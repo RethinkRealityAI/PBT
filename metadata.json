@@ -1,0 +1,5 @@
+{
+  "name": "AdvocateSCD",
+  "description": "A digital advocacy hub empowering healthcare professionals to provide equitable, evidence-based care for Sickle Cell Disease patients through education and AI-driven roleplay.",
+  "requestFramePermissions": ["microphone"]
+}
