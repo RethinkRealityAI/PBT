@@ -1,36 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Scenario, SimulationMessage } from '../types';
 import { evaluateAdvocacyResponse, generateRoleplayMessage } from '../services/geminiService';
-import {
-  Send, AlertCircle, CheckCircle, Lightbulb,
-  Mic, Type as TypeIcon, Loader2, ArrowRight, ArrowLeft, RotateCcw
-} from 'lucide-react';
-
-// Code-split the voice chat — its WebSocket/Live API code is ~unused by text mode.
-const LiveVoiceChat = lazy(() =>
-  import('./LiveVoiceChat').then(m => ({ default: m.LiveVoiceChat }))
-);
-
-interface CharacterInfo {
-  name: string;
-  role: string;
-  initials: string;
-  avatarClass: string;
-}
-
-const DEFAULT_CHARACTER: CharacterInfo = {
-  name: 'Clinician',
-  role: 'Healthcare Provider',
-  initials: '?',
-  avatarClass: 'from-slate-400 to-slate-600',
-};
-
-const CHARACTERS: Record<string, CharacterInfo> = {
-  '1': { name: 'Nurse Williams', role: 'Triage Nurse, ED',       initials: 'NW', avatarClass: 'from-rose-400 to-rose-600'   },
-  '2': { name: 'Dr. Chen',       role: 'Attending Physician',     initials: 'DC', avatarClass: 'from-violet-400 to-violet-600' },
-  '3': { name: 'Dr. Park',       role: 'Covering Physician',      initials: 'DP', avatarClass: 'from-amber-400 to-amber-600'  },
-  '4': { name: 'Dr. Martinez',   role: 'Consulting Specialist',   initials: 'DM', avatarClass: 'from-sky-400 to-sky-600'     },
-};
+import { Send, RefreshCw, MessageSquare, AlertCircle, CheckCircle, Lightbulb, Mic, Type as TypeIcon, Loader2 } from 'lucide-react';
+import { LiveVoiceChat } from './LiveVoiceChat';
 
 const SCENARIOS: Scenario[] = [
   {
@@ -40,10 +12,10 @@ const SCENARIOS: Scenario[] = [
     clinicalContext: 'Patient has a known history of HbSS. Vitals: HR 110, BP 145/90, SpO2 94% on RA. He is writhing in pain. No signs of respiratory depression. Guidelines indicate rapid initiation of analgesia.',
     biasChallenge: 'Overcoming the "frequent flyer" stigma and ensuring timely pain management despite staff skepticism.',
     goals: [
-      "Validate the patient's pain professionally",
+      'Validate the patient\'s pain professionally',
       'Cite SCD pain management guidelines (e.g., rapid analgesia)',
-      'Successfully persuade the nurse to administer medication without further delay',
-    ],
+      'Successfully persuade the nurse to administer medication without further delay'
+    ]
   },
   {
     id: '2',
@@ -54,8 +26,8 @@ const SCENARIOS: Scenario[] = [
     goals: [
       'Highlight the objective change in clinical status (hypoxia)',
       'Assert the risk of Acute Chest Syndrome',
-      'Secure an order for a chest X-ray and blood gas',
-    ],
+      'Secure an order for a chest X-ray and blood gas'
+    ]
   },
   {
     id: '3',
@@ -64,101 +36,65 @@ const SCENARIOS: Scenario[] = [
     clinicalContext: 'Patient has a history of severe VOC requiring IV PCA. Current pain is 9/10. Oral meds are insufficient. Guidelines recommend individualized, rapid, and aggressive pain management, often requiring IV opioids.',
     biasChallenge: 'Advocating for appropriate, guideline-concordant IV pain management and challenging the unfounded fear of opioid addiction in SCD patients.',
     goals: [
-      "Address the physician's concern about opioids respectfully but firmly",
-      "Reference the patient's history and individualized pain plan",
-      'Obtain an order for appropriate IV pain medication',
-    ],
+      'Address the physician\'s concern about opioids respectfully but firmly',
+      'Reference the patient\'s history and individualized pain plan',
+      'Obtain an order for appropriate IV pain medication'
+    ]
   },
   {
     id: '4',
     title: 'Disrespectful Bedside Manner',
-    description: "A 35-year-old male is in the hospital. A consulting specialist enters the room, doesn't introduce themselves, and speaks over the patient, ignoring his questions about his care plan.",
+    description: 'A 35-year-old male is in the hospital. A consulting specialist enters the room, doesn\'t introduce themselves, and speaks over the patient, ignoring his questions about his care plan.',
     clinicalContext: 'Patient is stable but anxious about his treatment plan. He has experienced medical trauma in the past. Respectful, patient-centered communication is essential.',
-    biasChallenge: "Intervening to ensure the patient is heard, respected, and included in shared decision-making, addressing the specialist's dismissive behavior.",
+    biasChallenge: 'Intervening to ensure the patient is heard, respected, and included in shared decision-making, addressing the specialist\'s dismissive behavior.',
     goals: [
       'Interrupt the specialist politely to center the patient',
-      "Ensure the patient's specific questions are answered",
-      'Model respectful, trauma-informed communication',
-    ],
-  },
+      'Ensure the patient\'s specific questions are answered',
+      'Model respectful, trauma-informed communication'
+    ]
+  }
 ];
 
 const Simulator: React.FC = () => {
   const [currentScenarioIndex, setCurrentScenarioIndex] = useState(0);
-  const [viewMode, setViewMode]     = useState<'details' | 'simulation'>('details');
-  const [mode, setMode]             = useState<'voice' | 'text'>('voice');
-  const [messages, setMessages]     = useState<SimulationMessage[]>([]);
-  const [input, setInput]           = useState('');
-  const [loading, setLoading]       = useState(false);
-  const [isCompleted, setIsCompleted] = useState(false);
-
-  // Incremented on every new initiation; stale async callbacks check before writing state.
-  const generationRef   = useRef(0);
-  const messagesEndRef  = useRef<HTMLDivElement>(null);
+  const [viewMode, setViewMode] = useState<'details' | 'simulation'>('details');
+  const [mode, setMode] = useState<'voice' | 'text'>('voice');
+  const [messages, setMessages] = useState<SimulationMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const activeScenario = SCENARIOS[currentScenarioIndex];
-  const character      = CHARACTERS[activeScenario.id] ?? DEFAULT_CHARACTER;
 
-  // ── Auto-scroll to latest message ──────────────────────────────────────────
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
-
-  // ── Initiate text scenario when entering simulation ─────────────────────────
-  // useCallback ensures the effect dep is stable across renders for the same
-  // scenario; the generation counter inside prevents stale API responses from
-  // landing if the user navigates away and back quickly.
-  const initiateTextScenario = useCallback(async () => {
-    const generation = ++generationRef.current;
-    setLoading(true);
-    try {
-      const aiMsg = await generateRoleplayMessage(activeScenario, []);
-      if (generation !== generationRef.current) return; // stale — discard
-      setMessages([aiMsg]);
-    } finally {
-      if (generation === generationRef.current) setLoading(false);
-    }
-  }, [activeScenario]);
-
-  useEffect(() => {
-    if (
-      viewMode === 'simulation' &&
-      mode === 'text' &&
-      messages.length === 0 &&
-      !loading &&
-      !isCompleted
-    ) {
-      initiateTextScenario();
-    }
-  }, [viewMode, mode, messages.length, loading, isCompleted, initiateTextScenario]);
-
-  // ── Navigation helpers ──────────────────────────────────────────────────────
-  const resetSimulation = useCallback(() => {
-    generationRef.current++; // invalidate any in-flight request
+  const handleNextScenario = () => {
+    setCurrentScenarioIndex((prev) => (prev + 1) % SCENARIOS.length);
     setMessages([]);
     setInput('');
-    setIsCompleted(false);
-  }, []);
-
-  const goToScenario = useCallback((index: number) => {
-    setCurrentScenarioIndex(index);
-    resetSimulation();
     setViewMode('details');
-  }, [resetSimulation]);
-
-  const handleNextScenario = () => goToScenario((currentScenarioIndex + 1) % SCENARIOS.length);
-  const handlePrevScenario = () => goToScenario((currentScenarioIndex - 1 + SCENARIOS.length) % SCENARIOS.length);
-
-  const handleModeChange = (newMode: 'voice' | 'text') => {
-    if (newMode === mode) return;
-    setMode(newMode);
-    resetSimulation();
   };
 
-  // ── Message submission ──────────────────────────────────────────────────────
+  const handlePrevScenario = () => {
+    setCurrentScenarioIndex((prev) => (prev - 1 + SCENARIOS.length) % SCENARIOS.length);
+    setMessages([]);
+    setInput('');
+    setViewMode('details');
+  };
+
+  useEffect(() => {
+    if (viewMode === 'simulation' && mode === 'text' && messages.length === 0 && !loading) {
+      initiateTextScenario();
+    }
+  }, [viewMode, mode, messages.length]);
+
+  const initiateTextScenario = async () => {
+    setLoading(true);
+    const aiMsg = await generateRoleplayMessage(activeScenario, []);
+    setMessages([aiMsg]);
+    setLoading(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || loading || isCompleted) return;
+    if (!input.trim() || !activeScenario || loading) return;
 
     const userMsg: SimulationMessage = { role: 'user', text: input };
     const newHistory = [...messages, userMsg];
@@ -166,512 +102,266 @@ const Simulator: React.FC = () => {
     setInput('');
     setLoading(true);
 
-    try {
-      const userTurns = newHistory.filter((m) => m.role === 'user').length;
-
-      if (userTurns >= 3) {
-        // Build transcript excluding any earlier feedback messages so the
-        // evaluator only sees the raw roleplay exchange.
-        const roleplays = newHistory.filter((m) => !m.feedback);
-        const fullTranscript = roleplays
-          .map((m) => `${m.role === 'user' ? 'USER' : 'SCENARIO'}: ${m.text}`)
-          .join('\n\n');
-
-        const feedback = await evaluateAdvocacyResponse(
-          activeScenario,
-          `Full Conversation Transcript:\n${fullTranscript}`
-        );
-        setMessages((prev) => [
-          ...prev,
-          { role: 'ai', text: "I've analyzed your advocacy approach.", feedback },
-        ]);
-        setIsCompleted(true);
-      } else {
-        // Pass only the pre-submit history as context; the service appends the
-        // user message itself so it constructs the correct turn order.
-        const aiMsg = await generateRoleplayMessage(activeScenario, messages, input);
-        setMessages((prev) => [...prev, aiMsg]);
-      }
-    } finally {
-      setLoading(false);
+    const userTurns = newHistory.filter(m => m.role === 'user').length;
+    
+    if (userTurns >= 3) {
+      // Evaluate the roleplay
+      const fullTranscript = newHistory.map(m => `${m.role === 'user' ? 'USER' : 'SCENARIO'}: ${m.text}`).join('\n\n');
+      const feedback = await evaluateAdvocacyResponse(activeScenario, `Full Conversation Transcript:\n${fullTranscript}`);
+      
+      const aiMsg: SimulationMessage = {
+        role: 'ai',
+        text: "I've analyzed your advocacy approach across this simulation.",
+        feedback: feedback
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    } else {
+      const aiMsg = await generateRoleplayMessage(activeScenario, messages, input);
+      setMessages(prev => [...prev, aiMsg]);
     }
+
+    setLoading(false);
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col flex-grow w-full max-w-4xl mx-auto px-3 md:px-4 mt-16 pt-6 md:mt-20 mb-10 relative">
-
-      {/* Scenario navigation */}
-      <div className="flex items-center gap-3 mb-5 shrink-0">
-        <button
+    <div className="flex flex-col flex-grow w-full max-w-5xl mx-auto px-2 md:px-4 mt-20 pt-4 md:mt-24 mb-10 relative">
+      {/* Scenario Navigation Header */}
+      <div className="flex items-center justify-between bg-white/40 backdrop-blur-3xl border border-white/60 p-2 md:p-3 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.04)] mb-4 shrink-0 relative z-20">
+        <button 
           onClick={handlePrevScenario}
-          aria-label="Previous scenario"
-          className="w-10 h-10 flex items-center justify-center rounded-full liquid-glass text-slate-600 hover:text-slate-900 transition-all active:scale-95"
+          className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-white/60 hover:bg-white text-slate-700 shadow-sm transition-all active:scale-95"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
-
-        <div className="flex flex-col items-center gap-2 flex-grow text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-            Scenario {currentScenarioIndex + 1} of {SCENARIOS.length}
-          </p>
-          <div className="flex gap-2 items-center">
-            {SCENARIOS.map((_, i) => (
-              <button
-                key={i}
-                aria-label={`Go to scenario ${i + 1}`}
-                onClick={() => i !== currentScenarioIndex && goToScenario(i)}
-                className={`rounded-full transition-all duration-300 ${
-                  i === currentScenarioIndex
-                    ? 'w-7 h-2.5 bg-gradient-to-r from-red-500 to-rose-500 shadow-sm shadow-red-500/30'
-                    : 'w-2.5 h-2.5 bg-slate-300 hover:bg-slate-400 cursor-pointer'
-                }`}
-              />
-            ))}
-          </div>
+        <div className="flex flex-col items-center flex-grow text-center px-2">
+          <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-slate-500 mb-0.5 mt-1">Scenario {currentScenarioIndex + 1}</span>
+          <h2 className="text-sm md:text-base font-extrabold text-slate-800 truncate max-w-[200px] sm:max-w-xs md:max-w-md pb-1">{activeScenario.title}</h2>
         </div>
-
-        <button
+        <button 
           onClick={handleNextScenario}
-          aria-label="Next scenario"
-          className="w-10 h-10 flex items-center justify-center rounded-full liquid-glass text-slate-600 hover:text-slate-900 transition-all active:scale-95"
+          className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-white/60 hover:bg-white text-slate-700 shadow-sm transition-all active:scale-95"
         >
-          <ArrowRight className="h-4 w-4" />
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
         </button>
       </div>
 
       {viewMode === 'details' ? (
-        /* ── Details card ──────────────────────────────────────────────── */
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex-grow flex items-start py-2">
-          <div className="liquid-glass-elevated rounded-[2.5rem] w-full overflow-hidden">
-
-            <div className="relative px-6 pt-7 pb-5 md:px-10 md:pt-9 md:pb-6 overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-red-500/8 via-rose-400/4 to-transparent" />
-              <div className="absolute -top-10 -right-10 w-44 h-44 bg-red-200/20 rounded-full blur-3xl" />
-              <div className="relative z-10 flex items-center gap-4">
-                <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl flex items-center justify-center shadow-lg shadow-red-500/30 shrink-0 rotate-3">
-                  <ActivityIcon className="h-6 w-6 md:h-7 md:w-7 text-white -rotate-3" />
+        <div className="flex flex-col items-center justify-center animate-in fade-in slide-in-from-bottom-4 duration-500 mb-10 flex-grow py-4 md:py-8">
+           <div className="bg-white/40 backdrop-blur-3xl rounded-[2rem] md:rounded-[2.5rem] border border-white/60 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] p-4 sm:p-5 md:p-10 w-full max-w-3xl overflow-hidden relative mt-auto mb-auto">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-red-200/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
+              <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-200/20 rounded-full blur-3xl translate-y-1/3 -translate-x-1/3"></div>
+              
+              <div className="relative z-10 space-y-4 md:space-y-8">
+                <div className="text-center mb-5 md:mb-8">
+                  <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-red-100 to-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-2.5 md:mb-4 shadow-inner transform rotate-3">
+                    <ActivityIcon className="h-6 w-6 md:h-8 md:w-8 text-red-500 -rotate-3" />
+                  </div>
+                  <h3 className="text-[1.35rem] leading-tight md:text-3xl font-extrabold text-slate-800 tracking-tight">{activeScenario.title}</h3>
                 </div>
-                <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-red-500/80 mb-1">
-                    Clinical Scenario
-                  </p>
-                  <h3 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight leading-tight">
-                    {activeScenario.title}
-                  </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6">
+                  <div className="bg-white/60 backdrop-blur-md p-4 md:p-6 border border-white/80 rounded-2xl md:rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+                    <span className="text-[10px] md:text-[11px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5 md:mb-2">The Situation</span>
+                    <p className="text-slate-700 text-sm md:text-[15px] font-medium leading-relaxed">{activeScenario.description}</p>
+                  </div>
+                  <div className="bg-white/60 backdrop-blur-md p-4 md:p-6 border border-white/80 rounded-2xl md:rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+                     <span className="text-[10px] md:text-[11px] font-extrabold text-indigo-500 uppercase tracking-widest flex items-center mb-1.5 md:mb-2">
+                      <ActivityIcon className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1.5" /> Clinical Context
+                    </span>
+                    <p className="text-slate-700 text-sm md:text-[15px] font-medium leading-relaxed">{activeScenario.clinicalContext}</p>
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-red-50/80 to-rose-50/80 backdrop-blur-md p-4 md:p-6 border border-red-100 rounded-2xl md:rounded-3xl shadow-[inset_0_2px_10px_rgba(255,255,255,1)]">
+                  <span className="text-[10px] md:text-[11px] font-extrabold text-red-600 uppercase tracking-widest flex items-center mb-1.5 md:mb-2">
+                    <AlertCircle className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1.5" /> The Challenge
+                  </span>
+                  <p className="text-red-950 text-sm md:text-[15px] font-medium leading-relaxed">{activeScenario.biasChallenge}</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-emerald-50/80 to-teal-50/80 backdrop-blur-md p-4 md:p-6 border border-emerald-100 rounded-2xl md:rounded-3xl shadow-[inset_0_2px_10px_rgba(255,255,255,1)]">
+                  <span className="text-[10px] md:text-[11px] font-extrabold text-emerald-600 uppercase tracking-widest flex items-center mb-2 md:mb-3">
+                    <CheckCircle className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1.5" /> Resolution Goals
+                  </span>
+                  <ul className="text-emerald-950 text-sm md:text-[15px] space-y-2 md:space-y-3 font-medium">
+                    {activeScenario.goals.map((goal, idx) => (
+                      <li key={idx} className="flex items-start">
+                         <span className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-emerald-200/50 text-emerald-600 flex items-center justify-center shrink-0 mr-2.5 md:mr-3 text-[9px] md:text-[10px] mt-0.5 leading-none font-bold">✓</span>
+                         <span className="leading-relaxed">{goal}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="pt-4 md:pt-6 flex justify-center w-full">
+                  <button 
+                    onClick={() => setViewMode('simulation')}
+                    className="flex justify-center items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-4 rounded-full font-bold transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_40px_rgba(15,23,42,0.3)] hover:shadow-[0_0_60px_rgba(15,23,42,0.4)]  w-full sm:w-auto relative overflow-hidden group"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-shimmer"></div>
+                    <span className="relative z-10 flex items-center gap-2">Start Simulation <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span>
+                  </button>
                 </div>
               </div>
-              <div className="relative z-10 mt-5 border-t border-white/50" />
-            </div>
-
-            <div className="px-6 pb-7 md:px-10 md:pb-10 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <InfoCard label="The Situation" labelColor="text-slate-400">
-                  {activeScenario.description}
-                </InfoCard>
-                <InfoCard label="Clinical Context" labelColor="text-indigo-500">
-                  {activeScenario.clinicalContext}
-                </InfoCard>
-              </div>
-
-              <div className="bg-red-50/70 rounded-2xl p-5 border border-red-100/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-                <div className="flex items-center gap-2 mb-2.5">
-                  <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-red-600">The Challenge</p>
-                </div>
-                <p className="text-red-900 text-[14px] md:text-[15px] leading-relaxed font-medium">
-                  {activeScenario.biasChallenge}
-                </p>
-              </div>
-
-              <div className="bg-emerald-50/70 rounded-2xl p-5 border border-emerald-100/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-                <div className="flex items-center gap-2 mb-3">
-                  <CheckCircle className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-emerald-700">Your Goals</p>
-                </div>
-                <ul className="space-y-2.5">
-                  {activeScenario.goals.map((goal, i) => (
-                    <li key={i} className="flex items-start gap-3">
-                      <span className="w-5 h-5 rounded-full bg-emerald-200/70 flex items-center justify-center shrink-0 mt-0.5 border border-emerald-200">
-                        <span className="text-[9px] font-bold text-emerald-700">{i + 1}</span>
-                      </span>
-                      <span className="text-emerald-950 text-[14px] md:text-[15px] font-medium leading-relaxed">{goal}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Mode selector + CTA */}
-              <div className="pt-3">
-                <div className="flex justify-center gap-3 mb-4">
-                  <ModeButton active={mode === 'voice'} onClick={() => setMode('voice')} gradient="from-red-600 to-rose-500" shadow="shadow-red-500/25">
-                    <Mic className="h-4 w-4" /> Live Voice
-                  </ModeButton>
-                  <ModeButton active={mode === 'text'} onClick={() => setMode('text')} gradient="from-indigo-600 to-blue-500" shadow="shadow-indigo-500/25">
-                    <TypeIcon className="h-4 w-4" /> Text Chat
-                  </ModeButton>
-                </div>
-                <button
-                  onClick={() => setViewMode('simulation')}
-                  className="w-full flex justify-center items-center gap-3 bg-slate-900 hover:bg-slate-800 text-white px-8 py-4 rounded-2xl text-[15px] font-bold transition-all hover:scale-[1.01] active:scale-[0.99] shadow-[0_8px_30px_rgba(15,23,42,0.22),0_2px_8px_rgba(15,23,42,0.12)] hover:shadow-[0_12px_40px_rgba(15,23,42,0.28)] relative overflow-hidden group"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/8 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                  <span className="relative z-10">Begin Simulation</span>
-                  <ArrowRight className="relative z-10 h-5 w-5 group-hover:translate-x-1 transition-transform duration-200" />
-                </button>
-              </div>
-            </div>
-          </div>
+           </div>
         </div>
-
       ) : (
-        /* ── Simulation view ────────────────────────────────────────────── */
-        <div className="flex flex-col liquid-glass-elevated rounded-[2rem] animate-in fade-in zoom-in-[0.985] duration-350 flex-grow min-h-[580px] overflow-hidden mb-2">
+        <div className="flex flex-col bg-white/40 backdrop-blur-3xl rounded-[2.5rem] border border-white/60 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1),0_0_15px_rgba(255,255,255,0.4)] relative z-10 animate-in fade-in zoom-in-95 duration-500 overflow-visible flex-grow mb-10 min-h-[600px]">
+           
+           {/* Simulation Header */}
+           <div className="flex items-center justify-between p-4 md:p-6 border-b border-white/40 bg-white/20 backdrop-blur-sm z-20 shrink-0">
+             <button 
+               onClick={() => setViewMode('details')}
+               className="flex items-center text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors bg-white/50 px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-white/60 active:scale-95"
+             >
+               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 md:mr-1.5"><path d="m15 18-6-6 6-6"/></svg> <span className="hidden sm:inline">Back to Details</span><span className="sm:hidden">Back</span>
+             </button>
+             
+             <div className="flex bg-white/60 p-1 md:p-1.5 rounded-2xl border border-white/80 shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)] relative z-20">
+                <button
+                  onClick={() => setMode('voice')}
+                  className={`flex items-center px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-sm font-extrabold transition-all outline-none ${mode === 'voice' ? 'bg-gradient-to-r from-red-600 to-rose-500 text-white shadow-lg shadow-red-500/20' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}`}
+                >
+                  <Mic className="h-4 w-4 mr-2" /> Live Voice
+                </button>
+                <button
+                  onClick={() => setMode('text')}
+                  className={`flex items-center px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-sm font-extrabold transition-all outline-none ${mode === 'text' ? 'bg-gradient-to-r from-indigo-600 to-blue-500 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}`}
+                >
+                  <TypeIcon className="h-4 w-4 mr-2" /> Text Chat
+                </button>
+             </div>
+           </div>
 
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 md:px-5 py-3 border-b border-white/40 bg-white/20 backdrop-blur-sm shrink-0">
-            <button
-              onClick={() => { setViewMode('details'); resetSimulation(); }}
-              className="flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors bg-white/50 px-3 py-1.5 rounded-full border border-white/70 active:scale-95"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Back</span>
-            </button>
+           <div className="flex flex-col relative h-[600px] flex-grow">
+              {mode === 'text' ? (
+                 <div className="flex flex-col relative h-full flex-grow overflow-hidden rounded-b-[2.5rem] pb-[72px] md:pb-[88px]">
+                    <div className="flex-grow overflow-y-auto p-4 md:p-8 space-y-6">
+                       {messages.length === 0 && loading && (
+                         <div className="flex justify-center items-center h-full">
+                           <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
+                           <span className="ml-3 text-slate-500 font-medium">Starting Scenario...</span>
+                         </div>
+                       )}
 
-            <p className="flex-1 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate hidden sm:block px-4 max-w-[180px] mx-auto">
-              {activeScenario.title}
-            </p>
+                       {messages.length === 0 && !loading && (
+                        <div className="text-center text-slate-500 mt-12 glass-panel p-6 md:p-8 bg-white/50 backdrop-blur-md border border-white mx-auto max-w-sm rounded-[2rem] shadow-lg shadow-black/5">
+                          <div className="w-16 h-16 bg-gradient-to-br from-indigo-100 to-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-inner rotate-3">
+                            <MessageSquare className="h-8 w-8 text-indigo-500 -rotate-3" />
+                          </div>
+                          <h4 className="text-lg font-bold text-slate-800 mb-2">Ready to Advocate</h4>
+                          <p className="font-medium text-slate-600 text-[15px] leading-relaxed">Type your response to the scenario here to evaluate your approach.</p>
+                        </div>
+                      )}
 
-            <div className="flex bg-white/60 p-1 rounded-xl border border-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] gap-0.5">
-              <SimModeButton active={mode === 'voice'} onClick={() => handleModeChange('voice')} gradient="from-red-600 to-rose-500" shadow="shadow-red-500/20">
-                <Mic className="h-3 w-3" /> Voice
-              </SimModeButton>
-              <SimModeButton active={mode === 'text'} onClick={() => handleModeChange('text')} gradient="from-indigo-600 to-blue-500" shadow="shadow-indigo-500/20">
-                <TypeIcon className="h-3 w-3" /> Text
-              </SimModeButton>
-            </div>
-          </div>
+                      {messages.map((msg, idx) => (
+                        <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} max-w-3xl mx-auto w-full animate-in fade-in slide-in-from-bottom-2`}>
+                          {msg.role === 'user' ? (
+                            <div className="bg-slate-800 text-white px-5 py-4 rounded-3xl rounded-tr-sm max-w-[85%] shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-700">
+                              <p className="text-[15px] font-medium leading-relaxed">{msg.text}</p>
+                            </div>
+                          ) : (
+                            <div className="w-full flex justify-start">
+                              {!msg.feedback ? (
+                                <div className="bg-white text-slate-800 px-5 py-4 rounded-3xl rounded-tl-sm max-w-[85%] shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-100">
+                                  <p className="text-[15px] font-medium leading-relaxed">{msg.text}</p>
+                                </div>
+                              ) : (
+                                <div className="bg-white/70 backdrop-blur-2xl border border-white w-full overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.06)] mt-2 rounded-[2rem]">
+                                  <div className="bg-gradient-to-r from-indigo-50/90 to-blue-50/90 backdrop-blur-md px-5 py-4 flex justify-between items-center shadow-sm relative">
+                                    <span className="font-extrabold text-indigo-900 text-[11px] tracking-widest uppercase flex items-center z-10">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-2 animate-pulse"></div>
+                                      Advocacy Analysis
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="p-4 md:p-6 grid grid-cols-3 gap-3 md:gap-4 border-b border-indigo-100/50">
+                                     <ScoreCard label="Empathy" score={msg.feedback.empathyScore} />
+                                     <ScoreCard label="Evidence" score={msg.feedback.evidenceScore} />
+                                     <ScoreCard label="Assert" score={msg.feedback.assertivenessScore} />
+                                  </div>
 
-          {mode === 'text' ? (
-            <div className="flex flex-col flex-grow overflow-hidden relative">
-              {/* Message list */}
-              <div className="flex-grow overflow-y-auto p-4 md:p-6 space-y-5" style={{ paddingBottom: '84px' }}>
-
-                {/* Initial loading — AI is speaking first */}
-                {messages.length === 0 && loading && (
-                  <div className="flex items-end gap-3 animate-in fade-in duration-300">
-                    <CharacterAvatar character={character} />
-                    <div>
-                      <p className="text-[11px] font-bold text-slate-400 mb-1.5 ml-1">
-                        {character.name} · {character.role}
-                      </p>
-                      <TypingIndicator />
+                                  <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+                                    <div>
+                                      <h5 className="text-[11px] font-extrabold text-slate-400 flex items-center mb-2.5 uppercase tracking-widest">
+                                        <Lightbulb className="h-3.5 w-3.5 text-amber-500 mr-2" /> Critique
+                                      </h5>
+                                      <p className="text-[14px] md:text-[15px] text-slate-700 font-medium leading-relaxed bg-white/50 p-4 md:p-5 rounded-2xl border border-white shadow-[inset_0_2px_10px_rgba(255,255,255,1)]">{msg.feedback.critique}</p>
+                                    </div>
+                                    
+                                    <div className="bg-emerald-50/80 backdrop-blur-md border border-emerald-100/50 p-4 md:p-5 rounded-2xl">
+                                      <h5 className="text-[11px] font-extrabold text-emerald-600 flex items-center mb-2.5 uppercase tracking-widest">
+                                        <CheckCircle className="h-3.5 w-3.5 mr-2" /> Recommended
+                                      </h5>
+                                      <p className="text-[14px] md:text-[15px] text-emerald-950 font-semibold leading-relaxed">"{msg.feedback.betterAlternative}"</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      
+                      {loading && (
+                        <div className="flex items-start max-w-3xl mx-auto w-full">
+                           <div className="bg-white px-5 py-4 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100 flex gap-1.5 items-center">
+                             <div className="w-2 h-2 rounded-full bg-slate-300 animate-bounce"></div>
+                             <div className="w-2 h-2 rounded-full bg-slate-300 animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                             <div className="w-2 h-2 rounded-full bg-slate-300 animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                           </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
 
-                {messages.map((msg, idx) => (
-                  <MessageBubble
-                    key={idx}
-                    msg={msg}
-                    character={character}
-                    onRetry={resetSimulation}
-                  />
-                ))}
-
-                {/* Mid-conversation loading indicator */}
-                {loading && messages.length > 0 && (
-                  <div className="flex items-end gap-3 animate-in fade-in duration-200">
-                    <CharacterAvatar character={character} />
-                    <TypingIndicator />
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Input bar */}
-              <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 bg-white/70 backdrop-blur-2xl border-t border-white/60 shadow-[0_-8px_24px_rgba(0,0,0,0.03)]">
-                {isCompleted ? (
-                  /* Completed state — prompt retry or scenario change */
-                  <div className="flex items-center justify-center gap-3 py-1">
-                    <p className="text-sm font-semibold text-slate-500">Simulation complete</p>
-                    <button
-                      onClick={resetSimulation}
-                      className="flex items-center gap-2 bg-slate-900 text-white text-sm font-bold px-5 py-2.5 rounded-xl hover:bg-slate-800 transition-all active:scale-95 shadow-md shadow-slate-900/15"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" /> Try Again
-                    </button>
-                  </div>
-                ) : (
-                  <form onSubmit={handleSubmit} className="flex gap-2 items-center">
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      placeholder={loading ? 'Waiting for response…' : 'Respond as the healthcare advocate…'}
-                      className="flex-grow bg-white/80 rounded-2xl px-5 py-3.5 text-slate-800 placeholder-slate-400 font-medium text-[15px] border border-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-400/50 focus:border-indigo-300/60 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_2px_8px_rgba(0,0,0,0.04)] disabled:opacity-60"
-                      disabled={loading}
-                    />
-                    <button
-                      type="submit"
-                      disabled={loading || !input.trim()}
-                      className="bg-slate-900 text-white w-11 h-11 rounded-xl hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center active:scale-95 shrink-0 shadow-md shadow-slate-900/15"
-                    >
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    </button>
-                  </form>
-                )}
-              </div>
-            </div>
-
-          ) : (
-            <div className="flex-grow flex flex-col pt-2 overflow-hidden">
-              <Suspense fallback={
-                <div className="flex-grow flex items-center justify-center">
-                  <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
+                    {/* Chat Input */}
+                    <div className="p-3 md:p-5 bg-white/80 backdrop-blur-2xl border-t border-white/60 shadow-[0_-10px_30px_rgb(0,0,0,0.02)] shrink-0 z-20 w-full rounded-b-[2.5rem] absolute bottom-0 left-0 right-0 overflow-hidden">
+                      <form onSubmit={handleSubmit} className="flex gap-2 max-w-4xl mx-auto relative group">
+                        <input
+                          type="text"
+                          value={input}
+                          onChange={(e) => setInput(e.target.value)}
+                          placeholder="Type your response..."
+                          className="flex-grow bg-white backdrop-blur-md rounded-2xl px-5 py-4 md:py-4.5 text-slate-800 placeholder-slate-400 font-medium text-[15px] shadow-[0_2px_10px_-3px_rgb(0,0,0,0.05)] border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition-all"
+                          disabled={loading}
+                        />
+                        <button
+                          type="submit"
+                          disabled={loading || !input.trim()}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-900 text-white w-10 h-10 md:w-11 md:h-11 rounded-xl hover:bg-slate-800 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-shrink-0 items-center justify-center active:scale-95"
+                        >
+                          <Send className="h-4 w-4 md:h-5 md:w-5" />
+                        </button>
+                      </form>
+                    </div>
+                 </div>
+              ) : (
+                <div className="flex-grow flex flex-col pt-4 overflow-hidden rounded-b-[2.5rem]">
+                  <LiveVoiceChat scenario={activeScenario} />
                 </div>
-              }>
-                <LiveVoiceChat scenario={activeScenario} />
-              </Suspense>
-            </div>
-          )}
+              )}
+           </div>
         </div>
       )}
     </div>
   );
 };
-
-/* ── Reusable layout sub-components ───────────────────────────────────────── */
-
-const InfoCard = ({
-  label, labelColor, children,
-}: {
-  label: string; labelColor: string; children: React.ReactNode;
-}) => (
-  <div className="bg-white/60 backdrop-blur-md rounded-2xl p-5 border border-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_2px_8px_rgba(0,0,0,0.03)]">
-    <p className={`text-[10px] font-extrabold uppercase tracking-[0.2em] ${labelColor} mb-2.5`}>{label}</p>
-    <p className="text-slate-700 text-[14px] md:text-[15px] leading-relaxed font-medium">{children}</p>
-  </div>
-);
-
-const ModeButton = ({
-  active, onClick, gradient, shadow, children,
-}: {
-  active: boolean; onClick: () => void; gradient: string; shadow: string; children: React.ReactNode;
-}) => (
-  <button
-    onClick={onClick}
-    className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all duration-200 ${
-      active
-        ? `bg-gradient-to-r ${gradient} text-white shadow-lg ${shadow}`
-        : 'bg-white/60 text-slate-600 border border-white/80 hover:bg-white/80 hover:text-slate-800'
-    }`}
-  >
-    {children}
-  </button>
-);
-
-const SimModeButton = ({
-  active, onClick, gradient, shadow, children,
-}: {
-  active: boolean; onClick: () => void; gradient: string; shadow: string; children: React.ReactNode;
-}) => (
-  <button
-    onClick={onClick}
-    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
-      active
-        ? `bg-gradient-to-r ${gradient} text-white shadow-sm ${shadow}`
-        : 'text-slate-500 hover:text-slate-800'
-    }`}
-  >
-    {children}
-  </button>
-);
-
-/* ── Chat sub-components ───────────────────────────────────────────────────── */
-
-const CharacterAvatar = ({ character }: { character: CharacterInfo }) => (
-  <div
-    className={`w-9 h-9 rounded-full bg-gradient-to-br ${character.avatarClass} flex items-center justify-center shrink-0 shadow-md border-2 border-white`}
-  >
-    <span className="text-[10px] font-extrabold text-white">{character.initials}</span>
-  </div>
-);
-
-const TypingIndicator = () => (
-  <div className="bg-white/80 backdrop-blur-md px-5 py-4 rounded-3xl rounded-bl-sm shadow-[0_4px_16px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.9)] border border-white/80 inline-flex gap-1.5 items-center">
-    <span className="w-2 h-2 rounded-full bg-slate-300 animate-bounce" style={{ animationDelay: '0ms' }} />
-    <span className="w-2 h-2 rounded-full bg-slate-300 animate-bounce" style={{ animationDelay: '150ms' }} />
-    <span className="w-2 h-2 rounded-full bg-slate-300 animate-bounce" style={{ animationDelay: '300ms' }} />
-  </div>
-);
-
-interface MessageBubbleProps {
-  msg: SimulationMessage;
-  character: CharacterInfo;
-  onRetry?: () => void;
-}
-
-const MessageBubble = ({ msg, character, onRetry }: MessageBubbleProps) => {
-  if (msg.role === 'user') {
-    return (
-      <div className="flex flex-col items-end animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <p className="text-[11px] font-bold text-slate-400 mb-1.5 mr-1">You · Healthcare Advocate</p>
-        <div className="bg-slate-800 text-white px-5 py-3.5 rounded-3xl rounded-tr-sm max-w-[85%] shadow-[0_4px_20px_rgba(15,23,42,0.15),0_1px_4px_rgba(15,23,42,0.1)]">
-          <p className="text-[15px] font-medium leading-relaxed">{msg.text}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (msg.feedback) {
-    return (
-      <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <FeedbackPanel feedback={msg.feedback} onRetry={onRetry} />
-      </div>
-    );
-  }
-
-  const isError = msg.text === 'Error connecting to AI.';
-
-  return (
-    <div className="flex items-end gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <CharacterAvatar character={character} />
-      <div className="max-w-[85%]">
-        <p className="text-[11px] font-bold text-slate-400 mb-1.5 ml-1">
-          {character.name} · {character.role}
-        </p>
-        <div
-          className={`text-slate-800 px-5 py-3.5 rounded-3xl rounded-bl-sm shadow-[0_4px_16px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.9)] border ${
-            isError
-              ? 'bg-red-50/80 border-red-200/80 text-red-800'
-              : 'bg-white/80 backdrop-blur-md border-white/80'
-          }`}
-        >
-          <p className="text-[15px] font-medium leading-relaxed">{msg.text}</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* ── Feedback panel ────────────────────────────────────────────────────────── */
-
-interface FeedbackPanelProps {
-  feedback: NonNullable<SimulationMessage['feedback']>;
-  onRetry?: () => void;
-}
-
-const FeedbackPanel = ({ feedback, onRetry }: FeedbackPanelProps) => (
-  <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[1.8rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.06),inset_0_1px_0_rgba(255,255,255,0.8)] my-2">
-
-    <div className="bg-gradient-to-r from-indigo-50/90 to-blue-50/80 px-6 py-4 border-b border-indigo-100/50 flex items-center gap-3">
-      <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-      <span className="font-extrabold text-indigo-900 text-[11px] tracking-[0.18em] uppercase">
-        Advocacy Analysis
-      </span>
-    </div>
-
-    <div className="px-6 py-6 grid grid-cols-3 gap-4 border-b border-slate-100/50">
-      <ScoreRing score={feedback.empathyScore}       label="Empathy"  />
-      <ScoreRing score={feedback.evidenceScore}      label="Evidence" />
-      <ScoreRing score={feedback.assertivenessScore} label="Assert."  />
-    </div>
-
-    <div className="px-6 py-5 space-y-4">
-      <div>
-        <div className="flex items-center gap-2 mb-2.5">
-          <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
-          <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-400">Critique</p>
-        </div>
-        <p className="text-[14px] md:text-[15px] text-slate-700 font-medium leading-relaxed bg-white/60 p-4 rounded-2xl border border-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
-          {feedback.critique}
-        </p>
-      </div>
-
-      <div className="bg-emerald-50/80 border border-emerald-100/80 p-5 rounded-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-        <div className="flex items-center gap-2 mb-2.5">
-          <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
-          <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-emerald-700">
-            Recommended Approach
-          </p>
-        </div>
-        <p className="text-[14px] md:text-[15px] text-emerald-950 font-semibold leading-relaxed">
-          "{feedback.betterAlternative}"
-        </p>
-      </div>
-
-      {onRetry && (
-        <button
-          onClick={onRetry}
-          className="w-full flex items-center justify-center gap-2 bg-white/60 hover:bg-white/90 text-slate-700 font-bold text-sm px-6 py-3 rounded-2xl border border-white/80 transition-all active:scale-[0.99] hover:shadow-sm"
-        >
-          <RotateCcw className="h-4 w-4" /> Try Again
-        </button>
-      )}
-    </div>
-  </div>
-);
-
-/* ── Score ring ────────────────────────────────────────────────────────────── */
-
-const ScoreRing = ({ score, label }: { score: number; label: string }) => {
-  const [animated, setAnimated] = useState(false);
-
-  useEffect(() => {
-    // Double rAF: first frame lets the browser paint the empty ring,
-    // second frame triggers the CSS transition fill animation.
-    let inner: number;
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => setAnimated(true));
-    });
-    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); };
-  }, []);
-
-  const strokeWidth = 4;
-  const radius      = 22; // actual circle radius (28 - strokeWidth/2 fits in 56px viewBox)
-  const circ        = 2 * Math.PI * radius;
-  const offset      = animated ? circ - (Math.min(Math.max(score, 0), 10) / 10) * circ : circ;
-
-  let strokeColor = '#f59e0b'; // amber — mid range
-  let textColor   = 'text-amber-600';
-  if (score >= 8) { strokeColor = '#10b981'; textColor = 'text-emerald-600'; }
-  if (score <= 4) { strokeColor = '#ef4444'; textColor = 'text-red-600'; }
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative w-14 h-14">
-        <svg width="56" height="56" viewBox="0 0 56 56" className="-rotate-90" aria-hidden="true">
-          <circle cx="28" cy="28" r={radius} fill="none" stroke="#e2e8f0" strokeWidth={strokeWidth} />
-          <circle
-            cx="28" cy="28" r={radius}
-            fill="none" stroke={strokeColor} strokeWidth={strokeWidth}
-            strokeDasharray={circ}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            style={{ transition: 'stroke-dashoffset 1s ease' }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center" aria-label={`${label}: ${score} out of 10`}>
-          <span className={`text-sm font-extrabold ${textColor}`}>{score}</span>
-        </div>
-      </div>
-      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">{label}</p>
-    </div>
-  );
-};
-
-/* ── Icons ─────────────────────────────────────────────────────────────────── */
 
 export const ActivityIcon = ({ className }: { className?: string }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-    className={className}
-  >
-    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-  </svg>
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
 );
+
+const ScoreCard = ({ label, score }: { label: string, score: number }) => {
+  let colorClass = "text-yellow-600";
+  if (score >= 8) colorClass = "text-emerald-600";
+  if (score <= 4) colorClass = "text-red-600";
+
+  return (
+    <div className="text-center glass-panel bg-white/60 border-white/80 p-3 rounded-xl shadow-sm">
+      <div className={`text-xl md:text-2xl font-bold ${colorClass} drop-shadow-sm`}>{score}/10</div>
+      <div className="text-[10px] md:text-xs text-slate-600 font-bold uppercase tracking-wider mt-1">{label}</div>
+    </div>
+  );
+}
 
 export default Simulator;

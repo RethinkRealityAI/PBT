@@ -1,6 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Scenario, SimulationMessage } from "../types";
 
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 // System instruction for the "Mentor" persona
 const SYSTEM_INSTRUCTION = `
 You are an expert Medical Advocacy Mentor specializing in Sickle Cell Disease (SCD) care and health equity.
@@ -87,7 +89,6 @@ export const evaluateAdvocacyResponse = async (
   userResponse: string
 ): Promise<SimulationMessage['feedback']> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = `
       SCENARIO CONTEXT:
       ${scenario.clinicalContext}
@@ -102,7 +103,7 @@ export const evaluateAdvocacyResponse = async (
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-flash-preview",
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,

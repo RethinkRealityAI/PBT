@@ -3,6 +3,8 @@ import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration } f
 import { Mic, MicOff, Loader2, Volume2, Square, CheckCircle, AlertCircle, RefreshCw, Lightbulb, MessageSquare } from 'lucide-react';
 import { Scenario } from '../types';
 
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 interface LiveVoiceChatProps {
   scenario: Scenario;
 }
@@ -87,12 +89,11 @@ export const LiveVoiceChat: React.FC<LiveVoiceChatProps> = ({ scenario }) => {
   const [metrics, setMetrics] = useState<SimulationMetrics | null>(null);
 
   const sessionRef = useRef<any>(null);
-  const isActiveRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const recordingContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
-  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const playbackQueueRef = useRef<Float32Array[]>([]);
+  const isPlayingRef = useRef(false);
   const nextPlayTimeRef = useRef(0);
 
   // Metrics tracking refs
@@ -110,7 +111,6 @@ export const LiveVoiceChat: React.FC<LiveVoiceChatProps> = ({ scenario }) => {
         await (window as any).aistudio.openSelectKey();
       }
 
-      isActiveRef.current = true;
       setIsConnecting(true);
       setError(null);
       setReport(null);
@@ -128,10 +128,7 @@ export const LiveVoiceChat: React.FC<LiveVoiceChatProps> = ({ scenario }) => {
       currentEmotionRef.current = 'red';
 
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      if (audioContextRef.current.state === 'suspended') {
-        try { await audioContextRef.current.resume(); } catch (e) {}
-      }
-
+      
       const systemInstruction = `
 You are participating in a clinical advocacy simulation for Sickle Cell Disease (SCD).
 You will roleplay as the colleague or patient described in the scenario.
@@ -154,11 +151,10 @@ If they are passive or aggressive, you might remain dismissive or defensive.
 Keep your responses relatively brief, conversational, and realistic.
 
 CRITICAL INSTRUCTIONS:
-1. START THE CONVERSATION: You must speak first. As soon as the session begins, deliver a 1-2 sentence opening statement in character that sets up the conflict (e.g., "I don't think he needs this medication, he might be drug seeking."). Do NOT wait for the user to speak first.
-2. TAKE TURNS: After your opening, wait for the user to respond. Speak once per turn, then stop and wait.
-3. UPDATE EMOTION: Call the \`updateEmotion\` tool at the start and whenever the tension level meaningfully shifts. Start with 'red', move to 'yellow' as the user makes good points, and 'green' when resolved.
-4. END SIMULATION — BE PATIENT: Do NOT call \`endSimulation\` early. Only call it after AT LEAST 4 substantive user turns AND one of: (a) tension has reached 'green' and held for a turn, or (b) the conversation is hopelessly deadlocked after 6+ turns. Never end on the first or second user turn.
-5. IF YOU HEAR SILENCE OR UNCLEAR AUDIO: Simply stay in character and wait. Do not end the simulation.
+1. START THE CONVERSATION: You must speak first. Deliver a 1-2 sentence opening statement in character that sets up the conflict (e.g., "I don't think he needs this medication, he might be drug seeking.").
+2. TAKE TURNS: You MUST wait for the user to speak before responding. DO NOT simulate both sides of the conversation. Speak exactly once, then stop and wait for the user's audio response.
+3. UPDATE EMOTION: You MUST call the \`updateEmotion\` tool frequently to reflect the current tension level. Start with 'red' (tense), move to 'yellow' as they make good points, and 'green' when the issue is resolved or de-escalated.
+4. END SIMULATION: End the simulation ONLY when the tension level reaches 'green' (the issue is successfully resolved) OR if the conversation becomes hopelessly deadlocked/escalated after several turns. Call the \`endSimulation\` function to terminate the session and provide their evaluation report. Do not say goodbye, just call the function.
 `;
 
       // Re-initialize the AI client to pick up the latest API key if it was just selected
@@ -167,22 +163,9 @@ CRITICAL INSTRUCTIONS:
       const sessionPromise = currentAi.live.connect({
         model: "gemini-3.1-flash-live-preview",
         callbacks: {
-          onopen: async () => {
+          onopen: () => {
             setIsConnected(true);
             setIsConnecting(false);
-
-            // Send the initial cue FIRST so the AI starts its opening before the mic can feed it silence.
-            try {
-              const session = await sessionPromise;
-              session.sendClientContent({
-                turns: [{ role: "user", parts: [{ text: "Begin the simulation now. Deliver your opening statement in character." }] }],
-                turnComplete: true
-              });
-            } catch (e) {
-              console.error("Error sending initial cue:", e);
-            }
-
-            // Only then start capturing the user's mic.
             startRecording(sessionPromise);
           },
           onmessage: async (message: any) => {
@@ -202,7 +185,7 @@ CRITICAL INSTRUCTIONS:
                   if (oldEmotion === 'red' || oldEmotion === 'yellow' || oldEmotion === 'green') {
                      timeInEmotionRef.current[oldEmotion as keyof typeof timeInEmotionRef.current] += timeSpent;
                   }
-
+                  
                   setMetrics({
                     durationSeconds: Math.floor((now - startTimeRef.current) / 1000),
                     timeInRed: Math.floor(timeInEmotionRef.current.red / 1000),
@@ -212,13 +195,6 @@ CRITICAL INSTRUCTIONS:
                     turns: turnCountRef.current
                   });
                   setReport(args as EvaluationReport);
-                  // Respond to the tool call before closing so the server records a clean termination
-                  try {
-                    const session = await sessionPromise;
-                    session.sendToolResponse({
-                      functionResponses: [{ id: call.id, name: call.name, response: { result: "acknowledged" } }]
-                    });
-                  } catch (e) {}
                   stopSession();
                   return;
                 } else if (call.name === 'updateEmotion') {
@@ -257,85 +233,55 @@ CRITICAL INSTRUCTIONS:
               }
             }
 
-            // Handle ALL audio output chunks (not just parts[0])
-            const parts = message.serverContent?.modelTurn?.parts ?? [];
-            for (const part of parts) {
-              const b64 = part?.inlineData?.data;
-              if (b64) playAudioChunk(b64);
+            // Handle audio output
+            const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+            if (base64Audio) {
+              playAudioChunk(base64Audio);
             }
-
-            // Handle interruption (user started speaking mid-AI-response):
-            // actually stop the buffered sources so the user doesn't hear the
-            // AI keep talking after they cut it off.
+            
+            // Handle interruption
             if (message.serverContent?.interrupted) {
-              stopAllPlayback();
-            }
-
-            // Turn complete — AI finished speaking. Count this as one turn.
-            if (message.serverContent?.turnComplete) {
-              turnCountRef.current += 1;
+              playbackQueueRef.current = [];
+              nextPlayTimeRef.current = audioContextRef.current?.currentTime || 0;
               setIsAiSpeaking(false);
             }
 
-
-            // AI transcription (only delivered when outputAudioTranscription is enabled).
-            // Concat streaming chunks while the speaker doesn't change.
-            const aiText = message.serverContent?.outputTranscription?.text;
-            if (aiText) {
-              setTranscript(prev => {
-                const last = prev[prev.length - 1];
-                if (last && last.role === 'ai') {
-                  return [...prev.slice(0, -1), { role: 'ai', text: last.text + aiText }];
-                }
-                return [...prev, { role: 'ai', text: aiText }];
-              });
-            }
-
-            // User transcription (only delivered when inputAudioTranscription is enabled).
-            const userText = message.serverContent?.inputTranscription?.text;
-            if (userText) {
-              setTranscript(prev => {
-                const last = prev[prev.length - 1];
-                if (last && last.role === 'user') {
-                  return [...prev.slice(0, -1), { role: 'user', text: last.text + userText }];
-                }
-                return [...prev, { role: 'user', text: userText }];
-              });
+            // Handle transcription
+            if (message.serverContent?.modelTurn) {
+               const textParts = message.serverContent.modelTurn.parts.filter((p: any) => p.text).map((p: any) => p.text).join('');
+               if (textParts) {
+                 setTranscript(prev => [...prev, { role: 'ai', text: textParts }]);
+               }
             }
           },
-          onclose: (event?: any) => {
-            console.log("Live session closed.", { code: event?.code, reason: event?.reason });
-            // Only surface a message if the user didn't stop it themselves and no report was generated
-            if (isActiveRef.current) {
-              const reason = event?.reason || 'The server closed the connection unexpectedly.';
-              setError(`Session ended: ${reason}`);
-            }
+          onclose: () => {
             stopSession();
           },
-          onerror: (err: any) => {
+          onerror: (err) => {
             console.error("Live API Error:", err);
-            const msg = err?.message || String(err) || '';
-            const isAuth = msg.toLowerCase().includes('api key') || msg.includes('401') || msg.includes('403');
-            setError(isAuth
-              ? "Authentication failed. Check that your GEMINI_API_KEY is set in Netlify and trigger a new deploy."
-              : `Connection error: ${msg || 'WebSocket closed unexpectedly.'}`
-            );
+            setError("Connection error occurred. If you are in the published version, please ensure your API key is valid.");
             stopSession();
           }
         },
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } },
           },
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
           systemInstruction: systemInstruction,
-          tools: [{ functionDeclarations: [endSimulationDeclaration, updateEmotionDeclaration] }],
+          tools: [{ functionDeclarations: [endSimulationDeclaration, updateEmotionDeclaration] }]
         },
       });
 
       sessionRef.current = sessionPromise;
+
+      sessionPromise.then((session: any) => {
+          try {
+            session.sendRealtimeInput({ text: "Please begin the simulation now by delivering your opening statement." });
+          } catch (e) {
+            console.error("Error sending initial cue:", e);
+          }
+      });
 
     } catch (err: any) {
       console.error("Failed to start session:", err);
@@ -351,35 +297,32 @@ CRITICAL INSTRUCTIONS:
         channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: true,
       } });
       mediaStreamRef.current = stream;
 
+      // We need a separate AudioContext for recording at 16000Hz
       const recordingContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      recordingContextRef.current = recordingContext;
-      if (recordingContext.state === 'suspended') {
-        try { await recordingContext.resume(); } catch (e) {}
-      }
-
-      // AudioWorklet keeps PCM conversion off the main thread (replaces the
-      // deprecated ScriptProcessorNode).
-      await recordingContext.audioWorklet.addModule('/pcm-recorder-worklet.js');
-
       const source = recordingContext.createMediaStreamSource(stream);
-      const workletNode = new AudioWorkletNode(recordingContext, 'pcm-recorder', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [1],
-        processorOptions: { chunkSize: 2048 },
-      });
-
-      workletNode.port.onmessage = (event: MessageEvent) => {
-        if (!isActiveRef.current) return;
-        const pcm16Buffer: ArrayBuffer = event.data;
-        const base64Data = arrayBufferToBase64(pcm16Buffer);
+      const processor = recordingContext.createScriptProcessor(4096, 1, 1);
+      
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        // Convert Float32 to Int16
+        const pcm16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          let s = Math.max(-1, Math.min(1, inputData[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        
+        // Convert to base64
+        const buffer = new Uint8Array(pcm16.buffer);
+        let binary = '';
+        for (let i = 0; i < buffer.byteLength; i++) {
+          binary += String.fromCharCode(buffer[i]);
+        }
+        const base64Data = btoa(binary);
 
         sessionPromise.then((session: any) => {
-          if (!isActiveRef.current) return;
           try {
             session.sendRealtimeInput({
               audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
@@ -388,49 +331,24 @@ CRITICAL INSTRUCTIONS:
         });
       };
 
-      source.connect(workletNode);
-      // The Live API wants no local playback of the mic. Connect to a muted
-      // destination just to keep the graph alive without echoing the user's
-      // own voice back to them.
-      const muteGain = recordingContext.createGain();
-      muteGain.gain.value = 0;
-      workletNode.connect(muteGain).connect(recordingContext.destination);
-
-      workletNodeRef.current = workletNode;
+      source.connect(processor);
+      processor.connect(recordingContext.destination);
+      processorRef.current = processor;
       setIsRecording(true);
 
     } catch (err) {
       console.error("Error accessing microphone:", err);
-      const msg = (err as any)?.name === 'NotAllowedError'
-        ? "Microphone permission denied. Enable it in your browser settings and reload."
-        : (err as any)?.name === 'NotFoundError'
-          ? "No microphone detected. Plug one in or select one in your system audio settings."
-          : "Microphone unavailable. Check browser permissions and try again.";
-      setError(msg);
-      stopSession();
+      setError("Microphone access denied or unavailable.");
     }
-  };
-
-  // Chunk-based base64 encoding — faster than the per-byte String.fromCharCode
-  // loop, especially since this runs on every captured PCM frame.
-  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-    const bytes = new Uint8Array(buffer);
-    const CHUNK = 0x8000;
-    let binary = '';
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary += String.fromCharCode.apply(
-        null,
-        Array.from(bytes.subarray(i, i + CHUNK)) as any
-      );
-    }
-    return btoa(binary);
   };
 
   const playAudioChunk = (base64Audio: string) => {
-    const ctx = audioContextRef.current;
-    if (!ctx) return;
+    if (!audioContextRef.current) return;
 
-    setIsAiSpeaking(true);
+    if (!isAiSpeaking) {
+      turnCountRef.current += 1;
+      setIsAiSpeaking(true);
+    }
 
     const binaryString = atob(base64Audio);
     const len = binaryString.length;
@@ -438,7 +356,7 @@ CRITICAL INSTRUCTIONS:
     for (let i = 0; i < len; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-
+    
     // PCM 16-bit to Float32
     const int16Array = new Int16Array(bytes.buffer);
     const float32Array = new Float32Array(int16Array.length);
@@ -446,40 +364,30 @@ CRITICAL INSTRUCTIONS:
       float32Array[i] = int16Array[i] / 32768.0;
     }
 
-    const audioBuffer = ctx.createBuffer(1, float32Array.length, 24000);
+    const audioBuffer = audioContextRef.current.createBuffer(1, float32Array.length, 24000);
     audioBuffer.getChannelData(0).set(float32Array);
 
-    const source = ctx.createBufferSource();
+    const source = audioContextRef.current.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(ctx.destination);
+    source.connect(audioContextRef.current.destination);
 
-    const currentTime = ctx.currentTime;
+    const currentTime = audioContextRef.current.currentTime;
     if (nextPlayTimeRef.current < currentTime) {
       nextPlayTimeRef.current = currentTime;
     }
-
+    
     source.start(nextPlayTimeRef.current);
     nextPlayTimeRef.current += audioBuffer.duration;
 
-    // Track the source so interruptions can actually cancel in-flight audio.
-    activeSourcesRef.current.add(source);
+    setIsAiSpeaking(true);
     source.onended = () => {
-      activeSourcesRef.current.delete(source);
+      if (audioContextRef.current && audioContextRef.current.currentTime >= nextPlayTimeRef.current - 0.1) {
+        setIsAiSpeaking(false);
+      }
     };
   };
 
-  const stopAllPlayback = () => {
-    for (const src of activeSourcesRef.current) {
-      try { src.stop(); } catch (e) {}
-      try { src.disconnect(); } catch (e) {}
-    }
-    activeSourcesRef.current.clear();
-    nextPlayTimeRef.current = audioContextRef.current?.currentTime ?? 0;
-    setIsAiSpeaking(false);
-  };
-
   const stopSession = () => {
-    isActiveRef.current = false;
     if (sessionRef.current) {
       sessionRef.current.then((session: any) => {
         if (typeof session.close === 'function') {
@@ -488,26 +396,14 @@ CRITICAL INSTRUCTIONS:
       });
       sessionRef.current = null;
     }
-    if (workletNodeRef.current) {
-      try { workletNodeRef.current.port.onmessage = null; } catch (e) {}
-      try { workletNodeRef.current.port.close(); } catch (e) {}
-      try { workletNodeRef.current.disconnect(); } catch (e) {}
-      workletNodeRef.current = null;
-    }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
       mediaStreamRef.current = null;
     }
-    if (recordingContextRef.current) {
-      try { recordingContextRef.current.close(); } catch (e) {}
-      recordingContextRef.current = null;
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
     }
-    // Stop any in-flight playback before closing the output context.
-    for (const src of activeSourcesRef.current) {
-      try { src.stop(); } catch (e) {}
-      try { src.disconnect(); } catch (e) {}
-    }
-    activeSourcesRef.current.clear();
     if (audioContextRef.current) {
       try { audioContextRef.current.close(); } catch (e) {}
       audioContextRef.current = null;
@@ -516,6 +412,7 @@ CRITICAL INSTRUCTIONS:
     setIsConnecting(false);
     setIsRecording(false);
     setIsAiSpeaking(false);
+    playbackQueueRef.current = [];
   };
 
   useEffect(() => {
@@ -597,54 +494,16 @@ CRITICAL INSTRUCTIONS:
           </div>
         )}
 
-        {/* Scenario briefing — shown before the session starts so the user knows what they're walking into */}
+        {/* Info panel - centered horizontally and vertically when its the only thing */}
         {!isConnected && !isConnecting && !report && (
-          <div className="max-w-2xl w-full m-auto bg-white/70 backdrop-blur-md border border-white/80 rounded-[2rem] shadow-xl shadow-slate-200/50 overflow-hidden shrink-0">
-            <div className="px-6 md:px-8 pt-6 md:pt-8 pb-5 bg-gradient-to-br from-indigo-50/60 to-white/30 border-b border-white/60">
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 bg-gradient-to-br from-indigo-100 to-indigo-50 rounded-[1.2rem] flex items-center justify-center shadow-inner rotate-3 shrink-0">
-                  <Mic className="h-7 w-7 text-indigo-500 -rotate-3" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-indigo-600 mb-1">Voice Simulation Briefing</p>
-                  <h3 className="text-slate-900 font-extrabold text-lg md:text-2xl tracking-tight leading-snug">{scenario.title}</h3>
-                </div>
-              </div>
+          <div className="text-center text-slate-600 max-w-md p-8 md:p-12 shrink-0 m-auto bg-white/70 backdrop-blur-md border border-white/80 rounded-[2rem] shadow-xl shadow-slate-200/50">
+            <div className="w-20 h-20 bg-gradient-to-br from-indigo-100 to-indigo-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 shadow-inner rotate-3">
+               <Mic className="h-10 w-10 text-indigo-500 -rotate-3" />
             </div>
-
-            <div className="p-6 md:p-8 space-y-5 text-left">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Clinical context</p>
-                <p className="text-sm md:text-[15px] text-slate-800 leading-relaxed font-medium">{scenario.clinicalContext}</p>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">The situation</p>
-                <p className="text-sm md:text-[15px] text-slate-800 leading-relaxed font-medium">{scenario.description}</p>
-              </div>
-
-              <div className="bg-gradient-to-br from-rose-50/80 to-amber-50/60 border border-rose-100 rounded-2xl p-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-rose-700 mb-1.5">Bias challenge to overcome</p>
-                <p className="text-sm text-rose-950 leading-relaxed font-semibold">{scenario.biasChallenge}</p>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Your goals</p>
-                <ul className="space-y-1.5">
-                  {scenario.goals.map((goal, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm md:text-[15px] text-slate-800 font-medium leading-relaxed">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 mt-2 shrink-0" />
-                      <span>{goal}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3">
-                <p className="text-xs md:text-sm text-indigo-900 font-semibold leading-relaxed">
-                  When you hit Start, the character will speak first. Respond out loud — the simulation tracks tension on the red/yellow/green orb and ends when you de-escalate or hit a turn limit.
-                </p>
-              </div>
+            <p className="mb-3 text-slate-800 font-extrabold text-xl md:text-2xl tracking-tight">Practice your advocacy skills out loud.</p>
+            <p className="text-sm md:text-base text-slate-600 mb-6 font-medium">Click "Start Voice Chat" to begin a real-time conversation.</p>
+            <div className="bg-gradient-to-br from-indigo-50/80 to-blue-50/80 backdrop-blur-sm p-4 rounded-2xl border border-indigo-100 shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)]">
+               <p className="text-xs md:text-sm text-indigo-900 font-semibold leading-relaxed">The simulation automatically ends when you verbally de-escalate the tension (green level) or if it takes too many turns.</p>
             </div>
           </div>
         )}
@@ -693,35 +552,12 @@ CRITICAL INSTRUCTIONS:
                 The AI is listening and will respond as the person in the scenario. Use persuasive, evidence-based language to de-escalate the tension.
               </p>
               <div className="w-full h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent my-2" />
-               <button
+               <button 
                  onClick={stopSession}
                  className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl font-bold transition-colors text-sm"
                >
                  <Square className="h-4 w-4 fill-current" /> End Early
                </button>
-            </div>
-          </div>
-        )}
-
-        {/* Live transcript shown during the call so the user sees what both sides said */}
-        {isConnected && transcript.length > 0 && (
-          <div className="w-full max-w-3xl m-auto mt-6 mb-2 bg-white/60 backdrop-blur-md border border-white/70 rounded-[2rem] shadow-lg shadow-slate-200/40 overflow-hidden">
-            <div className="px-5 py-3 border-b border-white/60 bg-white/40 flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-indigo-500" />
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Live transcript</p>
-            </div>
-            <div className="max-h-64 overflow-y-auto px-5 py-4 space-y-3 scrollbar-hide">
-              {transcript.map((m, i) => (
-                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                    m.role === 'user'
-                      ? 'bg-indigo-500 text-white rounded-br-md font-medium shadow-sm'
-                      : 'bg-white/80 text-slate-800 rounded-bl-md font-medium border border-white shadow-sm'
-                  }`}>
-                    {m.text}
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         )}

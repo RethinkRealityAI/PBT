@@ -14,25 +14,6 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
-      },
-      // Inject Node env vars into the client bundle at build time.
-      // GEMINI_API_KEY must be set in Netlify → Site configuration → Environment variables.
-      define: {
-        'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY ?? ''),
-      },
-      build: {
-        // Keep the @google/genai SDK in its own long-lived chunk so app code
-        // edits don't bust its cache on every deploy.
-        rollupOptions: {
-          output: {
-            manualChunks: {
-              'genai':  ['@google/genai'],
-              'react':  ['react', 'react-dom'],
-              'icons':  ['lucide-react'],
-            },
-          },
-        },
-        chunkSizeWarningLimit: 900,
-      },
+      }
     };
 });

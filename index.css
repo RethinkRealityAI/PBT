@@ -30,33 +30,17 @@
   .glass-input {
     @apply bg-white/50 border border-white/60 focus:bg-white/80 focus:border-indigo-400 focus:ring-indigo-400 backdrop-blur-sm transition-all;
   }
-  /* Apple liquid glass surfaces */
-  .liquid-glass {
-    @apply bg-white/35 backdrop-blur-3xl border border-white/55;
-    box-shadow:
-      0 4px 20px rgba(0, 0, 0, 0.05),
-      inset 0 1px 0 rgba(255, 255, 255, 0.8),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.03);
-  }
-  .liquid-glass-elevated {
-    @apply bg-white/40 backdrop-blur-3xl border border-white/55;
-    box-shadow:
-      0 24px 64px rgba(0, 0, 0, 0.07),
-      0 4px 16px rgba(0, 0, 0, 0.04),
-      inset 0 1px 0 rgba(255, 255, 255, 0.85),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.03);
-  }
   .hide-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
   }
   .hide-scrollbar::-webkit-scrollbar {
-    display: none;
+    display: none; /* Chrome, Safari and Opera */
   }
 }
 
 body {
-  background: linear-gradient(145deg, #f5f7fb 0%, #edf1f9 40%, #f1eef8 75%, #eef4f1 100%);
+  background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
   background-attachment: fixed;
 }
 
