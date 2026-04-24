@@ -161,12 +161,7 @@ CRITICAL INSTRUCTIONS:
       const currentAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
       const sessionPromise = currentAi.live.connect({
-        // gemini-live-2.5-flash-preview is the cookbook-documented Live API
-        // model that supports function calling + audio modality + transcription
-        // together. The newer gemini-3.1-flash-live-preview returns
-        // UNIMPLEMENTED ("Operation is not implemented, or supported, or
-        // enabled") when tools are declared alongside audio modality.
-        model: "gemini-live-2.5-flash-preview",
+        model: "gemini-3.1-flash-live-preview",
         callbacks: {
           onopen: () => {
             setIsConnected(true);
