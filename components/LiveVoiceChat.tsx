@@ -94,7 +94,6 @@ export const LiveVoiceChat: React.FC<LiveVoiceChatProps> = ({ scenario }) => {
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const nextPlayTimeRef = useRef(0);
-  const resumptionHandleRef = useRef<string | null>(null);
 
   // Metrics tracking refs
   const startTimeRef = useRef<number>(0);
@@ -278,11 +277,6 @@ CRITICAL INSTRUCTIONS:
               setIsAiSpeaking(false);
             }
 
-            // Capture resumption handle so we can survive a transient drop.
-            const handle = message.sessionResumptionUpdate?.newHandle;
-            if (handle && typeof handle === 'string') {
-              resumptionHandleRef.current = handle;
-            }
 
             // AI transcription (only delivered when outputAudioTranscription is enabled).
             // Concat streaming chunks while the speaker doesn't change.
@@ -338,13 +332,6 @@ CRITICAL INSTRUCTIONS:
           outputAudioTranscription: {},
           systemInstruction: systemInstruction,
           tools: [{ functionDeclarations: [endSimulationDeclaration, updateEmotionDeclaration] }],
-          // Resilience: keep a handle so transient disconnects don't lose context.
-          sessionResumption: resumptionHandleRef.current
-            ? { handle: resumptionHandleRef.current }
-            : {},
-          // Long simulations: let the server slide the context window instead
-          // of hitting hard token limits and terminating.
-          contextWindowCompression: { slidingWindow: {} },
         },
       });
 
