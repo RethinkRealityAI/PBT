@@ -91,10 +91,10 @@ export const LiveVoiceChat: React.FC<LiveVoiceChatProps> = ({ scenario }) => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const recordingContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const playbackQueueRef = useRef<Float32Array[]>([]);
-  const isPlayingRef = useRef(false);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const nextPlayTimeRef = useRef(0);
+  const resumptionHandleRef = useRef<string | null>(null);
 
   // Metrics tracking refs
   const startTimeRef = useRef<number>(0);
@@ -265,16 +265,23 @@ CRITICAL INSTRUCTIONS:
               if (b64) playAudioChunk(b64);
             }
 
-            // Handle interruption (user started speaking mid-AI-response)
+            // Handle interruption (user started speaking mid-AI-response):
+            // actually stop the buffered sources so the user doesn't hear the
+            // AI keep talking after they cut it off.
             if (message.serverContent?.interrupted) {
-              playbackQueueRef.current = [];
-              nextPlayTimeRef.current = audioContextRef.current?.currentTime || 0;
+              stopAllPlayback();
+            }
+
+            // Turn complete — AI finished speaking. Count this as one turn.
+            if (message.serverContent?.turnComplete) {
+              turnCountRef.current += 1;
               setIsAiSpeaking(false);
             }
 
-            // Turn complete — AI finished speaking
-            if (message.serverContent?.turnComplete) {
-              setIsAiSpeaking(false);
+            // Capture resumption handle so we can survive a transient drop.
+            const handle = message.sessionResumptionUpdate?.newHandle;
+            if (handle && typeof handle === 'string') {
+              resumptionHandleRef.current = handle;
             }
 
             // AI transcription (only delivered when outputAudioTranscription is enabled).
@@ -331,6 +338,13 @@ CRITICAL INSTRUCTIONS:
           outputAudioTranscription: {},
           systemInstruction: systemInstruction,
           tools: [{ functionDeclarations: [endSimulationDeclaration, updateEmotionDeclaration] }],
+          // Resilience: keep a handle so transient disconnects don't lose context.
+          sessionResumption: resumptionHandleRef.current
+            ? { handle: resumptionHandleRef.current }
+            : {},
+          // Long simulations: let the server slide the context window instead
+          // of hitting hard token limits and terminating.
+          contextWindowCompression: { slidingWindow: {} },
         },
       });
 
@@ -350,28 +364,32 @@ CRITICAL INSTRUCTIONS:
         channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true,
+        autoGainControl: true,
       } });
       mediaStreamRef.current = stream;
 
       const recordingContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       recordingContextRef.current = recordingContext;
-      const source = recordingContext.createMediaStreamSource(stream);
-      const processor = recordingContext.createScriptProcessor(4096, 1, 1);
+      if (recordingContext.state === 'suspended') {
+        try { await recordingContext.resume(); } catch (e) {}
+      }
 
-      processor.onaudioprocess = (e) => {
+      // AudioWorklet keeps PCM conversion off the main thread (replaces the
+      // deprecated ScriptProcessorNode).
+      await recordingContext.audioWorklet.addModule('/pcm-recorder-worklet.js');
+
+      const source = recordingContext.createMediaStreamSource(stream);
+      const workletNode = new AudioWorkletNode(recordingContext, 'pcm-recorder', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+        processorOptions: { chunkSize: 2048 },
+      });
+
+      workletNode.port.onmessage = (event: MessageEvent) => {
         if (!isActiveRef.current) return;
-        const inputData = e.inputBuffer.getChannelData(0);
-        const pcm16 = new Int16Array(inputData.length);
-        for (let i = 0; i < inputData.length; i++) {
-          const s = Math.max(-1, Math.min(1, inputData[i]));
-          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-        const buffer = new Uint8Array(pcm16.buffer);
-        let binary = '';
-        for (let i = 0; i < buffer.byteLength; i++) {
-          binary += String.fromCharCode(buffer[i]);
-        }
-        const base64Data = btoa(binary);
+        const pcm16Buffer: ArrayBuffer = event.data;
+        const base64Data = arrayBufferToBase64(pcm16Buffer);
 
         sessionPromise.then((session: any) => {
           if (!isActiveRef.current) return;
@@ -383,24 +401,49 @@ CRITICAL INSTRUCTIONS:
         });
       };
 
-      source.connect(processor);
-      processor.connect(recordingContext.destination);
-      processorRef.current = processor;
+      source.connect(workletNode);
+      // The Live API wants no local playback of the mic. Connect to a muted
+      // destination just to keep the graph alive without echoing the user's
+      // own voice back to them.
+      const muteGain = recordingContext.createGain();
+      muteGain.gain.value = 0;
+      workletNode.connect(muteGain).connect(recordingContext.destination);
+
+      workletNodeRef.current = workletNode;
       setIsRecording(true);
 
     } catch (err) {
       console.error("Error accessing microphone:", err);
-      setError("Microphone access denied or unavailable.");
+      const msg = (err as any)?.name === 'NotAllowedError'
+        ? "Microphone permission denied. Enable it in your browser settings and reload."
+        : (err as any)?.name === 'NotFoundError'
+          ? "No microphone detected. Plug one in or select one in your system audio settings."
+          : "Microphone unavailable. Check browser permissions and try again.";
+      setError(msg);
+      stopSession();
     }
   };
 
-  const playAudioChunk = (base64Audio: string) => {
-    if (!audioContextRef.current) return;
-
-    if (!isAiSpeaking) {
-      turnCountRef.current += 1;
-      setIsAiSpeaking(true);
+  // Chunk-based base64 encoding — faster than the per-byte String.fromCharCode
+  // loop, especially since this runs on every captured PCM frame.
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    const CHUNK = 0x8000;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(
+        null,
+        Array.from(bytes.subarray(i, i + CHUNK)) as any
+      );
     }
+    return btoa(binary);
+  };
+
+  const playAudioChunk = (base64Audio: string) => {
+    const ctx = audioContextRef.current;
+    if (!ctx) return;
+
+    setIsAiSpeaking(true);
 
     const binaryString = atob(base64Audio);
     const len = binaryString.length;
@@ -408,7 +451,7 @@ CRITICAL INSTRUCTIONS:
     for (let i = 0; i < len; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    
+
     // PCM 16-bit to Float32
     const int16Array = new Int16Array(bytes.buffer);
     const float32Array = new Float32Array(int16Array.length);
@@ -416,27 +459,36 @@ CRITICAL INSTRUCTIONS:
       float32Array[i] = int16Array[i] / 32768.0;
     }
 
-    const audioBuffer = audioContextRef.current.createBuffer(1, float32Array.length, 24000);
+    const audioBuffer = ctx.createBuffer(1, float32Array.length, 24000);
     audioBuffer.getChannelData(0).set(float32Array);
 
-    const source = audioContextRef.current.createBufferSource();
+    const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(audioContextRef.current.destination);
+    source.connect(ctx.destination);
 
-    const currentTime = audioContextRef.current.currentTime;
+    const currentTime = ctx.currentTime;
     if (nextPlayTimeRef.current < currentTime) {
       nextPlayTimeRef.current = currentTime;
     }
-    
+
     source.start(nextPlayTimeRef.current);
     nextPlayTimeRef.current += audioBuffer.duration;
 
-    setIsAiSpeaking(true);
+    // Track the source so interruptions can actually cancel in-flight audio.
+    activeSourcesRef.current.add(source);
     source.onended = () => {
-      if (audioContextRef.current && audioContextRef.current.currentTime >= nextPlayTimeRef.current - 0.1) {
-        setIsAiSpeaking(false);
-      }
+      activeSourcesRef.current.delete(source);
     };
+  };
+
+  const stopAllPlayback = () => {
+    for (const src of activeSourcesRef.current) {
+      try { src.stop(); } catch (e) {}
+      try { src.disconnect(); } catch (e) {}
+    }
+    activeSourcesRef.current.clear();
+    nextPlayTimeRef.current = audioContextRef.current?.currentTime ?? 0;
+    setIsAiSpeaking(false);
   };
 
   const stopSession = () => {
@@ -449,10 +501,11 @@ CRITICAL INSTRUCTIONS:
       });
       sessionRef.current = null;
     }
-    if (processorRef.current) {
-      processorRef.current.onaudioprocess = null;
-      processorRef.current.disconnect();
-      processorRef.current = null;
+    if (workletNodeRef.current) {
+      try { workletNodeRef.current.port.onmessage = null; } catch (e) {}
+      try { workletNodeRef.current.port.close(); } catch (e) {}
+      try { workletNodeRef.current.disconnect(); } catch (e) {}
+      workletNodeRef.current = null;
     }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -462,6 +515,12 @@ CRITICAL INSTRUCTIONS:
       try { recordingContextRef.current.close(); } catch (e) {}
       recordingContextRef.current = null;
     }
+    // Stop any in-flight playback before closing the output context.
+    for (const src of activeSourcesRef.current) {
+      try { src.stop(); } catch (e) {}
+      try { src.disconnect(); } catch (e) {}
+    }
+    activeSourcesRef.current.clear();
     if (audioContextRef.current) {
       try { audioContextRef.current.close(); } catch (e) {}
       audioContextRef.current = null;
@@ -470,7 +529,6 @@ CRITICAL INSTRUCTIONS:
     setIsConnecting(false);
     setIsRecording(false);
     setIsAiSpeaking(false);
-    playbackQueueRef.current = [];
   };
 
   useEffect(() => {

@@ -1,11 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Scenario, SimulationMessage } from '../types';
 import { evaluateAdvocacyResponse, generateRoleplayMessage } from '../services/geminiService';
 import {
   Send, AlertCircle, CheckCircle, Lightbulb,
   Mic, Type as TypeIcon, Loader2, ArrowRight, ArrowLeft, RotateCcw
 } from 'lucide-react';
-import { LiveVoiceChat } from './LiveVoiceChat';
+
+// Code-split the voice chat — its WebSocket/Live API code is ~unused by text mode.
+const LiveVoiceChat = lazy(() =>
+  import('./LiveVoiceChat').then(m => ({ default: m.LiveVoiceChat }))
+);
 
 interface CharacterInfo {
   name: string;
@@ -423,7 +427,13 @@ const Simulator: React.FC = () => {
 
           ) : (
             <div className="flex-grow flex flex-col pt-2 overflow-hidden">
-              <LiveVoiceChat scenario={activeScenario} />
+              <Suspense fallback={
+                <div className="flex-grow flex items-center justify-center">
+                  <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
+                </div>
+              }>
+                <LiveVoiceChat scenario={activeScenario} />
+              </Suspense>
             </div>
           )}
         </div>
