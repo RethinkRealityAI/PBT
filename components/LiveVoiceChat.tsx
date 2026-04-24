@@ -329,9 +329,8 @@ CRITICAL INSTRUCTIONS:
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          systemInstruction: { parts: [{ text: systemInstruction }] },
+          systemInstruction: systemInstruction,
           tools: [{ functionDeclarations: [endSimulationDeclaration, updateEmotionDeclaration] }],
-          toolConfig: { functionCallingConfig: {} }
         },
       });
 
