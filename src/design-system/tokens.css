@@ -1,0 +1,99 @@
+/**
+ * PBT runtime CSS variables.
+ * Dark theme overrides via [data-theme="dark"] on <html>.
+ * Driver tint vars (--pbt-driver-*) are written by ProfileProvider once a profile is locked.
+ */
+
+:root {
+  --pbt-cherry: oklch(0.62 0.22 22);
+  --pbt-crimson: oklch(0.55 0.24 18);
+  --pbt-coral: oklch(0.74 0.18 28);
+  --pbt-blush: oklch(0.94 0.05 20);
+  --pbt-cream: oklch(0.985 0.012 60);
+  --pbt-ink: oklch(0.22 0.04 20);
+  --pbt-mute: oklch(0.50 0.04 20);
+
+  --pbt-canvas: #ffffff;
+  --pbt-canvas-outer: #fff7f5;
+  --pbt-glass: rgba(255, 255, 255, 0.18);
+  --pbt-glass-border: rgba(255, 255, 255, 0.7);
+  --pbt-glass-tint-strong: rgba(255, 255, 255, 0.28);
+
+  --pbt-text: var(--pbt-ink);
+  --pbt-text-muted: var(--pbt-mute);
+
+  --pbt-score-good: oklch(0.55 0.18 145);
+  --pbt-score-ok: oklch(0.65 0.18 60);
+  --pbt-score-poor: oklch(0.55 0.24 18);
+
+  /* Default driver tint = Activator (cherry). Overwritten by ProfileProvider. */
+  --pbt-driver-primary: oklch(0.62 0.22 25);
+  --pbt-driver-accent: oklch(0.52 0.24 22);
+  --pbt-driver-soft: oklch(0.92 0.06 22);
+  --pbt-driver-wave: oklch(0.62 0.22 22);
+
+  --pbt-radius-sm: 12px;
+  --pbt-radius-md: 16px;
+  --pbt-radius-lg: 20px;
+  --pbt-radius-xl: 26px;
+  --pbt-radius-hero: 28px;
+  --pbt-radius-phone: 32px;
+  --pbt-radius-pill: 9999px;
+
+  --pbt-blur-compact: 24px;
+  --pbt-blur-medium: 28px;
+  --pbt-blur-heavy: 36px;
+  --pbt-blur-page: 40px;
+
+  --pbt-font-body: 'Mulish', 'Geist Variable', system-ui, sans-serif;
+  --pbt-font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+
+  --pbt-shadow-glass:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 -1px 0 rgba(255, 255, 255, 0.5) inset,
+    0 6px 18px -10px rgba(60, 20, 15, 0.18),
+    0 1px 2px rgba(60, 20, 15, 0.06);
+
+  --pbt-shadow-button-solid:
+    0 1px 0 rgba(255, 255, 255, 0.45) inset,
+    0 8px 24px -10px color-mix(in oklab, var(--pbt-cherry) 55%, transparent),
+    0 1px 2px rgba(60, 20, 15, 0.10);
+}
+
+[data-theme='dark'] {
+  --pbt-canvas: #0e0306;
+  --pbt-canvas-outer: #070203;
+  --pbt-glass: rgba(28, 12, 14, 0.22);
+  --pbt-glass-border: rgba(255, 255, 255, 0.14);
+  --pbt-glass-tint-strong: rgba(255, 255, 255, 0.06);
+
+  --pbt-text: oklch(0.96 0.01 60);
+  --pbt-text-muted: oklch(0.70 0.04 30);
+
+  --pbt-shadow-glass:
+    0 1px 0 rgba(255, 255, 255, 0.10) inset,
+    0 -1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 14px 36px -14px rgba(0, 0, 0, 0.55),
+    0 1px 2px rgba(0, 0, 0, 0.40);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --pbt-glass: rgba(255, 255, 255, 0.92);
+    --pbt-glass-tint-strong: rgba(255, 255, 255, 0.96);
+  }
+  [data-theme='dark'] {
+    --pbt-glass: rgba(28, 12, 14, 0.92);
+    --pbt-glass-tint-strong: rgba(40, 20, 22, 0.96);
+  }
+}

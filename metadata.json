@@ -1,5 +1,5 @@
 {
-  "name": "AdvocateSCD",
-  "description": "A digital advocacy hub empowering healthcare professionals to provide equitable, evidence-based care for Sickle Cell Disease patients through education and AI-driven roleplay.",
+  "name": "PBT — Pushback Training",
+  "description": "Training simulator for veterinary teams. Practice handling client pushback (cost, breeder advice, raw food, prescription diets, brand switches) against AI customer roleplay grounded in WSAVA / Royal Canin guidance. Sessions are scored on 7 dimensions (empathy, listening, knowledge, objection handling, confidence, closing, pacing) and tied to your ECHO personality driver (Activator / Energizer / Analyzer / Harmonizer).",
   "requestFramePermissions": ["microphone"]
 }

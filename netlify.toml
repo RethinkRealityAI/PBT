@@ -1,5 +1,13 @@
+# PBT (Pushback Training) — https://github.com/RethinkRealityAI/PBT
+# In Netlify: Site configuration → Environment variables, set at least:
+#   GEMINI_API_KEY              — required; Vite inlines it at build (see vite.config.ts)
+#   VITE_SUPABASE_URL          — optional (account sync)
+#   VITE_SUPABASE_PUBLISHABLE_KEY — optional
+#
+# `npm ci` uses package-lock.json for reproducible Netlify builds.
+
 [build]
-  command   = "npm install && npm run build"
+  command   = "npm ci && npm run build"
   publish   = "dist"
 
 [build.environment]

@@ -10,7 +10,21 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+
+# Environment & secrets (never commit real keys)
+.env
+.env.*
+!.env.example
+!.env.template
 *.local
+
+# Local tool / IDE state (project notes live in repo-root CLAUDE.md)
+.claude/
+.netlify
+
+# Test & coverage
+coverage
+.vitest
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +36,21 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# OS junk
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Office / LibreOffice lock files (often created under OneDrive)
+.~lock*
+~$*
+
+# Keys & credential-like filenames
+*.pem
+*.p12
+*credentials*.json
+secrets/
+
+# Duplicate OneDrive sync folder — same scenario transcripts as OneDrive_4_5-3-2026
+resources/OneDrive_5_5-3-2026/

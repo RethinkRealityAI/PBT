@@ -1,9 +1,10 @@
 import path from 'path';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ mode }) => {
+    const env = loadEnv(mode, process.cwd(), '');
     return {
       server: {
         port: 3000,
@@ -21,7 +22,20 @@ export default defineConfig(({ mode }) => {
       // browser the moment a module reading them loads — blanking the page.
       // GEMINI_API_KEY must be set in Netlify → Site configuration → Environment variables.
       define: {
-        'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY ?? ''),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY ?? ''),
+      },
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'vendor-react': ['react', 'react-dom'],
+              'vendor-genai': ['@google/genai'],
+              'vendor-supabase': ['@supabase/supabase-js'],
+              'vendor-motion': ['motion'],
+            },
+          },
+        },
+        chunkSizeWarningLimit: 700,
       },
     };
 });
