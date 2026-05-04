@@ -60,6 +60,11 @@ export const PUSHBACK_CATEGORIES: PushbackCategory[] = [
     title: 'Weight / obesity denial',
     example: '"He\'s not fat — all Labs look like that."',
   },
+  {
+    id: 'custom',
+    title: 'Other pushback',
+    example: 'Describe the objection in your own words in the field below.',
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -99,6 +104,13 @@ export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   4: 'Combative',
 };
 
+export const DIFFICULTY_DESCRIPTIONS: Record<Difficulty, string> = {
+  1: 'The client is open-minded and willing to hear your recommendations with minimal resistance.',
+  2: 'The client questions your advice and needs clear, evidence-backed reasoning to be persuaded.',
+  3: 'The client is frustrated or defensive, requiring empathy and persistence to reach resolution.',
+  4: 'The client is highly resistant and emotionally charged — tests your composure under pressure.',
+};
+
 // ─────────────────────────────────────────────────────────────
 // Scenario shape
 // ─────────────────────────────────────────────────────────────
@@ -111,8 +123,21 @@ export interface Scenario {
   difficulty: Difficulty;
   /** Optional free-text context from the staff member's memory of a real encounter */
   context?: string;
+  /**
+   * Required when `pushback.id === 'custom'`: what the client actually pushed back on.
+   * Also optional for canned categories to add specifics (feeds prompts + scoring).
+   */
+  pushbackNotes?: string;
   /** Customer's suggested communication driver — drives AI personality */
   suggestedDriver: DriverKey;
+  /**
+   * Opening line the AI customer delivers to kick off the simulation.
+   * Used in voice mode so the AI speaks first. Should be 1–2 sentences,
+   * in character, and set up the core pushback immediately.
+   */
+  openingLine?: string;
+  /** Dog weight in kg, as a string (e.g. "32.5"). Optional — absent means not specified. */
+  weightKg?: string;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -129,6 +154,8 @@ export const SEED_SCENARIOS: Scenario[] = [
     context:
       "Buddy is a 5-year-old male Lab weighing 42 kg — BCS 8/9. Vet flagged obesity and joint stress risk, recommended Satiety Support and a 12-week weight plan. Owner insists Buddy is just 'a big Lab' and that all his friends' Labs look the same. He eats whatever is on special at the supermarket and gets generous treats.",
     suggestedDriver: 'Activator',
+    openingLine:
+      "Look, Buddy's not fat — he's just a big Lab. All my mates' Labs look exactly the same.",
   },
   {
     breed: 'Lab',
@@ -139,6 +166,8 @@ export const SEED_SCENARIOS: Scenario[] = [
     context:
       "Owner came in for a routine weight check. Vet recommended Satiety Support but owner balked at the price difference vs. the store brand she's been using for two years.",
     suggestedDriver: 'Activator',
+    openingLine:
+      "I appreciate you seeing us, but honestly Royal Canin is just way too expensive. I can get similar food for half the price at the supermarket.",
   },
   {
     breed: 'GSD',
@@ -149,6 +178,8 @@ export const SEED_SCENARIOS: Scenario[] = [
     context:
       'First-time owner, very attached. Breeder sent her home with a specific raw brand and she feels switching would be going against expert advice.',
     suggestedDriver: 'Harmonizer',
+    openingLine:
+      "My breeder specifically told me to feed her the raw brand she sent home with me — I'd feel terrible going against that advice.",
   },
   {
     breed: 'French Bulldog',
@@ -159,6 +190,8 @@ export const SEED_SCENARIOS: Scenario[] = [
     context:
       'Owner is worried about over-medicalising her dog. Vet flagged early kidney markers but owner questions whether the prescription diet is truly necessary or just upselling.',
     suggestedDriver: 'Analyzer',
+    openingLine:
+      "I'm a bit worried — is this prescription diet actually medically necessary, or is this just an upsell? She seems perfectly fine on her current food.",
   },
   {
     breed: 'Golden',
@@ -169,6 +202,8 @@ export const SEED_SCENARIOS: Scenario[] = [
     context:
       'Owner switched to grain-free after seeing content online. No clinical issues yet but vet flagged the DCM risk. Owner is open but short on time.',
     suggestedDriver: 'Energizer',
+    openingLine:
+      "I switched him to grain-free a few months ago — everything I read online says it's so much healthier. Why would I go back to something with grains?",
   },
   {
     breed: 'Mini Schnauzer',
@@ -179,6 +214,8 @@ export const SEED_SCENARIOS: Scenario[] = [
     context:
       'Dog is eating a supermarket brand with no apparent issues. Owner sees no reason to change and wants to know the ROI on the premium price point.',
     suggestedDriver: 'Activator',
+    openingLine:
+      "We've been using our current brand for over a year and she's perfectly healthy. I don't see why we'd need to change anything.",
   },
   {
     breed: 'Poodle',
@@ -189,5 +226,7 @@ export const SEED_SCENARIOS: Scenario[] = [
     context:
       'Owner is on a fixed income and genuinely distressed about the cost. Emotionally invested in giving her dog the best but feels priced out. Needs a compassionate, value-led conversation.',
     suggestedDriver: 'Harmonizer',
+    openingLine:
+      "I want the absolute best for her, I really do — but that price is just out of reach for me right now. Is there really no other option?",
   },
 ];

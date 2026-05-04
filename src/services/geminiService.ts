@@ -11,11 +11,17 @@ import {
   type DimensionKey,
 } from '../data/knowledge/scoringRubric';
 
+/** Text / scoring */
 export const MODEL_TEXT = 'gemini-2.5-flash';
+/** Live voice WebSocket session — stable published model */
 export const MODEL_LIVE = 'gemini-2.0-flash-live-001';
 
 function getClient(): GoogleGenAI {
-  return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? '' });
+  const apiKey =
+    (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
+    (process.env.GEMINI_API_KEY as string | undefined) ||
+    '';
+  return new GoogleGenAI({ apiKey });
 }
 
 async function withRetry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 1200): Promise<T> {

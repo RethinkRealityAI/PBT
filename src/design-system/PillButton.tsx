@@ -58,15 +58,21 @@ export function PillButton({
     },
     glass: {
       color: dark ? '#fff' : 'oklch(0.30 0.10 20)',
-      background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.55)',
-      backdropFilter: 'blur(20px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      background: dark
+        ? 'rgba(255,255,255,0.08)'
+        : 'linear-gradient(165deg, rgba(255,255,255,0.64) 0%, rgba(255,255,255,0.32) 100%)',
+      backdropFilter: dark
+        ? 'blur(22px) saturate(190%)'
+        : 'blur(38px) saturate(235%) brightness(1.02)',
+      WebkitBackdropFilter: dark
+        ? 'blur(22px) saturate(190%)'
+        : 'blur(38px) saturate(235%) brightness(1.02)',
       boxShadow: dark
-        ? '0 1px 0 rgba(255,255,255,0.1) inset, 0 6px 14px -4px rgba(0,0,0,0.4)'
-        : '0 1px 0 rgba(255,255,255,0.9) inset, 0 6px 14px -4px oklch(0.55 0.22 18 / 0.18)',
+        ? '0 1px 0 rgba(255,255,255,0.1) inset, 0 -1px 0 rgba(0,0,0,0.2) inset, 0 10px 22px -8px rgba(0,0,0,0.45)'
+        : '0 1px 0 rgba(255,255,255,0.92) inset, 0 -1px 0 rgba(255,255,255,0.34) inset, 0 16px 36px -14px rgba(60,20,15,0.09)',
       border: dark
-        ? '0.5px solid rgba(255,255,255,0.18)'
-        : '0.5px solid rgba(255,255,255,0.9)',
+        ? '1px solid rgba(255,255,255,0.18)'
+        : '1px solid var(--pbt-glass-border)',
     },
     ghost: {
       color: dark ? '#fff' : 'oklch(0.30 0.10 20)',

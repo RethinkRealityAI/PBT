@@ -14,9 +14,13 @@
   --pbt-mute: oklch(0.50 0.04 20);
 
   --pbt-canvas: #ffffff;
-  --pbt-canvas-outer: #fff7f5;
-  --pbt-glass: rgba(255, 255, 255, 0.18);
-  --pbt-glass-border: rgba(255, 255, 255, 0.7);
+  /** Full-viewport backdrop — white so large screens don’t show a pink “device frame” */
+  --pbt-canvas-outer: #ffffff;
+  /** Centered content column (mobile-first); gradient bleeds full viewport behind this */
+  --pbt-layout-max: 440px;
+  --pbt-glass: rgba(255, 255, 255, 0.20);
+  /** Thin specular rim — iOS-style liquid glass (not a heavy stroke) */
+  --pbt-glass-border: rgba(255, 255, 255, 0.58);
   --pbt-glass-tint-strong: rgba(255, 255, 255, 0.28);
 
   --pbt-text: var(--pbt-ink);
@@ -33,26 +37,27 @@
   --pbt-driver-wave: oklch(0.62 0.22 22);
 
   --pbt-radius-sm: 12px;
-  --pbt-radius-md: 16px;
-  --pbt-radius-lg: 20px;
-  --pbt-radius-xl: 26px;
-  --pbt-radius-hero: 28px;
-  --pbt-radius-phone: 32px;
+  --pbt-radius-md: 17px;
+  --pbt-radius-lg: 22px;
+  --pbt-radius-xl: 28px;
+  --pbt-radius-hero: 32px;
+  --pbt-radius-phone: 36px;
   --pbt-radius-pill: 9999px;
 
-  --pbt-blur-compact: 24px;
-  --pbt-blur-medium: 28px;
-  --pbt-blur-heavy: 36px;
-  --pbt-blur-page: 40px;
+  --pbt-blur-compact: 28px;
+  --pbt-blur-medium: 34px;
+  --pbt-blur-heavy: 46px;
+  --pbt-blur-page: 54px;
 
   --pbt-font-body: 'Mulish', 'Geist Variable', system-ui, sans-serif;
   --pbt-font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
 
   --pbt-shadow-glass:
-    0 1px 0 rgba(255, 255, 255, 0.95) inset,
-    0 -1px 0 rgba(255, 255, 255, 0.5) inset,
-    0 6px 18px -10px rgba(60, 20, 15, 0.18),
-    0 1px 2px rgba(60, 20, 15, 0.06);
+    0 1px 0 rgba(255, 255, 255, 0.96) inset,
+    0 -1px 0 rgba(255, 255, 255, 0.4) inset,
+    0 24px 58px -22px rgba(60, 20, 15, 0.1),
+    0 10px 30px -14px rgba(60, 20, 15, 0.06),
+    0 2px 8px -3px rgba(60, 20, 15, 0.04);
 
   --pbt-shadow-button-solid:
     0 1px 0 rgba(255, 255, 255, 0.45) inset,
@@ -71,10 +76,10 @@
   --pbt-text-muted: oklch(0.70 0.04 30);
 
   --pbt-shadow-glass:
-    0 1px 0 rgba(255, 255, 255, 0.10) inset,
+    0 1px 0 rgba(255, 255, 255, 0.09) inset,
     0 -1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 14px 36px -14px rgba(0, 0, 0, 0.55),
-    0 1px 2px rgba(0, 0, 0, 0.40);
+    0 20px 44px -18px rgba(0, 0, 0, 0.52),
+    0 2px 8px -2px rgba(0, 0, 0, 0.38);
 }
 
 @media (prefers-reduced-motion: reduce) {

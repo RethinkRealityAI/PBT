@@ -19,6 +19,43 @@ const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
 };
 const MAX_SESSIONS = 50;
 
+const SCORE_UNAVAILABLE: ScoreReport = {
+  empathyTone: 0,
+  activeListening: 0,
+  productKnowledge: 0,
+  objectionHandling: 0,
+  confidence: 0,
+  closingEffectiveness: 0,
+  pacing: 0,
+  overall: 0,
+  band: 'poor',
+  acknowledgeScore: 0,
+  clarifyScore: 0,
+  takeActionScore: 0,
+  critique: 'Scoring unavailable.',
+  betterAlternative: '—',
+  perDimensionNotes: {
+    empathyTone: '',
+    activeListening: '',
+    productKnowledge: '',
+    objectionHandling: '',
+    confidence: '',
+    closingEffectiveness: '',
+    pacing: '',
+  },
+  keyMoments: [],
+};
+
+function scenarioSummaryLine(scenario: Scenario): string {
+  const note = scenario.pushbackNotes?.trim();
+  const pb = scenario.pushback.title;
+  if (note) {
+    const short = note.length > 52 ? `${note.slice(0, 52)}…` : note;
+    return `${pb} (${short}) · ${scenario.breed}`;
+  }
+  return `${pb} · ${scenario.breed}`;
+}
+
 // Token the AI appends to signal end of simulation
 const END_TOKEN = '[END_SIMULATION]';
 
@@ -32,6 +69,11 @@ export interface UseTextChat {
   open: () => Promise<void>;
   send: (text: string) => Promise<void>;
   end: () => Promise<void>;
+  /** Voice pipeline: persist transcript + scorecard into shared chat state + history. */
+  applyVoiceSessionComplete: (
+    report: ScoreReport | null,
+    transcript: ChatMessage[],
+  ) => Promise<void>;
   reset: () => void;
   startedAt: number | null;
 }
@@ -52,13 +94,28 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setStatus('opening');
     setTransientError(null);
     startedAtRef.current = Date.now();
+
+    const apiKey =
+      (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
+      (process.env.GEMINI_API_KEY as string | undefined) ||
+      '';
+    if (!apiKey) {
+      setTransientError('Gemini API key is not configured. Please add GEMINI_API_KEY to your environment.');
+      setStatus('error');
+      return;
+    }
+
     try {
       const first = await generateRoleplayMessage(scenario, []);
       setMessages([first]);
       setStatus('awaitingUser');
     } catch (err) {
       console.error('[useTextChat] open failed', err);
-      setTransientError('Could not reach the AI — check your network and tap "Try again".');
+      const msg = err instanceof Error ? err.message : '';
+      const friendly = msg.toLowerCase().includes('api key')
+        ? 'Gemini API key is not configured. Please add GEMINI_API_KEY to your environment.'
+        : 'Could not reach the AI — check your network and tap "Try again".';
+      setTransientError(friendly);
       setStatus('error');
     }
   }, [scenario, status]);
@@ -113,28 +170,22 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     let report: ScoreReport | null = null;
     try {
       report = await evaluateConversation(scenario, msgs);
-      setScoreReport(report);
     } catch (err) {
       console.error('[useTextChat] scoring failed', err);
     }
+    const effective = report ?? SCORE_UNAVAILABLE;
+    setScoreReport(effective);
     setStatus('complete');
 
     const startedAt = startedAtRef.current ?? Date.now();
     const record: SessionRecord = {
       id: uuid(),
-      scenarioSummary: `${scenario.pushback.title} · ${scenario.breed}`,
+      scenarioSummary: scenarioSummaryLine(scenario),
       pushbackId: scenario.pushback.id,
       driver: scenario.suggestedDriver,
       durationSeconds: Math.round((Date.now() - startedAt) / 1000),
       mode: 'text',
-      scoreReport: report ?? {
-        empathyTone: 0, activeListening: 0, productKnowledge: 0,
-        objectionHandling: 0, confidence: 0, closingEffectiveness: 0, pacing: 0,
-        overall: 0, band: 'poor', acknowledgeScore: 0, clarifyScore: 0, takeActionScore: 0,
-        critique: 'Scoring unavailable.', betterAlternative: '—',
-        perDimensionNotes: { empathyTone: '', activeListening: '', productKnowledge: '', objectionHandling: '', confidence: '', closingEffectiveness: '', pacing: '' },
-        keyMoments: [],
-      },
+      scoreReport: effective,
       transcript: msgs,
       createdAt: new Date().toISOString(),
     };
@@ -153,6 +204,36 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     startedAtRef.current = null;
   }, []);
 
+  const applyVoiceSessionComplete = useCallback(
+    async (report: ScoreReport | null, transcript: ChatMessage[]) => {
+      const msgs = transcript.filter((m) => !m._transientError);
+      setTransientError(null);
+      setMessages(msgs);
+
+      const effective = report ?? SCORE_UNAVAILABLE;
+      setScoreReport(effective);
+      setStatus('complete');
+
+      const t0 = msgs[0]?.timestamp ?? Date.now() - 60_000;
+      const durationSeconds = Math.max(1, Math.round((Date.now() - t0) / 1000));
+
+      const record: SessionRecord = {
+        id: uuid(),
+        scenarioSummary: scenarioSummaryLine(scenario),
+        pushbackId: scenario.pushback.id,
+        driver: scenario.suggestedDriver,
+        durationSeconds,
+        mode: 'voice',
+        scoreReport: effective,
+        transcript: msgs,
+        createdAt: new Date().toISOString(),
+      };
+      const existing = readStorage(SESSIONS_KEY);
+      writeStorage(SESSIONS_KEY, [record, ...existing].slice(0, MAX_SESSIONS));
+    },
+    [scenario],
+  );
+
   return {
     messages,
     status,
@@ -161,6 +242,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     open,
     send,
     end,
+    applyVoiceSessionComplete,
     reset,
     startedAt: startedAtRef.current,
   };

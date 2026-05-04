@@ -30,10 +30,8 @@ class MockObserver {
   disconnect = vi.fn();
   takeRecords = vi.fn().mockReturnValue([]);
 }
-// @ts-expect-error - assigning a mock for tests
-window.IntersectionObserver = MockObserver;
-// @ts-expect-error - assigning a mock for tests
-window.ResizeObserver = MockObserver;
+window.IntersectionObserver = MockObserver as unknown as typeof IntersectionObserver;
+window.ResizeObserver = MockObserver as unknown as typeof ResizeObserver;
 
 // silence framer-motion runtime checks in jsdom
 if (typeof window !== 'undefined') {

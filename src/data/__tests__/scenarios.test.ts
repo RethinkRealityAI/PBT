@@ -14,17 +14,19 @@ import { DRIVER_KEYS } from '../../design-system/tokens';
 // ─────────────────────────────────────────────────────────────
 
 describe('PUSHBACK_CATEGORIES', () => {
-  it('has exactly 5 entries', () => {
-    expect(PUSHBACK_CATEGORIES).toHaveLength(5);
+  it('has the canonical objection set plus Other', () => {
+    expect(PUSHBACK_CATEGORIES.length).toBeGreaterThanOrEqual(7);
   });
 
-  it('ids are the expected set', () => {
+  it('ids include catalog + custom', () => {
     expect(PUSHBACK_CATEGORIES.map((p) => p.id)).toEqual([
       'cost',
       'breeder-advice',
       'raw-food',
       'rx-diet',
       'brand-switch',
+      'weight-denial',
+      'custom',
     ]);
   });
 

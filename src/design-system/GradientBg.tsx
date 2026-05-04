@@ -35,13 +35,15 @@ export function GradientBg({
     secondaryColor ||
     primaryColor ||
     (dark ? 'oklch(0.55 0.20 22)' : 'oklch(0.78 0.18 30)');
-  const accent = dark ? 'oklch(0.45 0.18 12)' : 'oklch(0.92 0.06 20)';
+  const accent = dark ? 'oklch(0.45 0.18 12)' : 'oklch(0.88 0.08 24)';
 
   return (
     <div
       style={{
         position: 'absolute',
         inset: 0,
+        width: '100%',
+        minHeight: '100%',
         overflow: 'hidden',
         background: base,
       }}
@@ -76,22 +78,37 @@ export function GradientBg({
         </>
       ) : (
         <>
+          {/*
+           * Light mode: blooms must be vivid enough to survive two blur passes
+           * (filter:blur on the bloom + backdrop-filter:blur on Glass panels).
+           * Use lower blur values here so colour signal reaches the Glass layer.
+           * Higher opacity + lower filter-blur = colour actually bleeds through.
+           */}
           <Bloom
             position={positions[0]}
-            width="110%"
-            height="80%"
+            width="130%"
+            height="95%"
             color={primary}
-            opacity={Math.round(14 * intensity)}
-            blur={40}
+            opacity={Math.round(78 * intensity)}
+            blur={28}
+          />
+          <Bloom
+            position={positions[1]}
+            width="105%"
+            height="85%"
+            color={secondary}
+            opacity={Math.round(58 * intensity)}
+            blur={32}
           />
           <Bloom
             position={positions[2]}
-            width="90%"
-            height="70%"
-            color={secondary}
-            opacity={Math.round(8 * intensity)}
-            blur={50}
+            width="110%"
+            height="80%"
+            color={accent}
+            opacity={Math.round(44 * intensity)}
+            blur={24}
           />
+          <NoiseOverlay light />
         </>
       )}
     </div>
@@ -127,15 +144,15 @@ function Bloom({ position, width, height, color, opacity, blur }: BloomProps) {
   );
 }
 
-function NoiseOverlay() {
+function NoiseOverlay({ light = false }: { light?: boolean }) {
   return (
     <div
       aria-hidden
       style={{
         position: 'absolute',
         inset: 0,
-        opacity: 0.18,
-        mixBlendMode: 'overlay',
+        opacity: light ? 0.06 : 0.18,
+        mixBlendMode: light ? 'multiply' : 'overlay',
         pointerEvents: 'none',
         backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`,
       }}

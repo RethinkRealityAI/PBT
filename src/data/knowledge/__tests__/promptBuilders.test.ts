@@ -3,10 +3,21 @@ import {
   buildCustomerSystemPrompt,
   buildScoringSystemPrompt,
   buildVoiceSystemPrompt,
+  formatPushbackPromptSection,
 } from '../promptBuilders';
-import { SEED_SCENARIOS } from '../../scenarios';
+import { PUSHBACK_CATEGORIES, SEED_SCENARIOS, type Scenario } from '../../scenarios';
 
 const scenario = SEED_SCENARIOS[0];
+
+const customScenario: Scenario = {
+  breed: 'Beagle',
+  age: 'Adult (3-7)',
+  pushback: PUSHBACK_CATEGORIES.find((p) => p.id === 'custom')!,
+  pushbackNotes: 'Owner says prescription diets are a scam.',
+  persona: 'Skeptical',
+  difficulty: 2,
+  suggestedDriver: 'Activator',
+};
 
 describe('promptBuilders', () => {
   it('customer prompt includes driver, pushback, dog details', () => {
@@ -42,6 +53,15 @@ describe('promptBuilders', () => {
     const p = buildVoiceSystemPrompt(scenario);
     expect(p).toContain('updateEmotion');
     expect(p).toContain('endSimulation');
+    expect(p).toContain('Do not invent numeric scores');
+  });
+
+  it('custom pushback pulls trainee wording into the prompt', () => {
+    const block = formatPushbackPromptSection(customScenario);
+    expect(block).toContain('CUSTOM OBJECTION');
+    expect(block).toContain('prescription diets');
+    const p = buildCustomerSystemPrompt(customScenario);
+    expect(p).toContain('prescription diets');
   });
 
   it('different scenarios produce different prompts', () => {

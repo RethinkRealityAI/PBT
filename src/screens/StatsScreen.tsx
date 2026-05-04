@@ -31,7 +31,7 @@ export function StatsScreen() {
           </Glass>
         </Page>
         <div
-          className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[440px] -translate-x-1/2 gap-2 px-5"
+          className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 gap-2 px-5 lg:left-[240px] lg:right-0 lg:translate-x-0 lg:max-w-none"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
         >
           <PillButton variant="glass" onClick={() => go('home')} fullWidth>Home</PillButton>
@@ -56,6 +56,15 @@ export function StatsScreen() {
     <>
       <TopBar showBack title="Scorecard" />
       <Page>
+        {/*
+         * Two-column grid on desktop.
+         * Left: overall score card.  Right: dimension breakdown + coach notes.
+         * On mobile: single column, same sequential order as before.
+         */}
+        <div className="lg:grid lg:grid-cols-[38fr_62fr] lg:gap-8 lg:items-start">
+
+        {/* ── Left column: overall score ── */}
+        <div>
         <Glass radius={28} padding={22} glow="oklch(0.62 0.22 22)">
           <div className="flex items-start gap-4">
             <ScoreRing score={report.overall} label="Overall" size={120} />
@@ -87,8 +96,12 @@ export function StatsScreen() {
             </div>
           </div>
         </Glass>
+        </div>
 
-        <div style={{ height: 14 }} />
+        {/* ── Right column: breakdown + key moments + coach notes ── */}
+        <div>
+
+        <div style={{ height: 14 }} className="lg:hidden" />
 
         <div
           style={{
@@ -263,10 +276,12 @@ export function StatsScreen() {
           </p>
         </Glass>
 
-        <div style={{ height: 90 }} />
+        <div style={{ height: 90 }} className="lg:hidden" />
+        </div>{/* end right column */}
+        </div>{/* end two-column grid */}
       </Page>
       <div
-        className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[440px] -translate-x-1/2 gap-2 px-5"
+        className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 gap-2 px-5 lg:left-[240px] lg:right-0 lg:translate-x-0 lg:max-w-none"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
       >
         <PillButton variant="glass" onClick={() => go('home')} fullWidth>

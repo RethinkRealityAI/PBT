@@ -11,6 +11,22 @@ import {
 } from './clinicalReference';
 import { DIMENSIONS } from './scoringRubric';
 
+/** Pushback copy + trainee specifics for prompts (text + voice + scoring). */
+export function formatPushbackPromptSection(scenario: Scenario): string {
+  const extra = scenario.pushbackNotes?.trim();
+  if (scenario.pushback.id === 'custom') {
+    const core =
+      extra ??
+      '(Trainee chose “Other” but left details blank — improvise one realistic objection that fits breed, life stage, and persona.)';
+    return `CUSTOM OBJECTION — embody this faithfully:\n${core}`;
+  }
+  const base = `${scenario.pushback.title}\nExample phrase you might lead with: ${scenario.pushback.example}`;
+  if (extra) {
+    return `${base}\n\nTrainee-added specifics about this pushback:\n${extra}`;
+  }
+  return base;
+}
+
 const VARIETY_NUDGE = `
 At the start of any new conversation, vary your opening pushback. Don't reuse the
 same lead line you used last session. Pull from the sample phrasings provided —
@@ -24,6 +40,7 @@ or improvise something true to your driver type, breed, and pushback category.
 export function buildCustomerSystemPrompt(scenario: Scenario): string {
   const driver = DRIVER_KNOWLEDGE[scenario.suggestedDriver];
   const pushback = getPushbackKnowledge(scenario.pushback.id);
+  const pushbackBlock = formatPushbackPromptSection(scenario);
   const difficultyLine: Record<number, string> = {
     1: 'You are coachable: you push back once but yield when staff demonstrates real listening.',
     2: 'You are skeptical: you push back twice; the second time, slightly softened if staff acknowledged you well.',
@@ -42,9 +59,8 @@ Never mention that you are an AI.
 - Life stage: ${scenario.age}
 - Owner persona: ${scenario.persona}
 
-# PUSHBACK CATEGORY
-${scenario.pushback.title}
-Example you might lead with: "${scenario.pushback.example}"
+# PUSHBACK
+${pushbackBlock}
 
 # YOUR PERSONALITY (ECHO driver: ${scenario.suggestedDriver})
 Motivation: ${driver.motivation}
@@ -96,7 +112,7 @@ Score the staff member against the 7-dimension rubric below. Be precise,
 actionable, and non-shaming.
 
 # SCENARIO
-- Pushback: ${scenario.pushback.title}
+- Pushback: ${formatPushbackPromptSection(scenario).replace(/\n/g, ' | ')}
 - Customer's underlying driver: ${scenario.suggestedDriver}
 - Difficulty: ${scenario.difficulty}
 - Goal: help the staff handle this objection while moving toward a credible Royal Canin recommendation.
@@ -132,9 +148,15 @@ export function buildVoiceSystemPrompt(scenario: Scenario): string {
   return (
     buildCustomerSystemPrompt(scenario) +
     '\n\n# VOICE-MODE BEHAVIOUR\n' +
+    `- IMPORTANT: When you receive a message asking you to begin, deliver your opening pushback line IMMEDIATELY. Do not wait for the user to speak first. Start with your defensive opening statement as the client persona.\n` +
     `- Keep replies short (1–2 sentences) — voice loses listeners over long turns.\n` +
-    `- Call updateEmotion({emotion}) when your receptiveness shifts (red = tense, yellow = neutral, green = open).\n` +
-    `- Start in red. Move to yellow only after one solid acknowledge. Move to green only after a credible Take Action.\n` +
-    `- When you decide the simulation is complete (a clear close, a credible recommendation, or a stalemate after 8+ turns), call endSimulation with the 7-dimension scorecard.`
+    `- You have a traffic-light resolution level that the UI displays. Call updateEmotion({emotion}) whenever your receptiveness shifts:\n` +
+    `  RED (start here): Defensive, resistant. You push back, show frustration, repeat your concern.\n` +
+    `  YELLOW: Listening, receptive. Shift here when the trainee validates/acknowledges your concern WITHOUT immediately pitching — genuine empathy moves you.\n` +
+    `  GREEN: Convinced, resolved. Shift here ONLY when the trainee clarifies the root concern AND transforms the conversation to value/solution credibly. At GREEN you are ready to accept the recommendation.\n` +
+    `- Always start at RED. Never skip from RED to GREEN — YELLOW must come first.\n` +
+    `- Do NOT shift to YELLOW simply because the trainee greets you politely. The trainee must demonstrate the ACT Acknowledge step.\n` +
+    `- Do NOT shift to GREEN unless the trainee has completed both Clarify AND Take Action convincingly.\n` +
+    `- When the simulation reaches a natural end (clear close, recommendation accepted at GREEN, or stalemate after ~8+ customer turns), call endSimulation({reason: brief string}). Do not invent numeric scores — evaluation runs separately.`
   );
 }

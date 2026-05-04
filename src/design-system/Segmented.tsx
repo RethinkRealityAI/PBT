@@ -29,10 +29,17 @@ export function Segmented<V extends string>({
         display: 'inline-flex',
         padding: 3,
         borderRadius: 9999,
-        background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.55)',
+        background: dark
+          ? 'rgba(255,255,255,0.06)'
+          : 'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.3) 100%)',
+        backdropFilter: dark ? 'blur(18px) saturate(185%)' : 'blur(34px) saturate(235%) brightness(1.02)',
+        WebkitBackdropFilter: dark ? 'blur(18px) saturate(185%)' : 'blur(34px) saturate(235%) brightness(1.02)',
         border: dark
-          ? '0.5px solid rgba(255,255,255,0.14)'
-          : '0.5px solid rgba(255,255,255,0.7)',
+          ? '1px solid rgba(255,255,255,0.14)'
+          : '1px solid var(--pbt-glass-border)',
+        boxShadow: dark
+          ? '0 1px 0 rgba(255,255,255,0.08) inset'
+          : '0 1px 0 rgba(255,255,255,0.9) inset, 0 12px 28px -12px rgba(60,20,15,0.07)',
         gap: 2,
       }}
     >

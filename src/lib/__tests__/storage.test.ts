@@ -64,6 +64,6 @@ describe('storage', () => {
 
   it('theme key validates the union', () => {
     localStorage.setItem('pbt:theme', JSON.stringify('purple'));
-    expect(readStorage(STORAGE_KEYS.theme)).toBe('system');
+    expect(readStorage(STORAGE_KEYS.theme)).toBe('light');
   });
 });

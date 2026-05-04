@@ -234,6 +234,34 @@ export const PUSHBACK_KNOWLEDGE: Record<string, PushbackKnowledge> = {
       'Do not lead with joint disease before earning trust',
     ],
   },
+  custom: {
+    id: 'custom',
+    title: 'Trainee-specified objection',
+    examples: [
+      'Whatever wording the trainee typed — stay faithful to that concern.',
+    ],
+    rootConcerns: [
+      'Trust, fear of being sold to, prior bad advice, cost, confusion, or loyalty to another source',
+      'Need for listening before any recommendation lands',
+    ],
+    acknowledgePatterns: [
+      'Reflect their exact words without minimizing',
+      'Name the emotion underneath (worry, frustration, loyalty conflict)',
+    ],
+    clarifyQuestions: [
+      'What would “good enough” look like for you and your dog?',
+      'What happened last time someone recommended a change?',
+      'What’s the main worry if you switch?',
+    ],
+    takeActionPatterns: [
+      'Offer one clear next step tied to their stated concern',
+      'Use WSAVA-aligned framing — diagnosis-led nutrition when clinical',
+    ],
+    watchOuts: [
+      'Do not invent a different objection than the trainee described',
+      'Do not steamroll with product facts before acknowledge + clarify',
+    ],
+  },
 };
 
 export function getPushbackKnowledge(id: string): PushbackKnowledge | null {

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
 import { useNavigation } from '../app/providers/NavigationProvider';
+import { useTheme } from '../app/providers/ThemeProvider';
 
 export interface TopBarProps {
   title?: string;
@@ -11,8 +12,10 @@ export interface TopBarProps {
 
 export function TopBar({ title, showBack = false, trailing }: TopBarProps) {
   const { back } = useNavigation();
+  const { resolvedTheme, toggle } = useTheme();
+
   return (
-    <div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3">
+    <div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3 lg:hidden">
       <div style={{ width: 36 }}>
         {showBack && (
           <Glass
@@ -44,6 +47,17 @@ export function TopBar({ title, showBack = false, trailing }: TopBarProps) {
       )}
       <div style={{ minWidth: 36 }} className="flex items-center gap-2">
         {trailing}
+        <Glass
+          radius={9999}
+          padding={0}
+          tint={0.3}
+          shine={false}
+          onClick={toggle}
+          ariaLabel={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+          className="flex h-9 w-9 items-center justify-center"
+        >
+          {resolvedTheme === 'dark' ? <Icon.sun /> : <Icon.moon />}
+        </Glass>
       </div>
     </div>
   );

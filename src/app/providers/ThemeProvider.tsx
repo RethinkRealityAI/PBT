@@ -54,6 +54,14 @@ export function ThemeProvider({ children, initialTheme }: ThemeProviderProps) {
     if (typeof document === 'undefined') return;
     document.documentElement.dataset.theme = resolvedTheme;
     document.documentElement.style.colorScheme = resolvedTheme;
+
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute(
+        'content',
+        resolvedTheme === 'dark' ? '#0e0306' : '#ffffff',
+      );
+    }
   }, [resolvedTheme]);
 
   const setTheme = useCallback((next: ThemeMode) => {
@@ -63,7 +71,9 @@ export function ThemeProvider({ children, initialTheme }: ThemeProviderProps) {
 
   const toggle = useCallback(() => {
     setThemeState((prev) => {
-      const next: ThemeMode = prev === 'dark' ? 'light' : 'dark';
+      const resolved: ResolvedTheme =
+        prev === 'system' ? getSystemTheme() : prev;
+      const next: ThemeMode = resolved === 'dark' ? 'light' : 'dark';
       writeStorage(STORAGE_KEYS.theme, next);
       return next;
     });

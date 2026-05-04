@@ -54,10 +54,10 @@ describe('generateRoleplayMessage', () => {
     expect(callArg.contents[2].parts[0].text).toBe('How can I help?');
   });
 
-  it('returns a graceful fallback on error', async () => {
-    generateContent.mockRejectedValueOnce(new Error('boom'));
-    const result = await generateRoleplayMessage(SEED_SCENARIOS[0], []);
-    expect(result.text).toContain('connection error');
+  it('propagates errors after retries (callers surface UI fallback)', async () => {
+    generateContent.mockRejectedValue(new Error('boom'));
+    await expect(generateRoleplayMessage(SEED_SCENARIOS[0], [])).rejects.toThrow('boom');
+    expect(generateContent).toHaveBeenCalledTimes(2);
   });
 });
 

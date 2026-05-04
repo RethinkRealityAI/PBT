@@ -17,6 +17,7 @@ import { TabBar } from '../shell/TabBar';
 import { useCloudSync } from '../features/auth/useCloudSync';
 
 import { OnboardingScreen } from '../screens/OnboardingScreen';
+import { TermsScreen } from '../screens/TermsScreen';
 import { QuizScreen } from '../screens/QuizScreen';
 import { ResultScreen } from '../screens/ResultScreen';
 import { HomeScreen } from '../screens/HomeScreen';
@@ -27,6 +28,7 @@ import { HistoryScreen } from '../screens/HistoryScreen';
 import { PetAnalyzerScreen } from '../screens/PetAnalyzerScreen';
 import { ResourcesScreen } from '../screens/ResourcesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { ActGuideScreen } from '../screens/ActGuideScreen';
 
 import { readStorage, STORAGE_KEYS, getOrCreateSessionId } from '../lib/storage';
 
@@ -64,12 +66,12 @@ export function App() {
   );
 }
 
-/** Once mounted, if no profile exists and we're not in onboarding/quiz, route to quiz. */
+/** Once mounted, if no profile exists and we're not in a pre-quiz screen, route to quiz. */
 function RouteResolver({ children }: { children: ReactNode }) {
   const { profile } = useProfile();
   const { current, replace } = useNavigation();
   useEffect(() => {
-    if (!profile && current !== 'onboarding' && current !== 'quiz') {
+    if (!profile && current !== 'onboarding' && current !== 'terms' && current !== 'quiz') {
       replace('quiz');
     }
   }, [profile, current, replace]);
@@ -88,6 +90,8 @@ function ScreenSwitch() {
   switch (current) {
     case 'onboarding':
       return <OnboardingScreen />;
+    case 'terms':
+      return <TermsScreen />;
     case 'quiz':
       return <QuizScreen />;
     case 'result':
@@ -108,6 +112,8 @@ function ScreenSwitch() {
       return <ResourcesScreen />;
     case 'settings':
       return <SettingsScreen />;
+    case 'actGuide':
+      return <ActGuideScreen />;
     default:
       return null;
   }

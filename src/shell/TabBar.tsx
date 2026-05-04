@@ -7,13 +7,13 @@ export function TabBar() {
   const { current, go } = useNavigation();
   return (
     <div
-      className="pointer-events-none fixed bottom-0 left-1/2 z-30 w-full max-w-[440px] -translate-x-1/2 px-4 pb-[max(env(safe-area-inset-bottom),14px)]"
+      className="pointer-events-none fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-4 pb-[max(env(safe-area-inset-bottom),14px)] lg:hidden"
     >
       <Glass
         radius={9999}
         padding={6}
-        tint={0.32}
-        blur={28}
+        tint={0.24}
+        blur={40}
         className="pointer-events-auto"
       >
         <div className="flex items-center justify-between gap-1">

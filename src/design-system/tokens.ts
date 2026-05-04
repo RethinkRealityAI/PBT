@@ -20,7 +20,7 @@ export const COLORS = {
     canvasOuterDark: '#070203',
     glassLight: 'rgba(255,255,255,0.18)',
     glassDark: 'rgba(28,12,14,0.22)',
-    glassBorderLight: 'rgba(255,255,255,0.7)',
+    glassBorderLight: 'rgba(255,255,255,0.58)',
     glassBorderDark: 'rgba(255,255,255,0.14)',
   },
   score: {
@@ -74,19 +74,19 @@ export const DRIVER_COLORS: Record<DriverKey, DriverColors> = {
 
 export const RADII = {
   sm: 12,
-  md: 16,
-  lg: 20,
-  xl: 26,
-  hero: 28,
-  phone: 32,
+  md: 17,
+  lg: 22,
+  xl: 28,
+  hero: 32,
+  phone: 36,
   pill: 9999,
 } as const;
 
 export const BLURS = {
-  compact: 24,
-  medium: 28,
-  heavy: 36,
-  page: 40,
+  compact: 28,
+  medium: 34,
+  heavy: 46,
+  page: 54,
 } as const;
 
 export const SPACING = [

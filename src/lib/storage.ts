@@ -80,7 +80,7 @@ export const STORAGE_KEYS = {
 
   theme: {
     key: 'theme',
-    fallback: 'system' as const,
+    fallback: 'light' as const,
     validate: (v): v is 'light' | 'dark' | 'system' =>
       v === 'light' || v === 'dark' || v === 'system',
   } as StorageKeyDef<'light' | 'dark' | 'system'>,

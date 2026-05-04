@@ -1,5 +1,6 @@
 export type Screen =
   | 'onboarding'
+  | 'terms'
   | 'quiz'
   | 'result'
   | 'home'
@@ -9,7 +10,8 @@ export type Screen =
   | 'history'
   | 'analyzer'
   | 'resources'
-  | 'settings';
+  | 'settings'
+  | 'actGuide';
 
 export const SCREENS_WITH_TAB_BAR: Screen[] = [
   'home',

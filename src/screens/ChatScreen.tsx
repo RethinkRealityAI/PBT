@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Orb } from '../design-system/Orb';
 import { Icon } from '../design-system/Icon';
-import { PillButton } from '../design-system/PillButton';
 import { Segmented } from '../design-system/Segmented';
+import { DriverWave } from '../design-system/DriverWave';
 import { TopBar } from '../shell/TopBar';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { useChat } from '../app/providers/ChatProvider';
 import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
-import type { ScoreReport } from '../services/types';
+import { SEED_SCENARIOS, type Scenario } from '../data/scenarios';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -35,45 +36,453 @@ function useThinkingSound(active: boolean) {
   }, [active]);
 }
 
+function seedScenarioIndex(scenario: Scenario): number {
+  return SEED_SCENARIOS.findIndex(
+    (seed) =>
+      seed === scenario ||
+      (seed.breed === scenario.breed &&
+        seed.age === scenario.age &&
+        seed.persona === scenario.persona &&
+        seed.pushback.id === scenario.pushback.id &&
+        seed.openingLine === scenario.openingLine),
+  );
+}
+
+/** Prev / next chevrons — matches Home scenario card (counter between arrows + Scenario label) */
+function ScenarioArrowNav({
+  onPrev,
+  onNext,
+  indexDisplay,
+  disabled,
+}: {
+  onPrev: () => void;
+  onNext: () => void;
+  /** e.g. "3/7" — hidden when not in seed library */
+  indexDisplay: string | null;
+  disabled?: boolean;
+}) {
+  const btn = {
+    width: 28,
+    height: 28,
+    borderRadius: '50%',
+    border: '1px solid rgba(255,255,255,0.48)',
+    background: 'rgba(255,255,255,0.22)',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.45 : 1,
+    display: 'inline-flex' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    color: 'var(--pbt-text)',
+    backdropFilter: 'blur(16px) saturate(200%)',
+    WebkitBackdropFilter: 'blur(16px) saturate(200%)',
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2" style={{ marginTop: 10 }}>
+      <span
+        style={{
+          fontFamily: 'var(--pbt-font-mono)',
+          fontSize: 10,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+          color: 'var(--pbt-text-muted)',
+        }}
+      >
+        Scenario
+      </span>
+      <div className="flex items-center gap-1">
+        <button type="button" aria-label="Previous scenario" onClick={onPrev} disabled={disabled} style={btn}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        {indexDisplay != null && (
+          <span
+            style={{
+              fontFamily: 'var(--pbt-font-mono)',
+              fontSize: 10,
+              letterSpacing: '0.10em',
+              color: 'var(--pbt-text-muted)',
+              minWidth: 28,
+              textAlign: 'center',
+            }}
+          >
+            {indexDisplay}
+          </span>
+        )}
+        <button type="button" aria-label="Next scenario" onClick={onNext} disabled={disabled} style={btn}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Slide-up scenario details — auto-opens in voice idle, tap FAB during session */
+function ScenarioDetailsPanel({
+  scenario,
+  open,
+  onClose,
+  onBegin,
+  scenarioIndex,
+  scenarioTotal,
+}: {
+  scenario: Scenario;
+  open: boolean;
+  onClose: () => void;
+  /** Present only in voice idle — shows Begin Simulation */
+  onBegin?: () => void;
+  /** -1 when scenario is not one of the seed rotations (e.g. custom) */
+  scenarioIndex: number;
+  scenarioTotal: number;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Tap-outside scrim — subtle so it doesn't feel heavy on auto-open */}
+          <motion.button
+            type="button"
+            aria-label="Close scenario details"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 40,
+              border: 'none',
+              background: 'rgba(20, 12, 14, 0.12)',
+              backdropFilter: 'blur(2px)',
+              cursor: 'default',
+            }}
+          />
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="scenario-details-title"
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+              position: 'fixed',
+              left: 16,
+              right: 16,
+              bottom: 'max(env(safe-area-inset-bottom), 88px)',
+              zIndex: 41,
+              maxWidth: 440,
+              margin: '0 auto',
+            }}
+          >
+            <Glass radius={22} padding={18} blur={22} tint={0.05}>
+              {/* Header row */}
+              <div className="flex items-start justify-between gap-2" style={{ marginBottom: 14 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontFamily: 'var(--pbt-font-mono)',
+                      fontSize: 9,
+                      letterSpacing: '0.18em',
+                      textTransform: 'uppercase',
+                      color: 'var(--pbt-text-muted)',
+                      marginBottom: 5,
+                    }}
+                  >
+                    {scenarioIndex >= 0
+                      ? `Scenario ${scenarioIndex + 1} of ${scenarioTotal}`
+                      : 'Custom scenario'}
+                  </div>
+                  <h2 id="scenario-details-title" style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
+                    {scenario.pushback.title}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={onClose}
+                  style={{
+                    flexShrink: 0,
+                    width: 30,
+                    height: 30,
+                    borderRadius: '50%',
+                    border: '1px solid rgba(255,255,255,0.50)',
+                    background: 'rgba(255,255,255,0.22)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--pbt-text-muted)',
+                  }}
+                >
+                  <Icon.close />
+                </button>
+              </div>
+
+              {/* Meta chips row */}
+              <div className="flex flex-wrap gap-2" style={{ marginBottom: 14 }}>
+                {[scenario.breed, scenario.age, scenario.persona].map((tag) => (
+                  <span
+                    key={tag}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 9999,
+                      background: 'rgba(255,255,255,0.3)',
+                      border: '1px solid rgba(255,255,255,0.45)',
+                      fontSize: 11.5,
+                      fontWeight: 500,
+                      color: 'var(--pbt-text)',
+                    }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+
+              {/* Objective */}
+              <p style={{ margin: '0 0 12px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--pbt-text-muted)' }}>
+                <strong style={{ color: 'var(--pbt-text)', fontWeight: 600 }}>Objective:</strong>{' '}
+                Use ACT — Acknowledge, Clarify, Take Action — to guide this client from pushback to resolution.
+              </p>
+
+              {/* Context + opening */}
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 14,
+                  background: 'rgba(255,255,255,0.38)',
+                  border: '1px solid rgba(255,255,255,0.55)',
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  color: 'var(--pbt-text)',
+                  marginBottom: onBegin ? 14 : 0,
+                }}
+              >
+                {(scenario.context ?? scenario.pushbackNotes) && (
+                  <>
+                    <strong style={{ fontWeight: 700 }}>Context:</strong>{' '}
+                    {scenario.context ?? scenario.pushbackNotes}
+                    <br /><br />
+                  </>
+                )}
+                <strong style={{ fontWeight: 700 }}>Opening pushback:</strong>{' '}
+                <em style={{ color: 'var(--pbt-text-muted)' }}>{scenario.openingLine ?? scenario.pushbackNotes ?? scenario.pushback.example}</em>
+              </div>
+
+              {/* Begin Simulation CTA — only shown in voice idle */}
+              {onBegin && (
+                <button
+                  type="button"
+                  onClick={onBegin}
+                  style={{
+                    width: '100%',
+                    border: 'none',
+                    borderRadius: 9999,
+                    padding: '13px 22px',
+                    background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                    color: '#fff',
+                    fontFamily: 'var(--pbt-font-mono)',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    boxShadow: '0 14px 28px -16px oklch(0.55 0.22 18 / 0.65)',
+                  }}
+                >
+                  Begin simulation
+                </button>
+              )}
+            </Glass>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function ScenarioSessionControls({
+  scenario,
+  mode,
+  onModeChange,
+  onEnd,
+}: {
+  scenario: Scenario;
+  mode: 'text' | 'voice';
+  onModeChange: (mode: 'text' | 'voice') => void;
+  onEnd: () => void;
+}) {
+  return (
+    <Glass radius={22} padding="10px 12px" blur={18} tint={0.04}>
+      <div className="flex items-center gap-2">
+        {/* ECHO driver label + wave */}
+        <div className="min-w-0 flex-1" style={{ overflow: 'hidden' }}>
+          <div
+            style={{
+              fontFamily: 'var(--pbt-font-mono)',
+              fontSize: 8.5,
+              letterSpacing: '0.16em',
+              textTransform: 'uppercase',
+              color: 'var(--pbt-text-muted)',
+              marginBottom: 2,
+            }}
+          >
+            Echo driver · {scenario.suggestedDriver}
+          </div>
+          <div style={{ height: 28, marginLeft: -4, marginRight: 4 }}>
+            <DriverWave
+              driver={scenario.suggestedDriver}
+              height={28}
+              amplitude={0.9}
+              speed={0.85}
+              opacity={0.9}
+            />
+          </div>
+        </div>
+        <Segmented
+          value={mode}
+          onChange={onModeChange}
+          ariaLabel="Mode"
+          options={[
+            { value: 'text', label: <Icon.chat /> },
+            { value: 'voice', label: <Icon.voice /> },
+          ]}
+        />
+        <button
+          type="button"
+          onClick={onEnd}
+          style={{
+            padding: '7px 11px',
+            borderRadius: 9999,
+            border: '1px solid oklch(0.55 0.22 18 / 0.28)',
+            background: 'rgba(255,255,255,0.18)',
+            color: 'oklch(0.50 0.22 18)',
+            fontFamily: 'var(--pbt-font-mono)',
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          End
+        </button>
+      </div>
+    </Glass>
+  );
+}
+
 export function ChatScreen() {
   const { go } = useNavigation();
-  const { scenario } = useScenario();
+  const { scenario, setScenario } = useScenario();
   const chat = useChat();
   const voice = useVoiceSession();
-  const [mode, setMode] = useState<'text' | 'voice'>('text');
+  const [mode, setMode] = useState<'text' | 'voice'>('voice');
   const [draft, setDraft] = useState('');
+  const [voiceAnalyzing, setVoiceAnalyzing] = useState(false);
+  const [voiceAnalysisError, setVoiceAnalysisError] = useState<string | null>(null);
+  // Open by default in voice mode so Begin Simulation lives inside the panel
+  const [scenarioDetailsOpen, setScenarioDetailsOpen] = useState(mode === 'voice');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scoreRef = useRef<ScoreReport | null>(null);
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  const voiceEndRef = useRef(voice.endSession);
+  voiceEndRef.current = voice.endSession;
+  const voiceStartRef = useRef(voice.start);
+  voiceStartRef.current = voice.start;
+  const voiceStopRef = useRef(voice.stop);
+  voiceStopRef.current = voice.stop;
+  const voiceFinalizeBusyRef = useRef(false);
+  const scenarioIndex = scenario ? seedScenarioIndex(scenario) : -1;
+  const scenarioCounterIndex = scenarioIndex >= 0 ? scenarioIndex : undefined;
 
-  useThinkingSound(mode === 'text' && chat.status === 'aiTyping');
+  const finalizeVoice = useCallback(async () => {
+    if (voiceFinalizeBusyRef.current) return;
+    voiceFinalizeBusyRef.current = true;
+    setVoiceAnalyzing(true);
+    setVoiceAnalysisError(null);
+    try {
+      const { report, transcript } = await voiceEndRef.current();
+      await chatRef.current.applyVoiceSessionComplete(report, transcript);
+      go('stats');
+    } catch (err) {
+      console.error('[ChatScreen] finalizeVoice error', err);
+      setVoiceAnalysisError('Failed to analyze session — check your network and try again.');
+      voiceFinalizeBusyRef.current = false;
+      setVoiceAnalyzing(false);
+    }
+  }, [go]);
 
-  // Open text conversation whenever status returns to idle (mount + after reset)
+  const beginVoice = useCallback(() => {
+    if (!scenario) return;
+    voiceFinalizeBusyRef.current = false;
+    setVoiceAnalyzing(false);
+    setVoiceAnalysisError(null);
+    setScenarioDetailsOpen(false);
+    void voiceStartRef.current(scenario);
+  }, [scenario]);
+
+  const cycleScenario = useCallback(
+    (delta: number) => {
+      const currentIndex = scenario ? seedScenarioIndex(scenario) : -1;
+      if (currentIndex < 0) return;
+      const n = SEED_SCENARIOS.length;
+      const nextScenario = SEED_SCENARIOS[(currentIndex + delta + n) % n];
+      voiceStopRef.current();
+      chatRef.current.reset();
+      voiceFinalizeBusyRef.current = false;
+      setVoiceAnalyzing(false);
+      setVoiceAnalysisError(null);
+      setScenario(nextScenario);
+      // Re-open the details panel so Begin Simulation is available for the new scenario
+      if (mode === 'voice') setScenarioDetailsOpen(true);
+    },
+    [mode, scenario, setScenario],
+  );
+
+  const handleModeChange = useCallback((nextMode: 'text' | 'voice') => {
+    if (nextMode === 'text') {
+      voiceStopRef.current();
+    }
+    setMode(nextMode);
+  }, []);
+
+  const handleVoiceEnd = useCallback(() => {
+    if (voice.messages.length === 0 && (voice.status === 'idle' || voice.status === 'error')) {
+      voiceStopRef.current();
+      go('home');
+      return;
+    }
+    void finalizeVoice();
+  }, [finalizeVoice, go, voice.messages.length, voice.status]);
+
+  useThinkingSound(
+    (mode === 'text' && chat.status === 'aiTyping') ||
+      (mode === 'voice' && voice.status === 'thinking'),
+  );
+
+  useEffect(() => {
+    if (mode !== 'voice') {
+      voice.registerNaturalEndHandler(null);
+      return;
+    }
+    voice.registerNaturalEndHandler(() => {
+      void finalizeVoice();
+    });
+    return () => voice.registerNaturalEndHandler(null);
+  }, [mode, voice, finalizeVoice]);
+
+  // Open text conversation whenever text mode enters idle (mount + after reset).
+  // Voice mode stays visually ready until the user taps Begin simulation.
   const openRef = useRef(chat.open);
   openRef.current = chat.open;
   useEffect(() => {
-    if (scenario && chat.status === 'idle') {
+    if (mode === 'text' && scenario && chat.status === 'idle') {
       void openRef.current();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scenario, chat.status]);
-
-  // Start/stop voice session when mode changes
-  useEffect(() => {
-    if (!scenario) return;
-    if (mode === 'voice' && voice.status === 'idle') {
-      void voice.start(scenario);
-    }
-  }, [mode, scenario, voice]);
-
-  // Auto-advance to stats when voice ends (triggered by AI endSimulation tool)
-  useEffect(() => {
-    if (voice.status === 'ended' && mode === 'voice') {
-      void voice.endSession().then((score) => {
-        scoreRef.current = score;
-        go('stats');
-      });
-    }
-  }, [voice.status, mode, voice, go]);
+  }, [mode, scenario, chat.status]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -96,77 +505,74 @@ export function ChatScreen() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Scenario header */}
-      <div className="px-4 pt-[max(env(safe-area-inset-top),14px)] pb-2">
-        <Glass radius={22} padding={14}>
-          <div className="flex items-center gap-3">
-            <Orb size={42} />
-            <div className="flex-1">
-              <div style={{ fontWeight: 600, fontSize: 14 }}>
-                {scenario.persona} owner · {scenario.breed}
-              </div>
-              <div
-                style={{
-                  fontFamily: 'var(--pbt-font-mono)',
-                  fontSize: 10,
-                  letterSpacing: '0.10em',
-                  textTransform: 'uppercase',
-                  color: 'var(--pbt-text-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: 'oklch(0.55 0.18 145)',
-                  }}
-                />
-                LIVE · {scenario.suggestedDriver}
-              </div>
-            </div>
-            <Segmented
-              value={mode}
-              onChange={(v) => setMode(v)}
-              ariaLabel="Mode"
-              options={[
-                { value: 'text', label: <Icon.chat /> },
-                { value: 'voice', label: <Icon.voice /> },
-              ]}
-            />
-            <button
-              onClick={() => {
-                if (mode === 'voice') {
-                  void voice.endSession().then(() => go('stats'));
-                } else if (chat.status === 'error' || chat.status === 'idle') {
-                  go('home');
-                } else {
-                  void chat.end().then(() => go('stats')).catch(() => go('stats'));
-                }
-              }}
-              style={{
-                marginLeft: 4,
-                padding: '6px 12px',
-                borderRadius: 9999,
-                border: '1px solid oklch(0.55 0.22 18 / 0.3)',
-                background: 'transparent',
-                color: 'oklch(0.50 0.22 18)',
-                fontFamily: 'var(--pbt-font-mono)',
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              End
-            </button>
+    <div className="flex h-full min-h-0 flex-1 flex-col lg:max-w-4xl lg:mx-auto lg:w-full">
+      {/* ── Header ── */}
+      <div
+        className="px-4 pt-[max(env(safe-area-inset-top),12px)] pb-2 lg:pt-8"
+        style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      >
+        {/* Row 1: back button + eyebrow */}
+        <div className="flex items-center gap-3">
+          <button
+            aria-label="Back to dashboard"
+            onClick={() => go('home')}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              border: '1px solid rgba(255,255,255,0.48)',
+              background: 'rgba(255,255,255,0.22)',
+              color: 'var(--pbt-text)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              backdropFilter: 'blur(18px) saturate(200%)',
+              WebkitBackdropFilter: 'blur(18px) saturate(200%)',
+              flexShrink: 0,
+            }}
+          >
+            <Icon.back />
+          </button>
+          <div
+            style={{
+              fontFamily: 'var(--pbt-font-mono)',
+              fontSize: 9.5,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: 'var(--pbt-text-muted)',
+            }}
+          >
+            PBT · {mode === 'voice' ? 'Voice practice' : 'Text practice'}
           </div>
-        </Glass>
+        </div>
+
+        {/* Row 2: scenario title */}
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 20,
+            fontWeight: 600,
+            lineHeight: 1.2,
+            color: 'var(--pbt-text)',
+            letterSpacing: '-0.025em',
+            wordBreak: 'break-word',
+          }}
+        >
+          {scenario.pushback.title}
+        </h1>
+
+        {/* Row 3: scenario nav arrows */}
+        <ScenarioArrowNav
+          onPrev={() => cycleScenario(-1)}
+          onNext={() => cycleScenario(1)}
+          indexDisplay={
+            scenarioCounterIndex !== undefined
+              ? `${scenarioCounterIndex + 1}/${SEED_SCENARIOS.length}`
+              : null
+          }
+          disabled={scenarioIndex < 0}
+        />
       </div>
 
       {mode === 'text' ? (
@@ -176,27 +582,6 @@ export function ChatScreen() {
             ref={scrollRef}
             className="pbt-scroll flex-1 overflow-y-auto px-4 pb-4"
           >
-            <div
-              style={{
-                margin: '14px auto',
-                maxWidth: 320,
-                padding: '6px 14px',
-                borderRadius: 9999,
-                background:
-                  'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
-                color: '#fff',
-                fontFamily: 'var(--pbt-font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
-                fontWeight: 700,
-                textAlign: 'center',
-                width: 'fit-content',
-              }}
-            >
-              Scenario · {scenario.pushback.title}
-            </div>
-
             {/* Error state: retry button */}
             {chat.status === 'error' && (
               <div style={{ padding: '12px 0', textAlign: 'center' }}>
@@ -239,20 +624,20 @@ export function ChatScreen() {
                       background:
                         m.role === 'user'
                           ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
-                          : 'rgba(255,255,255,0.55)',
+                          : 'rgba(255,255,255,0.42)',
                       color: m.role === 'user' ? '#fff' : 'var(--pbt-text)',
                       backdropFilter:
-                        m.role === 'user' ? undefined : 'blur(20px) saturate(180%)',
+                        m.role === 'user' ? undefined : 'blur(22px) saturate(260%) brightness(1.03)',
                       WebkitBackdropFilter:
-                        m.role === 'user' ? undefined : 'blur(20px) saturate(180%)',
+                        m.role === 'user' ? undefined : 'blur(22px) saturate(260%) brightness(1.03)',
                       border:
                         m.role === 'user'
                           ? 'none'
-                          : '0.5px solid rgba(255,255,255,0.7)',
+                          : '1px solid rgba(255,255,255,0.65)',
                       boxShadow:
                         m.role === 'user'
                           ? '0 6px 16px -6px oklch(0.55 0.22 18 / 0.4)'
-                          : '0 4px 12px -6px rgba(60,20,15,0.10)',
+                          : '0 1px 0 rgba(255,255,255,0.9) inset, 0 4px 12px -6px rgba(60,20,15,0.08)',
                     }}
                   >
                     {m.text}
@@ -290,76 +675,130 @@ export function ChatScreen() {
             </div>
           </div>
 
-          {/* Composer */}
-          <div className="px-4 pb-[max(env(safe-area-inset-bottom),14px)]">
-            <Glass radius={9999} padding={6} blur={28}>
-              <div className="flex items-center gap-2">
-                <button
-                  aria-label="Add"
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 9999,
-                    background: 'rgba(255,255,255,0.55)',
-                    border: 'none',
-                    color: 'var(--pbt-text)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Icon.plus />
-                </button>
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Acknowledge, ask, recommend…"
-                  disabled={chat.status === 'aiTyping' || chat.status === 'scoring' || chat.status === 'complete'}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && draft.trim() && chat.status === 'awaitingUser') {
-                      const text = draft.trim();
-                      setDraft('');
-                      void chat.send(text);
-                    }
-                  }}
-                  style={{
-                    flex: 1,
-                    border: 'none',
-                    outline: 'none',
-                    background: 'transparent',
-                    fontFamily: 'inherit',
-                    fontSize: 14.5,
-                    color: 'var(--pbt-text)',
-                  }}
-                />
-                <button
-                  aria-label="Send"
-                  disabled={!draft.trim() || chat.status !== 'awaitingUser'}
-                  onClick={() => {
-                    const text = draft.trim();
-                    if (!text) return;
-                    setDraft('');
-                    void chat.send(text);
-                  }}
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 9999,
-                    border: 'none',
-                    cursor: draft.trim() ? 'pointer' : 'not-allowed',
-                    color: '#fff',
-                    background: draft.trim()
-                      ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
-                      : 'rgba(60,20,15,0.12)',
-                  }}
-                >
-                  <Icon.send />
-                </button>
-              </div>
-            </Glass>
-          </div>
         </>
       ) : (
-        <VoiceMode voice={voice} />
+        <>
+          <VoiceMode
+            voice={voice}
+            isAnalyzing={voiceAnalyzing}
+            analysisError={voiceAnalysisError}
+            onBegin={beginVoice}
+            onRetry={voiceAnalysisError ? finalizeVoice : beginVoice}
+          />
+        </>
       )}
+      <div
+        className="px-4 pb-[max(env(safe-area-inset-bottom),14px)]"
+        style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      >
+        <ScenarioDetailsPanel
+          scenario={scenario}
+          open={scenarioDetailsOpen}
+          onClose={() => setScenarioDetailsOpen(false)}
+          onBegin={mode === 'voice' && voice.status === 'idle' ? beginVoice : undefined}
+          scenarioIndex={scenarioIndex}
+          scenarioTotal={SEED_SCENARIOS.length}
+        />
+        <div style={{ position: 'relative' }}>
+          <Glass
+            radius={9999}
+            padding={0}
+            blur={18}
+            tint={0.05}
+            onClick={() => setScenarioDetailsOpen(true)}
+            ariaLabel="Open scenario details"
+            className="absolute z-[2] flex h-11 w-11 cursor-pointer items-center justify-center"
+            style={{
+              right: 0,
+              bottom: '100%',
+              marginBottom: 10,
+            }}
+          >
+            <Icon.book />
+          </Glass>
+          <ScenarioSessionControls
+            scenario={scenario}
+            mode={mode}
+            onModeChange={handleModeChange}
+            onEnd={
+              mode === 'voice'
+                ? handleVoiceEnd
+                : () => {
+                    if (chat.status === 'error' || chat.status === 'idle') {
+                      go('home');
+                    } else {
+                      void chat.end().then(() => go('stats')).catch(() => go('stats'));
+                    }
+                  }
+            }
+          />
+        </div>
+        {mode === 'text' && (
+          <Glass radius={9999} padding={6} blur={18} tint={0.04}>
+            <div className="flex items-center gap-2">
+              <button
+                aria-label="Add"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 9999,
+                  background: 'rgba(255,255,255,0.55)',
+                  border: 'none',
+                  color: 'var(--pbt-text)',
+                  cursor: 'pointer',
+                }}
+              >
+                <Icon.plus />
+              </button>
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Acknowledge, ask, recommend…"
+                disabled={chat.status === 'aiTyping' || chat.status === 'scoring' || chat.status === 'complete'}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && draft.trim() && chat.status === 'awaitingUser') {
+                    const text = draft.trim();
+                    setDraft('');
+                    void chat.send(text);
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  fontFamily: 'inherit',
+                  fontSize: 14.5,
+                  color: 'var(--pbt-text)',
+                }}
+              />
+              <button
+                aria-label="Send"
+                disabled={!draft.trim() || chat.status !== 'awaitingUser'}
+                onClick={() => {
+                  const text = draft.trim();
+                  if (!text) return;
+                  setDraft('');
+                  void chat.send(text);
+                }}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 9999,
+                  border: 'none',
+                  cursor: draft.trim() ? 'pointer' : 'not-allowed',
+                  color: '#fff',
+                  background: draft.trim()
+                    ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
+                    : 'rgba(60,20,15,0.12)',
+                }}
+              >
+                <Icon.send />
+              </button>
+            </div>
+          </Glass>
+        )}
+      </div>
     </div>
   );
 }
@@ -371,10 +810,11 @@ function TypingIndicator() {
         style={{
           padding: '12px 16px',
           borderRadius: 22,
-          background: 'rgba(255,255,255,0.55)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          border: '0.5px solid rgba(255,255,255,0.7)',
+          background: 'rgba(255,255,255,0.42)',
+          backdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
+          WebkitBackdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
+          border: '1px solid rgba(255,255,255,0.65)',
+          boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset, 0 4px 12px -6px rgba(60,20,15,0.08)',
           display: 'inline-flex',
           gap: 4,
         }}
@@ -405,201 +845,292 @@ const EMOTION_COLORS: Record<EmotionColor, string> = {
 };
 
 const EMOTION_LABELS: Record<EmotionColor, string> = {
-  red: 'Tense',
-  yellow: 'Neutral',
-  green: 'Open',
+  red: 'Defensive',
+  yellow: 'Receptive',
+  green: 'Convinced',
 };
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Initializing…',
   connecting: 'Connecting…',
-  listening: 'Listening',
-  aiSpeaking: 'Customer speaking…',
+  listening: 'Go ahead — I\'m listening',
+  thinking: 'Processing…',
+  aiSpeaking: 'Speaking…',
   ended: 'Session complete',
   error: 'Connection error',
 };
 
-function VoiceMode({ voice }: { voice: ReturnType<typeof useVoiceSession> }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+function VoiceMode({
+  voice,
+  isAnalyzing,
+  analysisError,
+  onBegin,
+  onRetry,
+}: {
+  voice: ReturnType<typeof useVoiceSession>;
+  isAnalyzing: boolean;
+  analysisError: string | null;
+  onBegin: () => void;
+  onRetry?: () => void;
+}) {
   const emotionColor = EMOTION_COLORS[voice.emotion];
+  const isThinking = voice.status === 'thinking';
+  const isReady = voice.status === 'idle';
+  const isConnecting = voice.status === 'connecting';
+  const hasStartError = voice.status === 'error' && !!voice.error;
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [voice.messages.length]);
+  // Derive last AI and last user message for the big transcript display
+  const aiMessages = voice.messages.filter((m) => m.role === 'ai');
+  const userMessages = voice.messages.filter((m) => m.role === 'user');
+  const lastAiMsg = aiMessages[aiMessages.length - 1];
+  const lastUserMsg = userMessages[userMessages.length - 1];
+
+  const orbSize = 'min(62vw, 240px)';
 
   return (
-    <div className="flex flex-1 flex-col items-center px-5 pb-6">
-      {/* Tension orb */}
+    <div
+      className="flex flex-1 flex-col items-center"
+      style={{ paddingLeft: 20, paddingRight: 20, paddingBottom: 12, minHeight: 0 }}
+    >
+      {/* Status label — above the orb */}
       <div
-        className="flex flex-col items-center"
-        style={{ paddingTop: 24, marginBottom: 16 }}
+        style={{
+          paddingTop: 16,
+          marginBottom: 12,
+          fontFamily: 'var(--pbt-font-mono)',
+          fontSize: 11,
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          color: isThinking ? 'oklch(0.55 0.10 240)' : 'var(--pbt-text-muted)',
+          textAlign: 'center',
+          minHeight: 18,
+          transition: 'color 0.4s ease',
+        }}
       >
+        {isConnecting
+          ? 'Connecting…'
+          : isReady
+          ? 'Voice ready'
+          : isAnalyzing
+          ? 'Analyzing session…'
+          : STATUS_LABELS[voice.status] ?? ''}
+      </div>
+
+      {/* Orb — large, centered */}
+      <div
+        style={{
+          position: 'relative',
+          width: orbSize,
+          height: orbSize,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        {/* Ambient gradient aura */}
         <div
           style={{
-            position: 'relative',
-            width: 160,
-            height: 160,
+            position: 'absolute',
+            inset: '-15%',
+            borderRadius: '50%',
+            background: `radial-gradient(closest-side, color-mix(in oklab, ${emotionColor} 25%, transparent), transparent)`,
+            transition: 'background 1.2s ease',
+            filter: 'blur(10px)',
+          }}
+        />
+        {/* Expanding radar rings while AI speaking */}
+        {voice.status === 'aiSpeaking' && [0, 1, 2].map((i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '50%',
+              border: `1.5px solid ${emotionColor}`,
+              opacity: 0.45,
+              animation: `pbtRingExpand 1.8s ${i * 0.6}s ease-out infinite`,
+            }}
+          />
+        ))}
+        {/* Pulsing inner glow while AI speaking */}
+        {voice.status === 'aiSpeaking' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: '-5%',
+              borderRadius: '50%',
+              background: `radial-gradient(closest-side, color-mix(in oklab, ${emotionColor} 38%, transparent), transparent)`,
+              animation: 'pbtPulse 1s ease-in-out infinite',
+            }}
+          />
+        )}
+        {/* Slow gentle pulse while thinking */}
+        {isThinking && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: '-8%',
+              borderRadius: '50%',
+              background: 'radial-gradient(closest-side, oklch(0.65 0.08 240 / 0.20), transparent)',
+              animation: 'pbtPulse 1.6s ease-in-out infinite',
+            }}
+          />
+        )}
+        <motion.div
+          style={{
+            width: '100%',
+            height: '100%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
-        >
-          {/* Ambient gradient aura */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: -20,
-              borderRadius: '50%',
-              background: `radial-gradient(closest-side, color-mix(in oklab, ${emotionColor} 28%, transparent), transparent)`,
-              transition: 'background 1s ease',
-              filter: 'blur(6px)',
-            }}
-          />
-          {/* Expanding radar rings while AI speaking */}
-          {voice.status === 'aiSpeaking' && [0, 1, 2].map((i) => (
-            <div
-              key={i}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: `1.5px solid ${emotionColor}`,
-                opacity: 0.5,
-                animation: `pbtRingExpand 1.8s ${i * 0.6}s ease-out infinite`,
-              }}
-            />
-          ))}
-          {/* Pulsing inner glow */}
-          {voice.status === 'aiSpeaking' && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: -8,
-                borderRadius: '50%',
-                background: `radial-gradient(closest-side, color-mix(in oklab, ${emotionColor} 40%, transparent), transparent)`,
-                animation: 'pbtPulse 1s ease-in-out infinite',
-              }}
-            />
-          )}
-          <Orb size={140} pulse={voice.status === 'aiSpeaking'} intensity={voice.status === 'aiSpeaking' ? 1.4 : 0.8} />
-        </div>
-        <div
-          style={{
-            marginTop: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
+          animate={
+            voice.status === 'aiSpeaking'
+              ? {
+                  scale: [1, 1.07, 1],
+                  filter: [
+                    `drop-shadow(0 0 20px ${emotionColor})`,
+                    `drop-shadow(0 0 40px ${emotionColor})`,
+                    `drop-shadow(0 0 20px ${emotionColor})`,
+                  ],
+                }
+              : {
+                  scale: [1, 1.035, 1],
+                  filter: [
+                    `drop-shadow(0 0 10px color-mix(in oklab, ${emotionColor} 55%, transparent))`,
+                    `drop-shadow(0 0 20px color-mix(in oklab, ${emotionColor} 80%, transparent))`,
+                    `drop-shadow(0 0 10px color-mix(in oklab, ${emotionColor} 55%, transparent))`,
+                  ],
+                }
+          }
+          transition={{
+            duration: voice.status === 'aiSpeaking' ? 1.2 : 2.4,
+            repeat: Infinity,
+            ease: 'easeInOut',
           }}
         >
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: emotionColor,
-              transition: 'background 0.6s ease',
-            }}
+          <Orb
+            size={240}
+            pulse={voice.status === 'aiSpeaking' || isThinking}
+            intensity={voice.status === 'aiSpeaking' ? 1.5 : isThinking ? 0.65 : 0.9}
           />
-          <span
-            style={{
-              fontFamily: 'var(--pbt-font-mono)',
-              fontSize: 11,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: emotionColor,
-              transition: 'color 0.6s ease',
-            }}
-          >
-            {EMOTION_LABELS[voice.emotion]} · {STATUS_LABELS[voice.status] ?? 'Ready'}
-          </span>
-        </div>
+        </motion.div>
       </div>
 
-      {/* Transcript */}
+      {/* Resolution dot + label — between orb and transcript */}
       <div
-        ref={scrollRef}
-        className="pbt-scroll w-full flex-1 overflow-y-auto"
-        style={{ marginBottom: 12 }}
+        style={{
+          marginTop: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}
       >
-        {voice.error && (
-          <Glass radius={16} padding={14} style={{ marginBottom: 10 }}>
-            <p style={{ fontSize: 13, color: 'oklch(0.55 0.22 18)', margin: 0 }}>
-              {voice.error}
-            </p>
-          </Glass>
-        )}
+        <div
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: isThinking ? 'oklch(0.60 0.12 240)' : emotionColor,
+            transition: 'background 0.6s ease',
+            animation: isThinking ? 'pbtPulse 1.2s ease-in-out infinite' : undefined,
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontFamily: 'var(--pbt-font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: isThinking ? 'oklch(0.55 0.10 240)' : emotionColor,
+            transition: 'color 0.6s ease',
+          }}
+        >
+          {isThinking ? 'Processing' : EMOTION_LABELS[voice.emotion]}
+        </span>
+      </div>
 
-        {voice.messages.length === 0 && voice.status !== 'error' && (
+      {/* Error states */}
+      {(voice.error || analysisError) && (
+        <div style={{ width: '100%', marginTop: 16 }}>
+          <Glass radius={16} padding={14}>
+            <p style={{ fontSize: 13, color: 'oklch(0.55 0.22 18)', margin: 0, marginBottom: onRetry ? 10 : 0 }}>
+              {voice.error ?? analysisError}
+            </p>
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                style={{
+                  padding: '6px 16px', borderRadius: 9999, border: 'none', cursor: 'pointer',
+                  background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                  color: '#fff', fontFamily: 'var(--pbt-font-mono)', fontSize: 11,
+                  fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase',
+                }}
+              >
+                {hasStartError ? 'Try voice again' : 'Try again'}
+              </button>
+            )}
+          </Glass>
+        </div>
+      )}
+
+      {/* Big transcript display — last AI message prominently, last user message below */}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          paddingTop: 12,
+          paddingBottom: 12,
+          gap: 12,
+          minHeight: 0,
+          overflow: 'hidden',
+        }}
+      >
+        {/* Connecting placeholder */}
+        {isConnecting && !isAnalyzing && (
           <div
             style={{
               textAlign: 'center',
               color: 'var(--pbt-text-muted)',
               fontSize: 13,
-              paddingTop: 20,
-              fontFamily: 'var(--pbt-font-mono)',
-              letterSpacing: '0.10em',
-              textTransform: 'uppercase',
+              lineHeight: 1.5,
             }}
           >
-            {voice.status === 'connecting' ? 'Connecting to voice…' : 'Speak to begin'}
+            <span
+              style={{
+                fontFamily: 'var(--pbt-font-mono)',
+                letterSpacing: '0.10em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Starting session…
+            </span>
           </div>
         )}
 
-        <div className="flex flex-col" style={{ gap: 8 }}>
-          {voice.messages.map((m, i) => (
-            <div
-              key={i}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
-              }}
-            >
-              <div
-                style={{
-                  maxWidth: '82%',
-                  padding: '8px 12px',
-                  borderRadius: 18,
-                  fontSize: 13.5,
-                  lineHeight: 1.4,
-                  background:
-                    m.role === 'user'
-                      ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
-                      : 'rgba(255,255,255,0.55)',
-                  color: m.role === 'user' ? '#fff' : 'var(--pbt-text)',
-                  backdropFilter: m.role === 'user' ? undefined : 'blur(20px)',
-                  border: m.role === 'user' ? 'none' : '0.5px solid rgba(255,255,255,0.7)',
-                }}
-              >
-                {m.text}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Mic status indicator */}
-      {(voice.status === 'listening' || voice.status === 'aiSpeaking') && (
-        <Glass radius={9999} padding={10} style={{ marginBottom: 0 }}>
-          <div className="flex items-center gap-3" style={{ paddingLeft: 4, paddingRight: 8 }}>
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background:
-                  voice.status === 'listening'
-                    ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
-                    : 'rgba(60,20,15,0.10)',
-                animation: voice.status === 'listening' ? 'pbtPulse 2s ease-in-out infinite' : undefined,
-              }}
-            >
-              <Icon.mic />
+        {/* Analyzing indicator */}
+        {isAnalyzing && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: 'oklch(0.55 0.22 18)',
+                    animation: `pbtTypingDot 1.4s ${i * 0.2}s infinite`,
+                    display: 'inline-block',
+                  }}
+                />
+              ))}
             </div>
             <span
               style={{
@@ -607,14 +1138,84 @@ function VoiceMode({ voice }: { voice: ReturnType<typeof useVoiceSession> }) {
                 fontSize: 11,
                 letterSpacing: '0.12em',
                 textTransform: 'uppercase',
-                color: voice.status === 'listening' ? 'oklch(0.55 0.22 18)' : 'var(--pbt-text-muted)',
+                color: 'var(--pbt-text-muted)',
               }}
             >
-              {voice.status === 'listening' ? 'Mic on · speak now' : 'Customer speaking'}
+              Analyzing session…
             </span>
           </div>
-        </Glass>
-      )}
+        )}
+
+        {/* Last AI message — large prominent display */}
+        {lastAiMsg && (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={lastAiMsg.timestamp}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+              style={{
+                textAlign: 'center',
+                fontSize: 'clamp(18px, 5vw, 26px)',
+                fontWeight: 400,
+                lineHeight: 1.4,
+                color: 'var(--pbt-text)',
+                letterSpacing: '-0.015em',
+                maxWidth: 380,
+                overflow: 'hidden',
+                display: '-webkit-box',
+                WebkitLineClamp: 5,
+                WebkitBoxOrient: 'vertical',
+              }}
+            >
+              {lastAiMsg.text}
+            </motion.div>
+          </AnimatePresence>
+        )}
+
+        {/* Last user message — smaller, muted */}
+        {lastUserMsg && (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={lastUserMsg.timestamp}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 0.6, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              style={{
+                textAlign: 'center',
+                fontSize: 'clamp(13px, 3.5vw, 15px)',
+                fontWeight: 400,
+                lineHeight: 1.45,
+                color: 'var(--pbt-text-muted)',
+                maxWidth: 340,
+                overflow: 'hidden',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+              }}
+            >
+              You: {lastUserMsg.text}
+            </motion.div>
+          </AnimatePresence>
+        )}
+
+        {/* Empty state — session started but no messages yet */}
+        {!isReady && !isConnecting && !lastAiMsg && !isAnalyzing && voice.status !== 'error' && (
+          <div
+            style={{
+              textAlign: 'center',
+              color: 'var(--pbt-text-muted)',
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            {voice.status === 'aiSpeaking' ? 'Customer is speaking…' : ''}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
 import { Chip } from '../design-system/Chip';
 import { PillButton } from '../design-system/PillButton';
+import { Segmented } from '../design-system/Segmented';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
@@ -11,16 +13,30 @@ import { useProfile } from '../app/providers/ProfileProvider';
 import { useSavedPets } from '../features/pet-analyzer/useSavedPets';
 import {
   BREEDS,
+  DIFFICULTY_DESCRIPTIONS,
   DIFFICULTY_LABELS,
   LIFE_STAGES,
   OWNER_PERSONAS,
   PUSHBACK_CATEGORIES,
+  SEED_SCENARIOS,
   type Difficulty,
   type LifeStage,
   type OwnerPersona,
   type PushbackCategory,
+  type Scenario,
 } from '../data/scenarios';
 import { DRIVER_KEYS, type DriverKey } from '../design-system/tokens';
+
+type Tab = 'build' | 'library';
+
+const TAB_OPTIONS: { value: Tab; label: string }[] = [
+  { value: 'build', label: 'Build' },
+  { value: 'library', label: 'Library' },
+];
+
+// Dropdown: all named pushbacks (not custom)
+const DROPDOWN_PUSHBACKS = PUSHBACK_CATEGORIES.filter((c) => c.id !== 'custom');
+const CUSTOM_PUSHBACK = PUSHBACK_CATEGORIES.find((c) => c.id === 'custom')!;
 
 export function CreateScreen() {
   const { go } = useNavigation();
@@ -28,28 +44,73 @@ export function CreateScreen() {
   const { profile } = useProfile();
   const { savedPets } = useSavedPets();
 
+  const [tab, setTab] = useState<Tab>('build');
   const [breed, setBreed] = useState('Labrador Retriever');
+  const [weight, setWeight] = useState('');
   const [age, setAge] = useState<LifeStage>(LIFE_STAGES[2]);
-  const [pushback, setPushback] = useState<PushbackCategory>(
-    PUSHBACK_CATEGORIES[0],
-  );
+  const [pushback, setPushback] = useState<PushbackCategory>(PUSHBACK_CATEGORIES[0]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [persona, setPersona] = useState<OwnerPersona>(OWNER_PERSONAS[0]);
   const [difficulty, setDifficulty] = useState<Difficulty>(2);
   const [context, setContext] = useState('');
-  const [driver, setDriver] = useState<DriverKey>(
-    profile?.primary ?? 'Activator',
-  );
+  const [pushbackNotes, setPushbackNotes] = useState('');
+  const [breedError, setBreedError] = useState<string | null>(null);
+  const [pushbackError, setPushbackError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [driver, setDriver] = useState<DriverKey>(profile?.primary ?? 'Activator');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const isCustomSelected = pushback.id === 'custom';
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dropdownOpen]);
+
+  const selectPushback = (cat: PushbackCategory) => {
+    setPushback(cat);
+    setPushbackError(null);
+    setDropdownOpen(false);
+  };
 
   const handleGenerate = () => {
+    const breedTrim = breed.trim();
+    if (!breedTrim) {
+      setBreedError('Choose a breed or type one in.');
+      return;
+    }
+    setBreedError(null);
+
+    const notesTrim = pushbackNotes.trim();
+    if (pushback.id === 'custom' && !notesTrim) {
+      setPushbackError('Describe what the client pushed back on.');
+      return;
+    }
+    setPushbackError(null);
+    setIsSubmitting(true);
     setScenario({
-      breed,
+      breed: breedTrim,
       age,
       pushback,
       persona,
       difficulty,
       context: context.trim() || undefined,
+      pushbackNotes: notesTrim || undefined,
       suggestedDriver: driver,
+      weightKg: weight.trim() || undefined,
     });
+    go('chat');
+  };
+
+  const startLibraryScenario = (scenario: Scenario) => {
+    setScenario(scenario);
     go('chat');
   };
 
@@ -57,259 +118,546 @@ export function CreateScreen() {
     <>
       <TopBar showBack title="Build a scenario" />
       <Page>
-        <Section eyebrow="Breed">
-          <Glass radius={20} padding={12} blur={20}>
-            <div className="flex items-center gap-2">
-              <Icon.search />
-              <input
-                value={breed}
-                onChange={(e) => setBreed(e.target.value)}
-                placeholder="Search breed"
-                style={{
-                  flex: 1,
-                  border: 'none',
-                  outline: 'none',
-                  background: 'transparent',
-                  fontFamily: 'inherit',
-                  fontSize: 14.5,
-                  color: 'var(--pbt-text)',
-                }}
-              />
-            </div>
-          </Glass>
-          {savedPets.length > 0 && (
-            <div style={{ marginTop: 10, marginBottom: 4 }}>
-              <div
-                style={{
-                  fontFamily: 'var(--pbt-font-mono)',
-                  fontSize: 9,
-                  letterSpacing: '0.18em',
-                  textTransform: 'uppercase',
-                  color: 'oklch(0.62 0.22 22)',
-                  marginBottom: 6,
-                  paddingLeft: 2,
-                }}
-              >
-                Saved pets
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {savedPets.map((pet) => (
-                  <Chip
-                    key={pet.id}
-                    active={breed === pet.breed}
-                    onClick={() => setBreed(pet.breed)}
-                  >
-                    <Icon.paw style={{ width: 12, height: 12, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
-                    {pet.name || pet.breed}
-                  </Chip>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            {BREEDS.slice(0, 6).map((b) => (
-              <Chip key={b} active={b === breed} onClick={() => setBreed(b)}>
-                {b}
-              </Chip>
-            ))}
-          </div>
-        </Section>
+        <div className="flex justify-center mb-5">
+          <Segmented
+            options={TAB_OPTIONS}
+            value={tab}
+            onChange={(v) => setTab(v)}
+            ariaLabel="Scenario tabs"
+          />
+        </div>
 
-        <Section eyebrow="Life stage">
-          <div className="grid grid-cols-2 gap-2">
-            {LIFE_STAGES.map((stage) => (
-              <Glass
-                key={stage}
-                radius={18}
-                padding={14}
-                onClick={() => setAge(stage)}
-                ariaLabel={stage}
-                glow={stage === age ? 'oklch(0.62 0.22 22)' : null}
-                style={{
-                  border: stage === age ? '1px solid oklch(0.62 0.22 22)' : undefined,
-                  background:
-                    stage === age
-                      ? 'linear-gradient(135deg, oklch(0.94 0.05 20), oklch(0.92 0.06 22))'
-                      : undefined,
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{stage}</div>
+        {tab === 'library' ? (
+          <div className="lg:grid lg:grid-cols-2 lg:gap-4 flex flex-col gap-3">
+            {SEED_SCENARIOS.map((scenario, i) => (
+              <Glass key={i} radius={18} padding={14}>
+                <div className="flex items-start justify-between gap-3">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
+                      {scenario.pushback.title}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', marginBottom: 8 }}>
+                      {scenario.breed} · {scenario.age} · {scenario.persona}
+                    </div>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '3px 10px',
+                        borderRadius: 9999,
+                        fontSize: 10,
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontWeight: 600,
+                        letterSpacing: '0.10em',
+                        textTransform: 'uppercase',
+                        background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                        color: '#fff',
+                      }}
+                    >
+                      {DIFFICULTY_LABELS[scenario.difficulty]}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => startLibraryScenario(scenario)}
+                    style={{
+                      flexShrink: 0,
+                      alignSelf: 'center',
+                      padding: '8px 18px',
+                      borderRadius: 9999,
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--pbt-font-mono)',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: '0.10em',
+                      textTransform: 'uppercase',
+                      background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                      color: '#fff',
+                      boxShadow: '0 4px 12px -4px oklch(0.55 0.22 18 / 0.35)',
+                    }}
+                  >
+                    Start
+                  </button>
+                </div>
               </Glass>
             ))}
           </div>
-        </Section>
+        ) : (
+          /*
+           * Build tab: two-column grid on desktop.
+           * Left col: Breed, Life stage, Owner persona, ECHO driver.
+           * Right col: The pushback, Difficulty, Additional details.
+           * On mobile: single column, JSX order preserved.
+           */
+          <div className="lg:grid lg:grid-cols-2 lg:gap-8 lg:items-start">
+            {/* Left column */}
+            <div>
+            {/* ── Breed ── */}
+            <Section label="Breed">
+              <Glass
+                radius={20}
+                padding={12}
+                style={breedError ? { border: '1.5px solid oklch(0.55 0.22 18)' } : undefined}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon.search />
+                  <input
+                    value={breed}
+                    onChange={(e) => { setBreed(e.target.value); if (breedError) setBreedError(null); }}
+                    placeholder="Search breed"
+                    style={{
+                      flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                      fontFamily: 'inherit', fontSize: 15, color: 'var(--pbt-text)',
+                    }}
+                    aria-invalid={breedError != null}
+                  />
+                </div>
+              </Glass>
+              {breedError && (
+                <div style={{ marginTop: 6, fontSize: 12, color: 'oklch(0.55 0.22 18)', paddingLeft: 4 }}>
+                  {breedError}
+                </div>
+              )}
+              {savedPets.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'oklch(0.62 0.22 22)', marginBottom: 6, paddingLeft: 2 }}>
+                    Saved pets
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {savedPets.map((pet) => (
+                      <Chip key={pet.id} active={breed === pet.breed} onClick={() => setBreed(pet.breed)}>
+                        <Icon.paw style={{ width: 12, height: 12, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
+                        {pet.name || pet.breed}
+                      </Chip>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {BREEDS.slice(0, 6).map((b) => (
+                  <Chip key={b} active={b === breed} onClick={() => setBreed(b)}>{b}</Chip>
+                ))}
+              </div>
 
-        <Section eyebrow="The pushback">
-          <div className="flex flex-col gap-2">
-            {PUSHBACK_CATEGORIES.map((cat) => {
-              const active = cat.id === pushback.id;
-              return (
+              {/* Weight — compact, prominent */}
+              <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Glass radius={16} padding="10px 16px" style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
+                  <input
+                    id="dog-weight"
+                    type="number"
+                    min="0.5"
+                    max="100"
+                    step="0.5"
+                    value={weight}
+                    onChange={(e) => setWeight(e.target.value)}
+                    placeholder="—"
+                    style={{
+                      width: 64,
+                      border: 'none',
+                      outline: 'none',
+                      background: 'transparent',
+                      fontFamily: 'inherit',
+                      fontSize: 30,
+                      fontWeight: 700,
+                      letterSpacing: '-0.03em',
+                      color: 'var(--pbt-text)',
+                      lineHeight: 1,
+                    }}
+                  />
+                  <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 13, color: 'var(--pbt-text-muted)', fontWeight: 600 }}>
+                    kg
+                  </span>
+                </Glass>
+                <span style={{ fontSize: 13, color: 'var(--pbt-text-muted)' }}>
+                  Dog's weight (optional)
+                </span>
+              </div>
+            </Section>
+
+            {/* ── Life stage ── */}
+            <Section label="Life stage">
+              <div className="grid grid-cols-2 gap-2">
+                {LIFE_STAGES.map((stage) => (
+                  <Glass
+                    key={stage}
+                    radius={18}
+                    padding={14}
+                    onClick={() => setAge(stage)}
+                    ariaLabel={stage}
+                    glow={stage === age ? 'oklch(0.62 0.22 22)' : null}
+                    style={{
+                      border: stage === age ? '1px solid oklch(0.62 0.22 22)' : undefined,
+                      background: stage === age ? 'linear-gradient(135deg, oklch(0.94 0.05 20), oklch(0.92 0.06 22))' : undefined,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{stage}</div>
+                  </Glass>
+                ))}
+              </div>
+            </Section>
+
+            {/* ── The pushback ── */}
+            <Section label="The pushback">
+              {/* Glass dropdown trigger */}
+              <div ref={dropdownRef} style={{ position: 'relative' }}>
                 <Glass
-                  key={cat.id}
                   radius={18}
                   padding={14}
-                  onClick={() => setPushback(cat)}
-                  ariaLabel={cat.title}
-                  glow={active ? 'oklch(0.62 0.22 22)' : null}
+                  onClick={() => setDropdownOpen((v) => !v)}
+                  ariaLabel="Select pushback type"
                   style={{
-                    border: active ? '1px solid oklch(0.62 0.22 22)' : undefined,
+                    cursor: 'pointer',
+                    border: !isCustomSelected ? '1px solid oklch(0.62 0.22 22)' : undefined,
+                    background: !isCustomSelected ? 'linear-gradient(135deg, oklch(0.96 0.04 20), oklch(0.93 0.06 22))' : undefined,
                   }}
                 >
-                  <div className="flex items-start gap-3">
-                    <div
-                      style={{
-                        width: 22,
-                        height: 22,
-                        borderRadius: '50%',
-                        flexShrink: 0,
-                        marginTop: 2,
-                        background: active
-                          ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
-                          : 'rgba(60,20,15,0.06)',
-                        color: '#fff',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
+                  <div className="flex items-center justify-between gap-3">
+                    <div style={{ minWidth: 0 }}>
+                      {isCustomSelected ? (
+                        <span style={{ fontSize: 15, color: 'var(--pbt-text-muted)' }}>
+                          Choose a pushback type…
+                        </span>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 700, fontSize: 15, color: 'oklch(0.44 0.20 18)' }}>
+                            {pushback.title}
+                          </div>
+                          <div style={{ fontSize: 12.5, color: 'var(--pbt-text-muted)', marginTop: 2, fontStyle: 'italic' }}>
+                            {pushback.example}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <motion.div
+                      animate={{ rotate: dropdownOpen ? 180 : 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ flexShrink: 0, color: 'var(--pbt-text-muted)', display: 'flex' }}
                     >
-                      {active && <Icon.check />}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>
-                        {cat.title}
-                      </div>
-                      <div
-                        style={{
-                          fontStyle: 'italic',
-                          fontSize: 13,
-                          color: 'var(--pbt-text-muted)',
-                          marginTop: 2,
-                        }}
-                      >
-                        "{cat.example}"
-                      </div>
-                    </div>
+                      <Icon.chevronDown />
+                    </motion.div>
                   </div>
                 </Glass>
-              );
-            })}
-          </div>
-        </Section>
 
-        <Section eyebrow="Owner persona">
-          <div className="flex flex-wrap gap-2">
-            {OWNER_PERSONAS.map((p) => (
-              <Chip key={p} active={p === persona} onClick={() => setPersona(p)}>
-                {p}
-              </Chip>
-            ))}
-          </div>
-        </Section>
+                {/* Dropdown panel */}
+                <AnimatePresence>
+                  {dropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                      transition={{ duration: 0.2, ease: 'easeOut' }}
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 6px)',
+                        left: 0,
+                        right: 0,
+                        zIndex: 50,
+                      }}
+                    >
+                      <Glass radius={18} padding={6} blur={28} tint={0.06}>
+                        <div className="flex flex-col" style={{ gap: 2 }}>
+                          {DROPDOWN_PUSHBACKS.map((cat) => {
+                            const active = cat.id === pushback.id;
+                            return (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => selectPushback(cat)}
+                                style={{
+                                  textAlign: 'left',
+                                  padding: '10px 12px',
+                                  borderRadius: 13,
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  background: active
+                                    ? 'linear-gradient(135deg, oklch(0.94 0.05 20), oklch(0.91 0.07 22))'
+                                    : 'transparent',
+                                  transition: 'background 0.15s',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 10,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: 20,
+                                    height: 20,
+                                    borderRadius: '50%',
+                                    flexShrink: 0,
+                                    background: active
+                                      ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
+                                      : 'rgba(60,20,15,0.08)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  {active && <Icon.check style={{ width: 10, height: 10, color: '#fff' }} />}
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontWeight: 600, fontSize: 14, color: active ? 'oklch(0.44 0.20 18)' : 'var(--pbt-text)' }}>
+                                    {cat.title}
+                                  </div>
+                                  <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', fontStyle: 'italic', marginTop: 1 }}>
+                                    {cat.example}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </Glass>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
 
-        <Section eyebrow="ECHO driver">
-          <div className="flex flex-wrap gap-2">
-            {DRIVER_KEYS.map((d) => (
-              <Chip key={d} active={d === driver} onClick={() => setDriver(d)}>
-                {d}
-              </Chip>
-            ))}
-          </div>
-        </Section>
+              {/* "What exactly did they say?" — shown below dropdown for any named pushback */}
+              <AnimatePresence>
+                {!isCustomSelected && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.22 }}
+                    style={{ overflow: 'hidden', marginTop: 8 }}
+                  >
+                    <Glass radius={16} padding={14}>
+                      <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)', marginBottom: 8, fontWeight: 700 }}>
+                        What exactly did they say? · optional
+                      </div>
+                      <textarea
+                        value={pushbackNotes}
+                        onChange={(e) => { setPushbackNotes(e.target.value); if (pushbackError) setPushbackError(null); }}
+                        placeholder="Add the actual wording or nuance — helps the AI stay specific."
+                        rows={2}
+                        style={{
+                          width: '100%', minHeight: 56, border: 'none', outline: 'none',
+                          resize: 'vertical', background: 'transparent', fontFamily: 'inherit',
+                          fontSize: 14, color: 'var(--pbt-text)',
+                        }}
+                      />
+                    </Glass>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-        <Section eyebrow="Difficulty">
-          <Glass radius={20} padding={16}>
-            <div className="flex items-center justify-between gap-2">
-              {([1, 2, 3, 4] as Difficulty[]).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setDifficulty(d)}
-                  style={{
-                    flex: 1,
-                    padding: '8px 4px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: 11,
-                    fontFamily: 'var(--pbt-font-mono)',
-                    letterSpacing: '0.10em',
-                    textTransform: 'uppercase',
-                    color: d <= difficulty ? '#fff' : 'var(--pbt-text-muted)',
-                    background:
-                      d <= difficulty
+              {/* Divider */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  margin: '14px 0',
+                }}
+              >
+                <div style={{ flex: 1, height: 1, background: 'rgba(60,20,15,0.08)' }} />
+                <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)' }}>
+                  or
+                </span>
+                <div style={{ flex: 1, height: 1, background: 'rgba(60,20,15,0.08)' }} />
+              </div>
+
+              {/* Other pushback — separate selectable card */}
+              <Glass
+                radius={18}
+                padding={14}
+                onClick={() => { selectPushback(CUSTOM_PUSHBACK); }}
+                ariaLabel={CUSTOM_PUSHBACK.title}
+                glow={isCustomSelected ? 'oklch(0.62 0.22 22)' : null}
+                style={{
+                  border: isCustomSelected ? '1px solid oklch(0.62 0.22 22)' : undefined,
+                  background: isCustomSelected ? 'linear-gradient(135deg, oklch(0.94 0.05 20), oklch(0.92 0.06 22))' : undefined,
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      background: isCustomSelected
                         ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
-                        : 'transparent',
-                    borderRadius: 9999,
-                    transition: 'all 0.2s',
+                        : 'rgba(60,20,15,0.08)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#fff',
+                    }}
+                  >
+                    {isCustomSelected && <Icon.check />}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: isCustomSelected ? 'oklch(0.44 0.20 18)' : 'var(--pbt-text)' }}>
+                      Other pushback
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--pbt-text-muted)', marginTop: 1 }}>
+                      Describe any objection in your own words
+                    </div>
+                  </div>
+                </div>
+              </Glass>
+
+              {/* Required custom notes — shown below "Other pushback" card */}
+              <AnimatePresence>
+                {isCustomSelected && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.22 }}
+                    style={{ overflow: 'hidden', marginTop: 8 }}
+                  >
+                    <Glass radius={16} padding={14}>
+                      <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)', marginBottom: 8, fontWeight: 700 }}>
+                        What did they push back on? · required
+                      </div>
+                      <textarea
+                        value={pushbackNotes}
+                        onChange={(e) => { setPushbackNotes(e.target.value); if (pushbackError) setPushbackError(null); }}
+                        placeholder='e.g. "They insisted supermarket senior food is identical to Rx…"'
+                        rows={3}
+                        style={{
+                          width: '100%', minHeight: 72, border: 'none', outline: 'none',
+                          resize: 'vertical', background: 'transparent', fontFamily: 'inherit',
+                          fontSize: 14, color: 'var(--pbt-text)',
+                        }}
+                        aria-invalid={pushbackError != null}
+                      />
+                      {pushbackError && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: 'oklch(0.55 0.22 18)' }}>
+                          {pushbackError}
+                        </div>
+                      )}
+                    </Glass>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Section>
+
+            {/* ── Owner persona ── */}
+            <Section label="Owner persona">
+              <div className="flex flex-wrap gap-2">
+                {OWNER_PERSONAS.map((p) => (
+                  <Chip key={p} active={p === persona} onClick={() => setPersona(p)}>{p}</Chip>
+                ))}
+              </div>
+            </Section>
+
+            {/* ── ECHO driver ── */}
+            <Section label="ECHO driver">
+              <div className="flex flex-wrap gap-2">
+                {DRIVER_KEYS.map((d) => (
+                  <Chip key={d} active={d === driver} onClick={() => setDriver(d)}>{d}</Chip>
+                ))}
+              </div>
+            </Section>
+            </div>{/* end left column */}
+
+            {/* Right column */}
+            <div>
+            {/* ── Difficulty ── */}
+            <Section label="Difficulty">
+              <div className="grid grid-cols-2 gap-2">
+                {([1, 2, 3, 4] as Difficulty[]).map((d) => {
+                  const active = d === difficulty;
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setDifficulty(d)}
+                      aria-pressed={active}
+                      style={{
+                        padding: '13px 16px',
+                        borderRadius: 18,
+                        border: active ? 'none' : '1px solid rgba(255,255,255,0.50)',
+                        cursor: 'pointer',
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                        background: active
+                          ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
+                          : 'rgba(255,255,255,0.22)',
+                        backdropFilter: active ? undefined : 'blur(18px) saturate(240%)',
+                        WebkitBackdropFilter: active ? undefined : 'blur(18px) saturate(240%)',
+                        color: active ? '#fff' : 'var(--pbt-text)',
+                        boxShadow: active
+                          ? '0 8px 22px -8px oklch(0.55 0.22 18 / 0.45)'
+                          : '0 1px 0 rgba(255,255,255,0.85) inset, 0 4px 12px -6px rgba(60,20,15,0.06)',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      {DIFFICULTY_LABELS[d]}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 10, fontSize: 13, color: 'var(--pbt-text-muted)', paddingLeft: 2, lineHeight: 1.5 }}>
+                {DIFFICULTY_DESCRIPTIONS[difficulty]}
+              </div>
+            </Section>
+
+            {/* ── Additional details ── */}
+            <Section label="Additional details">
+              <Glass radius={20} padding={14}>
+                <textarea
+                  value={context}
+                  onChange={(e) => setContext(e.target.value)}
+                  placeholder="Add specifics — what was said, what stalled the conversation…"
+                  rows={4}
+                  style={{
+                    width: '100%', minHeight: 90, border: 'none', outline: 'none',
+                    resize: 'vertical', background: 'transparent', fontFamily: 'inherit',
+                    fontSize: 14, color: 'var(--pbt-text)',
                   }}
-                >
-                  {DIFFICULTY_LABELS[d]}
-                </button>
-              ))}
+                />
+              </Glass>
+            </Section>
+
+            <div style={{ height: 90 }} className="lg:hidden" />
             </div>
-          </Glass>
-        </Section>
-
-        <Section eyebrow="What actually happened (optional)">
-          <Glass radius={20} padding={14}>
-            <textarea
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              placeholder="Add specifics — what was said, what stalled the conversation…"
-              rows={4}
-              style={{
-                width: '100%',
-                minHeight: 90,
-                border: 'none',
-                outline: 'none',
-                resize: 'vertical',
-                background: 'transparent',
-                fontFamily: 'inherit',
-                fontSize: 14,
-                color: 'var(--pbt-text)',
-              }}
-            />
-          </Glass>
-        </Section>
-
-        <div style={{ height: 90 }} />
+          </div>
+        )}
       </Page>
-      <div
-        className="fixed bottom-0 left-1/2 z-30 w-full max-w-[440px] -translate-x-1/2 px-5"
-        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
-      >
-        <PillButton
-          size="lg"
-          fullWidth
-          icon={<Icon.spark />}
-          onClick={handleGenerate}
+
+      {tab === 'build' && (
+        <div
+          className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:left-[240px] lg:right-0 lg:translate-x-0 lg:max-w-none"
+          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
         >
-          Generate scenario
-        </PillButton>
-      </div>
+          <PillButton
+            size="lg"
+            fullWidth
+            icon={<Icon.spark />}
+            onClick={handleGenerate}
+            disabled={isSubmitting}
+            style={isSubmitting ? { opacity: 0.65 } : undefined}
+          >
+            Start scenario
+          </PillButton>
+        </div>
+      )}
     </>
   );
 }
 
-function Section({
-  eyebrow,
-  children,
-}: {
-  eyebrow: string;
-  children: React.ReactNode;
-}) {
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <section style={{ marginBottom: 18 }}>
+    <section style={{ marginBottom: 22 }}>
       <div
         style={{
-          fontFamily: 'var(--pbt-font-mono)',
-          fontSize: 10,
-          letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-          color: 'var(--pbt-text-muted)',
-          marginBottom: 10,
-          paddingLeft: 4,
+          fontSize: 16,
+          fontWeight: 700,
+          letterSpacing: '-0.01em',
+          color: 'var(--pbt-text)',
+          marginBottom: 12,
+          paddingLeft: 2,
         }}
       >
-        {eyebrow}
+        {label}
       </div>
       {children}
     </section>

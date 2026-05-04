@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { Orb } from '../design-system/Orb';
 import { PillButton } from '../design-system/PillButton';
 import { Icon } from '../design-system/Icon';
-import { TermsModal } from './TermsModal';
 import { useNavigation } from '../app/providers/NavigationProvider';
-import { readStorage, STORAGE_KEYS, writeStorage } from '../lib/storage';
 
 const SLIDES: { eyebrow: string; title: string; body: string }[] = [
   {
@@ -27,13 +25,10 @@ const SLIDES: { eyebrow: string; title: string; body: string }[] = [
 export function OnboardingScreen() {
   const { go } = useNavigation();
   const [slide, setSlide] = useState(0);
-  const [termsOpen, setTermsOpen] = useState(
-    readStorage(STORAGE_KEYS.termsAcceptedAt) === null,
-  );
 
   const lastSlide = slide === SLIDES.length - 1;
   const advance = () => {
-    if (lastSlide) go('quiz');
+    if (lastSlide) go('terms');
     else setSlide(slide + 1);
   };
 
@@ -41,14 +36,6 @@ export function OnboardingScreen() {
 
   return (
     <div className="flex h-full flex-col items-center justify-between px-6 pt-12 pb-8">
-      <TermsModal
-        open={termsOpen}
-        onAccept={() => {
-          writeStorage(STORAGE_KEYS.termsAcceptedAt, new Date().toISOString());
-          setTermsOpen(false);
-        }}
-      />
-
       <div className="flex flex-col items-center gap-3">
         <div
           style={{
@@ -127,7 +114,7 @@ export function OnboardingScreen() {
           fullWidth
           style={{ maxWidth: 320 }}
         >
-          {lastSlide ? 'Take the ECHO Quiz' : 'Continue'}
+          {lastSlide ? 'Get Started' : 'Continue'}
         </PillButton>
         <button
           onClick={() => go('quiz')}

@@ -101,6 +101,20 @@ export const Icon = {
     '18',
     '18',
   ),
+  /** Filled circle + white check — use `color` / `currentColor` for badge fill. */
+  checkBadge: (props: IconProps) => (
+    <svg width={18} height={18} viewBox="0 0 24 24" aria-hidden {...props}>
+      <circle cx="12" cy="12" r="11" fill="currentColor" />
+      <path
+        d="M7.5 12.2 10.8 15.5 16.8 8.5"
+        fill="none"
+        stroke="white"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
   voice: stroke(
     <path d="M3 12h2M19 12h2M7 8v8M11 5v14M17 8v8M14 9v6" />,
   ),

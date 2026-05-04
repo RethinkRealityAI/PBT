@@ -20,12 +20,15 @@ export interface AccountUpgradeModalProps {
   open: boolean;
   initialMode?: 'signup' | 'signin';
   onClose: () => void;
+  /** Called after a successful auth, with the display name used (signup only). */
+  onSuccess?: (displayName: string) => void;
 }
 
 export function AccountUpgradeModal({
   open,
   initialMode = 'signup',
   onClose,
+  onSuccess,
 }: AccountUpgradeModalProps) {
   const [mode, setMode] = useState<'signup' | 'signin'>(initialMode);
   const [email, setEmail] = useState('');
@@ -94,6 +97,10 @@ export function AccountUpgradeModal({
         if (error) throw error;
       }
       onClose();
+      if (mode === 'signup') {
+        const name = displayName.trim() || email.split('@')[0];
+        onSuccess?.(name);
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Auth failed';
       setError(message);
