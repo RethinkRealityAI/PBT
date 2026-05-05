@@ -1318,11 +1318,13 @@ function SpeakingWave() {
       >
         <defs>
           <linearGradient id="pbtWaveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stopColor="oklch(0.30 0.05 18)" stopOpacity="0.0" />
-            <stop offset="20%"  stopColor="oklch(0.45 0.18 18)" stopOpacity="0.9" />
-            <stop offset="50%"  stopColor="oklch(0.62 0.24 22)" stopOpacity="1" />
-            <stop offset="80%"  stopColor="oklch(0.45 0.18 18)" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="oklch(0.30 0.05 18)" stopOpacity="0.0" />
+            <stop offset="0%"   stopColor="oklch(0.18 0.02 18)" stopOpacity="0.0" />
+            <stop offset="15%"  stopColor="oklch(0.20 0.03 18)" stopOpacity="0.9" />
+            <stop offset="40%"  stopColor="oklch(0.22 0.04 18)" stopOpacity="1" />
+            <stop offset="50%"  stopColor="oklch(0.55 0.22 22)" stopOpacity="1" />
+            <stop offset="60%"  stopColor="oklch(0.22 0.04 18)" stopOpacity="1" />
+            <stop offset="85%"  stopColor="oklch(0.20 0.03 18)" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="oklch(0.18 0.02 18)" stopOpacity="0.0" />
           </linearGradient>
           <filter id="pbtWaveGlow" x="-20%" y="-50%" width="140%" height="200%">
             <feGaussianBlur stdDeviation="1.4" result="b" />
