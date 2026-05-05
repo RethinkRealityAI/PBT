@@ -931,15 +931,14 @@ function VoiceMode({
   const hasStartError = voice.status === 'error' && !!voice.error;
 
   // Big transcript display:
-  // - AI line: prefer `liveAiText` (streams in real-time as the AI speaks, then stays
-  //   pinned through the user's turn until the next AI turn begins, at which point it
-  //   clears and re-fills). Fall back to last committed AI message before any streaming.
+  // - AI line: render ONLY `voice.liveAiText`. The voice session keeps it blank while
+  //   the AI is speaking and fills it (full, sanitized) at turnComplete. We do NOT fall
+  //   back to the last committed message — that would re-show the previous turn's text
+  //   during the next turn's speech, defeating the "blank while speaking" rule.
   // - User line: last committed user message (input transcription is sentence-level).
-  const aiMessages = voice.messages.filter((m) => m.role === 'ai');
   const userMessages = voice.messages.filter((m) => m.role === 'user');
-  const lastAiMsg = aiMessages[aiMessages.length - 1];
   const lastUserMsg = userMessages[userMessages.length - 1];
-  const aiDisplayText = voice.liveAiText || lastAiMsg?.text || '';
+  const aiDisplayText = voice.liveAiText;
 
   const orbSize = 'min(44vw, 168px)';
 

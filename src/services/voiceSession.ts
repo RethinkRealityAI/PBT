@@ -120,12 +120,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       setStatusSync('aiSpeaking');
       // Discard user-transcription buffer (likely echo of our own audio leaking back).
       userTextBufferRef.current = '';
-      // Reset the AI text buffer so the NEW turn's text doesn't append to the previous
-      // turn's text. Critically, we do NOT clear `liveAiText` here — if transcription
-      // arrives in one chunk at turnComplete (preview-model behavior), keeping the old
-      // line visible during audio playback is much better UX than going blank. The new
-      // chunks will REPLACE liveAiText the instant they arrive.
+      // Reset the AI text buffer for this new turn.
       aiTextBufferRef.current = '';
+      // Clear the displayed line — by design the transcript stays blank while AI is
+      // speaking and is filled in (full, sanitized) at turnComplete. This avoids any
+      // mid-turn fragments from late/partial transcription chunks ever showing.
+      setLiveAiText('');
     }
 
     const binary = atob(base64Audio);
@@ -477,14 +477,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         } catch { /* session closed during startup */ }
       });
 
-      // Pre-seed liveAiText with the scripted opening line so it appears on screen
-      // as soon as audio starts playing — preview Live models often delay
-      // outputTranscription until turnComplete, which would otherwise leave the
-      // first turn blank. Real transcription chunks (or the final pin at
-      // turnComplete) will replace this seed when they arrive.
-      if (scenario.openingLine) {
-        setLiveAiText(scenario.openingLine);
-      }
+      // Note: we deliberately do NOT pre-seed liveAiText with scenario.openingLine.
+      // The transcript should be blank while the AI is speaking (including the opening
+      // turn) and only appear when the turn completes. This matches the behavior for
+      // every subsequent turn — uniform, no special cases.
 
     } catch (err) {
       const errAny = err as { message?: string; name?: string; stack?: string };
