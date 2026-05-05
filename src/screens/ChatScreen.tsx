@@ -1220,8 +1220,9 @@ function VoiceMode({
           </div>
         )}
 
-        {/* AI line — streams live as the AI speaks; persists through user's turn until
-            new chunks arrive on the next AI turn (handled in voiceSession.ts). */}
+        {/* AI line — pinned authoritatively at turnComplete (or pre-seeded with
+            scenario.openingLine on session start). No mid-turn streaming updates so
+            late/partial transcription chunks can't replace the line with a fragment. */}
         {aiDisplayText && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -1229,15 +1230,15 @@ function VoiceMode({
             transition={{ duration: 0.25, ease: 'easeOut' }}
             style={{
               textAlign: 'center',
-              fontSize: 'clamp(15px, 3.6vw, 19px)',
+              fontSize: 'clamp(13px, 3vw, 16px)',
               fontWeight: 400,
-              lineHeight: 1.45,
+              lineHeight: 1.4,
               color: 'var(--pbt-text)',
-              letterSpacing: '-0.01em',
-              maxWidth: 380,
-              maxHeight: '38vh',
-              overflowY: 'auto',
+              letterSpacing: '-0.005em',
+              maxWidth: 360,
               padding: '4px 2px',
+              overflow: 'hidden',
+              wordBreak: 'break-word',
             }}
           >
             {aiDisplayText}

@@ -37,6 +37,27 @@ export interface UseVoiceSessionReturn {
 const SAMPLE_RATE_OUT = 24000;
 const SAMPLE_RATE_IN = 16000;
 
+// Strip any control-token / function-call narration that leaks into the AI's
+// transcribed audio. Keeps both the on-screen `liveAiText` and the saved
+// transcript clean — important for future RAG training where stray
+// "endSimulation" / "[END_SIMULATION]" text would poison samples.
+function sanitizeAiText(raw: string): string {
+  return raw
+    // Drop entire sentences that mention calling the tool / function names.
+    .replace(/[^.?!]*\b(?:calling|invoke|invoking|i(?:'|')ll\s+call)\b[^.?!]*(?:end[_\s-]*simulation|update[_\s-]*emotion)[^.?!]*[.?!]?/gi, '')
+    .replace(/[^.?!]*\b(?:end[_\s-]*simulation|update[_\s-]*emotion)\b[^.?!]*[.?!]?/gi, '')
+    // Strip stray bracket tokens / function-call literals.
+    .replace(/\[\s*end[_\s-]*simulation\s*\]/gi, '')
+    .replace(/\[\s*update[_\s-]*emotion\s*\]/gi, '')
+    .replace(/update[_\s-]*emotion\s*\([^)]*\)/gi, '')
+    .replace(/end[_\s-]*simulation\s*\([^)]*\)/gi, '')
+    // Tidy whitespace, dangling punctuation, double dots.
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .replace(/\.{2,}/g, '.')
+    .trim();
+}
+
 export function useVoiceSession(): UseVoiceSessionReturn {
   const [status, setStatus] = useState<VoiceStatus>('idle');
   const [emotion, setEmotion] = useState<EmotionColor>('red');
@@ -74,7 +95,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   }, []);
 
   const addAiMessage = useCallback(() => {
-    const text = aiTextBufferRef.current.trim();
+    const text = sanitizeAiText(aiTextBufferRef.current);
     if (!text) return;
     const msg: ChatMessage = { role: 'ai', text, timestamp: Date.now() };
     transcriptRef.current = [...transcriptRef.current, msg];
@@ -383,10 +404,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             }
 
             // AI speech transcription — outputTranscription path (when enabled).
-            // Push partial text to liveAiText so the UI can render it as it streams.
+            // Buffer for the saved transcript only. We deliberately do NOT push partial
+            // chunks to liveAiText: chunks often arrive late and partial (e.g. only the
+            // tail "...so expensive?" instead of "Why is the food so expensive?"), which
+            // would replace the pre-seeded opening with a truncated fragment. liveAiText
+            // is updated authoritatively at turnComplete (full final text) and from the
+            // pre-seed at session start.
             if (serverContent?.outputTranscription?.text) {
               aiTextBufferRef.current += serverContent.outputTranscription.text;
-              setLiveAiText(aiTextBufferRef.current);
             }
 
             // AI text fallback — modelTurn.parts[].text (matches working reference)
@@ -394,7 +419,6 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             const inlineText = parts.map((p) => p.text).filter(Boolean).join('');
             if (inlineText) {
               aiTextBufferRef.current += inlineText;
-              setLiveAiText(aiTextBufferRef.current);
             }
 
             // Audio playback
@@ -411,9 +435,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             }
 
             // Turn complete — commit accumulated AI text; unlock mic after first turn.
-            // Pin liveAiText to the final text so it persists until the next AI turn starts.
+            // Pin liveAiText to the FINAL sanitized text (single authoritative update for
+            // the turn — no mid-turn replacements from partial chunks).
             if (serverContent?.turnComplete) {
-              const finalText = aiTextBufferRef.current.trim();
+              const finalText = sanitizeAiText(aiTextBufferRef.current);
               addAiMessage();
               if (finalText) setLiveAiText(finalText);
               openingDeliveredRef.current = true;
