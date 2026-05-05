@@ -38,6 +38,16 @@ export function SettingsScreen() {
   const driver = ECHO_DRIVERS[profile.primary];
   const driverColors = DRIVER_COLORS[profile.primary];
 
+  // Derive display identity from auth user; fall back to anonymous session
+  const userMeta = (user as { user_metadata?: { display_name?: string } } | null)?.user_metadata;
+  const displayName = userMeta?.display_name?.trim()
+    || (user?.email ? user.email.split('@')[0] : null);
+  const headerName = displayName ?? 'Anonymous session';
+  const headerSubtitle = user?.email ?? (user ? '' : 'Not signed in');
+  const avatarText = displayName
+    ? displayName.trim().slice(0, 2).toUpperCase()
+    : profile.primary[0];
+
   return (
     <>
       <TopBar title="You" />
@@ -80,13 +90,15 @@ export function SettingsScreen() {
                 boxShadow: '0 6px 16px -6px oklch(0.55 0.22 18 / 0.5)',
               }}
             >
-              {profile.primary[0]}
+              {avatarText}
             </div>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 16 }}>Anonymous</div>
-              <div style={{ fontSize: 13, color: 'var(--pbt-text-muted)' }}>
-                Vet team member
-              </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 16, wordBreak: 'break-word' }}>{headerName}</div>
+              {headerSubtitle && (
+                <div style={{ fontSize: 13, color: 'var(--pbt-text-muted)', wordBreak: 'break-all' }}>
+                  {headerSubtitle}
+                </div>
+              )}
               <div
                 style={{
                   fontFamily: 'var(--pbt-font-mono)',

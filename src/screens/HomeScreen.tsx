@@ -229,7 +229,7 @@ export function HomeScreen() {
                   justifyContent: 'center',
                 }}
               >
-                {/* Ripple rings */}
+                {/* Ripple rings — driver-colored, evenly staggered, smooth fade */}
                 {[0, 1, 2].map((i) => (
                   <motion.div
                     key={i}
@@ -238,17 +238,43 @@ export function HomeScreen() {
                       position: 'absolute',
                       inset: 0,
                       borderRadius: '50%',
-                      border: `1px solid ${driverColors.primary}`,
-                      opacity: 0,
+                      border: `1.5px solid ${driverColors.primary}`,
+                      boxShadow: `0 0 12px ${driverColors.primary}`,
+                      willChange: 'transform, opacity',
                     }}
-                    animate={{ scale: [1, 2.2], opacity: [0.35, 0] }}
-                    transition={{ duration: 2.8, repeat: Infinity, delay: i * 0.9, ease: 'easeOut' }}
+                    initial={{ scale: 1, opacity: 0 }}
+                    animate={{
+                      scale: [1, 2.4],
+                      opacity: [0, 0.55, 0.35, 0.12, 0],
+                    }}
+                    transition={{
+                      duration: 3.6,
+                      repeat: Infinity,
+                      delay: i * 1.2,
+                      ease: [0.22, 0.61, 0.36, 1],
+                      times: [0, 0.15, 0.45, 0.8, 1],
+                    }}
                   />
                 ))}
+                {/* Soft glow halo — pulses with driver color */}
+                <motion.div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    inset: '-20%',
+                    borderRadius: '50%',
+                    background: `radial-gradient(closest-side, color-mix(in oklab, ${driverColors.primary} 30%, transparent), transparent 70%)`,
+                    filter: 'blur(8px)',
+                    pointerEvents: 'none',
+                  }}
+                  animate={{ opacity: [0.45, 0.85, 0.45] }}
+                  transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
+                />
                 {/* Breathing orb */}
                 <motion.div
+                  style={{ position: 'relative' }}
                   animate={{ scale: [1.0, 1.04, 1.0] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                  transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
                 >
                   <Orb size={72} />
                 </motion.div>
@@ -715,71 +741,19 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
               </div>
 
               {/* Intro */}
-              <p style={{ margin: '0 0 16px', fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)', fontWeight: 500 }}>
+              <p style={{ margin: '0 0 14px', fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)', fontWeight: 500 }}>
                 Each session is scored 0–100 across seven dimensions and rolled into a weighted overall score.
                 The fastest path to a high score: <strong style={{ fontWeight: 800 }}>Acknowledge → Clarify → Transform</strong> — don’t pitch product before the client feels heard.
               </p>
 
-              {/* Dimensions list */}
-              <div style={{ marginBottom: 18 }}>
-                {SCORING_DIMENSIONS.map((d) => (
-                  <div
-                    key={d.label}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 10,
-                      padding: '10px 12px',
-                      borderRadius: 14,
-                      background: 'rgba(255,255,255,0.16)',
-                      border: '1px solid rgba(255,255,255,0.32)',
-                      marginBottom: 6,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: 'var(--pbt-text)',
-                          marginBottom: 2,
-                          letterSpacing: '-0.005em',
-                        }}
-                      >
-                        {d.label}
-                      </div>
-                      <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--pbt-text-muted)' }}>
-                        {d.description}
-                      </div>
-                    </div>
-                    <span
-                      style={{
-                        flexShrink: 0,
-                        fontFamily: 'var(--pbt-font-mono)',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: '0.06em',
-                        padding: '4px 8px',
-                        borderRadius: 9999,
-                        background: 'rgba(255,255,255,0.28)',
-                        border: '1px solid rgba(255,255,255,0.45)',
-                        color: 'var(--pbt-text)',
-                      }}
-                    >
-                      {d.weight}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Example scorecard preview */}
+              {/* Example scorecard preview — first, sets the visual frame */}
               <div
                 style={{
                   borderRadius: 18,
                   padding: 16,
                   background: 'linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.10))',
                   border: '1px solid rgba(255,255,255,0.42)',
-                  marginBottom: 4,
+                  marginBottom: 16,
                 }}
               >
                 <div
@@ -849,9 +823,130 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                 </p>
               </div>
 
+              {/* Dimensions list */}
+              <div
+                style={{
+                  fontFamily: 'var(--pbt-font-mono)',
+                  fontSize: 9,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  color: 'var(--pbt-text-muted)',
+                  marginBottom: 8,
+                }}
+              >
+                The seven dimensions
+              </div>
+              <div style={{ marginBottom: 18 }}>
+                {SCORING_DIMENSIONS.map((d) => (
+                  <div
+                    key={d.label}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 14,
+                      background: 'rgba(255,255,255,0.16)',
+                      border: '1px solid rgba(255,255,255,0.32)',
+                      marginBottom: 6,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: 'var(--pbt-text)',
+                          marginBottom: 2,
+                          letterSpacing: '-0.005em',
+                        }}
+                      >
+                        {d.label}
+                      </div>
+                      <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--pbt-text-muted)' }}>
+                        {d.description}
+                      </div>
+                    </div>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.06em',
+                        padding: '4px 8px',
+                        borderRadius: 9999,
+                        background: 'rgba(255,255,255,0.28)',
+                        border: '1px solid rgba(255,255,255,0.45)',
+                        color: 'var(--pbt-text)',
+                      }}
+                    >
+                      {d.weight}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* How sessions end */}
+              <div
+                style={{
+                  fontFamily: 'var(--pbt-font-mono)',
+                  fontSize: 9,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  color: 'var(--pbt-text-muted)',
+                  marginBottom: 8,
+                }}
+              >
+                How a scenario ends
+              </div>
+              <div
+                style={{
+                  borderRadius: 16,
+                  padding: 14,
+                  background: 'rgba(255,255,255,0.16)',
+                  border: '1px solid rgba(255,255,255,0.32)',
+                  marginBottom: 12,
+                }}
+              >
+                <p style={{ margin: '0 0 10px', fontSize: 12.5, lineHeight: 1.55, color: 'var(--pbt-text)', fontWeight: 500 }}>
+                  The customer’s receptiveness moves through three states. Watch the dot under the orb to see how
+                  you’re doing in real time:
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {[
+                    { c: 'oklch(0.55 0.22 18)', l: 'Red — Defensive', t: 'They start here. Push back, repeat the concern. Acknowledge feelings before anything else.' },
+                    { c: 'oklch(0.72 0.19 80)', l: 'Yellow — Receptive', t: 'They feel heard. Ask one specific clarifying question to surface the real concern.' },
+                    { c: 'oklch(0.58 0.18 145)', l: 'Green — Convinced', t: 'They’re ready to act. Offer a concrete Royal Canin recommendation and the 12-week trial — the session ends as “resolved.”' },
+                  ].map((row) => (
+                    <div key={row.l} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          width: 10,
+                          height: 10,
+                          marginTop: 4,
+                          borderRadius: '50%',
+                          background: row.c,
+                          boxShadow: `0 0 8px 1px ${row.c}`,
+                        }}
+                      />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--pbt-text)' }}>{row.l}</div>
+                        <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--pbt-text-muted)' }}>{row.t}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ margin: '10px 0 0', fontSize: 11.5, lineHeight: 1.5, color: 'var(--pbt-text-muted)', fontStyle: 'italic' }}>
+                  If you can’t move them past Red after ~15 turns, the session ends as a “stalemate.” Either way,
+                  the full transcript is scored against the seven dimensions above.
+                </p>
+              </div>
+
               <p
                 style={{
-                  margin: '14px 0 0',
+                  margin: '4px 0 0',
                   fontSize: 11.5,
                   lineHeight: 1.5,
                   color: 'var(--pbt-text-muted)',
