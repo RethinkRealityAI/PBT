@@ -77,7 +77,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const nextPlayTimeRef = useRef(0);
 
   const transcriptRef = useRef<ChatMessage[]>([]);
+  // Two parallel accumulators for the AI's current turn:
+  //  - `aiTextBufferRef`: from modelTurn.parts[].text — authoritative, complete.
+  //  - `aiTranscriptionBufferRef`: from outputAudioTranscription — fallback, often
+  //    drops the first few words. We keep both and pick the longer at turnComplete.
   const aiTextBufferRef = useRef('');
+  const aiTranscriptionBufferRef = useRef('');
   const userTextBufferRef = useRef('');
   const scenarioRef = useRef<Scenario | null>(null);
   const statusRef = useRef<VoiceStatus>('idle');
@@ -120,11 +125,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       setStatusSync('aiSpeaking');
       // Discard user-transcription buffer (likely echo of our own audio leaking back).
       userTextBufferRef.current = '';
-      // Reset the AI text buffer for this new turn.
+      // Reset both AI accumulators for this new turn.
       aiTextBufferRef.current = '';
+      aiTranscriptionBufferRef.current = '';
       // Clear the displayed line — by design the transcript stays blank while AI is
-      // speaking and is filled in (full, sanitized) at turnComplete. This avoids any
-      // mid-turn fragments from late/partial transcription chunks ever showing.
+      // speaking and is filled in (full, sanitized) at turnComplete.
       setLiveAiText('');
     }
 
@@ -263,6 +268,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       setLiveAiText('');
       transcriptRef.current = [];
       aiTextBufferRef.current = '';
+      aiTranscriptionBufferRef.current = '';
       userTextBufferRef.current = '';
       nextPlayTimeRef.current = 0;
       scenarioRef.current = scenario;
@@ -320,7 +326,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
               ],
             },
           ],
-          responseModalities: [Modality.AUDIO],
+          // Request BOTH audio and text. The model emits its turn text directly via
+          // modelTurn.parts[].text (authoritative, complete) alongside audio chunks.
+          // We keep outputAudioTranscription for audio-derived transcription as a
+          // fallback, but the text path is what actually shows on screen — fixes the
+          // first-few-words truncation that outputTranscription alone produces.
+          responseModalities: [Modality.AUDIO, Modality.TEXT],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } },
             languageCode: 'en-US',
@@ -403,18 +414,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
               }
             }
 
-            // AI speech transcription — outputTranscription path (when enabled).
-            // Buffer for the saved transcript only. We deliberately do NOT push partial
-            // chunks to liveAiText: chunks often arrive late and partial (e.g. only the
-            // tail "...so expensive?" instead of "Why is the food so expensive?"), which
-            // would replace the pre-seeded opening with a truncated fragment. liveAiText
-            // is updated authoritatively at turnComplete (full final text) and from the
-            // pre-seed at session start.
+            // outputAudioTranscription — fallback path, often clips the first words.
             if (serverContent?.outputTranscription?.text) {
-              aiTextBufferRef.current += serverContent.outputTranscription.text;
+              aiTranscriptionBufferRef.current += serverContent.outputTranscription.text;
             }
 
-            // AI text fallback — modelTurn.parts[].text (matches working reference)
+            // modelTurn.parts[].text — AUTHORITATIVE path (Modality.TEXT enabled).
+            // The model emits its full response text here directly; this is the source
+            // we trust at turnComplete to avoid first-word truncation.
             const parts = serverContent?.modelTurn?.parts ?? [];
             const inlineText = parts.map((p) => p.text).filter(Boolean).join('');
             if (inlineText) {
@@ -435,14 +442,13 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             }
 
             // Turn complete — commit accumulated AI text; unlock mic after first turn.
-            // Pin liveAiText to the FINAL sanitized text (single authoritative update).
-            //
-            // Special-case the OPENING turn: Gemini Live's outputAudioTranscription
-            // reliably drops the first few words of the very first response (the audio
-            // is fine, the STT just starts mid-sentence). Since we instructed the model
-            // to deliver scenario.openingLine verbatim, we know the exact correct text.
-            // Override transcription with the scripted opening for the first AI turn so
-            // the user always sees the full opening line.
+            // Source-of-truth selection:
+            //  1. OPENING turn: use scenario.openingLine verbatim (we instructed the
+            //     model to speak this exact line; transcription drops first words).
+            //  2. Otherwise: prefer modelTurn text (authoritative), fall back to
+            //     outputTranscription only if text is missing/shorter. Picking the
+            //     LONGER of the two avoids first-word truncation when text arrives
+            //     and is also a safety net if Gemini ever omits the text part.
             if (serverContent?.turnComplete) {
               const isOpeningTurn =
                 !openingDeliveredRef.current &&
@@ -450,6 +456,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
                 transcriptRef.current.filter((m) => m.role === 'ai').length === 0;
               if (isOpeningTurn && scenarioRef.current?.openingLine) {
                 aiTextBufferRef.current = scenarioRef.current.openingLine;
+              } else {
+                const t = aiTextBufferRef.current.trim();
+                const tx = aiTranscriptionBufferRef.current.trim();
+                if (tx.length > t.length) aiTextBufferRef.current = tx;
               }
               const finalText = sanitizeAiText(aiTextBufferRef.current);
               addAiMessage();
@@ -519,6 +529,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     setLiveAiText('');
     transcriptRef.current = [];
     aiTextBufferRef.current = '';
+    aiTranscriptionBufferRef.current = '';
     userTextBufferRef.current = '';
     scenarioRef.current = null;
     setStatusSync('idle');

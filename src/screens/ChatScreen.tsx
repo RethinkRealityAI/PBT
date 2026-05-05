@@ -1277,12 +1277,6 @@ function VoiceMode({
         {!isReady && !isConnecting && !aiDisplayText && !isAnalyzing && voice.status === 'aiSpeaking' && (
           <SpeakingWave />
         )}
-        <style>{`
-          @keyframes pbtWaveBar {
-            0%, 100% { transform: scaleY(0.25); opacity: 0.5; }
-            50%      { transform: scaleY(1);    opacity: 1;   }
-          }
-        `}</style>
       </div>
 
     </div>
@@ -1290,38 +1284,75 @@ function VoiceMode({
 }
 
 /**
- * Subtle equalizer-style speaking indicator. Replaces the "Customer is speaking…"
- * text shown while the AI's audio is playing but its transcript hasn't pinned yet.
- * Theme-aware (uses --pbt-text), 7 bars with staggered animation.
+ * Fluid synth-style speaking indicator. Three overlapping sine-wave SVG paths
+ * driven by Framer Motion path-data interpolation. Brand red + black gradient
+ * with soft glow. Replaces the static equalizer bars.
  */
 function SpeakingWave() {
+  // Three wave shape variants — Framer Motion morphs between them on a loop.
+  // Each path is a smooth bezier in viewBox 0 0 200 60 with anchors at the
+  // midline and varying control-point heights for organic motion.
+  const waveA = 'M 0 30 Q 25 10 50 30 T 100 30 T 150 30 T 200 30';
+  const waveB = 'M 0 30 Q 25 50 50 30 T 100 30 T 150 30 T 200 30';
+  const waveC = 'M 0 30 Q 25 20 50 30 Q 75 45 100 30 Q 125 12 150 30 Q 175 42 200 30';
+
   return (
     <div
       role="img"
       aria-label="Customer is speaking"
       style={{
+        position: 'relative',
+        width: '100%',
+        maxWidth: 320,
+        height: 60,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 4,
-        height: 36,
       }}
     >
-      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-        <span
-          key={i}
-          style={{
-            display: 'inline-block',
-            width: 3,
-            height: 28,
-            borderRadius: 2,
-            background: 'var(--pbt-text)',
-            transformOrigin: 'center',
-            animation: `pbtWaveBar ${0.9 + (i % 3) * 0.15}s ease-in-out ${i * 0.08}s infinite`,
-            opacity: 0.7,
-          }}
-        />
-      ))}
+      <svg
+        viewBox="0 0 200 60"
+        preserveAspectRatio="none"
+        style={{ width: '100%', height: '100%', overflow: 'visible' }}
+        aria-hidden
+      >
+        <defs>
+          <linearGradient id="pbtWaveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stopColor="oklch(0.30 0.05 18)" stopOpacity="0.0" />
+            <stop offset="20%"  stopColor="oklch(0.45 0.18 18)" stopOpacity="0.9" />
+            <stop offset="50%"  stopColor="oklch(0.62 0.24 22)" stopOpacity="1" />
+            <stop offset="80%"  stopColor="oklch(0.45 0.18 18)" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="oklch(0.30 0.05 18)" stopOpacity="0.0" />
+          </linearGradient>
+          <filter id="pbtWaveGlow" x="-20%" y="-50%" width="140%" height="200%">
+            <feGaussianBlur stdDeviation="1.4" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {[
+          { delay: 0,    duration: 1.6, opacity: 0.95, strokeWidth: 1.8 },
+          { delay: 0.25, duration: 2.0, opacity: 0.55, strokeWidth: 1.2 },
+          { delay: 0.5,  duration: 2.4, opacity: 0.35, strokeWidth: 0.9 },
+        ].map((cfg, i) => (
+          <motion.path
+            key={i}
+            d={waveA}
+            fill="none"
+            stroke="url(#pbtWaveGrad)"
+            strokeWidth={cfg.strokeWidth}
+            strokeLinecap="round"
+            filter="url(#pbtWaveGlow)"
+            style={{ opacity: cfg.opacity }}
+            animate={{ d: [waveA, waveB, waveC, waveA] }}
+            transition={{
+              duration: cfg.duration,
+              ease: 'easeInOut',
+              repeat: Infinity,
+              delay: cfg.delay,
+            }}
+          />
+        ))}
+      </svg>
     </div>
   );
 }
