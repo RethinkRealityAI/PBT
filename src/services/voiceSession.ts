@@ -42,7 +42,7 @@ const SAMPLE_RATE_IN = 16000;
 // transcript clean — important for future RAG training where stray
 // "endSimulation" / "[END_SIMULATION]" text would poison samples.
 function sanitizeAiText(raw: string): string {
-  return raw
+  const cleaned = raw
     // Drop entire sentences that mention calling the tool / function names.
     .replace(/[^.?!]*\b(?:calling|invoke|invoking|i(?:'|')ll\s+call)\b[^.?!]*(?:end[_\s-]*simulation|update[_\s-]*emotion)[^.?!]*[.?!]?/gi, '')
     .replace(/[^.?!]*\b(?:end[_\s-]*simulation|update[_\s-]*emotion)\b[^.?!]*[.?!]?/gi, '')
@@ -56,6 +56,14 @@ function sanitizeAiText(raw: string): string {
     .replace(/\s+([.,!?;:])/g, '$1')
     .replace(/\.{2,}/g, '.')
     .trim();
+  // Capitalize the first letter — when Gemini Live's STT drops the leading word
+  // of a turn, the remaining text starts mid-sentence with a lowercase word
+  // ("you trying to imply?" instead of "What are you trying to imply?"). Bumping
+  // the first letter to uppercase makes the line read as a clean sentence start
+  // regardless of whether truncation happened.
+  return cleaned.length > 0
+    ? cleaned[0].toUpperCase() + cleaned.slice(1)
+    : cleaned;
 }
 
 export function useVoiceSession(): UseVoiceSessionReturn {

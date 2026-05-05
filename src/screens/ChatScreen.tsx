@@ -328,7 +328,7 @@ function ScenarioDetailsPanel({
                     border: 'none',
                     borderRadius: 9999,
                     padding: '16px 28px',
-                    background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                    background: 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
                     color: '#fff',
                     fontFamily: 'var(--pbt-font-mono)',
                     fontSize: 13,
@@ -336,7 +336,7 @@ function ScenarioDetailsPanel({
                     letterSpacing: '0.14em',
                     textTransform: 'uppercase',
                     cursor: 'pointer',
-                    boxShadow: '0 18px 36px -18px oklch(0.55 0.22 18 / 0.75)',
+                    boxShadow: '0 18px 36px -18px color-mix(in oklab, var(--pbt-driver-primary) 75%, transparent)',
                     marginTop: 4,
                   }}
                 >
@@ -405,9 +405,9 @@ function ScenarioSessionControls({
           style={{
             padding: '7px 11px',
             borderRadius: 9999,
-            border: '1px solid oklch(0.55 0.22 18 / 0.28)',
+            border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 28%, transparent)',
             background: 'rgba(255,255,255,0.18)',
-            color: 'oklch(0.50 0.22 18)',
+            color: 'var(--pbt-driver-primary)',
             fontFamily: 'var(--pbt-font-mono)',
             fontSize: 11,
             fontWeight: 600,
@@ -643,7 +643,7 @@ export function ChatScreen() {
                   onClick={() => { chat.reset(); }}
                   style={{
                     padding: '8px 20px', borderRadius: 9999, border: 'none', cursor: 'pointer',
-                    background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                    background: 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
                     color: '#fff', fontFamily: 'var(--pbt-font-mono)', fontSize: 11,
                     fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase',
                   }}
@@ -674,7 +674,7 @@ export function ChatScreen() {
                       lineHeight: 1.4,
                       background:
                         m.role === 'user'
-                          ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
+                          ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
                           : 'rgba(255,255,255,0.42)',
                       color: m.role === 'user' ? '#fff' : 'var(--pbt-text)',
                       backdropFilter:
@@ -687,7 +687,7 @@ export function ChatScreen() {
                           : '1px solid rgba(255,255,255,0.65)',
                       boxShadow:
                         m.role === 'user'
-                          ? '0 6px 16px -6px oklch(0.55 0.22 18 / 0.4)'
+                          ? '0 6px 16px -6px color-mix(in oklab, var(--pbt-driver-primary) 40%, transparent)'
                           : '0 1px 0 rgba(255,255,255,0.9) inset, 0 4px 12px -6px rgba(60,20,15,0.08)',
                     }}
                   >
