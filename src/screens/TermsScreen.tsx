@@ -17,7 +17,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'The ACT framework',
-    body: 'Sessions are scored against the ACT model: Acknowledge, Clarify, Take Action. The AI plays the customer; you practise your response. Scores reflect communication quality within the simulation, not clinical competence.',
+    body: 'Sessions are scored against the ACT model: Acknowledge, Clarify, Transform. The AI plays the customer; you practise your response. Scores reflect communication quality within the simulation, not clinical competence.',
   },
   {
     title: 'How the AI works',

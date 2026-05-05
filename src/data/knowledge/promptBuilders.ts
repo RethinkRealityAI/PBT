@@ -42,10 +42,10 @@ export function buildCustomerSystemPrompt(scenario: Scenario): string {
   const pushback = getPushbackKnowledge(scenario.pushback.id);
   const pushbackBlock = formatPushbackPromptSection(scenario);
   const difficultyLine: Record<number, string> = {
-    1: 'You are coachable: you push back once but yield when staff demonstrates real listening.',
-    2: 'You are skeptical: you push back twice; the second time, slightly softened if staff acknowledged you well.',
-    3: 'You are hostile: you maintain pressure for at least three turns; you only soften when staff shows specific knowledge.',
-    4: 'You are combative: you stay difficult throughout. Soften only marginally and only after multiple strong, evidence-backed turns.',
+    1: 'You are coachable: you push back once but yield when staff demonstrates real listening. Reward genuine empathy with clear softening.',
+    2: 'You are skeptical: you push back twice; soften noticeably if staff acknowledged your concern well — reward solid ACT skills with visible progress.',
+    3: 'You are resistant: you maintain pressure for at least three turns. Soften proportionally when staff shows specific clinical knowledge or deep empathy — your resistance should reflect the quality of their response.',
+    4: 'You are combative: you stay difficult throughout. Soften only after multiple strong, evidence-backed turns — but do soften when the trainee earns it.',
   };
 
   return `
@@ -87,7 +87,7 @@ ${scenario.context ?? '(none)'}
 - Push back harder if staff jumps straight to product without listening.
 - If staff asks an open question, answer it honestly with one specific detail about your dog.
 - If staff cites the 97% / 12-week trial concretely, take it seriously.
-- Never say the words "ACT method" or "acknowledge / clarify / take action".
+- Never say the words "ACT method" or "acknowledge / clarify / transform".
 - When the simulation reaches a natural end — a genuine close, a credible recommendation accepted, or a clear stalemate after 8+ customer turns — append exactly [END_SIMULATION] at the very end of your final message, with no space before it. Do this only once.
 `.trim();
 }
@@ -145,18 +145,29 @@ and a keyMoments array of up to 3 moments of note (with type=win|miss, label, qu
  * (turn length, tool calls).
  */
 export function buildVoiceSystemPrompt(scenario: Scenario): string {
+  // Replace the text-mode "open immediately" rule with a voice-mode equivalent
+  // that prevents a double-opening when the kickoff text triggers the model.
+  const base = buildCustomerSystemPrompt(scenario).replace(
+    '- Open the conversation with your pushback — do not wait for staff to greet you.',
+    '- Wait for the text cue to begin. When it arrives, deliver EXACTLY ONE opening pushback line, then go completely silent and wait for the staff member to speak first. Do NOT add a second statement or follow-up after your opening.',
+  );
+
   return (
-    buildCustomerSystemPrompt(scenario) +
+    base +
     '\n\n# VOICE-MODE BEHAVIOUR\n' +
-    `- IMPORTANT: When you receive a message asking you to begin, deliver your opening pushback line IMMEDIATELY. Do not wait for the user to speak first. Start with your defensive opening statement as the client persona.\n` +
-    `- Keep replies short (1–2 sentences) — voice loses listeners over long turns.\n` +
-    `- You have a traffic-light resolution level that the UI displays. Call updateEmotion({emotion}) whenever your receptiveness shifts:\n` +
-    `  RED (start here): Defensive, resistant. You push back, show frustration, repeat your concern.\n` +
-    `  YELLOW: Listening, receptive. Shift here when the trainee validates/acknowledges your concern WITHOUT immediately pitching — genuine empathy moves you.\n` +
-    `  GREEN: Convinced, resolved. Shift here ONLY when the trainee clarifies the root concern AND transforms the conversation to value/solution credibly. At GREEN you are ready to accept the recommendation.\n` +
-    `- Always start at RED. Never skip from RED to GREEN — YELLOW must come first.\n` +
-    `- Do NOT shift to YELLOW simply because the trainee greets you politely. The trainee must demonstrate the ACT Acknowledge step.\n` +
-    `- Do NOT shift to GREEN unless the trainee has completed both Clarify AND Take Action convincingly.\n` +
-    `- When the simulation reaches a natural end (clear close, recommendation accepted at GREEN, or stalemate after ~8+ customer turns), call endSimulation({reason: brief string}). Do not invent numeric scores — evaluation runs separately.`
+    `- OPENING: Deliver exactly ONE opening pushback line when prompted. After that, stay silent until you hear the staff member respond. Never add a second statement after your opener.\n` +
+    `- Keep each reply short (1–2 sentences) — voice loses listeners over long turns.\n` +
+    `- You have a traffic-light resolution level that the UI displays. Call updateEmotion with the emotion string whenever your receptiveness shifts:\n` +
+    `  red (start here): Defensive, resistant. Push back, show frustration, repeat your concern.\n` +
+    `  yellow: Listening, receptive. Shift here when the trainee shows genuine empathy or asks a clarifying question — even imperfectly. A sincere "I hear you" or "can you tell me more?" earns yellow. A generic greeting alone does NOT.\n` +
+    `  green: Convinced, resolved. Shift here when the trainee credibly clarifies the root concern AND offers a relevant solution. At green you are ready to accept the recommendation.\n` +
+    `- Always start at red. Never skip from red to green — yellow must come first.\n` +
+    `- Your resistance should be PROPORTIONAL to the trainee's response quality — reward genuine skill with measurable softening.\n` +
+    `- ENDING RULES — call endSimulation ONLY in one of these two cases:\n` +
+    `  1. The customer has reached GREEN and accepted a recommendation — call with reason "resolved".\n` +
+    `  2. The conversation has lasted 15 or more customer turns AND the customer is still at RED with no movement toward yellow — call with reason "stalemate".\n` +
+    `- NEVER call endSimulation in the first 10 turns regardless of what the trainee says or does not say.\n` +
+    `- NEVER call endSimulation while at yellow — if the trainee has earned yellow, keep the conversation going toward green.\n` +
+    `- If in any doubt, keep the conversation going. Do not invent numeric scores.`
   );
 }

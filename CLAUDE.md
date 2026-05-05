@@ -12,7 +12,7 @@ This file is loaded into Claude Code's context for every session in this repo. K
 - **Vite 6** + `@tailwindcss/vite` 4
 - **Vitest** + RTL for tests (run with `npm test`)
 - **Framer Motion** (`motion`) for animations
-- **`@google/genai`** for Gemini text + live voice
+- `**@google/genai`** for Gemini text + live voice
 - **Supabase** (optional, lazy-init) for auth + cloud sync
 
 ## Architecture quick reference
@@ -20,15 +20,16 @@ This file is loaded into Claude Code's context for every session in this repo. K
 ```
 src/
   app/         — App.tsx, providers (Theme, Profile, Session, Scenario, Chat, Navigation), routes.ts, flags.ts
-  design-system/ — Glass, PillButton, Orb, Icon, DriverWave, GradientBg, ScoreRing, ScoreChip, Chip, Segmented + tokens
-  shell/       — AppFrame, TopBar, TabBar, Page
-  screens/     — 11 screens + TermsModal
-  features/    — auth, chat (useTextChat), quiz (useQuiz), pet-analyzer (usePetAnalyzer)
-  services/    — geminiService (text + scoring), types
+  design-system/ — Glass, PillButton, Orb, Icon, DriverWave, GradientBg, ScoreRing, Chip, Segmented + tokens
+  shell/       — AppFrame, Sidebar (desktop), TopBar, TabBar, Page, ThemeToggle
+  screens/     — onboarding, terms, quiz, result, home, create, chat, stats, history, analyzer, resources, settings, actGuide (+ modals)
+  features/    — auth, chat (useTextChat), pet-analyzer (usePetAnalyzer)
+  services/    — geminiService (text + scoring), voiceSession.ts (Live voice + AudioWorklet), types
   data/        — echoDrivers, quizQuestions, scenarios, BCS/MCS, calorieTable
   data/knowledge/ — driverProfiles, pushbackTaxonomy, actGuide, clinicalReference, scoringRubric, promptBuilders
   lib/         — storage (namespaced localStorage), classNames, id
   tests/       — setup
+public/        — static assets (e.g. audio/pcm-capture-processor.js for voice capture)
 supabase/migrations/  — hand-run SQL
 docs/superpowers/specs/ — design spec
 resources/   — design handoff prototype + ECHO source PDFs/transcripts
@@ -38,10 +39,18 @@ resources/   — design handoff prototype + ECHO source PDFs/transcripts
 
 State-machine routing (no React Router). `Screen` enum in `src/app/routes.ts`. Tab-bar visibility is per-screen; back stack is depth-8.
 
+Tab bar (mobile): Train · History · Library · You — see `SCREENS_WITH_TAB_BAR` and `TABS` in `routes.ts`.
+
 Initial screen logic in `App.tsx::getInitialScreen()`:
+
 1. No `pbt:terms_accepted_at` → onboarding (T&C blocks)
 2. No `pbt:profile` → quiz (RouteResolver effect handles redirect)
 3. Else → home
+
+## Responsive layout
+
+- **Mobile / tablet** (`< lg`): Single centered content rail (`--pbt-layout-max`, typically 440px), bottom tab bar, sticky `TopBar`.
+- **Desktop** (`lg+` in Tailwind): `Sidebar` (~240px) with primary nav + driver wave + theme toggle; main column fills remaining width; `TopBar` and `TabBar` hidden (`lg:hidden`). Key screens use two-column grids where specified (Home, Create, Chat max-width rail, Stats, Pet Analyzer).
 
 ## ECHO driver system (4-driver, replaces old 6-type)
 
@@ -55,20 +64,34 @@ Drivers: Activator · Energizer · Analyzer · Harmonizer.
 
 Two services, both call `@google/genai`:
 
-| Function | Model | Purpose |
-|---|---|---|
-| `generateRoleplayMessage` | `gemini-2.5-flash` | Customer turn |
-| `evaluateConversation` | `gemini-2.5-flash` (JSON mode) | 7-dim scorecard |
-| `ai.live.connect` | `gemini-2.0-flash-live-001` | Voice mode |
+
+| Function                  | Model                          | Purpose         |
+| ------------------------- | ------------------------------ | --------------- |
+| `generateRoleplayMessage` | `gemini-2.5-flash`             | Customer turn   |
+| `evaluateConversation`    | `gemini-2.5-flash` (JSON mode) | 7-dim scorecard |
+| `ai.live.connect`         | `gemini-2.0-flash-live-001`    | Voice mode      |
+
+
+Use published model IDs that match your API key (AI Studio). Preview aliases may 404.
 
 System prompts are composed in `src/data/knowledge/promptBuilders.ts` from:
+
 - `driverProfiles.ts` (sample customer phrasings, communication style, stress signature)
 - `pushbackTaxonomy.ts` (root concerns + recommended ACT response patterns)
-- `actGuide.ts` (Acknowledge / Clarify / Take Action)
+- `actGuide.ts` (Acknowledge / Clarify / Transform)
 - `clinicalReference.ts` (BCS / MCS / calorie / Royal Canin product anchors)
 - `scoringRubric.ts` (7 dimensions with band examples)
 
 Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL_LIVE`.
+
+**Voice pipeline:** `src/services/voiceSession.ts` — mic first (`getUserMedia`), playback + capture `AudioContext`, `**/audio/pcm-capture-processor.js`** worklet, then `ai.live.connect`. User gesture starts session (Begin simulation). Avoid calling `session.close()` twice (guarded).
+
+## Scenario builder (`CreateScreen`)
+
+- **Build / Library** tabs — library lists `SEED_SCENARIOS` with quick Start.
+- Pushback: **dropdown** for canned categories; **Other pushback** remains a separate card; optional/required notes placement depends on selection.
+- **Difficulty** — four levels with descriptions (`DIFFICULTY_DESCRIPTIONS` in `scenarios.ts`).
+- Optional `**weightKg`** on `Scenario` for custom builds.
 
 ## Auth (anonymous-first)
 
@@ -83,6 +106,7 @@ Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL
 All `localStorage` keys are namespaced `pbt:` (see `src/lib/storage.ts`). Validators reject corrupt values and reset the slot.
 
 Active keys:
+
 - `pbt:terms_accepted_at`, `pbt:terms_version`
 - `pbt:theme` (`'light' | 'dark' | 'system'`)
 - `pbt:session_id` (uuid)
@@ -93,13 +117,15 @@ Active keys:
 
 ## Adding new content
 
-| Want | Edit |
-|---|---|
-| New pushback category | `src/data/scenarios.ts` `PUSHBACK_CATEGORIES` + `src/data/knowledge/pushbackTaxonomy.ts` |
-| New scenario in rotation | `src/data/scenarios.ts` `SEED_SCENARIOS` |
-| Tweak driver content | `src/data/echoDrivers.ts` (UI) + `src/data/knowledge/driverProfiles.ts` (AI) |
-| Add scoring dimension | `src/data/knowledge/scoringRubric.ts` (then update `geminiService.ts` schema + `ScoreReport` type) |
-| New screen | Add a `Screen` value in `src/app/routes.ts` and a case in `ScreenSwitch` in `App.tsx` |
+
+| Want                     | Edit                                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------- |
+| New pushback category    | `src/data/scenarios.ts` `PUSHBACK_CATEGORIES` + `src/data/knowledge/pushbackTaxonomy.ts`           |
+| New scenario in rotation | `src/data/scenarios.ts` `SEED_SCENARIOS`                                                           |
+| Tweak driver content     | `src/data/echoDrivers.ts` (UI) + `src/data/knowledge/driverProfiles.ts` (AI)                       |
+| Add scoring dimension    | `src/data/knowledge/scoringRubric.ts` (then update `geminiService.ts` schema + `ScoreReport` type) |
+| New screen               | Add a `Screen` value in `src/app/routes.ts` and a case in `ScreenSwitch` in `App.tsx`              |
+
 
 ## Conventions
 
@@ -110,19 +136,38 @@ Active keys:
 - Test files colocate as `__tests__/Subject.test.ts(x)`. Vitest globals are on (no need to import `describe`/`it`/`expect`).
 - Mock `@google/genai` in tests using `vi.hoisted` + a class-based mock — see `src/services/__tests__/geminiService.test.ts`.
 
+## Knowledge graph (Graphify)
+
+This repo includes [Graphify](https://graphify.net/) outputs under `graphify-out/`:
+
+
+| File              | Purpose                                                                                      |
+| ----------------- | -------------------------------------------------------------------------------------------- |
+| `GRAPH_REPORT.md` | God nodes, communities, suggested questions — **read this first** for architecture questions |
+| `graph.json`      | Queryable graph for `py -3 -m graphify query "..."`                                          |
+| `graph.html`      | Interactive visualization (open in browser)                                                  |
+
+
+**Install (Python 3.10+):** `py -3 -m pip install graphifyy` (package name is `graphifyy`; CLI is `graphify` or `py -3 -m graphify`).
+
+**Build:** Official `graphify extract` needs `ANTHROPIC_API_KEY` or `MOONSHOT_API_KEY` for the semantic pass. **Without API keys**, run `py -3 scripts/graphify_ast_only.py` (Tree-sitter AST + clustering only — still very useful for code structure).
+
+**Refresh after code edits (no API cost):** `py -3 -m graphify update .`
+
+Cursor loads `.cursor/rules/graphify.mdc` so agents prefer `GRAPH_REPORT.md` over blind repo-wide search when relevant.
+
 ## Build pipeline
 
 - Vite injects `process.env.GEMINI_API_KEY` via the `define` block in `vite.config.ts`.
 - Bundle is split into `vendor-react`, `vendor-genai`, `vendor-supabase`, `vendor-motion`, plus the main app.
 - Netlify build command: `npm run build`.
 
-## Outstanding work (v1 → v1.1)
+## Outstanding work (v1.x polish)
 
-1. **Voice mode**: ChatScreen has a stub. Extract the live-session pipeline into `src/services/voiceSession.ts`, wire to the Chat screen with the 7-dim `endSimulation` schema.
-2. **Coach drawer**: in-chat hints. Designed; needs LLM call wired up.
-3. **Today's pick rotation**: currently always `SEED_SCENARIOS[0]`. Should rotate based on date + driver.
-4. **Email verification**: scaffolded but disabled.
-5. **a11y polish**: focus rings exist; need a sweep for ARIA + keyboard parity on all screens.
+1. **Coach drawer**: in-chat hints — designed; needs LLM call wired up.
+2. **Today's pick rotation**: Home scenario index — rotate by date + driver (not only index 0).
+3. **Email verification**: scaffolded but disabled.
+4. **a11y polish**: focus rings exist; sweep for ARIA + keyboard parity on all screens.
 
 ## Don'ts
 
@@ -133,4 +178,4 @@ Active keys:
 
 ---
 
-**Status:** v1 shipped 2026-05-04. Feature-complete except voice mode. 106 tests passing. Production build clean.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. `**npm test` — 110 tests.** Production build: `npm run build`.

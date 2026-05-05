@@ -21,6 +21,11 @@ export interface DriverWaveProps {
   synthwave?: boolean;
   /** Force animation even when prefers-reduced-motion is set. */
   forceAnimate?: boolean;
+  /**
+   * Glowing dot that travels along the primary wave (same phase math as the top path).
+   * Hidden when prefers-reduced-motion (unless synthwave/forceAnimate already bypass).
+   */
+  travelingDot?: boolean;
 }
 
 interface Line {
@@ -42,9 +47,11 @@ export function DriverWave({
   speed = 1,
   synthwave = false,
   forceAnimate = false,
+  travelingDot = false,
 }: DriverWaveProps) {
   const [t, setT] = useState(0);
   const reduced = usePrefersReducedMotion();
+  const showDot = travelingDot && (!reduced || synthwave || forceAnimate);
   useEffect(() => {
     if (reduced && !synthwave && !forceAnimate) return;
     let raf = 0;
@@ -99,18 +106,38 @@ export function DriverWave({
   }
   const uid = idRef.current;
 
+  const waveYAtSample = (line: Line, tt: number, sampleIdx: number) => {
+    const clamped = Math.max(0, Math.min(samples, sampleIdx));
+    const phase =
+      (clamped / samples) * Math.PI * 2 * line.freq + tt * line.speed + line.phase;
+    const env = Math.sin((clamped / samples) * Math.PI);
+    return cy + Math.sin(phase) * line.amp * amplitude * env;
+  };
+
   const buildPath = (line: Line, tt: number) => {
     let d = '';
     for (let i = 0; i <= samples; i++) {
       const x = (i / samples) * W;
-      const phase =
-        (i / samples) * Math.PI * 2 * line.freq + tt * line.speed + line.phase;
-      const env = Math.sin((i / samples) * Math.PI);
-      const y = cy + Math.sin(phase) * line.amp * amplitude * env;
+      const y = waveYAtSample(line, tt, i);
       d += (i === 0 ? 'M' : 'L') + x.toFixed(2) + ',' + y.toFixed(2) + ' ';
     }
     return d;
   };
+
+  const primaryLine = lines[0];
+  /** Loops 0→W along the wave once per ~9s at speed 1 */
+  const dotScan = showDot && primaryLine ? ((t * 0.11) % 1) * samples : 0;
+  const dotI0 = Math.floor(dotScan);
+  const dotFrac = dotScan - dotI0;
+  const dotX =
+    showDot && primaryLine ? (dotScan / samples) * W : 0;
+  const dotY =
+    showDot && primaryLine
+      ? waveYAtSample(primaryLine, t, dotI0) +
+        (waveYAtSample(primaryLine, t, Math.min(samples, dotI0 + 1)) -
+          waveYAtSample(primaryLine, t, dotI0)) *
+          dotFrac
+      : 0;
 
   return (
     <svg
@@ -157,6 +184,24 @@ export function DriverWave({
           strokeLinecap="round"
         />
       ))}
+      {showDot && primaryLine && (
+        <g filter={`url(#${uid}-glow)`}>
+          <circle
+            cx={dotX}
+            cy={dotY}
+            r={synthwave ? 9 : 7}
+            fill={primaryLine.color}
+            opacity={0.22}
+          />
+          <circle
+            cx={dotX}
+            cy={dotY}
+            r={synthwave ? 4.2 : 3.4}
+            fill={primaryLine.color}
+            opacity={0.95}
+          />
+        </g>
+      )}
     </svg>
   );
 }

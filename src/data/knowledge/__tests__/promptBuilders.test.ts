@@ -46,7 +46,7 @@ describe('promptBuilders', () => {
     ].forEach((k) => expect(p).toContain(k));
     expect(p).toContain('Acknowledge');
     expect(p).toContain('Clarify');
-    expect(p).toContain('Take Action');
+    expect(p).toContain('Transform');
   });
 
   it('voice prompt extends customer prompt with tool-call guidance', () => {

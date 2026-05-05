@@ -62,8 +62,8 @@ function ScenarioArrowNav({
   disabled?: boolean;
 }) {
   const btn = {
-    width: 28,
-    height: 28,
+    width: 34,
+    height: 34,
     borderRadius: '50%',
     border: '1px solid rgba(255,255,255,0.48)',
     background: 'rgba(255,255,255,0.22)',
@@ -91,7 +91,7 @@ function ScenarioArrowNav({
       </span>
       <div className="flex items-center gap-1">
         <button type="button" aria-label="Previous scenario" onClick={onPrev} disabled={disabled} style={btn}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         {indexDisplay != null && (
           <span
@@ -100,7 +100,7 @@ function ScenarioArrowNav({
               fontSize: 10,
               letterSpacing: '0.10em',
               color: 'var(--pbt-text-muted)',
-              minWidth: 28,
+              minWidth: 30,
               textAlign: 'center',
             }}
           >
@@ -108,7 +108,7 @@ function ScenarioArrowNav({
           </span>
         )}
         <button type="button" aria-label="Next scenario" onClick={onNext} disabled={disabled} style={btn}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
     </div>
@@ -159,21 +159,19 @@ function ScenarioDetailsPanel({
             role="dialog"
             aria-modal="true"
             aria-labelledby="scenario-details-title"
-            initial={{ opacity: 0, y: 28 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ opacity: 0, scale: 0.94, x: '-50%', y: '-48%' }}
+            animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+            exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-48%' }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             style={{
               position: 'fixed',
-              left: 16,
-              right: 16,
-              bottom: 'max(env(safe-area-inset-bottom), 88px)',
+              top: '50%',
+              left: '50%',
               zIndex: 41,
-              maxWidth: 440,
-              margin: '0 auto',
+              width: 'min(92vw, 580px)',
             }}
           >
-            <Glass radius={22} padding={18} blur={22} tint={0.05}>
+            <Glass radius={26} padding="30px 26px 26px" blur={24} tint={0.05}>
               {/* Header row */}
               <div className="flex items-start justify-between gap-2" style={{ marginBottom: 14 }}>
                 <div style={{ minWidth: 0 }}>
@@ -239,35 +237,86 @@ function ScenarioDetailsPanel({
                 ))}
               </div>
 
-              {/* Objective */}
-              <p style={{ margin: '0 0 12px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--pbt-text-muted)' }}>
-                <strong style={{ color: 'var(--pbt-text)', fontWeight: 600 }}>Objective:</strong>{' '}
-                Use ACT — Acknowledge, Clarify, Take Action — to guide this client from pushback to resolution.
-              </p>
-
-              {/* Context + opening */}
-              <div
+              {/* Objective — full primary text color (muted was illegible on driver glow in dark mode) */}
+              <p
                 style={{
-                  padding: '12px 14px',
-                  borderRadius: 14,
-                  background: 'rgba(255,255,255,0.38)',
-                  border: '1px solid rgba(255,255,255,0.55)',
-                  fontSize: 13,
-                  lineHeight: 1.55,
+                  margin: '0 0 16px',
+                  fontSize: 13.5,
+                  lineHeight: 1.65,
+                  fontWeight: 600,
                   color: 'var(--pbt-text)',
-                  marginBottom: onBegin ? 14 : 0,
                 }}
               >
-                {(scenario.context ?? scenario.pushbackNotes) && (
-                  <>
-                    <strong style={{ fontWeight: 700 }}>Context:</strong>{' '}
-                    {scenario.context ?? scenario.pushbackNotes}
-                    <br /><br />
-                  </>
-                )}
-                <strong style={{ fontWeight: 700 }}>Opening pushback:</strong>{' '}
-                <em style={{ color: 'var(--pbt-text-muted)' }}>{scenario.openingLine ?? scenario.pushbackNotes ?? scenario.pushback.example}</em>
-              </div>
+                <strong style={{ fontWeight: 800 }}>Objective:</strong>{' '}
+                Use ACT — Acknowledge, Clarify, Transform — to guide this client from pushback to resolution.
+              </p>
+
+              {/* Context + opening — directly on the glass card (no nested grey panel) */}
+              {(scenario.context ?? scenario.pushbackNotes) && (
+                <p style={{ margin: '0 0 14px', fontSize: 13, lineHeight: 1.55, fontWeight: 600, color: 'var(--pbt-text)' }}>
+                  <strong style={{ fontWeight: 800 }}>Context:</strong>{' '}
+                  {scenario.context ?? scenario.pushbackNotes}
+                </p>
+              )}
+              <p
+                style={{
+                  margin: onBegin ? '0 0 14px' : 0,
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  fontWeight: 600,
+                  color: 'var(--pbt-text)',
+                }}
+              >
+                <strong style={{ fontWeight: 800 }}>Opening pushback:</strong>{' '}
+                <em style={{ fontWeight: 600, color: 'var(--pbt-text)', fontStyle: 'italic' }}>
+                  {scenario.openingLine ?? scenario.pushbackNotes ?? scenario.pushback.example}
+                </em>
+              </p>
+
+              {/* Scoring metrics — what will be evaluated */}
+              {onBegin && (
+                <div style={{ marginBottom: 16 }}>
+                  <div
+                    style={{
+                      fontFamily: 'var(--pbt-font-mono)',
+                      fontSize: 9,
+                      letterSpacing: '0.16em',
+                      textTransform: 'uppercase',
+                      color: 'var(--pbt-text-muted)',
+                      marginBottom: 8,
+                    }}
+                  >
+                    Scored on
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      'Empathy & Tone',
+                      'Active Listening',
+                      'Product Knowledge',
+                      'Objection Handling',
+                      'Confidence',
+                      'Closing',
+                      'Pacing',
+                    ].map((label) => (
+                      <span
+                        key={label}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: 9999,
+                          background: 'rgba(255,255,255,0.18)',
+                          border: '1px solid rgba(255,255,255,0.38)',
+                          fontSize: 11,
+                          fontWeight: 500,
+                          color: 'var(--pbt-text-muted)',
+                          letterSpacing: '0.01em',
+                        }}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Begin Simulation CTA — only shown in voice idle */}
               {onBegin && (
@@ -278,16 +327,17 @@ function ScenarioDetailsPanel({
                     width: '100%',
                     border: 'none',
                     borderRadius: 9999,
-                    padding: '13px 22px',
+                    padding: '16px 28px',
                     background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
                     color: '#fff',
                     fontFamily: 'var(--pbt-font-mono)',
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: 800,
-                    letterSpacing: '0.12em',
+                    letterSpacing: '0.14em',
                     textTransform: 'uppercase',
                     cursor: 'pointer',
-                    boxShadow: '0 14px 28px -16px oklch(0.55 0.22 18 / 0.65)',
+                    boxShadow: '0 18px 36px -18px oklch(0.55 0.22 18 / 0.75)',
+                    marginTop: 4,
                   }}
                 >
                   Begin simulation
@@ -333,9 +383,10 @@ function ScenarioSessionControls({
             <DriverWave
               driver={scenario.suggestedDriver}
               height={28}
-              amplitude={0.9}
-              speed={0.85}
+              amplitude={1.1}
+              speed={1.4}
               opacity={0.9}
+              forceAnimate
             />
           </div>
         </div>
@@ -885,18 +936,29 @@ function VoiceMode({
   const lastAiMsg = aiMessages[aiMessages.length - 1];
   const lastUserMsg = userMessages[userMessages.length - 1];
 
-  const orbSize = 'min(62vw, 240px)';
+  const orbSize = 'min(54vw, 210px)';
 
   return (
     <div
       className="flex flex-1 flex-col items-center"
       style={{ paddingLeft: 20, paddingRight: 20, paddingBottom: 12, minHeight: 0 }}
     >
-      {/* Status label — above the orb */}
+      {/* Orb section — natural height, pushed well down from top so orb sits near vertical center */}
       <div
         style={{
-          paddingTop: 16,
-          marginBottom: 12,
+          flex: '0 0 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          paddingTop: 'max(48px, 12%)',
+          width: '100%',
+        }}
+      >
+
+      {/* Status label — generous breathing room from orb */}
+      <div
+        style={{
+          marginBottom: 38,
           fontFamily: 'var(--pbt-font-mono)',
           fontSize: 11,
           letterSpacing: '0.18em',
@@ -1018,26 +1080,29 @@ function VoiceMode({
         </motion.div>
       </div>
 
-      {/* Resolution dot + label — between orb and transcript */}
+      {/* Three traffic-light dots + emotion label */}
       <div
         style={{
-          marginTop: 14,
+          marginTop: 40,
           display: 'flex',
           alignItems: 'center',
-          gap: 6,
+          gap: 7,
         }}
       >
-        <div
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            background: isThinking ? 'oklch(0.60 0.12 240)' : emotionColor,
-            transition: 'background 0.6s ease',
-            animation: isThinking ? 'pbtPulse 1.2s ease-in-out infinite' : undefined,
-            flexShrink: 0,
-          }}
-        />
+        {(['red', 'yellow', 'green'] as EmotionColor[]).map((e) => (
+          <div
+            key={e}
+            style={{
+              width: 9,
+              height: 9,
+              borderRadius: '50%',
+              background: (!isThinking && voice.emotion === e) ? EMOTION_COLORS[e] : 'rgba(120,80,60,0.18)',
+              boxShadow: (!isThinking && voice.emotion === e) ? `0 0 8px 2px ${EMOTION_COLORS[e]}` : 'none',
+              transition: 'all 0.55s ease',
+              flexShrink: 0,
+            }}
+          />
+        ))}
         <span
           style={{
             fontFamily: 'var(--pbt-font-mono)',
@@ -1046,6 +1111,7 @@ function VoiceMode({
             textTransform: 'uppercase',
             color: isThinking ? 'oklch(0.55 0.10 240)' : emotionColor,
             transition: 'color 0.6s ease',
+            marginLeft: 3,
           }}
         >
           {isThinking ? 'Processing' : EMOTION_LABELS[voice.emotion]}
@@ -1076,7 +1142,10 @@ function VoiceMode({
         </div>
       )}
 
-      {/* Big transcript display — last AI message prominently, last user message below */}
+      {/* Close the centered orb section */}
+      </div>
+
+      {/* Transcript — flex-1 fills remaining space, content vertically centered */}
       <div
         style={{
           flex: 1,
@@ -1085,11 +1154,11 @@ function VoiceMode({
           alignItems: 'center',
           justifyContent: 'center',
           width: '100%',
-          paddingTop: 12,
-          paddingBottom: 12,
-          gap: 12,
-          minHeight: 0,
+          paddingTop: 8,
+          paddingBottom: 16,
+          gap: 10,
           overflow: 'hidden',
+          minHeight: 0,
         }}
       >
         {/* Connecting placeholder */}

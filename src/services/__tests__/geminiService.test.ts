@@ -20,7 +20,7 @@ vi.mock('@google/genai', () => {
   };
 });
 
-import { generateRoleplayMessage, evaluateConversation } from '../geminiService';
+import { generateRoleplayMessage, evaluateConversation, MODEL_TEXT } from '../geminiService';
 
 beforeEach(() => {
   generateContent.mockReset();
@@ -34,7 +34,7 @@ describe('generateRoleplayMessage', () => {
     expect(result.text).toContain('expensive');
     expect(generateContent).toHaveBeenCalledOnce();
     const callArg = generateContent.mock.calls[0][0];
-    expect(callArg.model).toBe('gemini-2.5-flash');
+    expect(callArg.model).toBe(MODEL_TEXT);
     expect(callArg.contents[0].parts[0].text).toContain('Please begin');
   });
 

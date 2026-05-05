@@ -12,9 +12,9 @@ import {
 } from '../data/knowledge/scoringRubric';
 
 /** Text / scoring */
-export const MODEL_TEXT = 'gemini-2.5-flash';
-/** Live voice WebSocket session — stable published model */
-export const MODEL_LIVE = 'gemini-2.0-flash-live-001';
+export const MODEL_TEXT = 'gemini-3-flash-preview';
+/** Live voice WebSocket session */
+export const MODEL_LIVE = 'gemini-3.1-flash-live-preview';
 
 function getClient(): GoogleGenAI {
   const apiKey =

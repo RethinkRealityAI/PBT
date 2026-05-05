@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Orb } from '../design-system/Orb';
 import { Icon } from '../design-system/Icon';
@@ -15,6 +15,7 @@ import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS, RADII } from '../design-system/tokens';
 import { SEED_SCENARIOS } from '../data/scenarios';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
+import { useTheme } from '../app/providers/ThemeProvider';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -40,6 +41,9 @@ export function HomeScreen() {
   const { user } = useSession();
   const { setScenario } = useScenario();
   const [pickIndex, setPickIndex] = useState(0);
+  const [scoringInfoOpen, setScoringInfoOpen] = useState(false);
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
 
   if (!profile) return null;
 
@@ -349,6 +353,38 @@ export function HomeScreen() {
                 </PillButton>
               </div>
               </div>
+              {/* Info dot — opens scoring guide modal */}
+              <button
+                type="button"
+                aria-label="How sessions are scored"
+                onClick={(e) => { e.stopPropagation(); setScoringInfoOpen(true); }}
+                style={{
+                  position: 'absolute',
+                  right: 14,
+                  bottom: 14,
+                  zIndex: 2,
+                  width: 30,
+                  height: 30,
+                  borderRadius: '50%',
+                  border: '1px solid rgba(255,255,255,0.55)',
+                  background: 'rgba(255,255,255,0.28)',
+                  backdropFilter: 'blur(16px) saturate(200%)',
+                  WebkitBackdropFilter: 'blur(16px) saturate(200%)',
+                  color: 'var(--pbt-text-muted)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontFamily: 'var(--pbt-font-mono)',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  fontStyle: 'italic',
+                  letterSpacing: 0,
+                  boxShadow: '0 4px 12px -6px rgba(60,20,15,0.18)',
+                }}
+              >
+                i
+              </button>
             </Glass>
           </div>
 
@@ -503,7 +539,7 @@ export function HomeScreen() {
               ariaLabel="Your ECHO driver profile"
               style={{ position: 'relative', overflow: 'hidden', marginBottom: 14, minHeight: 72 }}
             >
-              {/* Wave sits in bottom half only */}
+              {/* Wave + traveling dot — bottom zone, same stack order as other Glass cards */}
               <div
                 style={{
                   position: 'absolute',
@@ -512,34 +548,42 @@ export function HomeScreen() {
                   right: 0,
                   height: '70%',
                   pointerEvents: 'none',
+                  zIndex: 0,
                 }}
               >
                 <DriverWave
                   driver={profile.primary}
                   height={52}
                   synthwave
-                  amplitude={1.1}
+                  amplitude={1.05}
                   speed={0.85}
-                  opacity={0.6}
+                  opacity={dark ? 0.48 : 0.55}
+                  travelingDot
                 />
               </div>
-              {/* Gradient shield: opaque at top, transparent at bottom */}
+              {/* Readability scrim: theme-aware (was light-only fallback and blew out dark glass) */}
               <div
                 style={{
                   position: 'absolute',
                   inset: 0,
-                  background: 'linear-gradient(to bottom, var(--pbt-glass-bg, rgba(255,255,255,0.72)) 55%, transparent 100%)',
+                  zIndex: 1,
                   pointerEvents: 'none',
+                  background: dark
+                    ? 'linear-gradient(to bottom, color-mix(in oklab, var(--pbt-canvas) 94%, transparent) 0%, color-mix(in oklab, var(--pbt-canvas) 40%, transparent) 52%, transparent 100%)'
+                    : 'linear-gradient(to bottom, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.28) 52%, transparent 100%)',
                 }}
               />
-              <div className="relative flex items-center gap-3" style={{ padding: 16 }}>
+              <div
+                className="relative flex items-center gap-3"
+                style={{ padding: 16, zIndex: 2 }}
+              >
                 <div
                   style={{
                     width: 36,
                     height: 36,
                     borderRadius: 12,
                     flexShrink: 0,
-                    background: `color-mix(in oklab, ${driverColors.primary} 22%, transparent)`,
+                    background: `color-mix(in oklab, ${driverColors.soft} 80%, rgba(255,255,255,0.5))`,
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -548,29 +592,279 @@ export function HomeScreen() {
                 >
                   <Icon.spark />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 15 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--pbt-text)' }}>
                     Your ECHO profile
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', fontWeight: 500 }}>
                     {profile.primary} driver · tap to review
                   </div>
                 </div>
-                <div
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: driverColors.primary,
-                    boxShadow: `0 0 8px 2px ${driverColors.primary}`,
-                    flexShrink: 0,
-                  }}
-                />
               </div>
             </Glass>
           </div>
         </div>
       </Page>
+      <ScoringInfoModal open={scoringInfoOpen} onClose={() => setScoringInfoOpen(false)} />
     </>
+  );
+}
+
+const SCORING_DIMENSIONS: Array<{ label: string; weight: string; description: string }> = [
+  { label: 'Empathy & Tone', weight: '20%', description: 'Warm, non-judgmental language. Validate feelings before pivoting.' },
+  { label: 'Active Listening', weight: '18%', description: 'Reflect back what the client said. Ask one specific clarifying question.' },
+  { label: 'Objection Handling', weight: '18%', description: 'Acknowledge the concern, clarify the root cause, then transform with evidence.' },
+  { label: 'Product Knowledge', weight: '14%', description: 'Cite Royal Canin specifics — 97% palatability, 12-week trial, BCS, MCS.' },
+  { label: 'Confidence', weight: '12%', description: 'Speak with calm authority. No hedging, no shaming.' },
+  { label: 'Closing', weight: '10%', description: 'Make a clear, specific recommendation the client can act on today.' },
+  { label: 'Pacing', weight: '8%', description: 'Match the client’s rhythm. Don’t rush past the emotion.' },
+];
+
+function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.button
+            type="button"
+            aria-label="Close scoring guide"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 60,
+              border: 'none',
+              background: 'rgba(20, 12, 14, 0.32)',
+              backdropFilter: 'blur(4px)',
+              cursor: 'default',
+            }}
+          />
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="scoring-info-title"
+            initial={{ opacity: 0, scale: 0.94, x: '-50%', y: '-48%' }}
+            animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+            exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-48%' }}
+            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              zIndex: 61,
+              width: 'min(94vw, 560px)',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              borderRadius: 28,
+            }}
+          >
+            <Glass radius={28} padding="28px 24px 24px" blur={26} tint={0.06}>
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3" style={{ marginBottom: 14 }}>
+                <div>
+                  <div
+                    style={{
+                      fontFamily: 'var(--pbt-font-mono)',
+                      fontSize: 9,
+                      letterSpacing: '0.18em',
+                      textTransform: 'uppercase',
+                      color: 'var(--pbt-text-muted)',
+                      marginBottom: 5,
+                    }}
+                  >
+                    How you’re scored
+                  </div>
+                  <h2
+                    id="scoring-info-title"
+                    style={{
+                      margin: 0,
+                      fontSize: 20,
+                      fontWeight: 600,
+                      lineHeight: 1.2,
+                      letterSpacing: '-0.02em',
+                    }}
+                  >
+                    Seven dimensions, one overall score
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={onClose}
+                  style={{
+                    flexShrink: 0,
+                    width: 30,
+                    height: 30,
+                    borderRadius: '50%',
+                    border: '1px solid rgba(255,255,255,0.50)',
+                    background: 'rgba(255,255,255,0.22)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--pbt-text-muted)',
+                  }}
+                >
+                  <Icon.close />
+                </button>
+              </div>
+
+              {/* Intro */}
+              <p style={{ margin: '0 0 16px', fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)', fontWeight: 500 }}>
+                Each session is scored 0–100 across seven dimensions and rolled into a weighted overall score.
+                The fastest path to a high score: <strong style={{ fontWeight: 800 }}>Acknowledge → Clarify → Transform</strong> — don’t pitch product before the client feels heard.
+              </p>
+
+              {/* Dimensions list */}
+              <div style={{ marginBottom: 18 }}>
+                {SCORING_DIMENSIONS.map((d) => (
+                  <div
+                    key={d.label}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 14,
+                      background: 'rgba(255,255,255,0.16)',
+                      border: '1px solid rgba(255,255,255,0.32)',
+                      marginBottom: 6,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: 'var(--pbt-text)',
+                          marginBottom: 2,
+                          letterSpacing: '-0.005em',
+                        }}
+                      >
+                        {d.label}
+                      </div>
+                      <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--pbt-text-muted)' }}>
+                        {d.description}
+                      </div>
+                    </div>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.06em',
+                        padding: '4px 8px',
+                        borderRadius: 9999,
+                        background: 'rgba(255,255,255,0.28)',
+                        border: '1px solid rgba(255,255,255,0.45)',
+                        color: 'var(--pbt-text)',
+                      }}
+                    >
+                      {d.weight}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Example scorecard preview */}
+              <div
+                style={{
+                  borderRadius: 18,
+                  padding: 16,
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.10))',
+                  border: '1px solid rgba(255,255,255,0.42)',
+                  marginBottom: 4,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: 'var(--pbt-font-mono)',
+                    fontSize: 9,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color: 'var(--pbt-text-muted)',
+                    marginBottom: 10,
+                  }}
+                >
+                  Example scorecard
+                </div>
+                <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--pbt-text-muted)', fontWeight: 600 }}>Overall</div>
+                    <div style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: 'oklch(0.58 0.18 145)' }}>
+                      87
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: 9999,
+                      fontFamily: 'var(--pbt-font-mono)',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.14em',
+                      textTransform: 'uppercase',
+                      color: '#fff',
+                      background: 'oklch(0.58 0.18 145)',
+                    }}
+                  >
+                    Strong
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5" style={{ marginBottom: 10 }}>
+                  {[
+                    { l: 'Empathy', v: 92 },
+                    { l: 'Listening', v: 88 },
+                    { l: 'Objection', v: 85 },
+                    { l: 'Product', v: 82 },
+                    { l: 'Confidence', v: 89 },
+                    { l: 'Closing', v: 84 },
+                    { l: 'Pacing', v: 86 },
+                  ].map((m) => (
+                    <span
+                      key={m.l}
+                      style={{
+                        padding: '3px 9px',
+                        borderRadius: 9999,
+                        background: 'rgba(255,255,255,0.32)',
+                        border: '1px solid rgba(255,255,255,0.5)',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: 'var(--pbt-text)',
+                      }}
+                    >
+                      {m.l} <span style={{ color: 'oklch(0.58 0.18 145)', fontWeight: 700 }}>{m.v}</span>
+                    </span>
+                  ))}
+                </div>
+                <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--pbt-text)', fontWeight: 500 }}>
+                  <strong style={{ fontWeight: 800 }}>Coach note:</strong> Strong empathy opener and a clean Royal Canin Satiety pivot.
+                  Next time, name the 12-week trial earlier to lift Closing.
+                </p>
+              </div>
+
+              <p
+                style={{
+                  margin: '14px 0 0',
+                  fontSize: 11.5,
+                  lineHeight: 1.5,
+                  color: 'var(--pbt-text-muted)',
+                  textAlign: 'center',
+                  fontStyle: 'italic',
+                }}
+              >
+                Bands: 85+ Strong · 70–84 On track · &lt;70 Needs work
+              </p>
+            </Glass>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }

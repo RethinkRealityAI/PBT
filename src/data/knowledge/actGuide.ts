@@ -1,5 +1,5 @@
 /**
- * The ACT method — Acknowledge → Clarify → Take Action.
+ * The ACT method — Acknowledge → Clarify → Transform.
  * Distilled from "Training session notes - How to train ACT Objection Handling.pptx"
  * and the ACT scenario transcripts.
  *
@@ -60,7 +60,7 @@ export const ACT_STEPS: ActStep[] = [
   },
   {
     key: 'takeAction',
-    label: 'Take Action',
+    label: 'Transform',
     goal: 'Propose a specific, credible Royal Canin next step with concrete benefits and a defined trial.',
     techniques: [
       'Lead with the outcome, then the product',

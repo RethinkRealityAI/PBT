@@ -54,3 +54,6 @@ secrets/
 
 # Duplicate OneDrive sync folder — same scenario transcripts as OneDrive_4_5-3-2026
 resources/OneDrive_5_5-3-2026/
+
+# Graphify incremental AST cache (regenerable; keep graphify-out/graph.json + GRAPH_REPORT.md in git)
+graphify-out/cache/
