@@ -8,6 +8,7 @@ export type Screen =
   | 'chat'
   | 'stats'
   | 'history'
+  | 'historyDetail'
   | 'analyzer'
   | 'resources'
   | 'settings'

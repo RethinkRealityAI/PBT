@@ -24,6 +24,8 @@ export interface UseVoiceSessionReturn {
   status: VoiceStatus;
   emotion: EmotionColor;
   messages: ChatMessage[];
+  /** Live, partial AI text for the in-flight turn (cleared when next AI turn begins). */
+  liveAiText: string;
   start: (scenario: Scenario) => Promise<void>;
   stop: () => void;
   endSession: () => Promise<VoiceSessionResult>;
@@ -39,6 +41,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const [status, setStatus] = useState<VoiceStatus>('idle');
   const [emotion, setEmotion] = useState<EmotionColor>('red');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [liveAiText, setLiveAiText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   // Session stored as a Promise (reference pattern) — all sends via .then()
@@ -61,6 +64,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const naturalEndHandlerRef = useRef<(() => void) | null>(null);
   // Gates mic audio until the AI delivers its first complete turn (prevents double opening)
   const openingDeliveredRef = useRef(false);
+  // Timestamp until which mic audio should be suppressed (post-AI-speech grace period).
+  // Prevents echo of AI audio leaking through speakers from being sent back as "user speech".
+  const micUnmuteAtRef = useRef(0);
 
   const setStatusSync = useCallback((s: VoiceStatus) => {
     statusRef.current = s;
@@ -74,6 +80,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     transcriptRef.current = [...transcriptRef.current, msg];
     setMessages([...transcriptRef.current]);
     aiTextBufferRef.current = '';
+    // Don't clear liveAiText here — we want it to persist as the "current AI line"
+    // until the NEXT AI turn begins. It's cleared at the start of the next turn instead.
   }, []);
 
   const addUserMessage = useCallback((text: string) => {
@@ -87,7 +95,17 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     const ctx = playbackCtxRef.current;
     if (!ctx || ctx.state === 'closed') return;
 
-    if (statusRef.current !== 'aiSpeaking') setStatusSync('aiSpeaking');
+    if (statusRef.current !== 'aiSpeaking') {
+      setStatusSync('aiSpeaking');
+      // Discard user-transcription buffer (likely echo of our own audio leaking back).
+      userTextBufferRef.current = '';
+      // Reset the AI text buffer so the NEW turn's text doesn't append to the previous
+      // turn's text. Critically, we do NOT clear `liveAiText` here — if transcription
+      // arrives in one chunk at turnComplete (preview-model behavior), keeping the old
+      // line visible during audio playback is much better UX than going blank. The new
+      // chunks will REPLACE liveAiText the instant they arrive.
+      aiTextBufferRef.current = '';
+    }
 
     const binary = atob(base64Audio);
     const bytes = new Uint8Array(binary.length);
@@ -112,6 +130,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     source.onended = () => {
       if (ctx.state !== 'closed' && ctx.currentTime >= nextPlayTimeRef.current - 0.1) {
         if (statusRef.current === 'aiSpeaking') setStatusSync('listening');
+        // 250ms grace before mic re-opens — lets AI audio tail decay so it doesn't
+        // get captured and sent back as a phantom user turn.
+        micUnmuteAtRef.current = performance.now() + 250;
       }
     };
   }, [setStatusSync]);
@@ -164,6 +185,13 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         // Send via Promise — no race with sessionRef being null
         // Don't send mic audio until AI delivers its opening — prevents double opener
         if (!openingDeliveredRef.current) return;
+        // CRITICAL: don't send mic audio while AI is speaking — browser echo cancellation
+        // doesn't apply to WebAudio playback, so AI audio leaks through speakers into the
+        // mic. Sending it back to Gemini causes self-conversation, mid-sentence interrupts,
+        // and false "user spoke" turn boundaries. Also honor a 250ms grace period after
+        // AI playback ends so the trailing tail doesn't bleed through.
+        if (statusRef.current === 'aiSpeaking') return;
+        if (performance.now() < micUnmuteAtRef.current) return;
         (sessionPromise as Promise<{ sendRealtimeInput: (p: unknown) => void }>).then((session) => {
           try {
             session.sendRealtimeInput({
@@ -206,10 +234,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     try {
       finalizePromiseRef.current = null;
       openingDeliveredRef.current = false;
+      micUnmuteAtRef.current = 0;
       setStatusSync('connecting');
       setError(null);
       setEmotion('red');
       setMessages([]);
+      setLiveAiText('');
       transcriptRef.current = [];
       aiTextBufferRef.current = '';
       userTextBufferRef.current = '';
@@ -299,9 +329,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
                 if (fc.name === 'updateEmotion') {
                   setEmotion(((args.emotion as string)?.toLowerCase().trim() as EmotionColor) ?? 'red');
-                } else if (fc.name === 'endSimulation') {
-                  addAiMessage();
                 }
+                // Note: don't commit accumulated AI text here for endSimulation —
+                // the same message may carry the closing line in serverContent.modelTurn
+                // (processed below). The natural turnComplete path commits the full text;
+                // committing early would orphan any closing-line chunks in this message.
 
                 (sessionPromise as Promise<{ sendToolResponse: (p: unknown) => void }>).then((session) => {
                   try {
@@ -312,7 +344,15 @@ export function useVoiceSession(): UseVoiceSessionReturn {
                 });
 
                 if (fc.name === 'endSimulation') {
-                  queueMicrotask(() => naturalEndHandlerRef.current?.());
+                  // Defer natural-end until any in-flight closing line finishes playing.
+                  // The model is instructed to speak the closing line in the same turn
+                  // as the function call; tearing down immediately would cut it off.
+                  const ctx = playbackCtxRef.current;
+                  const playbackTail = ctx
+                    ? Math.max(0, nextPlayTimeRef.current - ctx.currentTime)
+                    : 0;
+                  const delayMs = Math.min(8000, Math.ceil(playbackTail * 1000) + 400);
+                  setTimeout(() => naturalEndHandlerRef.current?.(), delayMs);
                 }
               }
             }
@@ -327,8 +367,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
                 }
               | undefined;
 
-            // User speech transcription — buffered, committed on sentence end
-            if (serverContent?.inputTranscription) {
+            // User speech transcription — buffered, committed on sentence end.
+            // Ignore inputTranscription while AI is speaking — that's almost always echo
+            // of our own audio leaking through the mic, not real user speech.
+            if (serverContent?.inputTranscription && statusRef.current !== 'aiSpeaking') {
               const { text, finished } = serverContent.inputTranscription;
               if (text) {
                 userTextBufferRef.current += text;
@@ -340,9 +382,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
               }
             }
 
-            // AI speech transcription — outputTranscription path (when enabled)
+            // AI speech transcription — outputTranscription path (when enabled).
+            // Push partial text to liveAiText so the UI can render it as it streams.
             if (serverContent?.outputTranscription?.text) {
               aiTextBufferRef.current += serverContent.outputTranscription.text;
+              setLiveAiText(aiTextBufferRef.current);
             }
 
             // AI text fallback — modelTurn.parts[].text (matches working reference)
@@ -350,6 +394,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             const inlineText = parts.map((p) => p.text).filter(Boolean).join('');
             if (inlineText) {
               aiTextBufferRef.current += inlineText;
+              setLiveAiText(aiTextBufferRef.current);
             }
 
             // Audio playback
@@ -360,11 +405,17 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             if (serverContent?.interrupted) {
               nextPlayTimeRef.current = playbackCtxRef.current?.currentTime ?? 0;
               if (statusRef.current === 'aiSpeaking') setStatusSync('listening');
+              // Don't apply mic grace on user-initiated barge-in — they're actively
+              // speaking, we want their input flowing immediately.
+              micUnmuteAtRef.current = 0;
             }
 
-            // Turn complete — commit accumulated AI text; unlock mic after first turn
+            // Turn complete — commit accumulated AI text; unlock mic after first turn.
+            // Pin liveAiText to the final text so it persists until the next AI turn starts.
             if (serverContent?.turnComplete) {
+              const finalText = aiTextBufferRef.current.trim();
               addAiMessage();
+              if (finalText) setLiveAiText(finalText);
               openingDeliveredRef.current = true;
               if (statusRef.current === 'thinking') setStatusSync('listening');
             }
@@ -401,6 +452,15 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         } catch { /* session closed during startup */ }
       });
 
+      // Pre-seed liveAiText with the scripted opening line so it appears on screen
+      // as soon as audio starts playing — preview Live models often delay
+      // outputTranscription until turnComplete, which would otherwise leave the
+      // first turn blank. Real transcription chunks (or the final pin at
+      // turnComplete) will replace this seed when they arrive.
+      if (scenario.openingLine) {
+        setLiveAiText(scenario.openingLine);
+      }
+
     } catch (err) {
       const errAny = err as { message?: string; name?: string; stack?: string };
       console.error('[voiceSession] start failed', {
@@ -422,6 +482,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     setError(null);
     setEmotion('red');
     setMessages([]);
+    setLiveAiText('');
     transcriptRef.current = [];
     aiTextBufferRef.current = '';
     userTextBufferRef.current = '';
@@ -431,6 +492,16 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
   const endSession = useCallback(async (): Promise<VoiceSessionResult> => {
     if (finalizePromiseRef.current) return finalizePromiseRef.current;
+
+    // Flush any in-flight AI text that hasn't been committed yet (e.g. user hit END
+    // before a turnComplete fired). Otherwise the last AI line is lost from the transcript.
+    if (aiTextBufferRef.current.trim()) {
+      addAiMessage();
+    }
+    if (userTextBufferRef.current.trim()) {
+      addUserMessage(userTextBufferRef.current.trim());
+      userTextBufferRef.current = '';
+    }
 
     const transcriptSnapshot = [...transcriptRef.current];
     const scenario = scenarioRef.current;
@@ -456,11 +527,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     } finally {
       finalizePromiseRef.current = null;
     }
-  }, [cleanup, setStatusSync]);
+  }, [addAiMessage, addUserMessage, cleanup, setStatusSync]);
 
   useEffect(() => {
     return () => { cleanup(); };
   }, [cleanup]);
 
-  return { status, emotion, messages, start, stop, endSession, registerNaturalEndHandler, error };
+  return { status, emotion, messages, liveAiText, start, stop, endSession, registerNaturalEndHandler, error };
 }

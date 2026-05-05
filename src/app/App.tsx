@@ -25,6 +25,7 @@ import { CreateScreen } from '../screens/CreateScreen';
 import { ChatScreen } from '../screens/ChatScreen';
 import { StatsScreen } from '../screens/StatsScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
+import { HistoryDetailScreen } from '../screens/HistoryDetailScreen';
 import { PetAnalyzerScreen } from '../screens/PetAnalyzerScreen';
 import { ResourcesScreen } from '../screens/ResourcesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -106,6 +107,8 @@ function ScreenSwitch() {
       return <StatsScreen />;
     case 'history':
       return <HistoryScreen />;
+    case 'historyDetail':
+      return <HistoryDetailScreen />;
     case 'analyzer':
       return <PetAnalyzerScreen />;
     case 'resources':

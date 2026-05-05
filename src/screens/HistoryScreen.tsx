@@ -8,6 +8,8 @@ import { Page } from '../shell/Page';
 import { PUSHBACK_CATEGORIES } from '../data/scenarios';
 import { readStorage, type StorageKeyDef } from '../lib/storage';
 import type { SessionRecord } from '../services/types';
+import { useNavigation } from '../app/providers/NavigationProvider';
+import { setSelectedSessionId } from '../lib/selectedSession';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
   key: 'sessions',
@@ -16,8 +18,14 @@ const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
 };
 
 export function HistoryScreen() {
+  const { go } = useNavigation();
   const [filter, setFilter] = useState<string>('all');
   const sessions = readStorage(SESSIONS_KEY);
+
+  const openSession = (id: string) => {
+    setSelectedSessionId(id);
+    go('historyDetail');
+  };
   const filtered =
     filter === 'all'
       ? sessions
@@ -99,11 +107,24 @@ export function HistoryScreen() {
           </Glass>
         ) : (
           filtered.map((s) => (
-            <div key={s.id} style={{ marginBottom: 8 }}>
+            <div
+              key={s.id}
+              style={{ marginBottom: 8 }}
+              onClick={() => openSession(s.id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openSession(s.id);
+                }
+              }}
+              className="cursor-pointer"
+            >
               <Glass radius={18} padding={14}>
                 <div className="flex items-center gap-3">
                   <Icon.chat />
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div style={{ fontWeight: 600, fontSize: 14 }}>
                       {s.scenarioSummary}
                     </div>
@@ -115,9 +136,11 @@ export function HistoryScreen() {
                       }}
                     >
                       {new Date(s.createdAt).toLocaleString()} · {s.mode}
+                      {s.transcript?.length ? ` · ${s.transcript.length} turns` : ''}
                     </div>
                   </div>
                   <ScoreChip score={s.scoreReport?.overall ?? 0} />
+                  <span style={{ color: 'var(--pbt-text-muted)', fontSize: 18 }}>›</span>
                 </div>
               </Glass>
             </div>

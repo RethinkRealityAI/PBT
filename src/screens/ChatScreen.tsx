@@ -930,35 +930,40 @@ function VoiceMode({
   const isConnecting = voice.status === 'connecting';
   const hasStartError = voice.status === 'error' && !!voice.error;
 
-  // Derive last AI and last user message for the big transcript display
+  // Big transcript display:
+  // - AI line: prefer `liveAiText` (streams in real-time as the AI speaks, then stays
+  //   pinned through the user's turn until the next AI turn begins, at which point it
+  //   clears and re-fills). Fall back to last committed AI message before any streaming.
+  // - User line: last committed user message (input transcription is sentence-level).
   const aiMessages = voice.messages.filter((m) => m.role === 'ai');
   const userMessages = voice.messages.filter((m) => m.role === 'user');
   const lastAiMsg = aiMessages[aiMessages.length - 1];
   const lastUserMsg = userMessages[userMessages.length - 1];
+  const aiDisplayText = voice.liveAiText || lastAiMsg?.text || '';
 
-  const orbSize = 'min(54vw, 210px)';
+  const orbSize = 'min(44vw, 168px)';
 
   return (
     <div
       className="flex flex-1 flex-col items-center"
       style={{ paddingLeft: 20, paddingRight: 20, paddingBottom: 12, minHeight: 0 }}
     >
-      {/* Orb section — natural height, pushed well down from top so orb sits near vertical center */}
+      {/* Orb section — natural height, modest top padding so the transcript has room */}
       <div
         style={{
           flex: '0 0 auto',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          paddingTop: 'max(48px, 12%)',
+          paddingTop: 'max(20px, 5%)',
           width: '100%',
         }}
       >
 
-      {/* Status label — generous breathing room from orb */}
+      {/* Status label — tight spacing so the orb + transcript both fit */}
       <div
         style={{
-          marginBottom: 38,
+          marginBottom: 20,
           fontFamily: 'var(--pbt-font-mono)',
           fontSize: 11,
           letterSpacing: '0.18em',
@@ -1073,7 +1078,7 @@ function VoiceMode({
           }}
         >
           <Orb
-            size={240}
+            size={168}
             pulse={voice.status === 'aiSpeaking' || isThinking}
             intensity={voice.status === 'aiSpeaking' ? 1.5 : isThinking ? 0.65 : 0.9}
           />
@@ -1083,7 +1088,7 @@ function VoiceMode({
       {/* Three traffic-light dots + emotion label */}
       <div
         style={{
-          marginTop: 40,
+          marginTop: 20,
           display: 'flex',
           alignItems: 'center',
           gap: 7,
@@ -1215,32 +1220,28 @@ function VoiceMode({
           </div>
         )}
 
-        {/* Last AI message — large prominent display */}
-        {lastAiMsg && (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={lastAiMsg.timestamp}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.35, ease: 'easeOut' }}
-              style={{
-                textAlign: 'center',
-                fontSize: 'clamp(18px, 5vw, 26px)',
-                fontWeight: 400,
-                lineHeight: 1.4,
-                color: 'var(--pbt-text)',
-                letterSpacing: '-0.015em',
-                maxWidth: 380,
-                overflow: 'hidden',
-                display: '-webkit-box',
-                WebkitLineClamp: 5,
-                WebkitBoxOrient: 'vertical',
-              }}
-            >
-              {lastAiMsg.text}
-            </motion.div>
-          </AnimatePresence>
+        {/* AI line — streams live as the AI speaks; persists through user's turn until
+            new chunks arrive on the next AI turn (handled in voiceSession.ts). */}
+        {aiDisplayText && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            style={{
+              textAlign: 'center',
+              fontSize: 'clamp(15px, 3.6vw, 19px)',
+              fontWeight: 400,
+              lineHeight: 1.45,
+              color: 'var(--pbt-text)',
+              letterSpacing: '-0.01em',
+              maxWidth: 380,
+              maxHeight: '38vh',
+              overflowY: 'auto',
+              padding: '4px 2px',
+            }}
+          >
+            {aiDisplayText}
+          </motion.div>
         )}
 
         {/* Last user message — smaller, muted */}
@@ -1271,7 +1272,7 @@ function VoiceMode({
         )}
 
         {/* Empty state — session started but no messages yet */}
-        {!isReady && !isConnecting && !lastAiMsg && !isAnalyzing && voice.status !== 'error' && (
+        {!isReady && !isConnecting && !aiDisplayText && !isAnalyzing && voice.status !== 'error' && (
           <div
             style={{
               textAlign: 'center',
