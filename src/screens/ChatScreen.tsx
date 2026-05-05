@@ -1271,21 +1271,57 @@ function VoiceMode({
           </AnimatePresence>
         )}
 
-        {/* Empty state — session started but no messages yet */}
-        {!isReady && !isConnecting && !aiDisplayText && !isAnalyzing && voice.status !== 'error' && (
-          <div
-            style={{
-              textAlign: 'center',
-              color: 'var(--pbt-text-muted)',
-              fontSize: 14,
-              lineHeight: 1.5,
-            }}
-          >
-            {voice.status === 'aiSpeaking' ? 'Customer is speaking…' : ''}
-          </div>
+        {/* Speaking indicator — subtle equalizer/synth-wave bars while AI is speaking.
+            Replaces the previous "Customer is speaking…" text since the orb's status
+            label above already reads "Speaking…". */}
+        {!isReady && !isConnecting && !aiDisplayText && !isAnalyzing && voice.status === 'aiSpeaking' && (
+          <SpeakingWave />
         )}
+        <style>{`
+          @keyframes pbtWaveBar {
+            0%, 100% { transform: scaleY(0.25); opacity: 0.5; }
+            50%      { transform: scaleY(1);    opacity: 1;   }
+          }
+        `}</style>
       </div>
 
+    </div>
+  );
+}
+
+/**
+ * Subtle equalizer-style speaking indicator. Replaces the "Customer is speaking…"
+ * text shown while the AI's audio is playing but its transcript hasn't pinned yet.
+ * Theme-aware (uses --pbt-text), 7 bars with staggered animation.
+ */
+function SpeakingWave() {
+  return (
+    <div
+      role="img"
+      aria-label="Customer is speaking"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+        height: 36,
+      }}
+    >
+      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+        <span
+          key={i}
+          style={{
+            display: 'inline-block',
+            width: 3,
+            height: 28,
+            borderRadius: 2,
+            background: 'var(--pbt-text)',
+            transformOrigin: 'center',
+            animation: `pbtWaveBar ${0.9 + (i % 3) * 0.15}s ease-in-out ${i * 0.08}s infinite`,
+            opacity: 0.7,
+          }}
+        />
+      ))}
     </div>
   );
 }

@@ -435,9 +435,22 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             }
 
             // Turn complete — commit accumulated AI text; unlock mic after first turn.
-            // Pin liveAiText to the FINAL sanitized text (single authoritative update for
-            // the turn — no mid-turn replacements from partial chunks).
+            // Pin liveAiText to the FINAL sanitized text (single authoritative update).
+            //
+            // Special-case the OPENING turn: Gemini Live's outputAudioTranscription
+            // reliably drops the first few words of the very first response (the audio
+            // is fine, the STT just starts mid-sentence). Since we instructed the model
+            // to deliver scenario.openingLine verbatim, we know the exact correct text.
+            // Override transcription with the scripted opening for the first AI turn so
+            // the user always sees the full opening line.
             if (serverContent?.turnComplete) {
+              const isOpeningTurn =
+                !openingDeliveredRef.current &&
+                !!scenarioRef.current?.openingLine &&
+                transcriptRef.current.filter((m) => m.role === 'ai').length === 0;
+              if (isOpeningTurn && scenarioRef.current?.openingLine) {
+                aiTextBufferRef.current = scenarioRef.current.openingLine;
+              }
               const finalText = sanitizeAiText(aiTextBufferRef.current);
               addAiMessage();
               if (finalText) setLiveAiText(finalText);
