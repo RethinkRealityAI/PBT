@@ -9,6 +9,7 @@ import { TopBar } from '../shell/TopBar';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { useChat } from '../app/providers/ChatProvider';
+import { useProfile } from '../app/providers/ProfileProvider';
 import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
 import { SEED_SCENARIOS, type Scenario } from '../data/scenarios';
 
@@ -352,7 +353,6 @@ function ScenarioDetailsPanel({
 }
 
 function ScenarioSessionControls({
-  scenario,
   mode,
   onModeChange,
   onEnd,
@@ -362,10 +362,15 @@ function ScenarioSessionControls({
   onModeChange: (mode: 'text' | 'voice') => void;
   onEnd: () => void;
 }) {
+  // Show the USER'S locked ECHO driver here — this surface represents the player's
+  // identity, not the customer's persona (the customer's driver is implicit in the
+  // scenario via scenario.suggestedDriver and surfaces in the AI's behavior).
+  const { profile } = useProfile();
+  const driverKey = profile?.primary ?? 'Activator';
   return (
     <Glass radius={22} padding="10px 12px" blur={18} tint={0.04}>
       <div className="flex items-center gap-2">
-        {/* ECHO driver label + wave */}
+        {/* ECHO driver label + wave — reflects the user's locked driver */}
         <div className="min-w-0 flex-1" style={{ overflow: 'hidden' }}>
           <div
             style={{
@@ -377,11 +382,11 @@ function ScenarioSessionControls({
               marginBottom: 2,
             }}
           >
-            Echo driver · {scenario.suggestedDriver}
+            Echo driver · {driverKey}
           </div>
           <div style={{ height: 28, marginLeft: -4, marginRight: 4 }}>
             <DriverWave
-              driver={scenario.suggestedDriver}
+              driver={driverKey}
               height={28}
               amplitude={1.1}
               speed={1.4}
