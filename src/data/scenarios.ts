@@ -155,7 +155,7 @@ export const SEED_SCENARIOS: Scenario[] = [
       "Buddy is a 5-year-old male Lab weighing 42 kg — BCS 8/9. Vet flagged obesity and joint stress risk, recommended Satiety Support and a 12-week weight plan. Owner insists Buddy is just 'a big Lab' and that all his friends' Labs look the same. He eats whatever is on special at the supermarket and gets generous treats.",
     suggestedDriver: 'Activator',
     openingLine:
-      "Look, Buddy's not fat — he's just a big Lab. All my mates' Labs look exactly the same.",
+      "Look, Buddy's not fat — he's just a big Lab. All my friends' Labs look exactly the same.",
   },
   {
     breed: 'Lab',

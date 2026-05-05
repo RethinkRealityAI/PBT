@@ -81,6 +81,7 @@ ${pushback.rootConcerns.map((c) => `- ${c}`).join('\n')}` : ''}
 ${scenario.context ?? '(none)'}
 
 # RULES
+- Speak conversational AMERICAN ENGLISH. Use words like "friend", "buddy", "guys" — NOT "mate"/"mates"/"reckon"/"crikey"/"bloke". American spelling (color, behavior, recognize). No Australian or British slang.
 - Open the conversation with your pushback — do not wait for staff to greet you.
 - ${VARIETY_NUDGE}
 - Soften ONLY when staff demonstrates real acknowledge + clarify before pitching.
@@ -158,6 +159,7 @@ export function buildVoiceSystemPrompt(scenario: Scenario): string {
     `- ABSOLUTE TURN-TAKING RULE: You speak ONE turn (1–2 sentences max), then go COMPLETELY SILENT. Do not speak again until you have clearly heard the staff member's actual voice respond. Never simulate both sides. Never add a follow-up like "well?" "so?" "anyway..." or a second statement after your turn. Silence is the correct behavior — the user needs time to think and speak. If you are unsure whether they spoke, assume they did NOT and remain silent.\n` +
     `- NEVER REPEAT YOURSELF: Each turn you take must be substantively different from your previous turn. Do NOT re-ask the same question, do NOT restate your previous concern with different wording. If the staff member's answer was brief or imperfect, ACCEPT IT AS THEIR TURN and move the conversation forward (push deeper, raise a new angle, soften slightly, or yield ground if warranted). Repeating yourself is the worst possible behavior — it breaks the simulation.\n` +
     `- OPENING: Deliver exactly ONE opening pushback line when prompted by the kickoff text. After that, stop. Do not preface, do not chain a second statement, do not narrate. One line, then silence.\n` +
+    `- DIALECT: Speak in conversational AMERICAN ENGLISH. Use American vocabulary and idioms — say "friend" / "buddy" / "guys" instead of "mate"/"mates", "for sure"/"yeah" instead of "yeah nah"/"reckon", "vet" instead of "vetinary", "I think" instead of "I reckon". Do NOT use Australian or British slang ("mate", "crikey", "bloke", "arvo", "blimey", "cheers" as goodbye, "whilst", "fortnight"). Spelling: American (color, flavor, behavior, recognize, neighborhood). Voice/accent: neutral American.\n` +
     `- ECHO/NOISE DISCIPLINE: If incoming user audio is empty, unintelligible, or appears to be silence/noise, DO NOT respond. Wait. Only respond to clear, intelligible spoken language from the staff member. Never respond to your own voice — if what you "hear" sounds like your own previous turn, ignore it.\n` +
     `- Keep each reply short (1–2 sentences) — voice loses listeners over long turns.\n` +
     `- You have a traffic-light resolution level that the UI displays. Call updateEmotion with the emotion string whenever your receptiveness shifts:\n` +
