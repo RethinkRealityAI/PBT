@@ -140,21 +140,25 @@ Active keys:
 
 This repo includes [Graphify](https://graphify.net/) outputs under `graphify-out/`:
 
-
 | File              | Purpose                                                                                      |
 | ----------------- | -------------------------------------------------------------------------------------------- |
-| `GRAPH_REPORT.md` | God nodes, communities, suggested questions — **read this first** for architecture questions |
+| `GRAPH_REPORT.md` | God nodes, communities, suggested questions                                                  |
 | `graph.json`      | Queryable graph for `py -3 -m graphify query "..."`                                          |
 | `graph.html`      | Interactive visualization (open in browser)                                                  |
 
+**MANDATORY — use the graph before grep/read searches:**
 
-**Install (Python 3.10+):** `py -3 -m pip install graphifyy` (package name is `graphifyy`; CLI is `graphify` or `py -3 -m graphify`).
+1. **At session start**: Read `graphify-out/GRAPH_REPORT.md` in full before exploring the codebase.
+2. **Before any grep or multi-file read**: Run `py -3 -m graphify query "<topic>"` first. Use the returned node/file list to target reads directly — skip blind glob/grep unless the query returns nothing.
+3. **After editing code**: Run `py -3 -m graphify update .` (no API cost, <5s) to keep the graph current.
 
-**Build:** Official `graphify extract` needs `ANTHROPIC_API_KEY` or `MOONSHOT_API_KEY` for the semantic pass. **Without API keys**, run `py -3 scripts/graphify_ast_only.py` (Tree-sitter AST + clustering only — still very useful for code structure).
+The graph has 230 nodes / 310 edges. A single query replaces 3–8 grep calls and saves significant context. There is no excuse for skipping it.
 
-**Refresh after code edits (no API cost):** `py -3 -m graphify update .`
+**Install (Python 3.10+):** `py -3 -m pip install graphifyy` (CLI is `py -3 -m graphify`).
 
-Cursor loads `.cursor/rules/graphify.mdc` so agents prefer `GRAPH_REPORT.md` over blind repo-wide search when relevant.
+**Build from scratch (no LLM):** `py -3 scripts/graphify_ast_only.py`
+
+Cursor loads `.cursor/rules/graphify.mdc` automatically.
 
 ## Build pipeline
 
