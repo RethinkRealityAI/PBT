@@ -88,19 +88,22 @@ export function GradientBg({
              * Driver washes: top-left (primary), faint upper-mid-right whisper,
              * soft bottom-centre secondary (low intensity).
              */}
-            <Bloom position={positions[0]} width="108%" height="82%" color={top1} opacity={44} blur={34} />
-            {/* Very subtle — sits just above horizontal centre on the right */}
+            {/* Top-left primary bloom — larger, slightly lower, +5% stronger */}
+            <Bloom position="10% 14%" width="118%" height="92%" color={top1} opacity={48} blur={34} />
+            {/* Middle-right whisper — subtle depth accent */}
             <Bloom position="82% 36%" width="72%" height="52%" color={top1} opacity={11} blur={52} />
-            <Bloom position="50% 93%" width="88%" height="58%" color={top2} opacity={13} blur={44} />
+            {/* Bottom bloom — left-shifted bottom-center */}
+            <Bloom position="38% 92%" width="84%" height="56%" color={top2} opacity={16} blur={42} />
             <NoiseOverlay />
           </>
         ) : (
           <>
-            <Bloom position={positions[0]} width="118%" height="88%" color={top1} opacity={Math.round(48 * intensity)} blur={32} />
-            {/* Whisper bloom — above centre-right; keeps canvas from feeling empty there */}
-            <Bloom position="82% 36%" width="78%" height="56%" color={top1} opacity={Math.round(12 * intensity)} blur={50} />
-            {/* Bottom-centre secondary — quieter than the former bottom-right wash */}
-            <Bloom position="50% 94%" width="92%" height="62%" color={top2} opacity={Math.round(17 * intensity)} blur={46} />
+            {/* Top-left primary bloom — larger, slightly lower, +5% stronger */}
+            <Bloom position="10% 14%" width="128%" height="96%" color={top1} opacity={Math.round(56 * intensity)} blur={32} />
+            {/* Middle-right whisper — subtle depth accent */}
+            <Bloom position="82% 36%" width="78%" height="56%" color={top1} opacity={Math.round(13 * intensity)} blur={50} />
+            {/* Bottom bloom — left-shifted bottom-center */}
+            <Bloom position="38% 92%" width="88%" height="60%" color={top2} opacity={Math.round(22 * intensity)} blur={44} />
             <NoiseOverlay light />
           </>
         )}

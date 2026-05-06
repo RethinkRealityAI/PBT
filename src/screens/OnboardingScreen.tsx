@@ -10,18 +10,18 @@ const BRAND_RED = 'oklch(0.62 0.22 22)';
 const SLIDES: { eyebrow: string; title: string; body: string }[] = [
   {
     eyebrow: 'PBT · Pushback Training',
-    title: 'Train the\nawkward moments.',
-    body: 'Our own human connection tool is designed to help you forge genuine, empathetic relationships. Perfect in business and everyday life.',
+    title: 'Helping you navigate\ndifficult conversations.',
+    body: 'This human connection tool is designed to help you forge genuine, empathetic relationships. Perfect in business and everyday life.',
   },
   {
     eyebrow: 'Built for clinic conversations',
-    title: 'Practice with\npersonalities.',
-    body: "Every customer is different. PBT roleplays the four ECHO driver types so you learn to read who you're talking to.",
+    title: 'Every Customer\nis Different.',
+    body: "This tool provides you with the place to ask and then practice how to deal with difficult customer conversations.",
   },
   {
     eyebrow: 'Score with rigour',
     title: "See what landed.\nFix what didn't.",
-    body: 'After every session: empathy, listening, knowledge, objection-handling, confidence, closing, pacing. With concrete next-line examples.',
+    body: "After every practice you'll receive feedback on how you used empathy, listening, knowledge, objection handling, confidence, closing, and pacing. You'll get concrete next-line suggestions too.",
   },
 ];
 
@@ -58,8 +58,8 @@ export function OnboardingScreen() {
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex flex-1 flex-col items-center justify-center text-center" style={{ gap: 'clamp(18px, 4vh, 32px)', padding: '16px 0' }}>
+      {/* Main content — shifted slightly below centre with generous vertical rhythm */}
+      <div className="flex flex-1 flex-col items-center justify-center text-center" style={{ gap: 'clamp(24px, 5vh, 40px)', padding: '16px 0', paddingTop: 'clamp(24px, 6vh, 56px)' }}>
         {/* Orb with pulsing rings — always brand red */}
         <div
           style={{
@@ -126,12 +126,15 @@ export function OnboardingScreen() {
         <h1
           style={{
             margin: 0,
-            fontSize: 'clamp(30px, 8vw, 42px)',
+            /* 34px floor so small phones (320px) still read comfortably at 2 lines.
+               The \n in slide data is the 2-line control — no clamp needed. */
+            fontSize: 'clamp(34px, 9vw, 44px)',
             fontWeight: 400,
             letterSpacing: '-0.025em',
-            lineHeight: 1.05,
+            lineHeight: 1.1,
             whiteSpace: 'pre-line',
             color: 'var(--pbt-text)',
+            maxWidth: '88vw',
           }}
         >
           {current.title}
@@ -139,9 +142,9 @@ export function OnboardingScreen() {
         <p
           style={{
             margin: 0,
-            maxWidth: 300,
-            fontSize: 'clamp(13px, 3.5vw, 15px)',
-            lineHeight: 1.55,
+            maxWidth: 'min(320px, 86vw)',
+            fontSize: 'clamp(15px, 4vw, 17px)',
+            lineHeight: 1.6,
             color: 'var(--pbt-text-muted)',
             textWrap: 'pretty' as never,
           }}

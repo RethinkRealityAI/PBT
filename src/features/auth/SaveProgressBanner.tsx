@@ -4,6 +4,7 @@ import { Glass } from '../../design-system/Glass';
 import { Icon } from '../../design-system/Icon';
 import { useSession } from '../../app/providers/SessionProvider';
 import { useProfile } from '../../app/providers/ProfileProvider';
+import { useTheme } from '../../app/providers/ThemeProvider';
 import { DRIVER_COLORS } from '../../design-system/tokens';
 import {
   readStorage,
@@ -23,7 +24,11 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 export function SaveProgressBanner() {
   const { user } = useSession();
   const { profile } = useProfile();
-  const driverColors = profile ? DRIVER_COLORS[profile.primary] : null;
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
+  const driverColors = profile
+    ? DRIVER_COLORS[profile.primary]
+    : DRIVER_COLORS.Activator;
   const dismissedUntil = readStorage(BANNER_KEY);
   const [dismissed, setDismissed] = useState(
     dismissedUntil !== null && new Date(dismissedUntil).getTime() > Date.now(),
@@ -31,10 +36,8 @@ export function SaveProgressBanner() {
   const [open, setOpen] = useState(false);
   const [welcomeName, setWelcomeName] = useState<string | null>(null);
 
-  // Hide the banner reactively when the user signs in.
   const visible = !user && !dismissed;
 
-  // Auto-dismiss the welcome overlay after 2.5 s.
   useEffect(() => {
     if (!welcomeName) return;
     const t = setTimeout(() => setWelcomeName(null), 2500);
@@ -43,7 +46,6 @@ export function SaveProgressBanner() {
 
   return (
     <>
-      {/* Welcome overlay — shown immediately after sign-up */}
       <AnimatePresence>
         {welcomeName && (
           <motion.div
@@ -100,65 +102,52 @@ export function SaveProgressBanner() {
         )}
       </AnimatePresence>
 
-      {/* Save-progress banner — only for anonymous users */}
       {visible && (
         <Glass
-          radius={18}
-          padding={14}
-          style={{ marginBottom: 14 }}
+          radius={14}
+          padding={0}
+          blur={dark ? 36 : 22}
+          tint={dark ? 0.44 : 0.12}
+          style={{ marginBottom: 10, position: 'relative', overflow: 'hidden' }}
         >
-          <div className="flex items-center gap-3">
+          {/* Single rail: dismiss · driver tile · headline · CTA */}
+          {/* Single tight row: title (15px, 600) · Sign up · dismiss — matches ACT Guide title height */}
+          <div
+            className="flex items-center"
+            style={{ padding: '8px 8px 8px 16px', gap: 10 }}
+          >
             <div
+              className="min-w-0 flex-1"
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: 12,
-                background: 'rgba(255,255,255,0.35)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                fontWeight: 600,
+                fontSize: 15,
+                lineHeight: 1.2,
+                letterSpacing: '-0.015em',
                 color: 'var(--pbt-text)',
               }}
             >
-              <Icon.user />
-            </div>
-            <div className="flex-1">
-              <div style={{ fontWeight: 600, fontSize: 14 }}>
-                Save your progress
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: 'var(--pbt-text-muted)',
-                  marginTop: 2,
-                }}
-              >
-                Keep your scores across devices. No verification needed.
-              </div>
+              Save your progress
             </div>
             <button
+              type="button"
               onClick={() => setOpen(true)}
               style={{
-                padding: '8px 14px',
-                border: driverColors
-                  ? `1px solid color-mix(in oklab, ${driverColors.primary} 34%, rgba(255,255,255,0.5))`
-                  : '1px solid color-mix(in oklab, var(--pbt-driver-primary) 34%, rgba(255,255,255,0.5))',
+                flexShrink: 0,
+                padding: '6px 14px',
+                border: `1px solid color-mix(in oklab, ${driverColors.primary} 34%, rgba(255,255,255,0.5))`,
                 borderRadius: 9999,
-                background: driverColors
-                  ? `linear-gradient(180deg, ${driverColors.primary}, ${driverColors.accent})`
-                  : 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+                background: `linear-gradient(180deg, ${driverColors.primary}, ${driverColors.accent})`,
                 color: '#fff',
                 fontWeight: 600,
-                fontSize: 13,
+                fontSize: 12,
                 cursor: 'pointer',
-                boxShadow: driverColors
-                  ? `0 1px 0 rgba(255,255,255,0.34) inset, 0 8px 18px -10px color-mix(in oklab, ${driverColors.primary} 42%, transparent)`
-                  : '0 1px 0 rgba(255,255,255,0.34) inset, 0 8px 18px -10px color-mix(in oklab, var(--pbt-driver-primary) 42%, transparent)',
+                boxShadow: `0 1px 0 rgba(255,255,255,0.34) inset, 0 6px 14px -8px color-mix(in oklab, ${driverColors.primary} 42%, transparent)`,
               }}
             >
               Sign up
             </button>
             <button
+              type="button"
               onClick={() => {
                 const until = new Date(Date.now() + SEVEN_DAYS_MS).toISOString();
                 writeStorage(BANNER_KEY, until);
@@ -166,8 +155,8 @@ export function SaveProgressBanner() {
               }}
               aria-label="Maybe later"
               style={{
-                width: 32,
-                height: 32,
+                width: 28,
+                height: 28,
                 border: 'none',
                 borderRadius: '50%',
                 background: 'transparent',
@@ -176,6 +165,7 @@ export function SaveProgressBanner() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                flexShrink: 0,
               }}
             >
               <Icon.close />

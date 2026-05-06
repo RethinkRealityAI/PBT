@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type CSSProperties, type MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
+import { DriverWave } from '../design-system/DriverWave';
 import { Orb } from '../design-system/Orb';
 import { Icon } from '../design-system/Icon';
 import { PillButton } from '../design-system/PillButton';
@@ -12,7 +13,7 @@ import { useScenario } from '../app/providers/ScenarioProvider';
 import { useSession } from '../app/providers/SessionProvider';
 import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens';
-import { SEED_SCENARIOS } from '../data/scenarios';
+import { LIBRARY_SCENARIOS } from '../data/scenarios';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
@@ -56,16 +57,15 @@ function pillSolidDriverStyle(dc: DriverColors): CSSProperties {
 function dashTileGlass(dark: boolean) {
   return {
     glow: null,
-    /* Match Glass default (0.06 light / 0.44 dark) — near-transparent in light so
-       background hues show through the frosted surface. */
-    tint: dark ? 0.44 : 0.06,
+    /* Match Glass default tint (0.18 light / 0.44 dark). */
+    tint: dark ? 0.44 : 0.18,
     blur: dark ? 36 : 22,
   };
 }
 
 /**
- * Glassmorphic icon badge — frosted fill, driver-colored border + icon, no solid soft fill.
- * Light: ~38% white + strong saturate lets background bleed through.
+ * Glassmorphic icon badge — transparent liquid glass, driver-colored border + icon.
+ * Light: low white tint + strong saturate lets background bleed through.
  * Dark:  ~20% neutral dark — glassy, not opaque.
  */
 function iconBadgeStyle(dc: typeof DRIVER_COLORS[keyof typeof DRIVER_COLORS], dark: boolean): CSSProperties {
@@ -81,10 +81,10 @@ function iconBadgeStyle(dc: typeof DRIVER_COLORS[keyof typeof DRIVER_COLORS], da
     backdropFilter: 'blur(10px) saturate(200%)',
     WebkitBackdropFilter: 'blur(10px) saturate(200%)',
     background: dark
-      ? 'rgba(10, 10, 14, 0.22)'
-      : 'rgba(255, 255, 255, 0.28)',
-    border: `1px solid color-mix(in oklab, ${dc.primary} 32%, rgba(255,255,255,0.45))`,
-    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35)',
+      ? 'rgba(10, 10, 14, 0.18)'
+      : 'rgba(255, 255, 255, 0.12)',
+    border: `1px solid color-mix(in oklab, ${dc.primary} 38%, rgba(255,255,255,0.28))`,
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.28)',
   };
 }
 
@@ -92,17 +92,69 @@ function iconBadgeStyle(dc: typeof DRIVER_COLORS[keyof typeof DRIVER_COLORS], da
 function roundGlassControlStyle(dc: DriverColors, dark: boolean): CSSProperties {
   return {
     border: `1px solid color-mix(in oklab, ${dc.primary} 42%, rgba(255,255,255,0.5))`,
-    background: dark ? 'rgba(10,10,14,0.30)' : 'rgba(255,255,255,0.42)',
+    background: dark ? 'rgba(10,10,14,0.22)' : 'rgba(255,255,255,0.16)',
     backdropFilter: 'blur(12px) saturate(240%)',
     WebkitBackdropFilter: 'blur(12px) saturate(240%)',
     boxShadow: [
       'inset 0 1px 0 rgba(255,255,255,0.58)',
       'inset 0 -1px 0 rgba(0,0,0,0.05)',
       dark
-        ? '0 6px 14px -5px rgba(0,0,0,0.5)'
-        : '0 8px 16px -8px rgba(15,14,20,0.16), 0 2px 6px rgba(15,14,20,0.08)',
+        ? '0 6px 14px -5px rgba(0,0,0,0.44)'
+        : '0 8px 16px -10px rgba(15,14,20,0.12), 0 1px 4px rgba(15,14,20,0.04)',
     ].join(', '),
   };
+}
+
+/** Subtitle animation: Acknowledge → dot → Clarify → dot → Transform, once per dashboard visit. */
+const ACT_SUBTITLE_PARTS = ['Acknowledge', '·', 'Clarify', '·', 'Transform'] as const;
+
+function AcTGuideCard({
+  driverColors,
+  dark,
+  onClick,
+}: {
+  driverColors: typeof DRIVER_COLORS[keyof typeof DRIVER_COLORS];
+  dark: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Glass
+      radius={RADII.lg}
+      padding="13px 16px"
+      {...dashTileGlass(dark)}
+      onClick={onClick}
+      ariaLabel="ACT Guide"
+      style={{ marginBottom: 14 }}
+    >
+      <div className="flex items-center gap-3">
+        <div style={iconBadgeStyle(driverColors, dark)}>
+          <Icon.layers />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.15 }}>ACT Guide</div>
+          <div
+            style={{ fontSize: 12, lineHeight: 1.25, color: 'var(--pbt-text-muted)', whiteSpace: 'nowrap' }}
+          >
+            {ACT_SUBTITLE_PARTS.map((part, i) => (
+              <motion.span
+                key={`${part}-${i}`}
+                initial={{ opacity: 0, x: part === '·' ? 0 : -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.34, ease: 'easeOut', delay: i * 0.22 }}
+                style={{
+                  display: 'inline-block',
+                  color: part === '·' ? 'var(--pbt-text-muted)' : undefined,
+                  padding: part === '·' ? '0 5px' : 0,
+                }}
+              >
+                {part}
+              </motion.span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Glass>
+  );
 }
 
 const DASHBOARD_WELCOMED_KEY: StorageKeyDef<boolean> = {
@@ -152,8 +204,8 @@ export function HomeScreen() {
 
   const driver = ECHO_DRIVERS[profile.primary];
   const driverColors = DRIVER_COLORS[profile.primary];
-  const todaysPick = SEED_SCENARIOS[pickIndex];
-  const total = SEED_SCENARIOS.length;
+  const todaysPick = LIBRARY_SCENARIOS[pickIndex];
+  const total = LIBRARY_SCENARIOS.length;
   const initials = getDisplayInitials(user);
   const displayName = getDisplayName(user);
 
@@ -315,7 +367,7 @@ export function HomeScreen() {
           ) : undefined
         }
       />
-      <Page withTabBar className="!pt-6 lg:!pt-10">
+      <Page withTabBar className="!pt-2 lg:!pt-6">
         {/* Desktop-only top row: larger heading + profile button */}
         <div className="hidden lg:flex items-start justify-between gap-4 mb-8">
           <div>
@@ -371,7 +423,7 @@ export function HomeScreen() {
         {/*
          * Two-column grid on desktop; single column on mobile.
          * Left col (55%): headline + driver pill + hero card.
-         * Right col (45%): save banner + quick actions + library + ACT + ECHO.
+         * Right col (45%): save banner + quick actions + library + ECHO.
          * On mobile both divs stack in JSX order → identical to original layout.
          */}
         <div className="lg:grid lg:grid-cols-[55fr_45fr] lg:gap-8 lg:items-start">
@@ -427,6 +479,9 @@ export function HomeScreen() {
               </span>
             </div>
 
+            {/* ACT Guide — just above hero scenario card */}
+            <AcTGuideCard driverColors={driverColors} dark={dark} onClick={() => go('actGuide')} />
+
             {/* Hero scenario card */}
             <Glass
               radius={RADII.xl}
@@ -439,7 +494,7 @@ export function HomeScreen() {
               <div
                 style={{
                   position: 'absolute',
-                  top: 52,
+                  top: 58,
                   right: 16,
                   opacity: 0.85,
                   pointerEvents: 'none',
@@ -532,19 +587,6 @@ export function HomeScreen() {
                 className="flex w-full min-w-0 items-center"
                 style={{ marginBottom: 8, gap: 12 }}
               >
-                <div
-                  style={{
-                    fontFamily: 'var(--pbt-font-mono)',
-                    fontSize: 10,
-                    letterSpacing: '0.14em',
-                    textTransform: 'uppercase',
-                    color: 'var(--pbt-text-muted)',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                  }}
-                >
-                  Scenario library
-                </div>
                 <div aria-hidden style={{ flex: 1, minWidth: 8 }} />
                 <div className="flex shrink-0 items-center gap-1">
                   <button
@@ -609,10 +651,11 @@ export function HomeScreen() {
                 }}
               >
                 {(() => {
-                  const words = todaysPick.pushback.title.split(' ');
+                  const title = todaysPick.pushback.title.replace('Switching brands', 'Switching\u00A0brands');
+                  const words = title.split(' ');
                   return words.length > 4
                     ? words.slice(0, 4).join(' ') + '…'
-                    : todaysPick.pushback.title;
+                    : title;
                 })()}
               </h2>
               <p
@@ -711,48 +754,55 @@ export function HomeScreen() {
             </div>
 
             <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 14 }}>
-              <Glass
-                radius={RADII.lg}
-                padding={16}
-                {...dashTileGlass(dark)}
-                onClick={() => go('create')}
-                ariaLabel="Build a scenario"
-              >
-                <div className="flex items-start gap-3">
-                  <div style={iconBadgeStyle(driverColors, dark)}>
-                    <Icon.plus />
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      Build a scenario
+              {([
+                { label: 'Build a scenario', sub: 'Custom pushback', icon: <Icon.plus />, screen: 'create' as const },
+                { label: 'Pet Analyzer',     sub: 'BCS · MCS · kcal', icon: <Icon.paw />,  screen: 'analyzer' as const },
+              ] as const).map(({ label, sub, icon, screen }) => (
+                <Glass
+                  key={screen}
+                  radius={RADII.lg}
+                  padding="12px 14px"
+                  {...dashTileGlass(dark)}
+                  onClick={() => go(screen)}
+                  ariaLabel={label}
+                >
+                  <div className="flex items-start gap-2" style={{ minWidth: 0 }}>
+                    <div style={{ ...iconBadgeStyle(driverColors, dark), flexShrink: 0, marginTop: 1 }}>
+                      {icon}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)' }}>
-                      Custom pushback
+                    <div style={{ minWidth: 0 }}>
+                      {/* Title: wraps freely up to 2 lines, never truncates */}
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: 13,
+                          lineHeight: 1.3,
+                          display: '-webkit-box',
+                          WebkitBoxOrient: 'vertical' as never,
+                          WebkitLineClamp: 2,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {label}
+                      </div>
+                      {/* Subtitle: single line, ellipsis only if truly too long */}
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--pbt-text-muted)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          lineHeight: 1.3,
+                          marginTop: 2,
+                        }}
+                      >
+                        {sub}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Glass>
-              <Glass
-                radius={RADII.lg}
-                padding={16}
-                {...dashTileGlass(dark)}
-                onClick={() => go('analyzer')}
-                ariaLabel="Pet Analyzer"
-              >
-                <div className="flex items-start gap-3">
-                  <div style={iconBadgeStyle(driverColors, dark)}>
-                    <Icon.paw />
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      Pet Analyzer
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)' }}>
-                      BCS · MCS · kcal
-                    </div>
-                  </div>
-                </div>
-              </Glass>
+                </Glass>
+              ))}
             </div>
 
             <Glass
@@ -782,46 +832,35 @@ export function HomeScreen() {
               radius={RADII.lg}
               padding={16}
               {...dashTileGlass(dark)}
-              onClick={() => go('actGuide')}
-              ariaLabel="ACT Guide"
-              style={{ marginBottom: 14 }}
-            >
-              <div className="flex items-center gap-3">
-                <div style={iconBadgeStyle(driverColors, dark)}>
-                  <Icon.layers />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 15 }}>
-                    ACT Guide
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)' }}>
-                    Acknowledge · Clarify · Transform
-                  </div>
-                </div>
-                <div
-                  style={{
-                    fontFamily: 'var(--pbt-font-mono)',
-                    fontSize: 9,
-                    letterSpacing: '0.14em',
-                    textTransform: 'uppercase',
-                    color: driverColors ? driverColors.primary : 'var(--pbt-text-muted)',
-                    opacity: 0.8,
-                  }}
-                >
-                  A.C.T.
-                </div>
-              </div>
-            </Glass>
-
-            <Glass
-              radius={RADII.lg}
-              padding={16}
-              {...dashTileGlass(dark)}
               onClick={() => go('result')}
               ariaLabel="Your ECHO driver profile"
-              style={{ marginBottom: 14, minHeight: 72 }}
+              style={{ marginBottom: 14, minHeight: 72, position: 'relative', overflow: 'hidden' }}
             >
-              <div className="relative flex items-center gap-3">
+              {/* Driver wave at the bottom of the ECHO profile card */}
+              <div
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 52,
+                  zIndex: 0,
+                  pointerEvents: 'none',
+                  overflow: 'hidden',
+                  borderBottomLeftRadius: RADII.lg,
+                  borderBottomRightRadius: RADII.lg,
+                }}
+              >
+                <DriverWave
+                  driver={profile.primary}
+                  height={52}
+                  opacity={dark ? 0.38 : 0.3}
+                  speed={0.6}
+                  amplitude={0.9}
+                />
+              </div>
+              <div className="relative flex items-center gap-3" style={{ zIndex: 1 }}>
                 <div style={iconBadgeStyle(driverColors, dark)}>
                   <Icon.spark />
                 </div>
@@ -853,7 +892,62 @@ const SCORING_DIMENSIONS: Array<{ label: string; weight: string; description: st
   { label: 'Pacing', weight: '8%', description: "Match the client's rhythm. Don't rush past the emotion." },
 ];
 
+/** OKLCH hues per dimension — pills + row accents (aligned with brand cherry / analyzer / harmonizer family). */
+function hueForDimensionLabel(label: string): number {
+  const h: Record<string, number> = {
+    'Empathy & Tone': 24,
+    'Active Listening': 238,
+    'Objection Handling': 72,
+    'Product Knowledge': 292,
+    Confidence: 148,
+    Closing: 168,
+    Pacing: 258,
+    Empathy: 24,
+    Listening: 238,
+    Objection: 72,
+    Product: 292,
+  };
+  return h[label] ?? 28;
+}
+
+function exampleScorecardPillStyle(shortLabel: string, dark: boolean): CSSProperties {
+  const hue = hueForDimensionLabel(shortLabel);
+  return {
+    padding: '5px 11px',
+    borderRadius: 9999,
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--pbt-text)',
+    background: dark
+      ? `color-mix(in oklab, oklch(0.48 0.1 ${hue}) 42%, oklch(0.20 0.04 20) 58%)`
+      : `color-mix(in oklab, oklch(0.95 0.05 ${hue}) 62%, white)`,
+    border: dark
+      ? `1px solid color-mix(in oklab, oklch(0.62 0.14 ${hue}) 50%, oklch(0.35 0.04 20))`
+      : `1px solid color-mix(in oklab, oklch(0.78 0.1 ${hue}) 70%, white)`,
+    boxShadow: dark
+      ? 'inset 0 1px 0 rgba(255,255,255,0.08)'
+      : 'inset 0 1px 0 rgba(255,255,255,0.75), 0 1px 2px rgba(20,12,14,0.04)',
+  };
+}
+
+function exampleScoreValueColor(shortLabel: string, dark: boolean): string {
+  const hue = hueForDimensionLabel(shortLabel);
+  return dark ? `oklch(0.78 0.12 ${hue})` : `oklch(0.40 0.16 ${hue})`;
+}
+
+/** Returns only the per-row accent override — layout/glass comes from className="pbt-glass-card". */
+function dimensionAccentBorder(label: string): CSSProperties {
+  const hue = hueForDimensionLabel(label);
+  return {
+    borderLeft: `4px solid color-mix(in oklab, oklch(0.62 0.15 ${hue}) 72%, transparent)`,
+    marginBottom: 6,
+  };
+}
+
 function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
+
   return (
     <AnimatePresence>
       {open && (
@@ -883,6 +977,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
             animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
             exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-48%' }}
             transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            className="pbt-scroll"
             style={{
               position: 'fixed',
               top: '50%',
@@ -948,15 +1043,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
               </div>
 
               {/* How scenarios work */}
-              <div
-                style={{
-                  borderRadius: 16,
-                  padding: '12px 14px',
-                  background: 'linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08))',
-                  border: '1px solid rgba(255,255,255,0.36)',
-                  marginBottom: 16,
-                }}
-              >
+              <div className="pbt-glass-card" style={{ marginBottom: 16, padding: '13px 15px' }}>
                 <div
                   style={{
                     fontFamily: 'var(--pbt-font-mono)',
@@ -969,41 +1056,74 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                 >
                   How scenarios work
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)', paddingTop: 2, flexShrink: 0 }}>Voice</span>
-                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text)' }}>
+                    <span
+                      style={{
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 10,
+                        letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                        color: 'var(--pbt-text)',
+                        opacity: dark ? 0.85 : 0.72,
+                        fontWeight: 700,
+                        paddingTop: 2,
+                        flexShrink: 0,
+                        minWidth: 44,
+                      }}
+                    >
+                      Voice
+                    </span>
+                    <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)', fontWeight: 550 }}>
                       A live conversation — the AI customer speaks and listens in real time. Respond naturally, as you would on the clinic floor.
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)', paddingTop: 2, flexShrink: 0 }}>Chat</span>
-                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text)' }}>
+                    <span
+                      style={{
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 10,
+                        letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                        color: 'var(--pbt-text)',
+                        opacity: dark ? 0.85 : 0.72,
+                        fontWeight: 700,
+                        paddingTop: 2,
+                        flexShrink: 0,
+                        minWidth: 44,
+                      }}
+                    >
+                      Chat
+                    </span>
+                    <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)', fontWeight: 550 }}>
                       Turn-based — the AI sends a message, you reply, and so on. Take your time crafting each response.
                     </p>
                   </div>
-                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text-muted)' }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 13,
+                      lineHeight: 1.6,
+                      color: 'var(--pbt-text)',
+                      fontWeight: 500,
+                      opacity: dark ? 0.88 : 0.92,
+                    }}
+                  >
                     The session ends automatically once the AI determines the conversation has reached a natural close — usually after you have acknowledged the concern, clarified the facts, and reframed the value.
                   </p>
                 </div>
               </div>
 
               {/* Intro */}
-              <p style={{ margin: '0 0 14px', fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)', fontWeight: 500 }}>
-                Each session is scored 0–100 across seven dimensions and rolled into a weighted overall score.
-                The fastest path to a high score: <strong style={{ fontWeight: 800 }}>Acknowledge → Clarify → Transform</strong> — don't pitch product before the client feels heard.
-              </p>
+              <div className="pbt-glass-card" style={{ marginBottom: 16, padding: '13px 15px' }}>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: 'var(--pbt-text)', fontWeight: 540 }}>
+                  Each session is scored 0–100 across seven dimensions and rolled into a weighted overall score.
+                  The fastest path to a high score: <strong style={{ fontWeight: 800 }}>Acknowledge → Clarify → Transform</strong> — don't pitch product before the client feels heard.
+                </p>
+              </div>
 
-              {/* Example scorecard preview — first, sets the visual frame */}
-              <div
-                style={{
-                  borderRadius: 18,
-                  padding: 16,
-                  background: 'linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.10))',
-                  border: '1px solid rgba(255,255,255,0.42)',
-                  marginBottom: 16,
-                }}
-              >
+              {/* Example scorecard preview */}
+              <div className="pbt-glass-card" style={{ marginBottom: 16, padding: 16 }}>
                 <div
                   style={{
                     fontFamily: 'var(--pbt-font-mono)',
@@ -1039,7 +1159,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                     Strong
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-1.5" style={{ marginBottom: 10 }}>
+                <div className="flex flex-wrap gap-2" style={{ marginBottom: 10 }}>
                   {[
                     { l: 'Empathy', v: 92 },
                     { l: 'Listening', v: 88 },
@@ -1049,23 +1169,13 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                     { l: 'Closing', v: 84 },
                     { l: 'Pacing', v: 86 },
                   ].map((m) => (
-                    <span
-                      key={m.l}
-                      style={{
-                        padding: '3px 9px',
-                        borderRadius: 9999,
-                        background: 'rgba(255,255,255,0.32)',
-                        border: '1px solid rgba(255,255,255,0.5)',
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: 'var(--pbt-text)',
-                      }}
-                    >
-                      {m.l} <span style={{ color: 'oklch(0.58 0.18 145)', fontWeight: 700 }}>{m.v}</span>
+                    <span key={m.l} style={exampleScorecardPillStyle(m.l, dark)}>
+                      {m.l}{' '}
+                      <span style={{ color: exampleScoreValueColor(m.l, dark), fontWeight: 800 }}>{m.v}</span>
                     </span>
                   ))}
                 </div>
-                <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--pbt-text)', fontWeight: 500 }}>
+                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text)', fontWeight: 540 }}>
                   <strong style={{ fontWeight: 800 }}>Coach note:</strong> Strong empathy opener and a clean Royal Canin Satiety pivot.
                   Next time, name the 12-week trial earlier to lift Closing.
                 </p>
@@ -1085,54 +1195,57 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                 The seven dimensions
               </div>
               <div style={{ marginBottom: 18 }}>
-                {SCORING_DIMENSIONS.map((d) => (
-                  <div
-                    key={d.label}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 10,
-                      padding: '10px 12px',
-                      borderRadius: 14,
-                      background: 'rgba(255,255,255,0.16)',
-                      border: '1px solid rgba(255,255,255,0.32)',
-                      marginBottom: 6,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
+                {SCORING_DIMENSIONS.map((d) => {
+                  const hue = hueForDimensionLabel(d.label);
+                  return (
+                    <div
+                      key={d.label}
+                      className="pbt-glass-card flex items-start gap-2.5"
+                      style={dimensionAccentBorder(d.label)}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 13.5,
+                            fontWeight: 700,
+                            color: 'var(--pbt-text)',
+                            marginBottom: 3,
+                            letterSpacing: '-0.005em',
+                          }}
+                        >
+                          {d.label}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12.5,
+                            lineHeight: 1.5,
+                            color: 'var(--pbt-text-muted)',
+                          }}
+                        >
+                          {d.description}
+                        </div>
+                      </div>
+                      <span
                         style={{
-                          fontSize: 13,
+                          flexShrink: 0,
+                          fontFamily: 'var(--pbt-font-mono)',
+                          fontSize: 10,
                           fontWeight: 700,
+                          letterSpacing: '0.06em',
+                          padding: '5px 9px',
+                          borderRadius: 9999,
+                          background: dark
+                            ? `color-mix(in oklab, oklch(0.42 0.1 ${hue}) 38%, transparent)`
+                            : `color-mix(in oklab, oklch(0.94 0.06 ${hue}) 72%, white)`,
+                          border: `1px solid color-mix(in oklab, oklch(0.62 0.12 ${hue}) 44%, transparent)`,
                           color: 'var(--pbt-text)',
-                          marginBottom: 2,
-                          letterSpacing: '-0.005em',
                         }}
                       >
-                        {d.label}
-                      </div>
-                      <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--pbt-text-muted)' }}>
-                        {d.description}
-                      </div>
+                        {d.weight}
+                      </span>
                     </div>
-                    <span
-                      style={{
-                        flexShrink: 0,
-                        fontFamily: 'var(--pbt-font-mono)',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: '0.06em',
-                        padding: '4px 8px',
-                        borderRadius: 9999,
-                        background: 'rgba(255,255,255,0.28)',
-                        border: '1px solid rgba(255,255,255,0.45)',
-                        color: 'var(--pbt-text)',
-                      }}
-                    >
-                      {d.weight}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* How sessions end */}
@@ -1148,20 +1261,12 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
               >
                 How a scenario ends
               </div>
-              <div
-                style={{
-                  borderRadius: 16,
-                  padding: 14,
-                  background: 'rgba(255,255,255,0.16)',
-                  border: '1px solid rgba(255,255,255,0.32)',
-                  marginBottom: 12,
-                }}
-              >
-                <p style={{ margin: '0 0 10px', fontSize: 12.5, lineHeight: 1.55, color: 'var(--pbt-text)', fontWeight: 500 }}>
+              <div className="pbt-glass-card" style={{ marginBottom: 12, padding: 15 }}>
+                <p style={{ margin: '0 0 11px', fontSize: 13, lineHeight: 1.58, color: 'var(--pbt-text)', fontWeight: 540 }}>
                   The customer's receptiveness moves through three states. Watch the dot under the orb to see how
                   you're doing in real time:
                 </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                   {[
                     { c: 'oklch(0.55 0.22 18)', l: 'Red — Defensive', t: 'They start here. Push back, repeat the concern. Acknowledge feelings before anything else.' },
                     { c: 'oklch(0.72 0.19 80)', l: 'Yellow — Receptive', t: 'They feel heard. Ask one specific clarifying question to surface the real concern.' },
@@ -1180,13 +1285,25 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                         }}
                       />
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--pbt-text)' }}>{row.l}</div>
-                        <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--pbt-text-muted)' }}>{row.t}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pbt-text)', marginBottom: 2 }}>{row.l}</div>
+                        <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--pbt-text-muted)' }}>
+                          {row.t}
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
-                <p style={{ margin: '10px 0 0', fontSize: 11.5, lineHeight: 1.5, color: 'var(--pbt-text-muted)', fontStyle: 'italic' }}>
+                <p
+                  style={{
+                    margin: '11px 0 0',
+                    fontSize: 12.5,
+                    lineHeight: 1.55,
+                    color: 'var(--pbt-text)',
+                    fontStyle: 'italic',
+                    opacity: dark ? 0.88 : 0.9,
+                    fontWeight: 480,
+                  }}
+                >
                   If you can't move them past Red after ~15 turns, the session ends as a "stalemate." Either way,
                   the full transcript is scored against the seven dimensions above.
                 </p>
@@ -1195,11 +1312,13 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
               <p
                 style={{
                   margin: '4px 0 0',
-                  fontSize: 11.5,
+                  fontSize: 12,
                   lineHeight: 1.5,
-                  color: 'var(--pbt-text-muted)',
+                  color: 'var(--pbt-text)',
                   textAlign: 'center',
                   fontStyle: 'italic',
+                  opacity: dark ? 0.72 : 0.78,
+                  fontWeight: 500,
                 }}
               >
                 Bands: 85+ Strong · 70–84 On track · &lt;70 Needs work

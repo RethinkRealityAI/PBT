@@ -15,6 +15,7 @@ import {
   BREEDS,
   DIFFICULTY_DESCRIPTIONS,
   DIFFICULTY_LABELS,
+  LIBRARY_SCENARIOS,
   LIFE_STAGES,
   OWNER_PERSONAS,
   PUSHBACK_CATEGORIES,
@@ -51,7 +52,7 @@ export function CreateScreen() {
   const [pushback, setPushback] = useState<PushbackCategory>(PUSHBACK_CATEGORIES[0]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [persona, setPersona] = useState<OwnerPersona>(OWNER_PERSONAS[0]);
-  const [difficulty, setDifficulty] = useState<Difficulty>(2);
+  const [difficulty, setDifficulty] = useState<Difficulty>(1);
   const [context, setContext] = useState('');
   const [pushbackNotes, setPushbackNotes] = useState('');
   const [breedError, setBreedError] = useState<string | null>(null);
@@ -129,7 +130,7 @@ export function CreateScreen() {
 
         {tab === 'library' ? (
           <div className="lg:grid lg:grid-cols-2 lg:gap-4 flex flex-col gap-3">
-            {SEED_SCENARIOS.map((scenario, i) => (
+            {LIBRARY_SCENARIOS.map((scenario, i) => (
               <Glass key={i} radius={18} padding={14}>
                 <div className="flex items-start justify-between gap-3">
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -565,45 +566,7 @@ export function CreateScreen() {
             <div>
             {/* ── Difficulty ── */}
             <Section label="Difficulty">
-              <div className="grid grid-cols-2 gap-2">
-                {([1, 2, 3, 4] as Difficulty[]).map((d) => {
-                  const active = d === difficulty;
-                  return (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setDifficulty(d)}
-                      aria-pressed={active}
-                      style={{
-                        padding: '13px 16px',
-                        borderRadius: 18,
-                        border: active ? 'none' : '1px solid rgba(255,255,255,0.50)',
-                        cursor: 'pointer',
-                        fontFamily: 'var(--pbt-font-mono)',
-                        fontSize: 12,
-                        fontWeight: 700,
-                        letterSpacing: '0.08em',
-                        textTransform: 'uppercase',
-                        background: active
-                          ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
-                          : 'rgba(255,255,255,0.22)',
-                        backdropFilter: active ? undefined : 'blur(18px) saturate(240%)',
-                        WebkitBackdropFilter: active ? undefined : 'blur(18px) saturate(240%)',
-                        color: active ? '#fff' : 'var(--pbt-text)',
-                        boxShadow: active
-                          ? '0 8px 22px -8px color-mix(in oklab, var(--pbt-driver-primary) 48%, transparent)'
-                          : '0 1px 0 rgba(255,255,255,0.85) inset, 0 4px 12px -6px rgba(0,0,0,0.08)',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      {DIFFICULTY_LABELS[d]}
-                    </button>
-                  );
-                })}
-              </div>
-              <div style={{ marginTop: 10, fontSize: 13, color: 'var(--pbt-text-muted)', paddingLeft: 2, lineHeight: 1.5 }}>
-                {DIFFICULTY_DESCRIPTIONS[difficulty]}
-              </div>
+              <DifficultySlider value={difficulty} onChange={setDifficulty} />
             </Section>
 
             {/* ── Additional details ── */}
@@ -667,5 +630,158 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       </div>
       {children}
     </section>
+  );
+}
+
+function DifficultySlider({ value, onChange }: { value: Difficulty; onChange: (d: Difficulty) => void }) {
+  const STEPS = [1, 2, 3, 4] as Difficulty[];
+  const fraction = (value - 1) / 3;
+  const pct = fraction * 100;
+
+  return (
+    <div>
+      {/* Step labels row — taps shift the orb to that step */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, paddingLeft: 2, paddingRight: 2 }}>
+        {STEPS.map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => onChange(d)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 4px',
+              fontFamily: 'var(--pbt-font-mono)',
+              fontSize: 9.5,
+              fontWeight: d === value ? 800 : 500,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: d === value ? 'var(--pbt-driver-primary)' : 'var(--pbt-text-muted)',
+              transition: 'color 0.2s, font-weight 0.15s',
+              lineHeight: 1,
+            }}
+          >
+            {DIFFICULTY_LABELS[d]}
+          </button>
+        ))}
+      </div>
+
+      {/* Track area — single orb that smoothly slides between positions */}
+      <div
+        style={{
+          position: 'relative',
+          height: 36,
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 12px',
+        }}
+      >
+        {/* Background track */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 12,
+            right: 12,
+            height: 6,
+            borderRadius: 9999,
+            background: 'color-mix(in oklab, var(--pbt-text) 8%, rgba(255,255,255,0.10))',
+            border: '1px solid color-mix(in oklab, var(--pbt-text) 6%, rgba(255,255,255,0.18))',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Gradient fill — animates smoothly with the orb */}
+          <motion.div
+            animate={{ width: `${pct}%` }}
+            transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+            style={{
+              height: '100%',
+              borderRadius: 9999,
+              background: 'linear-gradient(90deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+              boxShadow: '0 0 8px color-mix(in oklab, var(--pbt-driver-primary) 55%, transparent)',
+            }}
+          />
+        </div>
+
+        {/* Single sliding orb */}
+        <motion.div
+          aria-hidden
+          animate={{ left: `calc(12px + (100% - 24px) * ${fraction})` }}
+          transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+          style={{
+            position: 'absolute',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 22,
+            height: 22,
+            borderRadius: '50%',
+            background: 'linear-gradient(160deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+            boxShadow:
+              '0 0 0 4px color-mix(in oklab, var(--pbt-driver-primary) 18%, transparent), 0 4px 14px color-mix(in oklab, var(--pbt-driver-primary) 45%, transparent), inset 0 1px 0 rgba(255,255,255,0.5)',
+            zIndex: 2,
+            pointerEvents: 'none',
+          }}
+        />
+
+        {/* Native range input — full overlay, drives drag + keyboard */}
+        <input
+          type="range"
+          min={1}
+          max={4}
+          step={1}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value) as Difficulty)}
+          aria-label="Difficulty"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: '100%',
+            height: '100%',
+            opacity: 0,
+            cursor: 'pointer',
+            margin: 0,
+            padding: 0,
+            zIndex: 3,
+          }}
+        />
+      </div>
+
+      {/* Animated description */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={value}
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          style={{ marginTop: 6 }}
+        >
+          <Glass radius={14} padding="10px 14px">
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <span
+                style={{
+                  flexShrink: 0,
+                  fontFamily: 'var(--pbt-font-mono)',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: '0.14em',
+                  textTransform: 'uppercase',
+                  color: 'var(--pbt-driver-primary)',
+                  paddingTop: 2,
+                }}
+              >
+                {value}/4
+              </span>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--pbt-text-muted)', lineHeight: 1.5 }}>
+                {DIFFICULTY_DESCRIPTIONS[value]}
+              </p>
+            </div>
+          </Glass>
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }

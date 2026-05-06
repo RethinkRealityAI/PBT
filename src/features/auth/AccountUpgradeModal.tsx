@@ -121,18 +121,26 @@ export function AccountUpgradeModal({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'rgba(20,5,8,0.55)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
+        /* Scrim: very light so GradientBg colour survives through the blur.
+           Heavy dark scrims desaturate and grey out glass surfaces above them. */
+        background: 'rgba(10, 5, 8, 0.18)',
+        backdropFilter: 'blur(10px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(10px) saturate(180%)',
         padding: 16,
       }}
     >
       <Glass
         radius={28}
         padding={0}
-        tint={0.92}
         glow="oklch(0.62 0.22 22)"
-        style={{ maxWidth: 380, width: '100%' }}
+        backdropSaturatePct={235}
+        /* Override flat fill with the same diagonal gradient the Segmented tab uses —
+           that's the look the user wants: bright top-left catchlight fading to 30% bottom. */
+        style={{
+          maxWidth: 380,
+          width: '100%',
+          background: 'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.30) 100%)',
+        }}
       >
         <div style={{ padding: 22 }}>
           <div className="flex items-start justify-between mb-3">
@@ -311,22 +319,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        style={{
-          padding: '12px 14px',
-          borderRadius: 14,
-          border: '0.5px solid rgba(60,20,15,0.10)',
-          background: 'rgba(255,255,255,0.7)',
-          fontFamily: 'inherit',
-          fontSize: 14,
-          color: 'var(--pbt-text)',
-          outline: 'none',
-        }}
-        onFocus={(e) =>
-          (e.currentTarget.style.borderColor = 'oklch(0.62 0.22 22 / 0.5)')
-        }
-        onBlur={(e) =>
-          (e.currentTarget.style.borderColor = 'rgba(60,20,15,0.10)')
-        }
+        className="pbt-glass-input"
       />
     </label>
   );

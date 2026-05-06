@@ -58,8 +58,8 @@ export function AppFrame({ children }: { children: ReactNode }) {
         {/* Sidebar — hidden on mobile/tablet, 240px on desktop */}
         <Sidebar />
 
-        {/* Content area — fills remaining space, maintains flex-col for screens */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* Content area — overflow-y auto so screens scroll; overflow-x clipped by rail */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden">
           {children}
         </div>
       </div>

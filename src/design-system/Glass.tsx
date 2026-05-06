@@ -53,13 +53,14 @@ export function Glass({
 
   /**
    * iOS liquid-glass base fill:
-   *   Light — 6% cool-glass tint: near-transparent so GradientBg colour shows through
-   *     as a vivid hue. Using rgba(228,240,255,…) instead of pure white gives the
-   *     faint blue-cool tint that reads as "glass" even over a neutral backdrop.
-   *   Dark  — 44% neutral dark (slightly cool, no warm-red).
-   * Explicit `tint` overrides (e.g. hero card, quiz answers).
+   *   Light — 18% warm-neutral white. Pure white at this opacity reads distinctly
+   *     as frosted glass: visible as a surface, still transparent enough that the
+   *     GradientBg colour and content below show through clearly.
+   *     We rely on backdrop saturate(320%) to tint it with ambient hues — no blue fill.
+   *   Dark  — 44% neutral dark.
+   * Explicit `tint` overrides (e.g. hero card, quiz answers, modals).
    */
-  const t = tint ?? (dark ? 0.44 : 0.06);
+  const t = tint ?? (dark ? 0.44 : 0.18);
 
   /**
    * Blur kept moderate: lower blur → less diffusion → more background colour survives
@@ -96,13 +97,13 @@ export function Glass({
 
   /**
    * Panel fill:
-   *   Light — cool-glass white (r228 g240 b255): the slight blue tint reads as glass
-   *     even at very low opacity, avoiding the "opaque white card" look.
+   *   Light — pure white at tint opacity: backdrop-filter saturate() provides the
+   *     colour, pure white ensures no artificial blue/cool cast on neutral backgrounds.
    *   Dark  — neutral near-black.
    */
   const panelBackground = dark
     ? `rgba(10, 10, 14, ${t.toFixed(2)})`
-    : `rgba(228, 240, 255, ${t.toFixed(2)})`;
+    : `rgba(255, 255, 255, ${t.toFixed(2)})`;
 
   return (
     <div

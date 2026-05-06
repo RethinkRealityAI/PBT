@@ -27,12 +27,12 @@ const RAINBOW_FILL_SOFT = `linear-gradient(90deg in oklab,
   oklch(0.87 0.08 220) 67%,
   oklch(0.86 0.09 145) 100%)`;
 
-/** Letter badge — soft rainbow rim (idle / chosen intensities) */
+/** Letter badge idle — soft rainbow corners restore the original multicolor detail */
 const LETTER_RIM_SOFT = [
-  `-1px -1px 8px 0 color-mix(in oklab, ${RAINBOW[0]} 12%, transparent)`,
-  `1px -1px 8px 0 color-mix(in oklab, ${RAINBOW[1]} 12%, transparent)`,
-  `1px 1px 8px 0 color-mix(in oklab, ${RAINBOW[2]} 12%, transparent)`,
-  `-1px 1px 8px 0 color-mix(in oklab, ${RAINBOW[3]} 12%, transparent)`,
+  `-1px -1px 8px 0 color-mix(in oklab, ${RAINBOW[0]} 18%, transparent)`,
+  `1px -1px 8px 0 color-mix(in oklab, ${RAINBOW[1]} 18%, transparent)`,
+  `1px 1px 8px 0 color-mix(in oklab, ${RAINBOW[2]} 18%, transparent)`,
+  `-1px 1px 8px 0 color-mix(in oklab, ${RAINBOW[3]} 18%, transparent)`,
   'inset 0 1px 0 rgba(255,255,255,0.55)',
 ].join(', ');
 
@@ -45,12 +45,12 @@ const LETTER_RIM_CHOSEN_COMPACT = [
   'inset 0 1px 0 rgba(255,255,255,0.65)',
 ].join(', ');
 
-/** Answer row glass — crisp border, minimal shadow (matches letter badge stroke when selected) */
+/** Answer row glass — uses --pbt-shadow-glass system token for consistency */
 const glassBorder = (dark: boolean) =>
-  dark ? '1px solid rgba(255,255,255,0.22)' : '1px solid rgba(255,255,255,0.52)';
+  dark ? '1px solid rgba(255,255,255,0.22)' : '1px solid var(--pbt-glass-border)';
 
-const glassShadowIdle = '0 1px 0 rgba(255,255,255,0.45) inset, 0 2px 12px -6px rgba(15, 10, 12, 0.06)';
-const glassShadowChosenCompact = `${LETTER_RIM_CHOSEN_COMPACT}, 0 2px 10px -8px rgba(15, 10, 12, 0.06)`;
+const glassShadowIdle = 'var(--pbt-shadow-glass)';
+const glassShadowChosenCompact = `${LETTER_RIM_CHOSEN_COMPACT}, 0 4px 16px -8px rgba(15, 10, 12, 0.08)`;
 
 export function QuizScreen() {
   const { replace, back } = useNavigation();
@@ -115,61 +115,23 @@ export function QuizScreen() {
       : 100;
 
   const showBack = !(step.kind === 'question' && step.index === 0);
-  const waveH = 'clamp(28px, 8vw, 44px)';
+  /** Must match `<DriverWave height=…>` — a shorter wrapper clips the strip and it overlaps the progress bar */
+  const quizWaveStripPx = 52;
 
   return (
     <>
-      <Page className="flex min-h-0 flex-1 flex-col !px-6 !pt-0 !pb-0 !overflow-hidden max-sm:!px-7 lg:!px-12">
-        {/* Soft multi-driver wash — full canvas */}
+      <Page className="flex min-h-0 flex-1 flex-col !px-5 !pt-0 !pb-0 !overflow-visible lg:!px-10">
+        {/* Full-viewport veil — fixed so it bleeds behind the AppFrame rail edge */}
         <div
           aria-hidden
           style={{
-            position: 'absolute',
+            position: 'fixed',
             inset: 0,
             zIndex: 0,
             pointerEvents: 'none',
-            /* Soft white veil at top (light) / gentle darken at top (dark); no harsh corner orbs */
             background: dark
-              ? `linear-gradient(180deg,
-                  rgba(10, 7, 9, 0.72) 0%,
-                  transparent 44%
-                ),
-                linear-gradient(165deg,
-                  color-mix(in oklab, ${RAINBOW[2]} 13%, transparent) 0%,
-                  color-mix(in oklab, ${RAINBOW[0]} 9%, transparent) 28%,
-                  color-mix(in oklab, ${RAINBOW[3]} 10%, transparent) 58%,
-                  color-mix(in oklab, ${RAINBOW[1]} 8%, transparent) 100%)`
-              : `linear-gradient(180deg,
-                  rgba(255,255,255,0.88) 0%,
-                  rgba(255,255,255,0.42) 34%,
-                  transparent 54%
-                ),
-                linear-gradient(165deg,
-                  color-mix(in oklab, ${RAINBOW[2]} 15%, transparent) 0%,
-                  color-mix(in oklab, ${RAINBOW[1]} 11%, transparent) 30%,
-                  color-mix(in oklab, ${RAINBOW[3]} 12%, transparent) 62%,
-                  color-mix(in oklab, ${RAINBOW[0]} 10%, transparent) 100%)`,
-          }}
-        />
-        {/* Single soft bottom blob — color anchors the canvas without hot spots at the top */}
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            bottom: '12%',
-            left: '0',
-            width: 'min(52%, 100%)',
-            height: '32%',
-            borderRadius: '50%',
-            opacity: dark ? 0.36 : 0.4,
-            background: `
-              radial-gradient(ellipse 68% 58% at 48% 48%, color-mix(in oklab, ${RAINBOW[1]} 12%, transparent), transparent 60%),
-              radial-gradient(ellipse 58% 52% at 62% 55%, color-mix(in oklab, ${RAINBOW[3]} 11%, transparent), transparent 58%),
-              radial-gradient(ellipse 50% 46% at 38% 52%, color-mix(in oklab, ${RAINBOW[2]} 10%, transparent), transparent 56%)
-            `,
-            filter: 'blur(30px)',
-            pointerEvents: 'none',
-            zIndex: 0,
+              ? 'linear-gradient(180deg, rgba(10,7,9,0.32) 0%, transparent 42%)'
+              : 'linear-gradient(180deg, rgba(255,255,255,0.48) 0%, transparent 42%)',
           }}
         />
 
@@ -178,7 +140,7 @@ export function QuizScreen() {
           <div
             className="flex shrink-0 items-center gap-2"
             style={{
-              paddingTop: 'max(env(safe-area-inset-top), 10px)',
+              paddingTop: 'max(env(safe-area-inset-top), 22px)',
               paddingBottom: 'clamp(8px, 2.5vw, 14px)',
             }}
           >
@@ -239,20 +201,20 @@ export function QuizScreen() {
             </Glass>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col overflow-visible">
           <header className="shrink-0 px-0 pt-0">
             {/* Multicolor wave — breathing room below title row + above progress */}
             <div
               style={{
-                height: waveH,
-                marginTop: 'clamp(2px, 1vw, 6px)',
-                marginBottom: 'clamp(8px, 2.5vw, 14px)',
-                minHeight: 28,
+                height: quizWaveStripPx,
+                marginTop: 'clamp(4px, 1.2vw, 8px)',
+                marginBottom: 'clamp(14px, 3.5vw, 22px)',
+                overflow: 'hidden',
               }}
             >
               <DriverWave
                 driver="all"
-                height={52}
+                height={quizWaveStripPx}
                 synthwave
                 amplitude={1.15}
                 speed={1.05}
@@ -332,8 +294,8 @@ export function QuizScreen() {
            * Answers fill the remaining space with even distribution.
            */}
           <div
-            className="flex min-h-0 flex-1 flex-col"
-            style={{ paddingTop: 'clamp(10px, 2.5vh, 20px)', paddingBottom: 8 }}
+            className="flex min-h-0 flex-col"
+            style={{ paddingTop: 'clamp(10px, 2.5vh, 20px)', paddingBottom: 16 }}
           >
             {/*
              * Fixed-height question block: 3 lines × (28.75px × 1.25) ≈ 108px.
@@ -357,8 +319,8 @@ export function QuizScreen() {
             </div>
 
             <div
-              className="mx-auto flex min-w-0 w-full max-w-full flex-col sm:max-w-[min(100%,22rem)] flex-1"
-              style={{ gap: 'clamp(11px, 2.8vw, 16px)', paddingInline: 6, justifyContent: 'flex-start' }}
+              className="flex w-full flex-col"
+              style={{ gap: 'clamp(12px, 3vw, 16px)', paddingInline: 2, paddingBottom: 8 }}
             >
               {question.options.map((opt) => {
                 const isChosen = chosen?.letter === opt.letter;
@@ -389,7 +351,8 @@ export function QuizScreen() {
                       onClick={() => handleChoose(opt)}
                       radius={28}
                       padding={14}
-                      blur={20}
+                      blur={22}
+                      tint={isChosen ? (dark ? 0.48 : 0.22) : (dark ? 0.28 : 0.10)}
                       glow={null}
                       shine={true}
                       className="rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:ring-offset-0"

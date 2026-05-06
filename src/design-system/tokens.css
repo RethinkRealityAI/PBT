@@ -18,9 +18,10 @@
   --pbt-canvas-outer: #ffffff;
   /** Centered content column (mobile-first); gradient bleeds full viewport behind this */
   --pbt-layout-max: 440px;
-  --pbt-glass: rgba(255, 255, 255, 0.20);
+  /* Matches Glass primitive light fill: pure white at 18% — no blue tint */
+  --pbt-glass: rgba(255, 255, 255, 0.18);
   /** Specular rim border — bright for the iOS glass "thick edge" look */
-  --pbt-glass-border: rgba(255, 255, 255, 0.82);
+  --pbt-glass-border: rgba(255, 255, 255, 0.72);
   --pbt-glass-tint-strong: rgba(255, 255, 255, 0.28);
 
   --pbt-text: var(--pbt-ink);
@@ -93,6 +94,117 @@
     0 4px 16px -4px rgba(0, 0, 0, 0.38);
 }
 
+/**
+ * ─── Nested liquid-glass card ────────────────────────────────────────────────
+ * Use .pbt-glass-card for any sub-panel that sits *inside* a <Glass> surface
+ * (e.g. dimension rows, scorecard blocks, info panels inside modals).
+ * It reuses the same tokens as the <Glass> primitive so every nested surface
+ * automatically tracks light/dark/contrast-mode without per-component JS.
+ *
+ * Usage: <div className="pbt-glass-card"> … </div>
+ * Accent border: add a data-accent="<hue>" attribute OR pair with an inline
+ * border-left style for per-row color — everything else comes from the class.
+ */
+.pbt-glass-card {
+  border-radius: var(--pbt-radius-lg);
+  padding: 10px 12px;
+  background: var(--pbt-glass);
+  border: 1px solid var(--pbt-glass-border);
+  box-shadow: var(--pbt-shadow-glass);
+  /* Matches Glass primitive: high saturate so background hues read through even at 12% fill */
+  backdrop-filter: blur(22px) saturate(320%) brightness(1.01);
+  -webkit-backdrop-filter: blur(22px) saturate(320%) brightness(1.01);
+}
+
+[data-theme='dark'] .pbt-glass-card {
+  backdrop-filter: blur(22px) saturate(200%) brightness(0.96);
+  -webkit-backdrop-filter: blur(22px) saturate(200%) brightness(0.96);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .pbt-glass-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  :root .pbt-glass-card {
+    background: rgba(255, 255, 255, 0.92);
+  }
+  [data-theme='dark'] .pbt-glass-card {
+    background: rgba(28, 12, 14, 0.92);
+  }
+}
+
+/**
+ * ─── Nested liquid-glass text fields ─────────────────────────────────────────
+ * Use .pbt-glass-input for <input> / <textarea> that sit inside a <Glass>
+ * surface. Transparent fill + backdrop blur; placeholder uses --pbt-text-muted.
+ * Focus ring uses --pbt-cherry per brand spec.
+ */
+.pbt-glass-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: var(--pbt-radius-md);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--pbt-text);
+  border-style: solid;
+  border-width: 1px;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+
+:root .pbt-glass-input {
+  /* Same diagonal gradient as the Segmented tab container — that's the reference look.
+     Bright top-left (62%) fading to softer bottom-right (30%), frosted blur behind it. */
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.52) 0%, rgba(255, 255, 255, 0.24) 100%);
+  border-color: var(--pbt-glass-border);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(15, 14, 20, 0.03),
+    0 12px 28px -12px rgba(60, 20, 15, 0.06);
+  backdrop-filter: blur(34px) saturate(235%) brightness(1.02);
+  -webkit-backdrop-filter: blur(34px) saturate(235%) brightness(1.02);
+}
+
+[data-theme='dark'] .pbt-glass-input {
+  background: color-mix(in oklab, rgba(255, 255, 255, 0.07) 55%, rgba(14, 12, 18, 0.52));
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 2px 10px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px) saturate(185%) brightness(0.97);
+  -webkit-backdrop-filter: blur(14px) saturate(185%) brightness(0.97);
+}
+
+.pbt-glass-input::placeholder {
+  color: var(--pbt-text-muted);
+  opacity: 1;
+}
+
+:root .pbt-glass-input::placeholder {
+  /* Slightly stronger than flat muted on translucent light glass */
+  color: color-mix(in oklab, var(--pbt-text) 35%, var(--pbt-text-muted));
+}
+
+.pbt-glass-input:focus-visible {
+  outline: none;
+  border-color: color-mix(in oklab, var(--pbt-cherry) 55%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--pbt-cherry) 24%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+[data-theme='dark'] .pbt-glass-input:focus-visible {
+  border-color: color-mix(in oklab, var(--pbt-cherry) 62%, rgba(255, 255, 255, 0.22));
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--pbt-cherry) 30%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -111,5 +223,15 @@
   [data-theme='dark'] {
     --pbt-glass: rgba(28, 12, 14, 0.92);
     --pbt-glass-tint-strong: rgba(40, 20, 22, 0.96);
+  }
+  :root .pbt-glass-input {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  [data-theme='dark'] .pbt-glass-input {
+    background: color-mix(in oklab, var(--pbt-glass) 88%, rgba(255, 255, 255, 0.06));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }

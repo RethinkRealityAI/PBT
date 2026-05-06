@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Orb } from '../design-system/Orb';
@@ -16,8 +16,9 @@ import {
   type DriverColors,
   type DriverKey,
 } from '../design-system/tokens';
+import { useTheme } from '../app/providers/ThemeProvider';
 import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
-import { SEED_SCENARIOS, type Scenario } from '../data/scenarios';
+import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -44,7 +45,7 @@ function useThinkingSound(active: boolean) {
 }
 
 function seedScenarioIndex(scenario: Scenario): number {
-  return SEED_SCENARIOS.findIndex(
+  return LIBRARY_SCENARIOS.findIndex(
     (seed) =>
       seed === scenario ||
       (seed.breed === scenario.breed &&
@@ -336,7 +337,7 @@ function ScenarioDetailsPanel({
                           border: '1px solid rgba(255,255,255,0.38)',
                           fontSize: 11,
                           fontWeight: 500,
-                          color: 'var(--pbt-text-muted)',
+                          color: '#000',
                           letterSpacing: '0.01em',
                         }}
                       >
@@ -457,10 +458,39 @@ function ScenarioSessionControls({
   );
 }
 
+/** Matches Home scenario card scoring info — round glass + Icon.info 18px */
+function scenarioLibraryInfoButtonStyle(dc: DriverColors, dark: boolean): CSSProperties {
+  return {
+    width: 34,
+    height: 34,
+    borderRadius: '50%',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: dc.primary,
+    flexShrink: 0,
+    border: `1px solid color-mix(in oklab, ${dc.primary} 42%, rgba(255,255,255,0.5))`,
+    background: dark ? 'rgba(10,10,14,0.22)' : 'rgba(255,255,255,0.16)',
+    backdropFilter: 'blur(12px) saturate(240%)',
+    WebkitBackdropFilter: 'blur(12px) saturate(240%)',
+    boxShadow: [
+      'inset 0 1px 0 rgba(255,255,255,0.58)',
+      'inset 0 -1px 0 rgba(0,0,0,0.05)',
+      dark
+        ? '0 6px 14px -5px rgba(0,0,0,0.44)'
+        : '0 8px 16px -10px rgba(15,14,20,0.12), 0 1px 4px rgba(15,14,20,0.04)',
+    ].join(', '),
+  };
+}
+
 export function ChatScreen() {
   const { go } = useNavigation();
   const { profile } = useProfile();
+  const { resolvedTheme } = useTheme();
+  const darkChrome = resolvedTheme === 'dark';
   const driverKey = profile?.primary ?? 'Activator';
+  const driverColors = DRIVER_COLORS[driverKey];
   const { scenario, setScenario } = useScenario();
   const chat = useChat();
   const voice = useVoiceSession();
@@ -513,8 +543,8 @@ export function ChatScreen() {
     (delta: number) => {
       const currentIndex = scenario ? seedScenarioIndex(scenario) : -1;
       if (currentIndex < 0) return;
-      const n = SEED_SCENARIOS.length;
-      const nextScenario = SEED_SCENARIOS[(currentIndex + delta + n) % n];
+      const n = LIBRARY_SCENARIOS.length;
+      const nextScenario = LIBRARY_SCENARIOS[(currentIndex + delta + n) % n];
       voiceStopRef.current();
       chatRef.current.reset();
       voiceFinalizeBusyRef.current = false;
@@ -654,7 +684,7 @@ export function ChatScreen() {
           onNext={() => cycleScenario(1)}
           indexDisplay={
             scenarioCounterIndex !== undefined
-              ? `${scenarioCounterIndex + 1}/${SEED_SCENARIOS.length}`
+              ? `${scenarioCounterIndex + 1}/${LIBRARY_SCENARIOS.length}`
               : null
           }
           disabled={scenarioIndex < 0}
@@ -784,39 +814,44 @@ export function ChatScreen() {
           onClose={() => setScenarioDetailsOpen(false)}
           onBegin={mode === 'voice' && voice.status === 'idle' ? beginVoice : undefined}
           scenarioIndex={scenarioIndex}
-          scenarioTotal={SEED_SCENARIOS.length}
+          scenarioTotal={LIBRARY_SCENARIOS.length}
         />
         <div style={{ position: 'relative' }}>
-          <Glass
-            radius={9999}
-            padding="0 12px 0 10px"
-            blur={18}
-            tint={0.05}
-            onClick={() => setScenarioDetailsOpen(true)}
-            ariaLabel="Scenario info"
+          {/* Same Icon.info + round glass as Home scenario card; label leads for readability */}
+          <div
+            role="button"
+            tabIndex={0}
             className="absolute z-[2] flex cursor-pointer items-center gap-2"
             style={{
               right: 0,
               bottom: '100%',
-              marginBottom: 10,
-              height: 36,
+              marginBottom: 16,
             }}
+            onClick={() => setScenarioDetailsOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setScenarioDetailsOpen(true);
+              }
+            }}
+            aria-label="Scenario info"
           >
-            <Icon.info style={{ width: 16, height: 16, flexShrink: 0 }} />
             <span
               style={{
-                fontFamily: 'var(--pbt-font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-                fontWeight: 600,
-                color: 'var(--pbt-text)',
+                fontSize: 9,
+                letterSpacing: '0.04em',
+                fontWeight: 500,
+                color: 'var(--pbt-text-muted)',
                 whiteSpace: 'nowrap',
+                userSelect: 'none',
               }}
             >
               Scenario info
             </span>
-          </Glass>
+            <span style={scenarioLibraryInfoButtonStyle(driverColors, darkChrome)}>
+              <Icon.info style={{ width: 18, height: 18 }} aria-hidden />
+            </span>
+          </div>
           <ScenarioSessionControls
             scenario={scenario}
             mode={mode}
@@ -992,18 +1027,18 @@ function VoiceMode({
 
   return (
     <div
-      className="flex flex-1 flex-col items-center"
-      style={{ paddingLeft: 20, paddingRight: 20, paddingBottom: 12, minHeight: 0 }}
+      className="flex min-h-0 flex-1 flex-col items-center"
+      style={{ paddingLeft: 20, paddingRight: 20, paddingBottom: 8, minHeight: 0 }}
     >
-      {/* Orb section — status label + orb + emotion dots */}
+      {/* Orb section — status label + orb + emotion dots; pushed down for breathing room */}
       <div
         style={{
           flex: '0 0 auto',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          paddingTop: 8,
-          paddingBottom: 8,
+          paddingTop: 24,
+          paddingBottom: 10,
           width: '100%',
         }}
       >
@@ -1011,7 +1046,7 @@ function VoiceMode({
       {/* Status label */}
       <div
         style={{
-          marginBottom: 20,
+          marginBottom: 14,
           fontFamily: 'var(--pbt-font-mono)',
           fontSize: 11,
           letterSpacing: '0.18em',
@@ -1033,7 +1068,7 @@ function VoiceMode({
           : STATUS_LABELS[voice.status] ?? ''}
       </div>
 
-      {/* Orb — large, centered */}
+      {/* Orb — nudged down so stack breathes vs header; ring glow stays symmetric */}
       <div
         style={{
           position: 'relative',
@@ -1043,6 +1078,7 @@ function VoiceMode({
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
+          marginTop: 18,
         }}
       >
         {/* Ambient gradient aura */}
@@ -1139,7 +1175,7 @@ function VoiceMode({
       {/* Three traffic-light dots + emotion label */}
       <div
         style={{
-          marginTop: 12,
+          marginTop: 18,
           display: 'flex',
           alignItems: 'center',
           gap: 7,
@@ -1218,7 +1254,7 @@ function VoiceMode({
 
       </div>
 
-      {/* Transcript — below orb, centered */}
+      {/* Transcript — fills remaining space below orb block; centered vertically so text uses midzone */}
       <div
         style={{
           flex: 1,
@@ -1227,11 +1263,15 @@ function VoiceMode({
           alignItems: 'center',
           justifyContent: 'center',
           width: '100%',
-          paddingTop: 8,
-          paddingBottom: 16,
-          overflow: 'hidden',
           minHeight: 0,
-          gap: 8,
+          paddingTop: 24,
+          paddingBottom: 18,
+          paddingLeft: 16,
+          paddingRight: 16,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          WebkitOverflowScrolling: 'touch',
+          gap: 12,
         }}
       >
         {aiDisplayText && (
@@ -1241,14 +1281,15 @@ function VoiceMode({
             transition={{ duration: 0.25, ease: 'easeOut' }}
             style={{
               textAlign: 'center',
-              fontSize: 'clamp(17.9px, 4.14vw, 22.1px)',
+              fontSize: 'clamp(16px, 3.9vw, 20px)',
               fontWeight: 400,
-              lineHeight: 1.4,
+              lineHeight: 1.45,
               color: 'var(--pbt-text)',
               letterSpacing: '-0.005em',
               maxWidth: 360,
-              overflow: 'hidden',
+              width: '100%',
               wordBreak: 'break-word',
+              overflowWrap: 'break-word',
             }}
           >
             {aiDisplayText}
@@ -1259,20 +1300,19 @@ function VoiceMode({
             <motion.div
               key={lastUserMsg.timestamp}
               initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 0.55, y: 0 }}
+              animate={{ opacity: 0.58, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
               style={{
                 textAlign: 'center',
                 fontSize: 'clamp(12px, 3vw, 14px)',
                 fontWeight: 400,
-                lineHeight: 1.45,
+                lineHeight: 1.5,
                 color: 'var(--pbt-text-muted)',
-                maxWidth: 320,
-                overflow: 'hidden',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
+                maxWidth: 340,
+                width: '100%',
+                wordBreak: 'break-word',
+                overflowWrap: 'break-word',
               }}
             >
               You: {lastUserMsg.text}

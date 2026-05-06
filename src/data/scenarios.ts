@@ -230,3 +230,15 @@ export const SEED_SCENARIOS: Scenario[] = [
       "I want the absolute best for her, I really do — but that price is just out of reach for me right now. Is there really no other option?",
   },
 ];
+
+/**
+ * The scenarios currently exposed in the UI.
+ * Keep all scenarios in SEED_SCENARIOS; this curated list controls access without deleting content.
+ * Current launch set:
+ *   weight denial · cost / price · switching brands
+ */
+export const LIBRARY_SCENARIOS: Scenario[] = [
+  SEED_SCENARIOS[0], // weight-denial: Lab BCS 8/9, Satiety Support
+  SEED_SCENARIOS[1], // cost: Lab, Satiety Support price
+  SEED_SCENARIOS[5], // brand-switch: Mini Schnauzer, supermarket brand
+];

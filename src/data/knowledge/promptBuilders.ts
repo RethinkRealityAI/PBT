@@ -27,6 +27,16 @@ export function formatPushbackPromptSection(scenario: Scenario): string {
   return base;
 }
 
+function formatScenarioFacts(scenario: Scenario): string {
+  return [
+    `- Breed: ${scenario.breed}`,
+    `- Life stage: ${scenario.age}`,
+    `- Owner persona: ${scenario.persona}`,
+    `- Dog weight: ${scenario.weightKg?.trim() ? `${scenario.weightKg.trim()} kg` : '(not specified)'}`,
+    `- Context: ${scenario.context?.trim() || '(none)'}`,
+  ].join('\n');
+}
+
 const VARIETY_NUDGE = `
 At the start of any new conversation, vary your opening pushback. Don't reuse the
 same lead line you used last session. Pull from the sample phrasings provided —
@@ -55,9 +65,7 @@ Reply in 1–3 sentences per turn. Never break character. Never grade the staff.
 Never mention that you are an AI.
 
 # DOG
-- Breed: ${scenario.breed}
-- Life stage: ${scenario.age}
-- Owner persona: ${scenario.persona}
+${formatScenarioFacts(scenario)}
 
 # PUSHBACK
 ${pushbackBlock}
@@ -114,6 +122,11 @@ actionable, and non-shaming.
 
 # SCENARIO
 - Pushback: ${formatPushbackPromptSection(scenario).replace(/\n/g, ' | ')}
+- Breed: ${scenario.breed}
+- Life stage: ${scenario.age}
+- Owner persona: ${scenario.persona}
+- Dog weight: ${scenario.weightKg?.trim() ? `${scenario.weightKg.trim()} kg` : '(not specified)'}
+- Context: ${scenario.context?.trim() || '(none)'}
 - Customer's underlying driver: ${scenario.suggestedDriver}
 - Difficulty: ${scenario.difficulty}
 - Goal: help the staff handle this objection while moving toward a credible Royal Canin recommendation.
