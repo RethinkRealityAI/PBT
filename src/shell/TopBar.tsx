@@ -8,15 +8,33 @@ export interface TopBarProps {
   title?: string;
   showBack?: boolean;
   trailing?: ReactNode;
+  /** Rich middle content (e.g. home greeting + driver). Overrides `title` when both are set. */
+  center?: ReactNode;
 }
 
-export function TopBar({ title, showBack = false, trailing }: TopBarProps) {
+export function TopBar({ title, showBack = false, trailing, center }: TopBarProps) {
   const { back } = useNavigation();
   const { resolvedTheme, toggle } = useTheme();
 
+  const middle = center ?? (
+    title ? (
+      <h1
+        style={{
+          fontSize: 16,
+          fontWeight: 600,
+          letterSpacing: '-0.01em',
+          margin: 0,
+          color: 'var(--pbt-text)',
+        }}
+      >
+        {title}
+      </h1>
+    ) : null
+  );
+
   return (
-    <div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3 lg:hidden">
-      <div style={{ width: 36 }}>
+    <div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(env(safe-area-inset-top),22px)] pb-4 lg:hidden">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {showBack && (
           <Glass
             radius={9999}
@@ -26,26 +44,16 @@ export function TopBar({ title, showBack = false, trailing }: TopBarProps) {
             onClick={back}
             ariaLabel="Back"
             shine={false}
-            className="flex h-9 w-9 items-center justify-center"
+            className="flex h-9 w-9 shrink-0 items-center justify-center"
           >
             <Icon.back />
           </Glass>
         )}
+        {middle && (
+          <div className="min-w-0 flex-1 text-left">{middle}</div>
+        )}
       </div>
-      {title && (
-        <h1
-          style={{
-            fontSize: 16,
-            fontWeight: 600,
-            letterSpacing: '-0.01em',
-            margin: 0,
-            color: 'var(--pbt-text)',
-          }}
-        >
-          {title}
-        </h1>
-      )}
-      <div style={{ minWidth: 36 }} className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         {trailing}
         <Glass
           radius={9999}

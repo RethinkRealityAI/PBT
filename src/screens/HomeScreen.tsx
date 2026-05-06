@@ -202,7 +202,7 @@ export function HomeScreen() {
           ) : undefined
         }
       />
-      <Page withTabBar>
+      <Page withTabBar className="!pt-6 lg:!pt-10">
         {/* Desktop-only top row: larger heading + profile button */}
         <div className="hidden lg:flex items-start justify-between gap-4 mb-8">
           <div>
