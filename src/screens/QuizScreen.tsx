@@ -4,15 +4,14 @@ import { Glass } from '../design-system/Glass';
 import { DriverWave } from '../design-system/DriverWave';
 import { Icon } from '../design-system/Icon';
 import { useQuiz } from '../features/quiz/useQuiz';
-import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
-import { DRIVER_COLORS, type DriverKey } from '../design-system/tokens';
+import type { DriverKey } from '../design-system/tokens';
 import type { QuizOption } from '../data/quizQuestions';
 
-// All four driver colors for the rainbow gradient effects
+// All four driver colors — ambient UI stays multicolor; answers don’t reveal mapping
 const RAINBOW = [
   'oklch(0.62 0.22 22)',   // Activator — coral/red
   'oklch(0.70 0.18 70)',   // Energizer — amber
@@ -20,20 +19,46 @@ const RAINBOW = [
   'oklch(0.60 0.16 145)',  // Harmonizer — green
 ] as const;
 
-const RAINBOW_GRADIENT = `linear-gradient(90deg, ${RAINBOW.join(', ')})`;
+/** Lighter, smoother-blended progress fill (same hues as intro wave) */
+const RAINBOW_FILL_SOFT = `linear-gradient(90deg in oklab,
+  oklch(0.86 0.09 22) 0%,
+  oklch(0.88 0.08 48) 22%,
+  oklch(0.89 0.08 85) 44%,
+  oklch(0.87 0.08 220) 67%,
+  oklch(0.86 0.09 145) 100%)`;
+
+/** Letter badge — soft rainbow rim (idle / chosen intensities) */
+const LETTER_RIM_SOFT = [
+  `-1px -1px 8px 0 color-mix(in oklab, ${RAINBOW[0]} 12%, transparent)`,
+  `1px -1px 8px 0 color-mix(in oklab, ${RAINBOW[1]} 12%, transparent)`,
+  `1px 1px 8px 0 color-mix(in oklab, ${RAINBOW[2]} 12%, transparent)`,
+  `-1px 1px 8px 0 color-mix(in oklab, ${RAINBOW[3]} 12%, transparent)`,
+  'inset 0 1px 0 rgba(255,255,255,0.55)',
+].join(', ');
+
+/** Tighter rims + softer outer shadow — stays inside rail padding (no clip / no horizontal scroll). */
+const LETTER_RIM_CHOSEN_COMPACT = [
+  `-1px -1px 7px 0 color-mix(in oklab, ${RAINBOW[0]} 15%, transparent)`,
+  `1px -1px 7px 0 color-mix(in oklab, ${RAINBOW[1]} 15%, transparent)`,
+  `1px 1px 7px 0 color-mix(in oklab, ${RAINBOW[2]} 15%, transparent)`,
+  `-1px 1px 7px 0 color-mix(in oklab, ${RAINBOW[3]} 15%, transparent)`,
+  'inset 0 1px 0 rgba(255,255,255,0.65)',
+].join(', ');
+
+/** Answer row glass — crisp border, minimal shadow (matches letter badge stroke when selected) */
+const glassBorder = (dark: boolean) =>
+  dark ? '1px solid rgba(255,255,255,0.22)' : '1px solid rgba(255,255,255,0.52)';
+
+const glassShadowIdle = '0 1px 0 rgba(255,255,255,0.45) inset, 0 2px 12px -6px rgba(15, 10, 12, 0.06)';
+const glassShadowChosenCompact = `${LETTER_RIM_CHOSEN_COMPACT}, 0 2px 10px -8px rgba(15, 10, 12, 0.06)`;
 
 export function QuizScreen() {
   const { go, back } = useNavigation();
   const { setProfile } = useProfile();
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme, toggle } = useTheme();
   const dark = resolvedTheme === 'dark';
   const { step, currentQuestion, tieBreaker, answer } = useQuiz();
   const [chosen, setChosen] = useState<QuizOption | null>(null);
-  const [activeDriver, setActiveDriver] = useState<DriverKey | 'all'>('all');
-  // Track the driver color of the chosen option for glow/border effects
-  const chosenDriverColor = chosen
-    ? DRIVER_COLORS[chosen.driver as DriverKey]?.primary ?? RAINBOW[0]
-    : null;
 
   // Prevent double-fire
   const answering = useRef(false);
@@ -80,7 +105,6 @@ export function QuizScreen() {
     if (chosen || answering.current) return;
     answering.current = true;
     setChosen(opt);
-    setActiveDriver(opt.driver as DriverKey);
     setTimeout(() => answer(opt.driver as DriverKey), 420);
   };
 
@@ -89,140 +113,167 @@ export function QuizScreen() {
       ? ((step.index + 1) / step.total) * 100
       : 100;
 
-  // Current driver color for orbs/progress (update immediately when driver changes)
-  const driverColor = activeDriver !== 'all'
-    ? DRIVER_COLORS[activeDriver].primary
-    : null;
+  const showBack = !(step.kind === 'question' && step.index === 0);
+  const waveH = 'clamp(38px, 12vw, 52px)';
 
   return (
     <>
-      <TopBar
-        title="ECHO Driver Quiz"
-        showBack={!(step.kind === 'question' && step.index === 0)}
-        trailing={
-          <button
-            onClick={back}
+      <Page className="flex min-h-0 flex-1 flex-col !px-6 !pt-0 overflow-x-hidden overflow-y-hidden max-sm:!px-7 lg:!px-12">
+        {/* Soft multi-driver wash — full canvas */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 0,
+            pointerEvents: 'none',
+            /* Soft white veil at top (light) / gentle darken at top (dark); no harsh corner orbs */
+            background: dark
+              ? `linear-gradient(180deg,
+                  rgba(10, 7, 9, 0.72) 0%,
+                  transparent 44%
+                ),
+                linear-gradient(165deg,
+                  color-mix(in oklab, ${RAINBOW[2]} 13%, transparent) 0%,
+                  color-mix(in oklab, ${RAINBOW[0]} 9%, transparent) 28%,
+                  color-mix(in oklab, ${RAINBOW[3]} 10%, transparent) 58%,
+                  color-mix(in oklab, ${RAINBOW[1]} 8%, transparent) 100%)`
+              : `linear-gradient(180deg,
+                  rgba(255,255,255,0.88) 0%,
+                  rgba(255,255,255,0.42) 34%,
+                  transparent 54%
+                ),
+                linear-gradient(165deg,
+                  color-mix(in oklab, ${RAINBOW[2]} 15%, transparent) 0%,
+                  color-mix(in oklab, ${RAINBOW[1]} 11%, transparent) 30%,
+                  color-mix(in oklab, ${RAINBOW[3]} 12%, transparent) 62%,
+                  color-mix(in oklab, ${RAINBOW[0]} 10%, transparent) 100%)`,
+          }}
+        />
+        {/* Single soft bottom blob — color anchors the canvas without hot spots at the top */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            bottom: '12%',
+            left: '0',
+            width: 'min(52%, 100%)',
+            height: '32%',
+            borderRadius: '50%',
+            opacity: dark ? 0.36 : 0.4,
+            background: `
+              radial-gradient(ellipse 68% 58% at 48% 48%, color-mix(in oklab, ${RAINBOW[1]} 12%, transparent), transparent 60%),
+              radial-gradient(ellipse 58% 52% at 62% 55%, color-mix(in oklab, ${RAINBOW[3]} 11%, transparent), transparent 58%),
+              radial-gradient(ellipse 50% 46% at 38% 52%, color-mix(in oklab, ${RAINBOW[2]} 10%, transparent), transparent 56%)
+            `,
+            filter: 'blur(30px)',
+            pointerEvents: 'none',
+            zIndex: 0,
+          }}
+        />
+
+        <div className="relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Seamless top controls (no separate sticky header band) */}
+          <div
+            className="flex shrink-0 items-center gap-2"
             style={{
-              fontFamily: 'var(--pbt-font-mono)',
-              fontSize: 11,
-              letterSpacing: '0.10em',
-              textTransform: 'uppercase',
-              color: 'var(--pbt-text-muted)',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
+              paddingTop: 'max(env(safe-area-inset-top), 10px)',
+              paddingBottom: 'clamp(18px, 5vw, 28px)',
             }}
           >
-            {counter}
-          </button>
-        }
-      />
-      <Page className="flex flex-col flex-1 min-h-0">
-        {/* Ambient orbs — cross-fade to active driver color */}
-        {/* Ambient orbs — keyed so AnimatePresence can exit/enter on driver change */}
-        <AnimatePresence>
-          <motion.div
-            aria-hidden
-            key={`orb1-${activeDriver}`}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.7, ease: 'easeInOut' }}
-            style={{
-              position: 'absolute',
-              top: '8%',
-              right: '-10%',
-              width: '70%',
-              height: '40%',
-              borderRadius: '50%',
-              background: `radial-gradient(closest-side, color-mix(in oklab, ${driverColor ?? 'oklch(0.62 0.22 22)'} 28%, transparent), transparent 70%)`,
-              filter: 'blur(32px)',
-              pointerEvents: 'none',
-              zIndex: 0,
-            }}
-          />
-        </AnimatePresence>
-        <AnimatePresence>
-          <motion.div
-            aria-hidden
-            key={`orb2-${activeDriver}`}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.7, ease: 'easeInOut', delay: 0.12 }}
-            style={{
-              position: 'absolute',
-              bottom: '15%',
-              left: '-10%',
-              width: '55%',
-              height: '30%',
-              borderRadius: '50%',
-              background: `radial-gradient(closest-side, color-mix(in oklab, ${driverColor ?? 'oklch(0.70 0.18 70)'} 22%, transparent), transparent 70%)`,
-              filter: 'blur(26px)',
-              pointerEvents: 'none',
-              zIndex: 0,
-            }}
-          />
-        </AnimatePresence>
+            {showBack ? (
+              <Glass
+                radius={9999}
+                padding={0}
+                blur={20}
+                tint={0.45}
+                onClick={back}
+                ariaLabel="Back"
+                shine={false}
+                className="flex h-9 w-9 shrink-0 items-center justify-center"
+              >
+                <Icon.back />
+              </Glass>
+            ) : null}
+            <h1
+              className="min-w-0 flex-1 truncate text-left"
+              style={{
+                margin: 0,
+                fontSize: 15,
+                fontWeight: 600,
+                letterSpacing: '-0.02em',
+                color: 'var(--pbt-text)',
+              }}
+            >
+              ECHO Driver Quiz
+            </h1>
+            <button
+              type="button"
+              onClick={back}
+              style={{
+                fontFamily: 'var(--pbt-font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.10em',
+                textTransform: 'uppercase',
+                color: 'var(--pbt-text-muted)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                flexShrink: 0,
+                padding: '4px 2px',
+              }}
+            >
+              {counter}
+            </button>
+            <Glass
+              radius={9999}
+              padding={0}
+              tint={0.3}
+              shine={false}
+              onClick={toggle}
+              ariaLabel={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+              className="flex h-9 w-9 shrink-0 items-center justify-center"
+            >
+              {resolvedTheme === 'dark' ? <Icon.sun /> : <Icon.moon />}
+            </Glass>
+          </div>
 
-        <div className="relative z-[1] flex flex-col flex-1 min-h-0">
-          <header className="shrink-0">
-            {/* DriverWave — cross-fades when driver changes */}
-            <div style={{ height: 56, marginBottom: 8, position: 'relative' }}>
-              <AnimatePresence>
-                <motion.div
-                  key={activeDriver}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.4, ease: 'easeInOut' }}
-                  style={{ position: 'absolute', inset: 0 }}
-                >
-                  <DriverWave
-                    driver={activeDriver}
-                    height={56}
-                    synthwave
-                    amplitude={1.15}
-                    speed={1.05}
-                  />
-                </motion.div>
-              </AnimatePresence>
+          <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain">
+          <header className="shrink-0 px-0 pt-0">
+            {/* Multicolor wave — breathing room below title row + above progress */}
+            <div
+              style={{
+                height: waveH,
+                marginTop: 'clamp(6px, 2vw, 12px)',
+                marginBottom: 'clamp(16px, 4.5vw, 24px)',
+                minHeight: 38,
+              }}
+            >
+              <DriverWave
+                driver="all"
+                height={52}
+                synthwave
+                amplitude={1.15}
+                speed={1.05}
+              />
             </div>
 
-            {/* Progress bar — rainbow gradient fill + glowing thumb */}
+            {/* Progress — soft rainbow fill, white thumb */}
             <div
               style={{
                 position: 'relative',
-                height: 6,
+                height: 'max(5px, min(6px, 1.4vw))',
                 borderRadius: 9999,
-                background: dark
-                  ? 'rgba(255,255,255,0.10)'
-                  : 'rgba(0,0,0,0.07)',
-                marginBottom: 14,
+                background: dark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)',
+                marginBottom: 'clamp(18px, 5vw, 28px)',
                 overflow: 'visible',
+                border: dark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.45)',
               }}
             >
-              {/* Track glassmorphic tint */}
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  borderRadius: 9999,
-                  backdropFilter: 'blur(8px)',
-                  WebkitBackdropFilter: 'blur(8px)',
-                  background: dark
-                    ? 'rgba(255,255,255,0.06)'
-                    : 'rgba(255,255,255,0.35)',
-                  border: '0.5px solid rgba(255,255,255,0.4)',
-                }}
-              />
-              {/* Fill — rainbow when no driver chosen, transitions to active driver color */}
               <motion.div
                 animate={{
                   width: `${pct}%`,
-                  background: driverColor
-                    ? `linear-gradient(90deg, ${driverColor}, color-mix(in oklab, ${driverColor} 70%, ${DRIVER_COLORS[activeDriver as DriverKey]?.accent ?? driverColor}))`
-                    : RAINBOW_GRADIENT,
+                  background: RAINBOW_FILL_SOFT,
                 }}
                 transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
                 style={{
@@ -231,10 +282,9 @@ export function QuizScreen() {
                   left: 0,
                   height: '100%',
                   borderRadius: 9999,
-                  boxShadow: `0 0 8px 2px color-mix(in oklab, ${driverColor ?? RAINBOW[0]} 50%, transparent)`,
+                  boxShadow: '0 0 12px 3px rgba(255,255,255,0.18)',
                 }}
               />
-              {/* Glowing thumb dot */}
               <motion.div
                 animate={{ left: `${pct}%` }}
                 transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
@@ -242,11 +292,12 @@ export function QuizScreen() {
                   position: 'absolute',
                   top: '50%',
                   transform: 'translate(-50%, -50%)',
-                  width: 16,
-                  height: 16,
+                  width: 13,
+                  height: 13,
                   borderRadius: '50%',
-                  background: driverColor ?? RAINBOW[0],
-                  boxShadow: `0 0 10px 4px color-mix(in oklab, ${driverColor ?? RAINBOW[0]} 65%, transparent), 0 0 22px 10px color-mix(in oklab, ${driverColor ?? RAINBOW[0]} 22%, transparent)`,
+                  background: '#fff',
+                  boxShadow:
+                    '0 0 10px 3px rgba(255,255,255,0.55), 0 0 22px 8px rgba(255,255,255,0.25)',
                   zIndex: 2,
                 }}
               />
@@ -255,12 +306,17 @@ export function QuizScreen() {
             <div
               style={{
                 fontFamily: 'var(--pbt-font-mono)',
-                fontSize: 11,
-                letterSpacing: '0.18em',
+                fontSize: 'clamp(11px, 3.4vw, 14px)',
+                letterSpacing: '0.14em',
                 textTransform: 'uppercase',
-                color: 'var(--pbt-text-muted)',
-                marginBottom: 6,
-                textAlign: 'center',
+                fontWeight: 700,
+                color: 'var(--pbt-text)',
+                opacity: dark ? 0.96 : 1,
+                marginBottom: 'clamp(10px, 3vw, 16px)',
+                textAlign: 'left',
+                textShadow: dark
+                  ? '0 1px 3px rgba(0, 0, 0, 0.45)'
+                  : '0 1px 2px rgba(255, 255, 255, 0.75)',
               }}
             >
               {step.kind === 'question'
@@ -270,61 +326,77 @@ export function QuizScreen() {
           </header>
 
           <div
-            className="flex flex-1 flex-col justify-center min-h-0"
-            style={{ gap: 22, paddingTop: 12, paddingBottom: 16 }}
+            className="flex min-h-0 flex-1 flex-col justify-start"
+            style={{
+              paddingTop: 'clamp(10px, 3vw, 20px)',
+              paddingBottom: 16,
+            }}
           >
             <h2
               style={{
                 margin: 0,
-                fontSize: 31,
+                marginBottom: 'clamp(32px, min(12vh, 14vw), 96px)',
+                fontSize: 'clamp(18px, 5.25vw, 26.8px)',
                 fontWeight: 400,
                 letterSpacing: '-0.025em',
-                lineHeight: 1.12,
+                lineHeight: 1.2,
                 color: 'var(--pbt-text)',
                 textAlign: 'center',
-                paddingInline: 4,
+                paddingInline: 'clamp(2px, 1vw, 8px)',
               }}
             >
               {question.prompt}
             </h2>
 
-            <div className="flex flex-col" style={{ gap: 12 }}>
+            <div
+              className="mx-auto flex min-w-0 w-full max-w-full flex-col sm:max-w-[min(100%,22rem)]"
+              style={{ gap: 12, paddingInline: 6 }}
+            >
               {question.options.map((opt) => {
                 const isChosen = chosen?.letter === opt.letter;
                 const isOther = chosen !== null && !isChosen;
-                const optDriverColor = DRIVER_COLORS[opt.driver as DriverKey]?.primary ?? RAINBOW[0];
 
                 return (
                   <motion.div
                     key={opt.letter}
+                    className="min-w-0"
                     animate={
                       isChosen
-                        ? { y: -5, scale: 1.02 }
+                        ? { y: -3, scale: 1 }
                         : isOther
-                          ? { opacity: 0.32, scale: 0.97 }
+                          ? { opacity: 0.32, scale: 0.98 }
                           : { y: 0, scale: 1, opacity: 1 }
                     }
                     transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                    whileHover={
+                      isChosen || isOther
+                        ? undefined
+                        : {
+                            y: -3,
+                            transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+                          }
+                    }
                   >
                     <Glass
                       onClick={() => handleChoose(opt)}
-                      radius={22}
+                      radius={28}
                       padding={18}
                       blur={20}
                       glow={null}
                       shine={true}
-                      style={isChosen ? {
-                        boxShadow: [
-                          `0 0 0 1.5px ${optDriverColor}`,
-                          `0 8px 20px -6px color-mix(in oklab, ${optDriverColor} 40%, transparent)`,
-                        ].join(', '),
-                        transition: 'box-shadow 0.28s ease',
-                      } : {
-                        transition: 'box-shadow 0.28s ease',
+                      className="rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:ring-offset-0"
+                      style={{
+                        border: isChosen
+                          ? '1px solid rgba(255,255,255,0.72)'
+                          : glassBorder(dark),
+                        boxShadow: isChosen ? glassShadowChosenCompact : glassShadowIdle,
+                        transition: 'box-shadow 0.28s ease, border-color 0.28s ease, transform 0.22s ease',
+                        outline: 'none',
+                        WebkitTapHighlightColor: 'transparent',
                       }}
                     >
                       <div className="flex items-center gap-4">
-                        {/* Letter badge — always glassmorphic; only border/glow change on chosen */}
+                        {/* Letter badge — uniform multicolor rim; no per-driver hint */}
                         <div
                           style={{
                             width: 36,
@@ -342,25 +414,10 @@ export function QuizScreen() {
                             background: dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.28)',
                             color: dark ? '#fff' : 'oklch(0.25 0.04 20)',
                             border: isChosen
-                              ? `1px solid color-mix(in oklab, ${optDriverColor} 70%, white)`
+                              ? '1px solid rgba(255,255,255,0.72)'
                               : '1px solid rgba(255,255,255,0.55)',
-                            boxShadow: isChosen
-                              ? [
-                                  `-3px -3px 8px 2px color-mix(in oklab, ${RAINBOW[0]} 25%, transparent)`,
-                                  `3px -3px 8px 2px color-mix(in oklab, ${RAINBOW[1]} 25%, transparent)`,
-                                  `3px 3px 8px 2px color-mix(in oklab, ${RAINBOW[2]} 25%, transparent)`,
-                                  `-3px 3px 8px 2px color-mix(in oklab, ${RAINBOW[3]} 25%, transparent)`,
-                                  'inset 0 1px 0 rgba(255,255,255,0.70)',
-                                ].join(', ')
-                              : [
-                                  `-3px -3px 8px 2px color-mix(in oklab, ${RAINBOW[0]} 18%, transparent)`,
-                                  `3px -3px 8px 2px color-mix(in oklab, ${RAINBOW[1]} 18%, transparent)`,
-                                  `3px 3px 8px 2px color-mix(in oklab, ${RAINBOW[2]} 18%, transparent)`,
-                                  `-3px 3px 8px 2px color-mix(in oklab, ${RAINBOW[3]} 18%, transparent)`,
-                                  '0 2px 8px rgba(0,0,0,0.06)',
-                                  'inset 0 1px 0 rgba(255,255,255,0.70)',
-                                ].join(', '),
-                            transition: 'border 0.28s ease, box-shadow 0.28s ease',
+                            boxShadow: isChosen ? LETTER_RIM_CHOSEN_COMPACT : LETTER_RIM_SOFT,
+                            transition: 'box-shadow 0.28s ease, border-color 0.28s ease',
                           }}
                         >
                           <AnimatePresence mode="wait">
@@ -404,6 +461,7 @@ export function QuizScreen() {
                 );
               })}
             </div>
+          </div>
           </div>
         </div>
       </Page>
