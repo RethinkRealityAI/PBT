@@ -56,9 +56,9 @@ describe('QUIZ_QUESTIONS', () => {
 
   it('every partLabel matches its part number', () => {
     const labelMap: Record<number, string> = {
-      1: 'Workplace dynamics',
-      2: 'Communication & interaction',
-      3: 'Personal style & values',
+      1: 'How you work',
+      2: 'How you connect',
+      3: 'Who you are',
     }
     for (const q of QUIZ_QUESTIONS) {
       expect(q.partLabel).toBe(labelMap[q.part])
