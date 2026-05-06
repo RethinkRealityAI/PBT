@@ -1,10 +1,9 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Orb } from '../design-system/Orb';
 import { Icon } from '../design-system/Icon';
 import { PillButton } from '../design-system/PillButton';
-import { DriverWave } from '../design-system/DriverWave';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
@@ -12,7 +11,7 @@ import { useProfile } from '../app/providers/ProfileProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { useSession } from '../app/providers/SessionProvider';
 import { ECHO_DRIVERS } from '../data/echoDrivers';
-import { DRIVER_COLORS, RADII } from '../design-system/tokens';
+import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens';
 import { SEED_SCENARIOS } from '../data/scenarios';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
@@ -33,6 +32,76 @@ function getDisplayName(user: { email?: string; user_metadata?: { display_name?:
   const email = user.email;
   if (email) return email.split('@')[0];
   return null;
+}
+
+function driverAvatarGradient(dc: DriverColors): string {
+  return `linear-gradient(180deg, color-mix(in oklab, ${dc.primary} 90%, white), ${dc.accent})`;
+}
+
+function pillSolidDriverStyle(dc: DriverColors): CSSProperties {
+  return {
+    background: `linear-gradient(180deg, ${dc.primary}, ${dc.accent})`,
+    border: `1px solid color-mix(in oklab, ${dc.primary} 28%, rgba(255,255,255,0.45))`,
+    boxShadow: [
+      '0 1px 0 rgba(255,255,255,0.38) inset',
+      '0 -1px 0 rgba(0,0,0,0.1) inset',
+      `0 5px 18px -8px color-mix(in oklab, ${dc.primary} 28%, transparent)`,
+      `0 1px 3px rgba(0,0,0,0.07)`,
+    ].join(', '),
+  };
+}
+
+/** Secondary dashboard tiles — liquid glass, no colored bloom. */
+function dashTileGlass(dark: boolean) {
+  return {
+    glow: null as const,
+    /* Match Glass default (0.06 light / 0.44 dark) — near-transparent in light so
+       background hues show through the frosted surface. */
+    tint: dark ? 0.44 : 0.06,
+    blur: dark ? 36 : 22,
+  };
+}
+
+/**
+ * Glassmorphic icon badge — frosted fill, driver-colored border + icon, no solid soft fill.
+ * Light: ~38% white + strong saturate lets background bleed through.
+ * Dark:  ~20% neutral dark — glassy, not opaque.
+ */
+function iconBadgeStyle(dc: typeof DRIVER_COLORS[keyof typeof DRIVER_COLORS], dark: boolean): CSSProperties {
+  return {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    flexShrink: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: dc.primary,
+    backdropFilter: 'blur(10px) saturate(200%)',
+    WebkitBackdropFilter: 'blur(10px) saturate(200%)',
+    background: dark
+      ? 'rgba(10, 10, 14, 0.22)'
+      : 'rgba(255, 255, 255, 0.28)',
+    border: `1px solid color-mix(in oklab, ${dc.primary} 32%, rgba(255,255,255,0.45))`,
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35)',
+  };
+}
+
+/** Small round controls (scenario arrows) — same glass + lift language as icon badges */
+function roundGlassControlStyle(dc: DriverColors, dark: boolean): CSSProperties {
+  return {
+    border: `1px solid color-mix(in oklab, ${dc.primary} 42%, rgba(255,255,255,0.5))`,
+    background: dark ? 'rgba(10,10,14,0.30)' : 'rgba(255,255,255,0.42)',
+    backdropFilter: 'blur(12px) saturate(240%)',
+    WebkitBackdropFilter: 'blur(12px) saturate(240%)',
+    boxShadow: [
+      'inset 0 1px 0 rgba(255,255,255,0.58)',
+      'inset 0 -1px 0 rgba(0,0,0,0.05)',
+      dark
+        ? '0 6px 14px -5px rgba(0,0,0,0.5)'
+        : '0 8px 16px -8px rgba(15,14,20,0.16), 0 2px 6px rgba(15,14,20,0.08)',
+    ].join(', '),
+  };
 }
 
 export function HomeScreen() {
@@ -62,6 +131,53 @@ export function HomeScreen() {
   return (
     <>
       <TopBar
+        center={
+          <div className="min-w-0 pr-1">
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.2,
+                color: 'var(--pbt-text)',
+                marginBottom: 3,
+              }}
+            >
+              {displayName ? `Good day, ${displayName}.` : 'Good day.'}
+            </div>
+            <div
+              className="flex items-center gap-2"
+              style={{ minWidth: 0 }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  background: driverColors.primary,
+                  boxShadow: `0 0 10px color-mix(in oklab, ${driverColors.primary} 75%, transparent)`,
+                }}
+              />
+              <span
+                style={{
+                  fontFamily: 'var(--pbt-font-mono)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: 'var(--pbt-text)',
+                  opacity: 0.92,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                ECHO Driver · {driver.name}
+              </span>
+            </div>
+          </div>
+        }
         trailing={
           initials ? (
             <Glass
@@ -73,8 +189,7 @@ export function HomeScreen() {
               ariaLabel="Profile"
               className="flex h-9 w-9 items-center justify-center"
               style={{
-                background:
-                  'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                background: driverAvatarGradient(driverColors),
                 color: '#fff',
                 fontFamily: 'var(--pbt-font-mono)',
                 fontSize: 11,
@@ -91,15 +206,18 @@ export function HomeScreen() {
         {/* Desktop-only top row: larger heading + profile button */}
         <div className="hidden lg:flex items-start justify-between gap-4 mb-8">
           <div>
-            {displayName ? (
-              <div style={{ fontSize: 14, color: 'var(--pbt-text-muted)', marginBottom: 4 }}>
-                Good day, {displayName}.
-              </div>
-            ) : (
-              <div style={{ fontSize: 14, color: 'var(--pbt-text-muted)', marginBottom: 4 }}>
-                Good day
-              </div>
-            )}
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 600,
+                letterSpacing: '-0.02em',
+                color: 'var(--pbt-text)',
+                opacity: 0.92,
+                marginBottom: 6,
+              }}
+            >
+              {displayName ? `Good day, ${displayName}.` : 'Good day.'}
+            </div>
             <h1
               style={{
                 margin: 0,
@@ -124,8 +242,7 @@ export function HomeScreen() {
               ariaLabel="Profile"
               className="flex h-11 w-11 items-center justify-center flex-shrink-0"
               style={{
-                background:
-                  'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                background: driverAvatarGradient(driverColors),
                 color: '#fff',
                 fontFamily: 'var(--pbt-font-mono)',
                 fontSize: 12,
@@ -150,15 +267,6 @@ export function HomeScreen() {
           <div>
             {/* Mobile-only greeting + headline (hidden on desktop; desktop version is above) */}
             <div className="lg:hidden">
-              {displayName ? (
-                <div style={{ marginBottom: 4, fontSize: 14, color: 'var(--pbt-text-muted)' }}>
-                  Good day, {displayName}.
-                </div>
-              ) : (
-                <div style={{ marginBottom: 4, fontSize: 14, color: 'var(--pbt-text-muted)' }}>
-                  Good day
-                </div>
-              )}
               <h1
                 style={{
                   margin: '0 0 14px',
@@ -176,13 +284,12 @@ export function HomeScreen() {
               <SaveProgressBanner />
             </div>
 
-            {/* Driver pill */}
+            {/* Driver pill — desktop only (mobile: TopBar) */}
             <div
+              className="mb-[18px] hidden lg:inline-flex"
               style={{
-                display: 'inline-flex',
                 alignItems: 'center',
                 gap: 8,
-                marginBottom: 18,
               }}
             >
               <span
@@ -203,7 +310,7 @@ export function HomeScreen() {
                   color: 'var(--pbt-text-muted)',
                 }}
               >
-                Driver · {driver.name}
+                ECHO Driver · {driver.name}
               </span>
             </div>
 
@@ -212,24 +319,26 @@ export function HomeScreen() {
               radius={RADII.xl}
               padding={22}
               glow={driverColors.primary}
+              tint={dark ? 0.38 : 0.08}
+              blur={dark ? 36 : 22}
               style={{ minHeight: 200, position: 'relative', marginBottom: 14, overflow: 'hidden' }}
             >
               <div
                 style={{
                   position: 'absolute',
-                  top: 16,
+                  top: 52,
                   right: 16,
                   opacity: 0.85,
                   pointerEvents: 'none',
                   zIndex: 0,
-                  width: 72,
-                  height: 72,
+                  width: 104,
+                  height: 104,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                {/* Ripple rings — driver-colored, evenly staggered, smooth fade */}
+                {/* Ripple rings — emanating waves (no separate synth wave elsewhere) */}
                 {[0, 1, 2].map((i) => (
                   <motion.div
                     key={i}
@@ -239,18 +348,18 @@ export function HomeScreen() {
                       inset: 0,
                       borderRadius: '50%',
                       border: `1.5px solid ${driverColors.primary}`,
-                      boxShadow: `0 0 12px ${driverColors.primary}`,
+                      boxShadow: `0 0 10px color-mix(in oklab, ${driverColors.primary} 40%, transparent)`,
                       willChange: 'transform, opacity',
                     }}
                     initial={{ scale: 1, opacity: 0 }}
                     animate={{
-                      scale: [1, 2.4],
-                      opacity: [0, 0.55, 0.35, 0.12, 0],
+                      scale: [1, 2.75],
+                      opacity: [0, 0.34, 0.24, 0.07, 0],
                     }}
                     transition={{
-                      duration: 3.6,
+                      duration: 3.8,
                       repeat: Infinity,
-                      delay: i * 1.2,
+                      delay: i * 1.15,
                       ease: [0.22, 0.61, 0.36, 1],
                       times: [0, 0.15, 0.45, 0.8, 1],
                     }}
@@ -261,40 +370,50 @@ export function HomeScreen() {
                   aria-hidden
                   style={{
                     position: 'absolute',
-                    inset: '-20%',
+                    inset: '-22%',
                     borderRadius: '50%',
-                    background: `radial-gradient(closest-side, color-mix(in oklab, ${driverColors.primary} 30%, transparent), transparent 70%)`,
-                    filter: 'blur(8px)',
+                    background: `radial-gradient(closest-side, color-mix(in oklab, ${driverColors.primary} 26%, transparent), transparent 72%)`,
+                    filter: 'blur(12px)',
                     pointerEvents: 'none',
                   }}
-                  animate={{ opacity: [0.45, 0.85, 0.45] }}
+                  animate={{ opacity: [0.26, 0.5, 0.26] }}
                   transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
                 />
-                {/* Breathing orb */}
+                {/* Breathing orb — slightly larger; Orb halo handles pulse */}
                 <motion.div
                   style={{ position: 'relative' }}
-                  animate={{ scale: [1.0, 1.04, 1.0] }}
+                  animate={{ scale: [1.0, 1.045, 1.0] }}
                   transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
                 >
-                  <Orb size={72} />
+                  <Orb size={88} driver={profile.primary} pulse />
                 </motion.div>
               </div>
 
-              <div style={{ position: 'relative', zIndex: 1, paddingRight: 92 }}>
-              {/* Header row: eyebrow + scenario counter */}
-              <div className="flex items-center justify-between gap-2" style={{ marginBottom: 8 }}>
+              {/*
+               * Do not pad the whole column for the orb — only constrain title/subcopy.
+               * Otherwise prev/next + info align to a narrow column instead of the card edge.
+               */}
+              <div style={{ position: 'relative', zIndex: 1 }}>
+              {/* Header row: title left, flexible gap, switcher flush to card inner edge */}
+              <div
+                className="flex w-full min-w-0 items-center"
+                style={{ marginBottom: 8, gap: 12 }}
+              >
                 <div
                   style={{
                     fontFamily: 'var(--pbt-font-mono)',
                     fontSize: 10,
-                    letterSpacing: '0.18em',
+                    letterSpacing: '0.14em',
                     textTransform: 'uppercase',
                     color: 'var(--pbt-text-muted)',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
                   Scenario library
                 </div>
-                <div className="flex items-center gap-1">
+                <div aria-hidden style={{ flex: 1, minWidth: 8 }} />
+                <div className="flex shrink-0 items-center gap-1">
                   <button
                     onClick={() => setPickIndex((i) => (i - 1 + total) % total)}
                     aria-label="Previous scenario"
@@ -302,15 +421,12 @@ export function HomeScreen() {
                       width: 28,
                       height: 28,
                       borderRadius: '50%',
-                      border: '1px solid rgba(255,255,255,0.45)',
-                      background: 'rgba(255,255,255,0.22)',
-                      backdropFilter: 'blur(12px)',
-                      WebkitBackdropFilter: 'blur(12px)',
                       cursor: 'pointer',
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: 'var(--pbt-text)',
+                      color: driverColors.primary,
+                      ...roundGlassControlStyle(driverColors, dark),
                     }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -334,15 +450,12 @@ export function HomeScreen() {
                       width: 28,
                       height: 28,
                       borderRadius: '50%',
-                      border: '1px solid rgba(255,255,255,0.45)',
-                      background: 'rgba(255,255,255,0.22)',
-                      backdropFilter: 'blur(12px)',
-                      WebkitBackdropFilter: 'blur(12px)',
                       cursor: 'pointer',
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: 'var(--pbt-text)',
+                      color: driverColors.primary,
+                      ...roundGlassControlStyle(driverColors, dark),
                     }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
@@ -353,15 +466,21 @@ export function HomeScreen() {
               <h2
                 style={{
                   margin: '0 0 6px',
-                  fontSize: 26,
+                  fontSize: 20,
                   fontWeight: 400,
                   letterSpacing: '-0.02em',
                   color: 'var(--pbt-text)',
                   maxWidth: 240,
+                  paddingRight: 108,
                   transition: 'opacity 0.2s',
                 }}
               >
-                {todaysPick.pushback.title}
+                {(() => {
+                  const words = todaysPick.pushback.title.split(' ');
+                  return words.length > 4
+                    ? words.slice(0, 4).join(' ') + '…'
+                    : todaysPick.pushback.title;
+                })()}
               </h2>
               <p
                 style={{
@@ -369,48 +488,44 @@ export function HomeScreen() {
                   fontSize: 13,
                   color: 'var(--pbt-text-muted)',
                   maxWidth: 280,
+                  paddingRight: 108,
                 }}
               >
                 {todaysPick.breed}, {todaysPick.age}. Driver: {todaysPick.suggestedDriver}.
               </p>
-              <div className="flex items-center gap-2">
-                <PillButton onClick={startTodaysPick} icon={<Icon.arrow />}>
+              <div className="flex w-full min-w-0 items-center justify-between gap-4">
+                <PillButton
+                  onClick={startTodaysPick}
+                  icon={<Icon.arrow />}
+                  style={{
+                    ...pillSolidDriverStyle(driverColors),
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   Start scenario
                 </PillButton>
+                <button
+                  type="button"
+                  aria-label="How sessions are scored"
+                  onClick={(e) => { e.stopPropagation(); setScoringInfoOpen(true); }}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: driverColors.primary,
+                    flexShrink: 0,
+                    ...roundGlassControlStyle(driverColors, dark),
+                  }}
+                >
+                  <Icon.info style={{ width: 18, height: 18 }} aria-hidden />
+                </button>
               </div>
               </div>
-              {/* Info dot — opens scoring guide modal */}
-              <button
-                type="button"
-                aria-label="How sessions are scored"
-                onClick={(e) => { e.stopPropagation(); setScoringInfoOpen(true); }}
-                style={{
-                  position: 'absolute',
-                  right: 14,
-                  bottom: 14,
-                  zIndex: 2,
-                  width: 30,
-                  height: 30,
-                  borderRadius: '50%',
-                  border: '1px solid rgba(255,255,255,0.55)',
-                  background: 'rgba(255,255,255,0.28)',
-                  backdropFilter: 'blur(16px) saturate(200%)',
-                  WebkitBackdropFilter: 'blur(16px) saturate(200%)',
-                  color: 'var(--pbt-text-muted)',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontFamily: 'var(--pbt-font-mono)',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  fontStyle: 'italic',
-                  letterSpacing: 0,
-                  boxShadow: '0 4px 12px -6px rgba(60,20,15,0.18)',
-                }}
-              >
-                i
-              </button>
             </Glass>
           </div>
 
@@ -425,24 +540,12 @@ export function HomeScreen() {
               <Glass
                 radius={RADII.lg}
                 padding={16}
+                {...dashTileGlass(dark)}
                 onClick={() => go('create')}
                 ariaLabel="Build a scenario"
               >
                 <div className="flex items-start gap-3">
-                  <div
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 12,
-                      background: 'rgba(255,255,255,0.28)',
-                      border: '1px solid rgba(255,255,255,0.5)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'var(--pbt-text)',
-                      flexShrink: 0,
-                    }}
-                  >
+                  <div style={iconBadgeStyle(driverColors, dark)}>
                     <Icon.plus />
                   </div>
                   <div>
@@ -458,24 +561,12 @@ export function HomeScreen() {
               <Glass
                 radius={RADII.lg}
                 padding={16}
+                {...dashTileGlass(dark)}
                 onClick={() => go('analyzer')}
                 ariaLabel="Pet Analyzer"
               >
                 <div className="flex items-start gap-3">
-                  <div
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 12,
-                      background: 'rgba(255,255,255,0.28)',
-                      border: '1px solid rgba(255,255,255,0.5)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'var(--pbt-text)',
-                      flexShrink: 0,
-                    }}
-                  >
+                  <div style={iconBadgeStyle(driverColors, dark)}>
                     <Icon.paw />
                   </div>
                   <div>
@@ -493,12 +584,15 @@ export function HomeScreen() {
             <Glass
               radius={RADII.lg}
               padding={16}
+              {...dashTileGlass(dark)}
               onClick={() => go('resources')}
               ariaLabel="Library"
               style={{ marginBottom: 10 }}
             >
               <div className="flex items-center gap-3">
-                <Icon.book />
+                <div style={iconBadgeStyle(driverColors, dark)}>
+                  <Icon.fileText />
+                </div>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 15 }}>
                     Clinical library
@@ -513,27 +607,14 @@ export function HomeScreen() {
             <Glass
               radius={RADII.lg}
               padding={16}
+              {...dashTileGlass(dark)}
               onClick={() => go('actGuide')}
               ariaLabel="ACT Guide"
               style={{ marginBottom: 14 }}
             >
               <div className="flex items-center gap-3">
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 12,
-                    flexShrink: 0,
-                    background: driverColors
-                      ? `color-mix(in oklab, ${driverColors.soft} 80%, rgba(255,255,255,0.5))`
-                      : 'rgba(255,255,255,0.5)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: driverColors ? driverColors.primary : 'var(--pbt-text)',
-                  }}
-                >
-                  <Icon.book />
+                <div style={iconBadgeStyle(driverColors, dark)}>
+                  <Icon.layers />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 15 }}>
@@ -560,62 +641,14 @@ export function HomeScreen() {
 
             <Glass
               radius={RADII.lg}
-              padding={0}
+              padding={16}
+              {...dashTileGlass(dark)}
               onClick={() => go('result')}
               ariaLabel="Your ECHO driver profile"
-              style={{ position: 'relative', overflow: 'hidden', marginBottom: 14, minHeight: 72 }}
+              style={{ marginBottom: 14, minHeight: 72 }}
             >
-              {/* Wave + traveling dot — bottom zone, same stack order as other Glass cards */}
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: '70%',
-                  pointerEvents: 'none',
-                  zIndex: 0,
-                }}
-              >
-                <DriverWave
-                  driver={profile.primary}
-                  height={52}
-                  synthwave
-                  amplitude={1.05}
-                  speed={0.85}
-                  opacity={dark ? 0.48 : 0.55}
-                  travelingDot
-                />
-              </div>
-              {/* Readability scrim: theme-aware (was light-only fallback and blew out dark glass) */}
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  zIndex: 1,
-                  pointerEvents: 'none',
-                  background: dark
-                    ? 'linear-gradient(to bottom, color-mix(in oklab, var(--pbt-canvas) 94%, transparent) 0%, color-mix(in oklab, var(--pbt-canvas) 40%, transparent) 52%, transparent 100%)'
-                    : 'linear-gradient(to bottom, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.28) 52%, transparent 100%)',
-                }}
-              />
-              <div
-                className="relative flex items-center gap-3"
-                style={{ padding: 16, zIndex: 2 }}
-              >
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 12,
-                    flexShrink: 0,
-                    background: `color-mix(in oklab, ${driverColors.soft} 80%, rgba(255,255,255,0.5))`,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: driverColors.primary,
-                  }}
-                >
+              <div className="relative flex items-center gap-3">
+                <div style={iconBadgeStyle(driverColors, dark)}>
                   <Icon.spark />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -623,7 +656,7 @@ export function HomeScreen() {
                     Your ECHO profile
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', fontWeight: 500 }}>
-                    {profile.primary} driver · tap to review
+                    ECHO Driver · {profile.primary} · tap to review
                   </div>
                 </div>
               </div>
