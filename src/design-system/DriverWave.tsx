@@ -9,6 +9,13 @@ const WAVE_COLOR: Record<DriverKey, string> = {
   Harmonizer: 'oklch(0.60 0.16 145)',
 };
 
+/** Blend driver hues toward white / soft highlight so multicolor waves match airy UI (no extra stroke). */
+function softenMulticolorStroke(base: string, dark: boolean): string {
+  return dark
+    ? `color-mix(in oklab, ${base} 54%, oklch(0.88 0.03 270))`
+    : `color-mix(in oklab, ${base} 58%, white)`;
+}
+
 export interface DriverWaveProps {
   /** Driver key, or 'all' to render one line per driver in their color. */
   driver?: DriverKey | 'all';
@@ -71,7 +78,7 @@ export function DriverWave({
   const lines: Line[] = useMemo(() => {
     if (driver === 'all') {
       return DRIVER_KEYS.map((d, i) => ({
-        color: WAVE_COLOR[d],
+        color: softenMulticolorStroke(WAVE_COLOR[d], dark),
         amp: synthwave ? 18 + (i % 2) * 6 : 12 + (i % 2) * 4,
         freq: 0.9 + i * 0.18,
         speed: (synthwave ? 0.9 + i * 0.22 : 0.7 + i * 0.18) * speed,
@@ -93,7 +100,7 @@ export function DriverWave({
       { color: c, amp: 11, freq: 1.45, speed: 1.05 * speed, phase: 1.4, width: 1.4, op: 0.55 },
       { color: c, amp: 7, freq: 1.85, speed: 0.55 * speed, phase: 2.7, width: 1.0, op: 0.4 },
     ];
-  }, [driver, speed, synthwave]);
+  }, [driver, speed, synthwave, dark]);
 
   const W = width;
   const H = height;

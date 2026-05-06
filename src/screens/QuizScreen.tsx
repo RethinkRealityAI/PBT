@@ -53,7 +53,7 @@ const glassShadowIdle = '0 1px 0 rgba(255,255,255,0.45) inset, 0 2px 12px -6px r
 const glassShadowChosenCompact = `${LETTER_RIM_CHOSEN_COMPACT}, 0 2px 10px -8px rgba(15, 10, 12, 0.06)`;
 
 export function QuizScreen() {
-  const { go, back } = useNavigation();
+  const { replace, back } = useNavigation();
   const { setProfile } = useProfile();
   const { resolvedTheme, toggle } = useTheme();
   const dark = resolvedTheme === 'dark';
@@ -69,9 +69,10 @@ export function QuizScreen() {
         ...step.result,
         takenAt: new Date().toISOString(),
       });
-      go('result');
+      /* Replace so Back from the result screen does not return to an empty quiz shell. */
+      replace('result');
     }
-  }, [step, setProfile, go]);
+  }, [step, setProfile, replace]);
 
   useEffect(() => {
     setChosen(null);
@@ -114,11 +115,11 @@ export function QuizScreen() {
       : 100;
 
   const showBack = !(step.kind === 'question' && step.index === 0);
-  const waveH = 'clamp(38px, 12vw, 52px)';
+  const waveH = 'clamp(28px, 8vw, 44px)';
 
   return (
     <>
-      <Page className="flex min-h-0 flex-1 flex-col !px-6 !pt-0 overflow-x-hidden overflow-y-hidden max-sm:!px-7 lg:!px-12">
+      <Page className="flex min-h-0 flex-1 flex-col !px-6 !pt-0 !pb-0 !overflow-hidden max-sm:!px-7 lg:!px-12">
         {/* Soft multi-driver wash — full canvas */}
         <div
           aria-hidden
@@ -178,7 +179,7 @@ export function QuizScreen() {
             className="flex shrink-0 items-center gap-2"
             style={{
               paddingTop: 'max(env(safe-area-inset-top), 10px)',
-              paddingBottom: 'clamp(18px, 5vw, 28px)',
+              paddingBottom: 'clamp(8px, 2.5vw, 14px)',
             }}
           >
             {showBack ? (
@@ -238,15 +239,15 @@ export function QuizScreen() {
             </Glass>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <header className="shrink-0 px-0 pt-0">
             {/* Multicolor wave — breathing room below title row + above progress */}
             <div
               style={{
                 height: waveH,
-                marginTop: 'clamp(6px, 2vw, 12px)',
-                marginBottom: 'clamp(16px, 4.5vw, 24px)',
-                minHeight: 38,
+                marginTop: 'clamp(2px, 1vw, 6px)',
+                marginBottom: 'clamp(8px, 2.5vw, 14px)',
+                minHeight: 28,
               }}
             >
               <DriverWave
@@ -265,7 +266,7 @@ export function QuizScreen() {
                 height: 'max(5px, min(6px, 1.4vw))',
                 borderRadius: 9999,
                 background: dark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)',
-                marginBottom: 'clamp(18px, 5vw, 28px)',
+                marginBottom: 'clamp(12px, 3vw, 18px)',
                 overflow: 'visible',
                 border: dark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.45)',
               }}
@@ -306,13 +307,13 @@ export function QuizScreen() {
             <div
               style={{
                 fontFamily: 'var(--pbt-font-mono)',
-                fontSize: 'clamp(11px, 3.4vw, 14px)',
+                fontSize: 'clamp(10px, 3vw, 12px)',
                 letterSpacing: '0.14em',
                 textTransform: 'uppercase',
                 fontWeight: 700,
                 color: 'var(--pbt-text)',
                 opacity: dark ? 0.96 : 1,
-                marginBottom: 'clamp(10px, 3vw, 16px)',
+                marginBottom: 'clamp(6px, 2vw, 10px)',
                 textAlign: 'left',
                 textShadow: dark
                   ? '0 1px 3px rgba(0, 0, 0, 0.45)'
@@ -325,32 +326,39 @@ export function QuizScreen() {
             </div>
           </header>
 
+          {/*
+           * Layout: flex column. Question gets a fixed-height slot (3 lines at
+           * max font-size) so answers never shift when questions vary in length.
+           * Answers fill the remaining space with even distribution.
+           */}
           <div
-            className="flex min-h-0 flex-1 flex-col justify-start"
-            style={{
-              paddingTop: 'clamp(10px, 3vw, 20px)',
-              paddingBottom: 16,
-            }}
+            className="flex min-h-0 flex-1 flex-col"
+            style={{ paddingTop: 'clamp(10px, 2.5vh, 20px)', paddingBottom: 8 }}
           >
-            <h2
-              style={{
-                margin: 0,
-                marginBottom: 'clamp(32px, min(12vh, 14vw), 96px)',
-                fontSize: 'clamp(18px, 5.25vw, 26.8px)',
-                fontWeight: 400,
-                letterSpacing: '-0.025em',
-                lineHeight: 1.2,
-                color: 'var(--pbt-text)',
-                textAlign: 'center',
-                paddingInline: 'clamp(2px, 1vw, 8px)',
-              }}
-            >
-              {question.prompt}
-            </h2>
+            {/*
+             * Fixed-height question block: 3 lines × (28.75px × 1.25) ≈ 108px.
+             * Vertically centres the text within that band regardless of length.
+             */}
+            <div style={{ height: 108, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 'clamp(20px, 5.5vw, 28.75px)',
+                  fontWeight: 400,
+                  letterSpacing: '-0.025em',
+                  lineHeight: 1.25,
+                  color: 'var(--pbt-text)',
+                  textAlign: 'center',
+                  paddingInline: 'clamp(2px, 1vw, 8px)',
+                }}
+              >
+                {question.prompt}
+              </h2>
+            </div>
 
             <div
-              className="mx-auto flex min-w-0 w-full max-w-full flex-col sm:max-w-[min(100%,22rem)]"
-              style={{ gap: 12, paddingInline: 6 }}
+              className="mx-auto flex min-w-0 w-full max-w-full flex-col sm:max-w-[min(100%,22rem)] flex-1"
+              style={{ gap: 'clamp(11px, 2.8vw, 16px)', paddingInline: 6, justifyContent: 'flex-start' }}
             >
               {question.options.map((opt) => {
                 const isChosen = chosen?.letter === opt.letter;
@@ -380,7 +388,7 @@ export function QuizScreen() {
                     <Glass
                       onClick={() => handleChoose(opt)}
                       radius={28}
-                      padding={18}
+                      padding={14}
                       blur={20}
                       glow={null}
                       shine={true}
@@ -395,12 +403,12 @@ export function QuizScreen() {
                         WebkitTapHighlightColor: 'transparent',
                       }}
                     >
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3">
                         {/* Letter badge — uniform multicolor rim; no per-driver hint */}
                         <div
                           style={{
-                            width: 36,
-                            height: 36,
+                            width: 34,
+                            height: 34,
                             borderRadius: '50%',
                             flexShrink: 0,
                             display: 'inline-flex',
@@ -446,8 +454,8 @@ export function QuizScreen() {
 
                         <div
                           style={{
-                            fontSize: 16,
-                            lineHeight: 1.45,
+                            fontSize: 15.5,
+                            lineHeight: 1.34,
                             color: 'var(--pbt-text)',
                             fontWeight: isChosen ? 600 : 500,
                             transition: 'font-weight 0.2s ease',

@@ -19,8 +19,8 @@
   /** Centered content column (mobile-first); gradient bleeds full viewport behind this */
   --pbt-layout-max: 440px;
   --pbt-glass: rgba(255, 255, 255, 0.20);
-  /** Thin specular rim — iOS-style liquid glass (not a heavy stroke) */
-  --pbt-glass-border: rgba(255, 255, 255, 0.58);
+  /** Specular rim border — bright for the iOS glass "thick edge" look */
+  --pbt-glass-border: rgba(255, 255, 255, 0.82);
   --pbt-glass-tint-strong: rgba(255, 255, 255, 0.28);
 
   --pbt-text: var(--pbt-ink);
@@ -53,11 +53,19 @@
   --pbt-font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
 
   --pbt-shadow-glass:
+    /* ── 4-axis inset rims (iOS liquid glass "thick slab" illusion) ── */
+    /* top — brightest catchlight (light hits the top edge first) */
     0 1px 0 rgba(255, 255, 255, 0.96) inset,
-    0 -1px 0 rgba(255, 255, 255, 0.4) inset,
-    0 24px 58px -22px rgba(60, 20, 15, 0.1),
-    0 10px 30px -14px rgba(60, 20, 15, 0.06),
-    0 2px 8px -3px rgba(60, 20, 15, 0.04);
+    /* left — secondary catchlight */
+    1px 0 0 rgba(255, 255, 255, 0.55) inset,
+    /* right — subtle opposite-side glint */
+    -1px 0 0 rgba(255, 255, 255, 0.18) inset,
+    /* bottom — dim backlight rim (glass "base") */
+    0 -2px 0 rgba(255, 255, 255, 0.28) inset,
+    /* ── outer depth shadows ── */
+    0 22px 52px -22px rgba(15, 14, 20, 0.15),
+    0 8px 24px -12px rgba(15, 14, 20, 0.09),
+    0 2px 6px -2px rgba(15, 14, 20, 0.05);
 
   --pbt-shadow-button-solid:
     0 1px 0 rgba(255, 255, 255, 0.45) inset,
@@ -66,20 +74,23 @@
 }
 
 [data-theme='dark'] {
-  --pbt-canvas: #0e0306;
-  --pbt-canvas-outer: #070203;
-  --pbt-glass: rgba(28, 12, 14, 0.22);
-  --pbt-glass-border: rgba(255, 255, 255, 0.14);
+  /* Cooler dark base — removes inherent warm-red cast from the old #0e0306 */
+  --pbt-canvas: #090a0d;
+  --pbt-canvas-outer: #06070a;
+  --pbt-glass: rgba(10, 10, 14, 0.55);
+  --pbt-glass-border: rgba(255, 255, 255, 0.22);
   --pbt-glass-tint-strong: rgba(255, 255, 255, 0.06);
 
   --pbt-text: oklch(0.96 0.01 60);
   --pbt-text-muted: oklch(0.70 0.04 30);
 
   --pbt-shadow-glass:
-    0 1px 0 rgba(255, 255, 255, 0.09) inset,
-    0 -1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 20px 44px -18px rgba(0, 0, 0, 0.52),
-    0 2px 8px -2px rgba(0, 0, 0, 0.38);
+    0 1px 0 rgba(255, 255, 255, 0.14) inset,
+    1px 0 0 rgba(255, 255, 255, 0.08) inset,
+    -1px 0 0 rgba(255, 255, 255, 0.03) inset,
+    0 -1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 20px 48px -22px rgba(0, 0, 0, 0.52),
+    0 4px 16px -4px rgba(0, 0, 0, 0.38);
 }
 
 @media (prefers-reduced-motion: reduce) {

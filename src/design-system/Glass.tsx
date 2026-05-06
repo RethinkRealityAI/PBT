@@ -7,14 +7,24 @@ export interface GlassProps {
   children: ReactNode;
   blur?: number;
   radius?: number;
-  /** 0-1 background tint over the canvas. Defaults: ~0.14 light, 0.22 dark. */
+  /**
+   * 0-1 fill opacity for the panel base.
+   * Defaults: 0.20 light (very translucent), 0.44 dark (deep glass).
+   * Lower = more colour bleed-through from the background.
+   */
   tint?: number;
   border?: boolean;
   padding?: number | string;
   /** When set, applies a colored drop shadow (driver glow). Sparingly. */
   glow?: string | null;
-  /** 135deg linear-gradient highlight overlay. Default true. */
+  /** Shine + prismatic layers. Default true. */
   shine?: boolean;
+  /**
+   * Optional `saturate()` percentage for backdrop-filter.
+   * Defaults: 320% light / 200% dark so ambient GradientBg hues read through cards.
+   * Use lower values (~115–150%) on overlays/modals — otherwise blooms/orbs behind the glass read artificially neon.
+   */
+  backdropSaturatePct?: number;
   className?: string;
   style?: CSSProperties;
   onClick?: MouseEventHandler<HTMLDivElement>;
@@ -31,6 +41,7 @@ export function Glass({
   padding = 20,
   glow = null,
   shine = true,
+  backdropSaturatePct,
   className,
   style,
   onClick,
@@ -39,31 +50,59 @@ export function Glass({
 }: GlassProps) {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
-  const t = tint ?? (dark ? 0.20 : 0.04);
-  /*
-   * Light: cap blur at 18px — GradientBg blooms already have filter:blur(24-32px);
-   * stacking another high blur washes colour to white. Lower blur = more signal.
-   * Dark: floor at 32px for the deep-space frosted look.
+
+  /**
+   * iOS liquid-glass base fill:
+   *   Light — 6% cool-glass tint: near-transparent so GradientBg colour shows through
+   *     as a vivid hue. Using rgba(228,240,255,…) instead of pure white gives the
+   *     faint blue-cool tint that reads as "glass" even over a neutral backdrop.
+   *   Dark  — 44% neutral dark (slightly cool, no warm-red).
+   * Explicit `tint` overrides (e.g. hero card, quiz answers).
+   */
+  const t = tint ?? (dark ? 0.44 : 0.06);
+
+  /**
+   * Blur kept moderate: lower blur → less diffusion → more background colour survives
+   * to the Glass surface so saturate() has real saturation to amplify.
    */
   const effectiveBlur = dark ? Math.max(blur, 32) : Math.min(blur, 22);
 
+  const satLight = backdropSaturatePct ?? 320;
+  const satDark = backdropSaturatePct ?? 200;
+  const backdropLight = `blur(${effectiveBlur}px) saturate(${satLight}%) brightness(1.02)`;
+  const backdropDark = `blur(${effectiveBlur}px) saturate(${satDark}%) brightness(0.95)`;
+
+  /**
+   * Shadow layers:
+   *   var(--pbt-shadow-glass) now includes 4-axis inset rims (see tokens.css).
+   *   glow variant adds a subtle colored halo on top.
+   */
   const shadow = glow
     ? dark
-      ? `0 1px 0 rgba(255,255,255,0.08) inset, 0 10px 30px -12px color-mix(in oklab, ${glow} 55%, black), 0 2px 6px -2px rgba(0,0,0,0.25)`
-      : `var(--pbt-shadow-glass), 0 22px 52px -18px color-mix(in oklab, ${glow} 38%, rgba(60,20,15,0.08)), 0 6px 18px -8px color-mix(in oklab, ${glow} 28%, rgba(60,20,15,0.06))`
+      ? [
+          '0 1px 0 rgba(255,255,255,0.12) inset',
+          '1px 0 0 rgba(255,255,255,0.07) inset',
+          '-1px 0 0 rgba(255,255,255,0.03) inset',
+          '0 -1px 0 rgba(255,255,255,0.05) inset',
+          `0 12px 32px -20px color-mix(in oklab, ${glow} 30%, rgba(0,0,0,0.60))`,
+          '0 2px 10px -4px rgba(0,0,0,0.36)',
+        ].join(', ')
+      : [
+          'var(--pbt-shadow-glass)',
+          `0 16px 42px -22px color-mix(in oklab, ${glow} 18%, rgba(18,18,22,0.06))`,
+          `0 6px 18px -12px color-mix(in oklab, ${glow} 10%, rgba(18,18,22,0.04))`,
+        ].join(', ')
     : 'var(--pbt-shadow-glass)';
 
   /**
-   * Light: low-opacity stops so backdrop-blur + GradientBg blooms show through
-   * as true liquid glass. First stop is the specular peak; mid/bottom let the
-   * gradient colours bleed through vividly.
+   * Panel fill:
+   *   Light — cool-glass white (r228 g240 b255): the slight blue tint reads as glass
+   *     even at very low opacity, avoiding the "opaque white card" look.
+   *   Dark  — neutral near-black.
    */
   const panelBackground = dark
-    ? `rgba(28,12,14,${t})`
-    : `linear-gradient(165deg,
-        rgba(255,255,255,${(0.14 + t * 0.4).toFixed(2)}) 0%,
-        rgba(255,255,255,${(0.04 + t * 0.5).toFixed(2)}) 38%,
-        rgba(255,255,255,${(0.06 + t * 0.4).toFixed(2)}) 100%)`;
+    ? `rgba(10, 10, 14, ${t.toFixed(2)})`
+    : `rgba(228, 240, 255, ${t.toFixed(2)})`;
 
   return (
     <div
@@ -82,12 +121,8 @@ export function Glass({
       style={{
         borderRadius: radius,
         padding,
-        backdropFilter: dark
-          ? `blur(${effectiveBlur}px) saturate(220%)`
-          : `blur(${effectiveBlur}px) saturate(260%) brightness(1.03)`,
-        WebkitBackdropFilter: dark
-          ? `blur(${effectiveBlur}px) saturate(220%)`
-          : `blur(${effectiveBlur}px) saturate(260%) brightness(1.03)`,
+        backdropFilter: dark ? backdropDark : backdropLight,
+        WebkitBackdropFilter: dark ? backdropDark : backdropLight,
         background: panelBackground,
         boxShadow: shadow,
         border: border ? `1px solid var(--pbt-glass-border)` : 'none',
@@ -97,18 +132,53 @@ export function Glass({
       }}
     >
       {shine && (
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            inset: 0,
-            borderRadius: radius,
-            background: dark
-              ? 'linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 32%, rgba(255,255,255,0) 70%, rgba(255,255,255,0.05) 100%)'
-              : 'linear-gradient(135deg, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.22) 20%, rgba(255,255,255,0.01) 48%, rgba(255,255,255,0.04) 70%, rgba(255,255,255,0.38) 100%)',
-            pointerEvents: 'none',
-          }}
-        />
+        <>
+          {/**
+           * Layer 1 — Diagonal specular gradient.
+           * Mimics the top-left catchlight of a thick glass slab:
+           *   • Light: blazing top-left (0.92), rapid fade to near-invisible centre,
+           *     subtle bottom-right corner glint (0.55) — "lit from top-left" illusion.
+           *   • Dark: dimmer but same geometry.
+           */}
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: radius,
+              background: dark
+                ? 'linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.04) 22%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.05) 82%, rgba(255,255,255,0.10) 100%)'
+                : 'linear-gradient(135deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.55) 8%, rgba(255,255,255,0.10) 28%, rgba(255,255,255,0.02) 52%, rgba(255,255,255,0.08) 74%, rgba(255,255,255,0.55) 100%)',
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}
+          />
+          {/**
+           * Layer 2 — Prismatic bottom rim.
+           * Thin iridescent fringe along the bottom edge — mimics light dispersion
+           * through real glass (visible in the reference image as the rainbow stripe).
+           * Kept intentionally subtle: it's a detail, not a rainbow flag.
+           */}
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: '6%',
+              right: '6%',
+              height: 3,
+              borderBottomLeftRadius: radius,
+              borderBottomRightRadius: radius,
+              background: dark
+                ? 'linear-gradient(90deg, rgba(255,80,80,0.22) 0%, rgba(255,200,50,0.18) 20%, rgba(80,220,110,0.16) 38%, rgba(80,140,255,0.22) 56%, rgba(180,80,255,0.18) 76%, rgba(255,80,140,0.22) 100%)'
+                : 'linear-gradient(90deg, rgba(255,80,80,0.45) 0%, rgba(255,200,50,0.40) 20%, rgba(80,220,110,0.35) 38%, rgba(80,140,255,0.45) 56%, rgba(180,80,255,0.40) 76%, rgba(255,80,140,0.45) 100%)',
+              filter: 'blur(1.5px)',
+              opacity: dark ? 0.55 : 0,
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          />
+        </>
       )}
       <div className="relative z-[1]">{children}</div>
     </div>

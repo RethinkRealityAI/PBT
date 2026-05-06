@@ -64,12 +64,12 @@ export function Segmented<V extends string>({
               textTransform: 'uppercase',
               cursor: 'pointer',
               background: active
-                ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
+                ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
                 : 'transparent',
               color: active ? '#fff' : dark ? '#fff' : 'var(--pbt-ink)',
               transition: 'all 0.2s',
               boxShadow: active
-                ? '0 4px 10px -4px oklch(0.55 0.22 18 / 0.4)'
+                ? '0 4px 10px -4px color-mix(in oklab, var(--pbt-driver-primary) 42%, transparent)'
                 : 'none',
               display: 'inline-flex',
               alignItems: 'center',

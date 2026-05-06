@@ -127,6 +127,37 @@ export const Icon = {
       <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
     </>,
   ),
+  /** Question in circle — optional alternative for help affordances */
+  helpCircle: stroke(
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" strokeWidth={2.5} strokeLinecap="round" />
+    </>,
+  ),
+  /** Info (i in circle) — scoring / instructions */
+  info: stroke(
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-5" strokeLinecap="round" />
+      <path d="M12 8h.01" strokeLinecap="round" strokeWidth={2.5} />
+    </>,
+  ),
+  /** Stacked layers — frameworks / multi-step flows (e.g. ACT) */
+  layers: stroke(
+    <>
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 17 12 22 22 17" />
+      <polyline points="2 12 12 17 22 12" />
+    </>,
+  ),
+  /** Document — clinical references / tables */
+  fileText: stroke(
+    <>
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2Z" />
+      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+    </>,
+  ),
 } as const;
 
 export type IconKey = keyof typeof Icon;

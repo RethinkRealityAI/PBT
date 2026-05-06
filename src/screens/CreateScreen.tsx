@@ -150,7 +150,7 @@ export function CreateScreen() {
                         fontWeight: 600,
                         letterSpacing: '0.10em',
                         textTransform: 'uppercase',
-                        background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                        background: 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
                         color: '#fff',
                       }}
                     >
@@ -171,9 +171,10 @@ export function CreateScreen() {
                       fontWeight: 600,
                       letterSpacing: '0.10em',
                       textTransform: 'uppercase',
-                      background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                      background: 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
                       color: '#fff',
-                      boxShadow: '0 4px 12px -4px oklch(0.55 0.22 18 / 0.35)',
+                      boxShadow:
+                        '0 4px 12px -4px color-mix(in oklab, var(--pbt-driver-primary) 42%, transparent)',
                     }}
                   >
                     Start
@@ -197,7 +198,7 @@ export function CreateScreen() {
               <Glass
                 radius={20}
                 padding={12}
-                style={breedError ? { border: '1.5px solid oklch(0.55 0.22 18)' } : undefined}
+                style={breedError ? { border: '1.5px solid var(--pbt-score-poor)' } : undefined}
               >
                 <div className="flex items-center gap-2">
                   <Icon.search />
@@ -214,13 +215,13 @@ export function CreateScreen() {
                 </div>
               </Glass>
               {breedError && (
-                <div style={{ marginTop: 6, fontSize: 12, color: 'oklch(0.55 0.22 18)', paddingLeft: 4 }}>
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--pbt-score-poor)', paddingLeft: 4 }}>
                   {breedError}
                 </div>
               )}
               {savedPets.length > 0 && (
                 <div style={{ marginTop: 10 }}>
-                  <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'oklch(0.62 0.22 22)', marginBottom: 6, paddingLeft: 2 }}>
+                  <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--pbt-driver-primary)', marginBottom: 6, paddingLeft: 2 }}>
                     Saved pets
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -284,10 +285,12 @@ export function CreateScreen() {
                     padding={14}
                     onClick={() => setAge(stage)}
                     ariaLabel={stage}
-                    glow={stage === age ? 'oklch(0.62 0.22 22)' : null}
+                    glow={stage === age ? 'var(--pbt-driver-primary)' : null}
                     style={{
-                      border: stage === age ? '1px solid oklch(0.62 0.22 22)' : undefined,
-                      background: stage === age ? 'linear-gradient(135deg, oklch(0.94 0.05 20), oklch(0.92 0.06 22))' : undefined,
+                      border:
+                        stage === age
+                          ? '1px solid color-mix(in oklab, var(--pbt-driver-primary) 58%, rgba(255,255,255,0.42))'
+                          : undefined,
                     }}
                   >
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{stage}</div>
@@ -305,10 +308,12 @@ export function CreateScreen() {
                   padding={14}
                   onClick={() => setDropdownOpen((v) => !v)}
                   ariaLabel="Select pushback type"
+                  glow={!isCustomSelected ? 'var(--pbt-driver-primary)' : null}
                   style={{
                     cursor: 'pointer',
-                    border: !isCustomSelected ? '1px solid oklch(0.62 0.22 22)' : undefined,
-                    background: !isCustomSelected ? 'linear-gradient(135deg, oklch(0.96 0.04 20), oklch(0.93 0.06 22))' : undefined,
+                    border: !isCustomSelected
+                      ? '1px solid color-mix(in oklab, var(--pbt-driver-primary) 58%, rgba(255,255,255,0.42))'
+                      : undefined,
                   }}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -319,7 +324,7 @@ export function CreateScreen() {
                         </span>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 700, fontSize: 15, color: 'oklch(0.44 0.20 18)' }}>
+                          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--pbt-text)' }}>
                             {pushback.title}
                           </div>
                           <div style={{ fontSize: 12.5, color: 'var(--pbt-text-muted)', marginTop: 2, fontStyle: 'italic' }}>
@@ -370,7 +375,7 @@ export function CreateScreen() {
                                   border: 'none',
                                   cursor: 'pointer',
                                   background: active
-                                    ? 'linear-gradient(135deg, oklch(0.94 0.05 20), oklch(0.91 0.07 22))'
+                                    ? 'color-mix(in oklab, var(--pbt-driver-primary) 16%, transparent)'
                                     : 'transparent',
                                   transition: 'background 0.15s',
                                   display: 'flex',
@@ -385,8 +390,8 @@ export function CreateScreen() {
                                     borderRadius: '50%',
                                     flexShrink: 0,
                                     background: active
-                                      ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
-                                      : 'rgba(60,20,15,0.08)',
+                                      ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
+                                      : 'color-mix(in oklab, var(--pbt-driver-primary) 11%, rgba(255,255,255,0.06))',
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -395,7 +400,7 @@ export function CreateScreen() {
                                   {active && <Icon.check style={{ width: 10, height: 10, color: '#fff' }} />}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 600, fontSize: 14, color: active ? 'oklch(0.44 0.20 18)' : 'var(--pbt-text)' }}>
+                                  <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--pbt-text)' }}>
                                     {cat.title}
                                   </div>
                                   <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', fontStyle: 'italic', marginTop: 1 }}>
@@ -451,11 +456,11 @@ export function CreateScreen() {
                   margin: '14px 0',
                 }}
               >
-                <div style={{ flex: 1, height: 1, background: 'rgba(60,20,15,0.08)' }} />
+                <div style={{ flex: 1, height: 1, background: 'color-mix(in oklab, var(--pbt-driver-primary) 12%, transparent)' }} />
                 <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)' }}>
                   or
                 </span>
-                <div style={{ flex: 1, height: 1, background: 'rgba(60,20,15,0.08)' }} />
+                <div style={{ flex: 1, height: 1, background: 'color-mix(in oklab, var(--pbt-driver-primary) 12%, transparent)' }} />
               </div>
 
               {/* Other pushback — separate selectable card */}
@@ -464,10 +469,11 @@ export function CreateScreen() {
                 padding={14}
                 onClick={() => { selectPushback(CUSTOM_PUSHBACK); }}
                 ariaLabel={CUSTOM_PUSHBACK.title}
-                glow={isCustomSelected ? 'oklch(0.62 0.22 22)' : null}
+                glow={isCustomSelected ? 'var(--pbt-driver-primary)' : null}
                 style={{
-                  border: isCustomSelected ? '1px solid oklch(0.62 0.22 22)' : undefined,
-                  background: isCustomSelected ? 'linear-gradient(135deg, oklch(0.94 0.05 20), oklch(0.92 0.06 22))' : undefined,
+                  border: isCustomSelected
+                    ? '1px solid color-mix(in oklab, var(--pbt-driver-primary) 58%, rgba(255,255,255,0.42))'
+                    : undefined,
                 }}
               >
                 <div className="flex items-center gap-3">
@@ -478,8 +484,8 @@ export function CreateScreen() {
                       borderRadius: '50%',
                       flexShrink: 0,
                       background: isCustomSelected
-                        ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
-                        : 'rgba(60,20,15,0.08)',
+                        ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
+                        : 'color-mix(in oklab, var(--pbt-driver-primary) 11%, rgba(255,255,255,0.06))',
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -489,7 +495,7 @@ export function CreateScreen() {
                     {isCustomSelected && <Icon.check />}
                   </div>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: isCustomSelected ? 'oklch(0.44 0.20 18)' : 'var(--pbt-text)' }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--pbt-text)' }}>
                       Other pushback
                     </div>
                     <div style={{ fontSize: 12.5, color: 'var(--pbt-text-muted)', marginTop: 1 }}>
@@ -526,7 +532,7 @@ export function CreateScreen() {
                         aria-invalid={pushbackError != null}
                       />
                       {pushbackError && (
-                        <div style={{ marginTop: 8, fontSize: 12, color: 'oklch(0.55 0.22 18)' }}>
+                        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--pbt-score-poor)' }}>
                           {pushbackError}
                         </div>
                       )}
@@ -579,14 +585,14 @@ export function CreateScreen() {
                         letterSpacing: '0.08em',
                         textTransform: 'uppercase',
                         background: active
-                          ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
+                          ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
                           : 'rgba(255,255,255,0.22)',
                         backdropFilter: active ? undefined : 'blur(18px) saturate(240%)',
                         WebkitBackdropFilter: active ? undefined : 'blur(18px) saturate(240%)',
                         color: active ? '#fff' : 'var(--pbt-text)',
                         boxShadow: active
-                          ? '0 8px 22px -8px oklch(0.55 0.22 18 / 0.45)'
-                          : '0 1px 0 rgba(255,255,255,0.85) inset, 0 4px 12px -6px rgba(60,20,15,0.06)',
+                          ? '0 8px 22px -8px color-mix(in oklab, var(--pbt-driver-primary) 48%, transparent)'
+                          : '0 1px 0 rgba(255,255,255,0.85) inset, 0 4px 12px -6px rgba(0,0,0,0.08)',
                         transition: 'all 0.2s ease',
                       }}
                     >

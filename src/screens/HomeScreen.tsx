@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useState, useEffect, useRef, type CSSProperties, type MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Orb } from '../design-system/Orb';
@@ -15,6 +15,7 @@ import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens
 import { SEED_SCENARIOS } from '../data/scenarios';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
+import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -54,7 +55,7 @@ function pillSolidDriverStyle(dc: DriverColors): CSSProperties {
 /** Secondary dashboard tiles — liquid glass, no colored bloom. */
 function dashTileGlass(dark: boolean) {
   return {
-    glow: null as const,
+    glow: null,
     /* Match Glass default (0.06 light / 0.44 dark) — near-transparent in light so
        background hues show through the frosted surface. */
     tint: dark ? 0.44 : 0.06,
@@ -104,6 +105,18 @@ function roundGlassControlStyle(dc: DriverColors, dark: boolean): CSSProperties 
   };
 }
 
+const DASHBOARD_WELCOMED_KEY: StorageKeyDef<boolean> = {
+  key: 'dashboard_welcomed',
+  fallback: false,
+  validate: (v): v is boolean => typeof v === 'boolean',
+};
+
+const SEEN_START_HERE_KEY: StorageKeyDef<boolean> = {
+  key: 'seen_start_here',
+  fallback: false,
+  validate: (v): v is boolean => typeof v === 'boolean',
+};
+
 export function HomeScreen() {
   const { go } = useNavigation();
   const { profile } = useProfile();
@@ -113,6 +126,27 @@ export function HomeScreen() {
   const [scoringInfoOpen, setScoringInfoOpen] = useState(false);
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
+  const [welcomeOpen, setWelcomeOpen] = useState(() => !readStorage(DASHBOARD_WELCOMED_KEY));
+  const [beaconActive, setBeaconActive] = useState(false);
+  /** Ripples / Orb CSS pulse / breathing — off until Start Here → scoring modal is closed. */
+  const [heroOrbMotion, setHeroOrbMotion] = useState(() => readStorage(SEEN_START_HERE_KEY));
+  const pendingStartHereRef = useRef(false);
+
+  useEffect(() => {
+    const welcomed = readStorage(DASHBOARD_WELCOMED_KEY);
+    const seenStart = readStorage(SEEN_START_HERE_KEY);
+    if (!welcomed) {
+      const closeT = window.setTimeout(() => {
+        setWelcomeOpen(false);
+        writeStorage(DASHBOARD_WELCOMED_KEY, true);
+        if (!readStorage(SEEN_START_HERE_KEY)) setBeaconActive(true);
+      }, 1800);
+      return () => { window.clearTimeout(closeT); };
+    } else if (!seenStart) {
+      setBeaconActive(true);
+    }
+    return undefined;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!profile) return null;
 
@@ -128,8 +162,87 @@ export function HomeScreen() {
     go('chat');
   };
 
+  const dismissBeacon = () => {
+    setBeaconActive(false);
+    writeStorage(SEEN_START_HERE_KEY, true);
+  };
+
+  const handleScoringModalClosed = () => {
+    setScoringInfoOpen(false);
+    if (pendingStartHereRef.current) {
+      pendingStartHereRef.current = false;
+      dismissBeacon();
+      setHeroOrbMotion(true);
+    }
+  };
+
+  const openScoringInfo = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (beaconActive) pendingStartHereRef.current = true;
+    setScoringInfoOpen(true);
+  };
+
   return (
     <>
+      <AnimatePresence>
+        {welcomeOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backdropFilter: 'blur(24px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+              background: dark ? 'rgba(10,10,14,0.72)' : 'rgba(255,255,255,0.68)',
+              gap: 28,
+              padding: '0 24px',
+            }}
+          >
+            {/*
+              Post-quiz welcome only — driver orb is static here.
+              The cycling “finding your driver” sequence runs on the quiz result screen (before results).
+            */}
+            <Orb driver={profile.primary} size={140} pulse={false} />
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15, duration: 0.45, ease: 'easeOut' }}
+              style={{ textAlign: 'center' }}
+            >
+              <div
+                style={{
+                  fontSize: 26,
+                  fontWeight: 400,
+                  letterSpacing: '-0.02em',
+                  color: 'var(--pbt-text)',
+                  marginBottom: 8,
+                }}
+              >
+                {displayName ? `Welcome, ${displayName}.` : 'Welcome, anonymous guest.'}
+              </div>
+              <div
+                style={{
+                  fontFamily: 'var(--pbt-font-mono)',
+                  fontSize: 11,
+                  letterSpacing: '0.14em',
+                  textTransform: 'uppercase',
+                  color: 'var(--pbt-text-muted)',
+                }}
+              >
+                ECHO Driver &middot; {driver.name}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <TopBar
         center={
           <div className="min-w-0 pr-1">
@@ -338,54 +451,74 @@ export function HomeScreen() {
                   justifyContent: 'center',
                 }}
               >
-                {/* Ripple rings — emanating waves (no separate synth wave elsewhere) */}
-                {[0, 1, 2].map((i) => (
+                {/* Ripple rings — gated until Start Here tour completes */}
+                {heroOrbMotion &&
+                  [0, 1, 2].map((i) => (
+                    <motion.div
+                      key={i}
+                      aria-hidden
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        borderRadius: '50%',
+                        border: `1.5px solid ${driverColors.primary}`,
+                        boxShadow: `0 0 10px color-mix(in oklab, ${driverColors.primary} 40%, transparent)`,
+                        willChange: 'transform, opacity',
+                      }}
+                      initial={{ scale: 1, opacity: 0 }}
+                      animate={{
+                        scale: [1, 2.75],
+                        opacity: [0, 0.34, 0.24, 0.07, 0],
+                      }}
+                      transition={{
+                        duration: 3.8,
+                        repeat: Infinity,
+                        delay: i * 1.15,
+                        ease: [0.22, 0.61, 0.36, 1],
+                        times: [0, 0.15, 0.45, 0.8, 1],
+                      }}
+                    />
+                  ))}
+                {heroOrbMotion ? (
                   <motion.div
-                    key={i}
                     aria-hidden
                     style={{
                       position: 'absolute',
-                      inset: 0,
+                      inset: '-22%',
                       borderRadius: '50%',
-                      border: `1.5px solid ${driverColors.primary}`,
-                      boxShadow: `0 0 10px color-mix(in oklab, ${driverColors.primary} 40%, transparent)`,
-                      willChange: 'transform, opacity',
+                      background: `radial-gradient(closest-side, color-mix(in oklab, ${driverColors.primary} 26%, transparent), transparent 72%)`,
+                      filter: 'blur(12px)',
+                      pointerEvents: 'none',
                     }}
-                    initial={{ scale: 1, opacity: 0 }}
-                    animate={{
-                      scale: [1, 2.75],
-                      opacity: [0, 0.34, 0.24, 0.07, 0],
-                    }}
-                    transition={{
-                      duration: 3.8,
-                      repeat: Infinity,
-                      delay: i * 1.15,
-                      ease: [0.22, 0.61, 0.36, 1],
-                      times: [0, 0.15, 0.45, 0.8, 1],
+                    animate={{ opacity: [0.26, 0.5, 0.26] }}
+                    transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                ) : (
+                  <div
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      inset: '-22%',
+                      borderRadius: '50%',
+                      background: `radial-gradient(closest-side, color-mix(in oklab, ${driverColors.primary} 22%, transparent), transparent 72%)`,
+                      filter: 'blur(12px)',
+                      pointerEvents: 'none',
+                      opacity: 0.36,
                     }}
                   />
-                ))}
-                {/* Soft glow halo — pulses with driver color */}
-                <motion.div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    inset: '-22%',
-                    borderRadius: '50%',
-                    background: `radial-gradient(closest-side, color-mix(in oklab, ${driverColors.primary} 26%, transparent), transparent 72%)`,
-                    filter: 'blur(12px)',
-                    pointerEvents: 'none',
-                  }}
-                  animate={{ opacity: [0.26, 0.5, 0.26] }}
-                  transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
-                />
-                {/* Breathing orb — slightly larger; Orb halo handles pulse */}
+                )}
                 <motion.div
                   style={{ position: 'relative' }}
-                  animate={{ scale: [1.0, 1.045, 1.0] }}
-                  transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
+                  animate={
+                    heroOrbMotion ? { scale: [1.0, 1.045, 1.0] } : { scale: 1 }
+                  }
+                  transition={
+                    heroOrbMotion
+                      ? { duration: 3.6, repeat: Infinity, ease: 'easeInOut' }
+                      : { duration: 0 }
+                  }
                 >
-                  <Orb size={88} driver={profile.primary} pulse />
+                  <Orb size={88} driver={profile.primary} pulse={heroOrbMotion} />
                 </motion.div>
               </div>
 
@@ -505,25 +638,66 @@ export function HomeScreen() {
                 >
                   Start scenario
                 </PillButton>
-                <button
-                  type="button"
-                  aria-label="How sessions are scored"
-                  onClick={(e) => { e.stopPropagation(); setScoringInfoOpen(true); }}
+                <motion.div
                   style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: '50%',
-                    cursor: 'pointer',
+                    flexShrink: 0,
                     display: 'inline-flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    color: driverColors.primary,
-                    flexShrink: 0,
-                    ...roundGlassControlStyle(driverColors, dark),
+                    gap: 8,
+                    borderRadius: 9999,
+                    padding: beaconActive ? '4px 6px 4px 10px' : 0,
                   }}
+                  animate={
+                    beaconActive ? { scale: [1, 1.045, 1] } : { scale: 1 }
+                  }
+                  transition={
+                    beaconActive
+                      ? { duration: 1.15, repeat: Infinity, ease: 'easeInOut' }
+                      : {}
+                  }
                 >
-                  <Icon.info style={{ width: 18, height: 18 }} aria-hidden />
-                </button>
+                  <AnimatePresence>
+                    {beaconActive && (
+                      <motion.span
+                        initial={{ opacity: 0, x: 6 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 4 }}
+                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                        style={{
+                          fontFamily: 'var(--pbt-font-mono)',
+                          fontSize: 10,
+                          letterSpacing: '0.12em',
+                          textTransform: 'uppercase',
+                          fontWeight: 700,
+                          color: driverColors.primary,
+                          whiteSpace: 'nowrap',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        Start here →
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                  <button
+                    type="button"
+                    aria-label="How sessions are scored"
+                    onClick={openScoringInfo}
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: driverColors.primary,
+                      flexShrink: 0,
+                      ...roundGlassControlStyle(driverColors, dark),
+                    }}
+                  >
+                    <Icon.info style={{ width: 18, height: 18 }} aria-hidden />
+                  </button>
+                </motion.div>
               </div>
               </div>
             </Glass>
@@ -664,7 +838,7 @@ export function HomeScreen() {
           </div>
         </div>
       </Page>
-      <ScoringInfoModal open={scoringInfoOpen} onClose={() => setScoringInfoOpen(false)} />
+      <ScoringInfoModal open={scoringInfoOpen} onClose={handleScoringModalClosed} />
     </>
   );
 }
@@ -676,7 +850,7 @@ const SCORING_DIMENSIONS: Array<{ label: string; weight: string; description: st
   { label: 'Product Knowledge', weight: '14%', description: 'Cite Royal Canin specifics — 97% palatability, 12-week trial, BCS, MCS.' },
   { label: 'Confidence', weight: '12%', description: 'Speak with calm authority. No hedging, no shaming.' },
   { label: 'Closing', weight: '10%', description: 'Make a clear, specific recommendation the client can act on today.' },
-  { label: 'Pacing', weight: '8%', description: 'Match the client’s rhythm. Don’t rush past the emotion.' },
+  { label: 'Pacing', weight: '8%', description: "Match the client's rhythm. Don't rush past the emotion." },
 ];
 
 function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -734,7 +908,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                       marginBottom: 5,
                     }}
                   >
-                    How you’re scored
+                    How you're scored
                   </div>
                   <h2
                     id="scoring-info-title"
@@ -773,10 +947,51 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                 </button>
               </div>
 
+              {/* How scenarios work */}
+              <div
+                style={{
+                  borderRadius: 16,
+                  padding: '12px 14px',
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08))',
+                  border: '1px solid rgba(255,255,255,0.36)',
+                  marginBottom: 16,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: 'var(--pbt-font-mono)',
+                    fontSize: 9,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color: 'var(--pbt-text-muted)',
+                    marginBottom: 8,
+                  }}
+                >
+                  How scenarios work
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)', paddingTop: 2, flexShrink: 0 }}>Voice</span>
+                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text)' }}>
+                      A live conversation — the AI customer speaks and listens in real time. Respond naturally, as you would on the clinic floor.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)', paddingTop: 2, flexShrink: 0 }}>Chat</span>
+                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text)' }}>
+                      Turn-based — the AI sends a message, you reply, and so on. Take your time crafting each response.
+                    </p>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text-muted)' }}>
+                    The session ends automatically once the AI determines the conversation has reached a natural close — usually after you have acknowledged the concern, clarified the facts, and reframed the value.
+                  </p>
+                </div>
+              </div>
+
               {/* Intro */}
               <p style={{ margin: '0 0 14px', fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)', fontWeight: 500 }}>
                 Each session is scored 0–100 across seven dimensions and rolled into a weighted overall score.
-                The fastest path to a high score: <strong style={{ fontWeight: 800 }}>Acknowledge → Clarify → Transform</strong> — don’t pitch product before the client feels heard.
+                The fastest path to a high score: <strong style={{ fontWeight: 800 }}>Acknowledge → Clarify → Transform</strong> — don't pitch product before the client feels heard.
               </p>
 
               {/* Example scorecard preview — first, sets the visual frame */}
@@ -943,14 +1158,14 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                 }}
               >
                 <p style={{ margin: '0 0 10px', fontSize: 12.5, lineHeight: 1.55, color: 'var(--pbt-text)', fontWeight: 500 }}>
-                  The customer’s receptiveness moves through three states. Watch the dot under the orb to see how
-                  you’re doing in real time:
+                  The customer's receptiveness moves through three states. Watch the dot under the orb to see how
+                  you're doing in real time:
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {[
                     { c: 'oklch(0.55 0.22 18)', l: 'Red — Defensive', t: 'They start here. Push back, repeat the concern. Acknowledge feelings before anything else.' },
                     { c: 'oklch(0.72 0.19 80)', l: 'Yellow — Receptive', t: 'They feel heard. Ask one specific clarifying question to surface the real concern.' },
-                    { c: 'oklch(0.58 0.18 145)', l: 'Green — Convinced', t: 'They’re ready to act. Offer a concrete Royal Canin recommendation and the 12-week trial — the session ends as “resolved.”' },
+                    { c: 'oklch(0.58 0.18 145)', l: 'Green — Convinced', t: "They're ready to act. Offer a concrete Royal Canin recommendation and the 12-week trial — the session ends as resolved." },
                   ].map((row) => (
                     <div key={row.l} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                       <span
@@ -972,7 +1187,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                   ))}
                 </div>
                 <p style={{ margin: '10px 0 0', fontSize: 11.5, lineHeight: 1.5, color: 'var(--pbt-text-muted)', fontStyle: 'italic' }}>
-                  If you can’t move them past Red after ~15 turns, the session ends as a “stalemate.” Either way,
+                  If you can't move them past Red after ~15 turns, the session ends as a "stalemate." Either way,
                   the full transcript is scored against the seven dimensions above.
                 </p>
               </div>

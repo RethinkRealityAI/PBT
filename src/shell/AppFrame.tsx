@@ -4,6 +4,8 @@ import { Sidebar } from './Sidebar';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { DRIVER_COLORS } from '../design-system/tokens';
 
+const BRAND_RED = 'oklch(0.62 0.22 25)';
+
 /**
  * Full-viewport ambient gradient + centered content rail.
  * Mobile/Tablet (< lg): 440px centered column (unchanged).
@@ -24,9 +26,16 @@ export function AppFrame({ children }: { children: ReactNode }) {
         style={{ zIndex: 0 }}
         aria-hidden
       >
+        {/*
+         * Global background: driver top-orbs (PBT-branded upper blooms) +
+         * soft rainbow bottom wash. The top two bloom positions use the active
+         * driver color; the bottom two use the balanced 4-driver palette so there
+         * is no persistent warm-red accent and the rest of the UI feels multicolor.
+         */}
         <GradientBg
-          primaryColor={colors?.primary ?? null}
-          secondaryColor={colors?.accent ?? null}
+          multicolor
+          primaryColor={colors?.primary ?? BRAND_RED}
+          secondaryColor={colors?.accent ?? BRAND_RED}
         />
       </div>
 
@@ -37,10 +46,8 @@ export function AppFrame({ children }: { children: ReactNode }) {
        */}
       <div
         className={[
-          'relative flex h-[100dvh] min-h-0 w-full overflow-x-hidden overflow-y-hidden',
-          // Mobile / tablet: centered narrow column
-          'mx-auto max-w-[var(--pbt-layout-max)] flex-col',
-          // Desktop: full-width side-by-side layout
+          'relative flex h-[100dvh] min-h-0 w-full overflow-x-hidden overflow-y-hidden flex-col',
+          'mx-auto max-w-[var(--pbt-layout-max)]',
           'lg:mx-0 lg:max-w-none lg:flex-row lg:overflow-x-visible',
         ].join(' ')}
         style={{

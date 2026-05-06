@@ -268,13 +268,13 @@ function StepCard({ stepKey, index }: StepCardProps) {
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {step.doExamples.slice(0, 2).map((ex, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <span style={{ color: 'oklch(0.55 0.18 145)', fontSize: 13, flexShrink: 0 }}>✓</span>
+              <span style={{ color: 'var(--pbt-score-good)', fontSize: 13, flexShrink: 0 }}>✓</span>
               <span style={{ fontSize: 12, color: 'var(--pbt-text-muted)', lineHeight: 1.4 }}>{ex}</span>
             </div>
           ))}
           {step.dontExamples.slice(0, 1).map((ex, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <span style={{ color: 'oklch(0.55 0.24 18)', fontSize: 13, flexShrink: 0 }}>✗</span>
+              <span style={{ color: 'var(--pbt-score-poor)', fontSize: 13, flexShrink: 0 }}>✗</span>
               <span style={{ fontSize: 12, color: 'var(--pbt-text-muted)', lineHeight: 1.4 }}>{ex}</span>
             </div>
           ))}
@@ -493,13 +493,16 @@ export function ActGuideScreen() {
             Example in practice
           </div>
           <Glass radius={RADII.xl} padding={20}>
-            {/* Objection bubble */}
-            <div
+            {/* Objection — nested glass (driver-accent rim), not flat gray */}
+            <Glass
+              radius={16}
+              padding={14}
+              blur={22}
+              glow={null}
               style={{
-                background: 'color-mix(in oklab, var(--pbt-text) 8%, transparent)',
-                borderRadius: '14px 14px 14px 4px',
-                padding: '12px 16px',
                 marginBottom: 20,
+                borderRadius: '14px 14px 14px 4px',
+                border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 38%, var(--pbt-glass-border))',
               }}
             >
               <div
@@ -508,8 +511,9 @@ export function ActGuideScreen() {
                   fontSize: 9,
                   letterSpacing: '0.14em',
                   textTransform: 'uppercase',
-                  color: 'var(--pbt-text-muted)',
+                  color: 'var(--pbt-driver-primary)',
                   marginBottom: 5,
+                  fontWeight: 700,
                 }}
               >
                 Client objection
@@ -525,7 +529,7 @@ export function ActGuideScreen() {
               >
                 "Your pricing is too high — I can get similar food at the supermarket for half the price!"
               </p>
-            </div>
+            </Glass>
 
             {/* ACT response steps */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

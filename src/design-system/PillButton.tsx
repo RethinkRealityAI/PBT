@@ -52,9 +52,9 @@ export function PillButton({
     solid: {
       color: '#fff',
       background:
-        'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+        'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
       boxShadow:
-        '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 16px -4px oklch(0.55 0.22 18 / 0.5), 0 2px 4px oklch(0.55 0.22 18 / 0.3)',
+        '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 16px -4px color-mix(in oklab, var(--pbt-driver-primary) 52%, transparent), 0 2px 4px color-mix(in oklab, var(--pbt-driver-accent) 38%, transparent)',
     },
     glass: {
       color: dark ? '#fff' : 'oklch(0.30 0.10 20)',
@@ -79,7 +79,7 @@ export function PillButton({
       background: 'transparent',
       border: dark
         ? '1px solid rgba(255,255,255,0.2)'
-        : '1px solid oklch(0.55 0.22 18 / 0.25)',
+        : '1px solid color-mix(in oklab, var(--pbt-driver-primary) 28%, transparent)',
     },
   };
 

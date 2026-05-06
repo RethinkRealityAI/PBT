@@ -10,6 +10,12 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { useChat } from '../app/providers/ChatProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
+import {
+  COLORS,
+  DRIVER_COLORS,
+  type DriverColors,
+  type DriverKey,
+} from '../design-system/tokens';
 import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
 import { SEED_SCENARIOS, type Scenario } from '../data/scenarios';
 
@@ -48,6 +54,22 @@ function seedScenarioIndex(scenario: Scenario): number {
         seed.openingLine === scenario.openingLine),
   );
 }
+
+/** Emotion traffic-light colors blended from the learner's ECHO palette — orb / glow only. */
+function emotionPalette(dc: DriverColors): Record<EmotionColor, string> {
+  return {
+    red: dc.primary,
+    yellow: `color-mix(in oklab, ${dc.primary} 48%, oklch(0.80 0.15 88) 52%)`,
+    green: `color-mix(in oklab, ${dc.primary} 32%, oklch(0.64 0.15 150) 68%)`,
+  };
+}
+
+/** Dots + emotion label: fixed rubric colors (not driver-tinted). */
+const EMOTION_DOT_COLORS: Record<EmotionColor, string> = {
+  red: COLORS.score.poor,
+  yellow: COLORS.score.ok,
+  green: COLORS.score.good,
+};
 
 /** Prev / next chevrons — matches Home scenario card (counter between arrows + Scenario label) */
 function ScenarioArrowNav({
@@ -172,7 +194,13 @@ function ScenarioDetailsPanel({
               width: 'min(92vw, 580px)',
             }}
           >
-            <Glass radius={26} padding="30px 26px 26px" blur={24} tint={0.05}>
+            <Glass
+              radius={26}
+              padding="30px 26px 26px"
+              blur={24}
+              tint={0.05}
+              backdropSaturatePct={130}
+            >
               {/* Header row */}
               <div className="flex items-start justify-between gap-2" style={{ marginBottom: 14 }}>
                 <div style={{ minWidth: 0 }}>
@@ -431,6 +459,8 @@ function ScenarioSessionControls({
 
 export function ChatScreen() {
   const { go } = useNavigation();
+  const { profile } = useProfile();
+  const driverKey = profile?.primary ?? 'Activator';
   const { scenario, setScenario } = useScenario();
   const chat = useChat();
   const voice = useVoiceSession();
@@ -740,6 +770,7 @@ export function ChatScreen() {
             analysisError={voiceAnalysisError}
             onBegin={beginVoice}
             onRetry={voiceAnalysisError ? finalizeVoice : beginVoice}
+            driverKey={driverKey}
           />
         </>
       )}
@@ -758,19 +789,33 @@ export function ChatScreen() {
         <div style={{ position: 'relative' }}>
           <Glass
             radius={9999}
-            padding={0}
+            padding="0 12px 0 10px"
             blur={18}
             tint={0.05}
             onClick={() => setScenarioDetailsOpen(true)}
-            ariaLabel="Open scenario details"
-            className="absolute z-[2] flex h-11 w-11 cursor-pointer items-center justify-center"
+            ariaLabel="Scenario info"
+            className="absolute z-[2] flex cursor-pointer items-center gap-2"
             style={{
               right: 0,
               bottom: '100%',
               marginBottom: 10,
+              height: 36,
             }}
           >
-            <Icon.book />
+            <Icon.info style={{ width: 16, height: 16, flexShrink: 0 }} />
+            <span
+              style={{
+                fontFamily: 'var(--pbt-font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                fontWeight: 600,
+                color: 'var(--pbt-text)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Scenario info
+            </span>
           </Glass>
           <ScenarioSessionControls
             scenario={scenario}
@@ -845,7 +890,7 @@ export function ChatScreen() {
                   cursor: draft.trim() ? 'pointer' : 'not-allowed',
                   color: '#fff',
                   background: draft.trim()
-                    ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))'
+                    ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
                     : 'rgba(60,20,15,0.12)',
                 }}
               >
@@ -883,7 +928,7 @@ function TypingIndicator() {
               width: 6,
               height: 6,
               borderRadius: '50%',
-              background: 'oklch(0.55 0.22 18)',
+              background: 'color-mix(in oklab, var(--pbt-driver-primary) 72%, oklch(0.48 0.06 25))',
               animation: `pbtTypingDot 1.4s ${i * 0.2}s infinite`,
               display: 'inline-block',
             }}
@@ -893,12 +938,6 @@ function TypingIndicator() {
     </div>
   );
 }
-
-const EMOTION_COLORS: Record<EmotionColor, string> = {
-  red: 'oklch(0.55 0.22 18)',
-  yellow: 'oklch(0.72 0.19 80)',
-  green: 'oklch(0.58 0.18 145)',
-};
 
 const EMOTION_LABELS: Record<EmotionColor, string> = {
   red: 'Defensive',
@@ -922,14 +961,18 @@ function VoiceMode({
   analysisError,
   onBegin,
   onRetry,
+  driverKey,
 }: {
   voice: ReturnType<typeof useVoiceSession>;
   isAnalyzing: boolean;
   analysisError: string | null;
   onBegin: () => void;
   onRetry?: () => void;
+  driverKey: DriverKey;
 }) {
-  const emotionColor = EMOTION_COLORS[voice.emotion];
+  const dc = DRIVER_COLORS[driverKey];
+  const emotionColors = emotionPalette(dc);
+  const emotionColor = emotionColors[voice.emotion];
   const isThinking = voice.status === 'thinking';
   const isReady = voice.status === 'idle';
   const isConnecting = voice.status === 'connecting';
@@ -952,19 +995,20 @@ function VoiceMode({
       className="flex flex-1 flex-col items-center"
       style={{ paddingLeft: 20, paddingRight: 20, paddingBottom: 12, minHeight: 0 }}
     >
-      {/* Orb section — natural height, modest top padding so the transcript has room */}
+      {/* Orb section — status label + orb + emotion dots */}
       <div
         style={{
           flex: '0 0 auto',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          paddingTop: 'max(20px, 5%)',
+          paddingTop: 8,
+          paddingBottom: 8,
           width: '100%',
         }}
       >
 
-      {/* Status label — tight spacing so the orb + transcript both fit */}
+      {/* Status label */}
       <div
         style={{
           marginBottom: 20,
@@ -972,7 +1016,9 @@ function VoiceMode({
           fontSize: 11,
           letterSpacing: '0.18em',
           textTransform: 'uppercase',
-          color: isThinking ? 'oklch(0.55 0.10 240)' : 'var(--pbt-text-muted)',
+          color: isThinking
+            ? `color-mix(in oklab, ${dc.primary} 24%, oklch(0.52 0.10 240))`
+            : 'var(--pbt-text-muted)',
           textAlign: 'center',
           minHeight: 18,
           transition: 'color 0.4s ease',
@@ -1043,7 +1089,7 @@ function VoiceMode({
               position: 'absolute',
               inset: '-8%',
               borderRadius: '50%',
-              background: 'radial-gradient(closest-side, oklch(0.65 0.08 240 / 0.20), transparent)',
+              background: `radial-gradient(closest-side, color-mix(in oklab, ${dc.primary} 35%, oklch(0.62 0.08 240)) 22%, transparent)`,
               animation: 'pbtPulse 1.6s ease-in-out infinite',
             }}
           />
@@ -1082,6 +1128,7 @@ function VoiceMode({
           }}
         >
           <Orb
+            driver={driverKey}
             size={168}
             pulse={voice.status === 'aiSpeaking' || isThinking}
             intensity={voice.status === 'aiSpeaking' ? 1.5 : isThinking ? 0.65 : 0.9}
@@ -1092,7 +1139,7 @@ function VoiceMode({
       {/* Three traffic-light dots + emotion label */}
       <div
         style={{
-          marginTop: 20,
+          marginTop: 12,
           display: 'flex',
           alignItems: 'center',
           gap: 7,
@@ -1105,8 +1152,14 @@ function VoiceMode({
               width: 9,
               height: 9,
               borderRadius: '50%',
-              background: (!isThinking && voice.emotion === e) ? EMOTION_COLORS[e] : 'rgba(120,80,60,0.18)',
-              boxShadow: (!isThinking && voice.emotion === e) ? `0 0 8px 2px ${EMOTION_COLORS[e]}` : 'none',
+              background:
+                !isThinking && voice.emotion === e
+                  ? EMOTION_DOT_COLORS[e]
+                  : 'color-mix(in oklab, var(--pbt-text-muted) 40%, transparent)',
+              boxShadow:
+                !isThinking && voice.emotion === e
+                  ? `0 0 8px 2px ${EMOTION_DOT_COLORS[e]}`
+                  : 'none',
               transition: 'all 0.55s ease',
               flexShrink: 0,
             }}
@@ -1118,7 +1171,9 @@ function VoiceMode({
             fontSize: 10,
             letterSpacing: '0.14em',
             textTransform: 'uppercase',
-            color: isThinking ? 'oklch(0.55 0.10 240)' : emotionColor,
+            color: isThinking
+              ? `color-mix(in oklab, ${dc.primary} 24%, oklch(0.52 0.10 240))`
+              : EMOTION_DOT_COLORS[voice.emotion],
             transition: 'color 0.6s ease',
             marginLeft: 3,
           }}
@@ -1131,7 +1186,14 @@ function VoiceMode({
       {(voice.error || analysisError) && (
         <div style={{ width: '100%', marginTop: 16 }}>
           <Glass radius={16} padding={14}>
-            <p style={{ fontSize: 13, color: 'oklch(0.55 0.22 18)', margin: 0, marginBottom: onRetry ? 10 : 0 }}>
+            <p
+              style={{
+                fontSize: 13,
+                color: 'color-mix(in oklab, var(--pbt-driver-accent) 85%, oklch(0.35 0.08 25))',
+                margin: 0,
+                marginBottom: onRetry ? 10 : 0,
+              }}
+            >
               {voice.error ?? analysisError}
             </p>
             {onRetry && (
@@ -1139,9 +1201,12 @@ function VoiceMode({
                 onClick={onRetry}
                 style={{
                   padding: '6px 16px', borderRadius: 9999, border: 'none', cursor: 'pointer',
-                  background: 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))',
+                  background:
+                    'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
                   color: '#fff', fontFamily: 'var(--pbt-font-mono)', fontSize: 11,
                   fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase',
+                  boxShadow:
+                    '0 4px 12px -4px color-mix(in oklab, var(--pbt-driver-primary) 45%, transparent)',
                 }}
               >
                 {hasStartError ? 'Try voice again' : 'Try again'}
@@ -1151,10 +1216,9 @@ function VoiceMode({
         </div>
       )}
 
-      {/* Close the centered orb section */}
       </div>
 
-      {/* Transcript — flex-1 fills remaining space, content vertically centered */}
+      {/* Transcript — below orb, centered */}
       <div
         style={{
           flex: 1,
@@ -1165,68 +1229,11 @@ function VoiceMode({
           width: '100%',
           paddingTop: 8,
           paddingBottom: 16,
-          gap: 10,
           overflow: 'hidden',
           minHeight: 0,
+          gap: 8,
         }}
       >
-        {/* Connecting placeholder */}
-        {isConnecting && !isAnalyzing && (
-          <div
-            style={{
-              textAlign: 'center',
-              color: 'var(--pbt-text-muted)',
-              fontSize: 13,
-              lineHeight: 1.5,
-            }}
-          >
-            <span
-              style={{
-                fontFamily: 'var(--pbt-font-mono)',
-                letterSpacing: '0.10em',
-                textTransform: 'uppercase',
-              }}
-            >
-              Starting session…
-            </span>
-          </div>
-        )}
-
-        {/* Analyzing indicator */}
-        {isAnalyzing && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: 'oklch(0.55 0.22 18)',
-                    animation: `pbtTypingDot 1.4s ${i * 0.2}s infinite`,
-                    display: 'inline-block',
-                  }}
-                />
-              ))}
-            </div>
-            <span
-              style={{
-                fontFamily: 'var(--pbt-font-mono)',
-                fontSize: 11,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-                color: 'var(--pbt-text-muted)',
-              }}
-            >
-              Analyzing session…
-            </span>
-          </div>
-        )}
-
-        {/* AI line — pinned authoritatively at turnComplete (or pre-seeded with
-            scenario.openingLine on session start). No mid-turn streaming updates so
-            late/partial transcription chunks can't replace the line with a fragment. */}
         {aiDisplayText && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -1234,13 +1241,12 @@ function VoiceMode({
             transition={{ duration: 0.25, ease: 'easeOut' }}
             style={{
               textAlign: 'center',
-              fontSize: 'clamp(13px, 3vw, 16px)',
+              fontSize: 'clamp(17.9px, 4.14vw, 22.1px)',
               fontWeight: 400,
               lineHeight: 1.4,
               color: 'var(--pbt-text)',
               letterSpacing: '-0.005em',
               maxWidth: 360,
-              padding: '4px 2px',
               overflow: 'hidden',
               wordBreak: 'break-word',
             }}
@@ -1248,26 +1254,24 @@ function VoiceMode({
             {aiDisplayText}
           </motion.div>
         )}
-
-        {/* Last user message — smaller, muted */}
         {lastUserMsg && (
           <AnimatePresence mode="wait">
             <motion.div
               key={lastUserMsg.timestamp}
               initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 0.6, y: 0 }}
+              animate={{ opacity: 0.55, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
               style={{
                 textAlign: 'center',
-                fontSize: 'clamp(13px, 3.5vw, 15px)',
+                fontSize: 'clamp(12px, 3vw, 14px)',
                 fontWeight: 400,
                 lineHeight: 1.45,
                 color: 'var(--pbt-text-muted)',
-                maxWidth: 340,
+                maxWidth: 320,
                 overflow: 'hidden',
                 display: '-webkit-box',
-                WebkitLineClamp: 3,
+                WebkitLineClamp: 2,
                 WebkitBoxOrient: 'vertical',
               }}
             >
@@ -1275,91 +1279,8 @@ function VoiceMode({
             </motion.div>
           </AnimatePresence>
         )}
-
-        {/* Speaking indicator — subtle equalizer/synth-wave bars while AI is speaking.
-            Replaces the previous "Customer is speaking…" text since the orb's status
-            label above already reads "Speaking…". */}
-        {!isReady && !isConnecting && !aiDisplayText && !isAnalyzing && voice.status === 'aiSpeaking' && (
-          <SpeakingWave />
-        )}
       </div>
 
-    </div>
-  );
-}
-
-/**
- * Fluid synth-style speaking indicator. Three overlapping sine-wave SVG paths
- * driven by Framer Motion path-data interpolation. Brand red + black gradient
- * with soft glow. Replaces the static equalizer bars.
- */
-function SpeakingWave() {
-  // Three wave shape variants — Framer Motion morphs between them on a loop.
-  // Each path is a smooth bezier in viewBox 0 0 200 60 with anchors at the
-  // midline and varying control-point heights for organic motion.
-  const waveA = 'M 0 30 Q 25 10 50 30 T 100 30 T 150 30 T 200 30';
-  const waveB = 'M 0 30 Q 25 50 50 30 T 100 30 T 150 30 T 200 30';
-  const waveC = 'M 0 30 Q 25 20 50 30 Q 75 45 100 30 Q 125 12 150 30 Q 175 42 200 30';
-
-  return (
-    <div
-      role="img"
-      aria-label="Customer is speaking"
-      style={{
-        position: 'relative',
-        width: '100%',
-        maxWidth: 320,
-        height: 60,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <svg
-        viewBox="0 0 200 60"
-        preserveAspectRatio="none"
-        style={{ width: '100%', height: '100%', overflow: 'visible' }}
-        aria-hidden
-      >
-        <defs>
-          <linearGradient id="pbtWaveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stopColor="oklch(0.18 0.02 18)" stopOpacity="0.0" />
-            <stop offset="15%"  stopColor="oklch(0.20 0.03 18)" stopOpacity="0.9" />
-            <stop offset="40%"  stopColor="oklch(0.22 0.04 18)" stopOpacity="1" />
-            <stop offset="50%"  stopColor="oklch(0.55 0.22 22)" stopOpacity="1" />
-            <stop offset="60%"  stopColor="oklch(0.22 0.04 18)" stopOpacity="1" />
-            <stop offset="85%"  stopColor="oklch(0.20 0.03 18)" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="oklch(0.18 0.02 18)" stopOpacity="0.0" />
-          </linearGradient>
-          <filter id="pbtWaveGlow" x="-20%" y="-50%" width="140%" height="200%">
-            <feGaussianBlur stdDeviation="1.4" result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-        </defs>
-        {[
-          { delay: 0,    duration: 1.6, opacity: 0.95, strokeWidth: 1.8 },
-          { delay: 0.25, duration: 2.0, opacity: 0.55, strokeWidth: 1.2 },
-          { delay: 0.5,  duration: 2.4, opacity: 0.35, strokeWidth: 0.9 },
-        ].map((cfg, i) => (
-          <motion.path
-            key={i}
-            d={waveA}
-            fill="none"
-            stroke="url(#pbtWaveGrad)"
-            strokeWidth={cfg.strokeWidth}
-            strokeLinecap="round"
-            filter="url(#pbtWaveGlow)"
-            style={{ opacity: cfg.opacity }}
-            animate={{ d: [waveA, waveB, waveC, waveA] }}
-            transition={{
-              duration: cfg.duration,
-              ease: 'easeInOut',
-              repeat: Infinity,
-              delay: cfg.delay,
-            }}
-          />
-        ))}
-      </svg>
     </div>
   );
 }

@@ -56,11 +56,7 @@ function sanitizeAiText(raw: string): string {
     .replace(/\s+([.,!?;:])/g, '$1')
     .replace(/\.{2,}/g, '.')
     .trim();
-  // Capitalize the first letter — when Gemini Live's STT drops the leading word
-  // of a turn, the remaining text starts mid-sentence with a lowercase word
-  // ("you trying to imply?" instead of "What are you trying to imply?"). Bumping
-  // the first letter to uppercase makes the line read as a clean sentence start
-  // regardless of whether truncation happened.
+  // Capitalize the first letter so partial STT that starts mid-phrase still reads cleanly.
   return cleaned.length > 0
     ? cleaned[0].toUpperCase() + cleaned.slice(1)
     : cleaned;
@@ -94,6 +90,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const statusRef = useRef<VoiceStatus>('idle');
   const finalizePromiseRef = useRef<Promise<VoiceSessionResult> | null>(null);
   const naturalEndHandlerRef = useRef<(() => void) | null>(null);
+  /** After endSimulation, wait until queued TTS finishes — reschedule as audio chunks arrive. */
+  const pendingNaturalEndRef = useRef(false);
+  const naturalEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Gates mic audio until the AI delivers its first complete turn (prevents double opening)
   const openingDeliveredRef = useRef(false);
   // Timestamp until which mic audio should be suppressed (post-AI-speech grace period).
@@ -103,6 +102,24 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const setStatusSync = useCallback((s: VoiceStatus) => {
     statusRef.current = s;
     setStatus(s);
+  }, []);
+
+  const scheduleNaturalEndAfterPlayback = useCallback(() => {
+    if (naturalEndTimerRef.current) {
+      clearTimeout(naturalEndTimerRef.current);
+      naturalEndTimerRef.current = null;
+    }
+    const ctx = playbackCtxRef.current;
+    const playbackTail =
+      ctx && ctx.state !== 'closed'
+        ? Math.max(0, nextPlayTimeRef.current - ctx.currentTime)
+        : 0;
+    const delayMs = Math.min(16000, Math.ceil(playbackTail * 1000) + 1000);
+    naturalEndTimerRef.current = setTimeout(() => {
+      naturalEndTimerRef.current = null;
+      pendingNaturalEndRef.current = false;
+      naturalEndHandlerRef.current?.();
+    }, delayMs);
   }, []);
 
   const addAiMessage = useCallback(() => {
@@ -131,8 +148,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       setStatusSync('aiSpeaking');
       // Discard user-transcription buffer (likely echo of our own audio leaking back).
       userTextBufferRef.current = '';
-      // Reset the AI text buffer for this new turn.
-      aiTextBufferRef.current = '';
+      // Do NOT clear aiTextBufferRef here. outputAudioTranscription chunks often arrive
+      // in the same message before this audio chunk, or in earlier messages before the
+      // first PCM arrives — clearing on first play would drop the leading words every turn.
+      // The buffer is reset in addAiMessage() after turnComplete and on session stop/start.
       // Clear the displayed line — transcript stays blank while AI is speaking;
       // it's filled (full, sanitized) at turnComplete.
       setLiveAiText('');
@@ -158,6 +177,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     source.start(nextPlayTimeRef.current);
     nextPlayTimeRef.current += audioBuf.duration;
 
+    if (pendingNaturalEndRef.current) {
+      queueMicrotask(() => scheduleNaturalEndAfterPlayback());
+    }
+
     source.onended = () => {
       if (ctx.state !== 'closed' && ctx.currentTime >= nextPlayTimeRef.current - 0.1) {
         if (statusRef.current === 'aiSpeaking') setStatusSync('listening');
@@ -166,7 +189,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         micUnmuteAtRef.current = performance.now() + 250;
       }
     };
-  }, [setStatusSync]);
+  }, [scheduleNaturalEndAfterPlayback, setStatusSync]);
 
   const stopRecording = useCallback(() => {
     processorRef.current?.disconnect();
@@ -242,6 +265,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   }, [setError, setStatusSync]);
 
   const cleanup = useCallback(() => {
+    if (naturalEndTimerRef.current) {
+      clearTimeout(naturalEndTimerRef.current);
+      naturalEndTimerRef.current = null;
+    }
+    pendingNaturalEndRef.current = false;
     stopRecording();
     if (playbackCtxRef.current?.state !== 'closed') {
       try { playbackCtxRef.current?.close(); } catch { /* already closed */ }
@@ -265,6 +293,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     try {
       finalizePromiseRef.current = null;
       openingDeliveredRef.current = false;
+      pendingNaturalEndRef.current = false;
+      if (naturalEndTimerRef.current) {
+        clearTimeout(naturalEndTimerRef.current);
+        naturalEndTimerRef.current = null;
+      }
       micUnmuteAtRef.current = 0;
       setStatusSync('connecting');
       setError(null);
@@ -378,15 +411,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
                 });
 
                 if (fc.name === 'endSimulation') {
-                  // Defer natural-end until any in-flight closing line finishes playing.
-                  // The model is instructed to speak the closing line in the same turn
-                  // as the function call; tearing down immediately would cut it off.
-                  const ctx = playbackCtxRef.current;
-                  const playbackTail = ctx
-                    ? Math.max(0, nextPlayTimeRef.current - ctx.currentTime)
-                    : 0;
-                  const delayMs = Math.min(8000, Math.ceil(playbackTail * 1000) + 400);
-                  setTimeout(() => naturalEndHandlerRef.current?.(), delayMs);
+                  // Wait until closing TTS in the queue finishes. Tool calls run before
+                  // serverContent in the same message, so we must NOT read playbackTail yet —
+                  // schedule after this tick (queueMicrotask) and reschedule whenever new audio
+                  // chunks extend the queue (pendingNaturalEndRef + playAudioChunk).
+                  pendingNaturalEndRef.current = true;
+                  queueMicrotask(() => scheduleNaturalEndAfterPlayback());
                 }
               }
             }
@@ -438,15 +468,16 @@ export function useVoiceSession(): UseVoiceSessionReturn {
               // Don't apply mic grace on user-initiated barge-in — they're actively
               // speaking, we want their input flowing immediately.
               micUnmuteAtRef.current = 0;
+              // Drop partial STT from the aborted turn so it can't merge into the next reply.
+              aiTextBufferRef.current = '';
             }
 
             // Turn complete — commit accumulated AI text; unlock mic after first turn.
             //
-            // Special-case the OPENING turn ONLY: the Gemini Live preview model
-            // reliably drops the first few words of the very first response in
-            // outputAudioTranscription. Since we instructed the model to deliver
-            // scenario.openingLine verbatim, we pin that exact text. For every
-            // subsequent turn we trust the transcription as-is.
+            // Special-case the OPENING turn: if transcription still mismatches the scripted
+            // opening, pin scenario.openingLine verbatim. (Leading words were also lost client-side
+            // when the first audio chunk cleared the STT buffer — fixed by not resetting the buffer
+            // in playAudioChunk.)
             if (serverContent?.turnComplete) {
               const isOpeningTurn =
                 !openingDeliveredRef.current &&
@@ -512,7 +543,15 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       setStatusSync('error');
       cleanup();
     }
-  }, [addAiMessage, addUserMessage, cleanup, playAudioChunk, setStatusSync, startRecording]);
+  }, [
+    addAiMessage,
+    addUserMessage,
+    cleanup,
+    playAudioChunk,
+    scheduleNaturalEndAfterPlayback,
+    setStatusSync,
+    startRecording,
+  ]);
 
   const stop = useCallback(() => {
     finalizePromiseRef.current = null;

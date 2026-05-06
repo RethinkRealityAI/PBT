@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Glass } from '../../design-system/Glass';
 import { Icon } from '../../design-system/Icon';
 import { useSession } from '../../app/providers/SessionProvider';
+import { useProfile } from '../../app/providers/ProfileProvider';
+import { DRIVER_COLORS } from '../../design-system/tokens';
 import {
   readStorage,
   writeStorage,
@@ -20,6 +22,8 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function SaveProgressBanner() {
   const { user } = useSession();
+  const { profile } = useProfile();
+  const driverColors = profile ? DRIVER_COLORS[profile.primary] : null;
   const dismissedUntil = readStorage(BANNER_KEY);
   const [dismissed, setDismissed] = useState(
     dismissedUntil !== null && new Date(dismissedUntil).getTime() > Date.now(),
@@ -136,13 +140,20 @@ export function SaveProgressBanner() {
               onClick={() => setOpen(true)}
               style={{
                 padding: '8px 14px',
-                border: 'none',
+                border: driverColors
+                  ? `1px solid color-mix(in oklab, ${driverColors.primary} 34%, rgba(255,255,255,0.5))`
+                  : '1px solid color-mix(in oklab, var(--pbt-driver-primary) 34%, rgba(255,255,255,0.5))',
                 borderRadius: 9999,
-                background: 'rgba(0,0,0,0.12)',
-                color: 'var(--pbt-text)',
+                background: driverColors
+                  ? `linear-gradient(180deg, ${driverColors.primary}, ${driverColors.accent})`
+                  : 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+                color: '#fff',
                 fontWeight: 600,
                 fontSize: 13,
                 cursor: 'pointer',
+                boxShadow: driverColors
+                  ? `0 1px 0 rgba(255,255,255,0.34) inset, 0 8px 18px -10px color-mix(in oklab, ${driverColors.primary} 42%, transparent)`
+                  : '0 1px 0 rgba(255,255,255,0.34) inset, 0 8px 18px -10px color-mix(in oklab, var(--pbt-driver-primary) 42%, transparent)',
               }}
             >
               Sign up

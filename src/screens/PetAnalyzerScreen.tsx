@@ -113,33 +113,51 @@ export function PetAnalyzerScreen() {
                     width: 42,
                     height: 42,
                     borderRadius: '50%',
-                    background: 'rgba(255,255,255,0.28)',
-                    border: '1px solid rgba(255,255,255,0.5)',
+                    background: 'color-mix(in oklab, var(--pbt-driver-primary) 16%, rgba(255,255,255,0.06))',
+                    border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 42%, rgba(255,255,255,0.45))',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: 'var(--pbt-text)',
+                    color: 'var(--pbt-driver-primary)',
                     flexShrink: 0,
+                    backdropFilter: 'blur(12px) saturate(220%)',
+                    WebkitBackdropFilter: 'blur(12px) saturate(220%)',
+                    boxShadow: '0 1px 0 rgba(255,255,255,0.35) inset',
                   }}
                 >
                   <Icon.paw />
                 </div>
-                <input
-                  value={state.name}
-                  onChange={(e) => update('name', e.target.value)}
-                  placeholder="Pet name"
+                <div
                   style={{
-                    border: 'none',
-                    outline: 'none',
-                    background: 'transparent',
-                    fontFamily: 'inherit',
-                    fontSize: 18,
-                    fontWeight: 700,
-                    color: 'var(--pbt-text)',
                     flex: 1,
                     minWidth: 0,
+                    borderRadius: 16,
+                    padding: '11px 15px',
+                    border: '1.5px solid color-mix(in oklab, var(--pbt-driver-primary) 52%, rgba(255,255,255,0.38))',
+                    background: 'color-mix(in oklab, var(--pbt-driver-primary) 11%, rgba(255,255,255,0.05))',
+                    backdropFilter: 'blur(18px) saturate(280%)',
+                    WebkitBackdropFilter: 'blur(18px) saturate(280%)',
+                    boxShadow:
+                      '0 1px 0 rgba(255,255,255,0.32) inset, 0 0 0 1px rgba(255,255,255,0.05) inset, 0 6px 20px -8px color-mix(in oklab, var(--pbt-driver-primary) 22%, transparent)',
                   }}
-                />
+                >
+                  <input
+                    value={state.name}
+                    onChange={(e) => update('name', e.target.value)}
+                    placeholder="Pet name"
+                    aria-label="Pet name"
+                    style={{
+                      width: '100%',
+                      border: 'none',
+                      outline: 'none',
+                      background: 'transparent',
+                      fontFamily: 'inherit',
+                      fontSize: 18,
+                      fontWeight: 700,
+                      color: 'var(--pbt-text)',
+                    }}
+                  />
+                </div>
               </div>
 
               {/* Breed section */}
@@ -188,11 +206,12 @@ export function PetAnalyzerScreen() {
                     marginTop: 8,
                     padding: '9px 13px',
                     borderRadius: 14,
-                    border: '1px solid rgba(255,255,255,0.55)',
-                    background: 'rgba(255,255,255,0.38)',
-                    backdropFilter: 'blur(12px)',
-                    WebkitBackdropFilter: 'blur(12px)',
-                    boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset',
+                    border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 42%, rgba(255,255,255,0.45))',
+                    background: 'color-mix(in oklab, var(--pbt-driver-primary) 10%, rgba(255,255,255,0.12))',
+                    backdropFilter: 'blur(14px) saturate(260%)',
+                    WebkitBackdropFilter: 'blur(14px) saturate(260%)',
+                    boxShadow:
+                      '0 1px 0 rgba(255,255,255,0.85) inset, 0 0 0 1px rgba(255,255,255,0.06) inset',
                   }}
                 >
                   <Icon.search />
@@ -235,7 +254,7 @@ export function PetAnalyzerScreen() {
             step={1}
             value={state.weightKg}
             onChange={(e) => update('weightKg', parseInt(e.target.value, 10))}
-            style={{ width: '100%', accentColor: 'oklch(0.62 0.22 22)', marginBottom: 16 }}
+            style={{ width: '100%', accentColor: 'var(--pbt-driver-primary)', marginBottom: 16 }}
           />
 
           {/* Activity selector — full-width glass cards, readable text */}
@@ -253,16 +272,16 @@ export function PetAnalyzerScreen() {
                     borderRadius: 18,
                     textAlign: 'left',
                     border: active
-                      ? '1px solid oklch(0.62 0.22 22)'
+                      ? '1px solid color-mix(in oklab, var(--pbt-driver-primary) 58%, rgba(255,255,255,0.38))'
                       : '1px solid rgba(255,255,255,0.50)',
                     background: active
-                      ? 'linear-gradient(135deg, oklch(0.96 0.04 20), oklch(0.93 0.06 22))'
+                      ? 'color-mix(in oklab, var(--pbt-driver-primary) 17%, rgba(255,255,255,0.06))'
                       : 'rgba(255,255,255,0.22)',
                     backdropFilter: 'blur(18px) saturate(240%) brightness(1.02)',
                     WebkitBackdropFilter: 'blur(18px) saturate(240%) brightness(1.02)',
                     boxShadow: active
-                      ? '0 1px 0 rgba(255,255,255,0.95) inset, 0 10px 24px -10px oklch(0.62 0.22 22 / 0.28)'
-                      : '0 1px 0 rgba(255,255,255,0.85) inset, 0 4px 12px -6px rgba(60,20,15,0.06)',
+                      ? '0 1px 0 rgba(255,255,255,0.95) inset, 0 10px 24px -10px color-mix(in oklab, var(--pbt-driver-primary) 30%, transparent)'
+                      : '0 1px 0 rgba(255,255,255,0.85) inset, 0 4px 12px -6px rgba(0,0,0,0.08)',
                     transition: 'all 0.2s ease',
                   }}
                   aria-pressed={active}
@@ -271,7 +290,7 @@ export function PetAnalyzerScreen() {
                     style={{
                       fontWeight: 700,
                       fontSize: 15,
-                      color: active ? 'oklch(0.50 0.22 18)' : 'var(--pbt-text)',
+                      color: 'var(--pbt-text)',
                       marginBottom: 3,
                     }}
                   >
@@ -282,7 +301,7 @@ export function PetAnalyzerScreen() {
                       fontFamily: 'var(--pbt-font-mono)',
                       fontSize: 10,
                       letterSpacing: '0.08em',
-                      color: active ? 'oklch(0.62 0.14 22)' : 'var(--pbt-text-muted)',
+                      color: 'var(--pbt-text-muted)',
                     }}
                   >
                     {act === 'active' ? '130 × kg^0.75' : '95 × kg^0.75'}
@@ -376,13 +395,13 @@ export function PetAnalyzerScreen() {
                       ? `1px solid ${m.color}`
                       : '1px solid rgba(255,255,255,0.50)',
                     background: active
-                      ? `color-mix(in oklab, ${m.color} 22%, rgba(255,255,255,0.5))`
+                      ? `color-mix(in oklab, ${m.color} 26%, rgba(255,255,255,0.12))`
                       : 'rgba(255,255,255,0.22)',
                     backdropFilter: 'blur(18px) saturate(240%) brightness(1.02)',
                     WebkitBackdropFilter: 'blur(18px) saturate(240%) brightness(1.02)',
                     boxShadow: active
                       ? `0 1px 0 rgba(255,255,255,0.9) inset, 0 6px 18px -8px color-mix(in oklab, ${m.color} 45%, transparent)`
-                      : '0 1px 0 rgba(255,255,255,0.85) inset, 0 4px 12px -6px rgba(60,20,15,0.06)',
+                      : '0 1px 0 rgba(255,255,255,0.85) inset, 0 4px 12px -6px rgba(0,0,0,0.08)',
                     color: 'var(--pbt-text)',
                     transition: 'all 0.2s',
                   }}
@@ -419,15 +438,17 @@ export function PetAnalyzerScreen() {
                   marginLeft: 'auto',
                   padding: '5px 12px',
                   borderRadius: 9999,
-                  border: `1px solid color-mix(in oklab, ${bcsLevel.color} 55%, transparent)`,
-                  background: `color-mix(in oklab, ${bcsLevel.color} 20%, rgba(255,255,255,0.35))`,
+                  border: `1px solid color-mix(in oklab, ${bcsLevel.color} 65%, white)`,
+                  background: `linear-gradient(180deg, color-mix(in oklab, ${bcsLevel.color} 68%, black), color-mix(in oklab, ${bcsLevel.color} 52%, black))`,
                   backdropFilter: 'blur(12px)',
                   WebkitBackdropFilter: 'blur(12px)',
-                  boxShadow: '0 1px 0 rgba(255,255,255,0.8) inset, 0 4px 10px -4px rgba(60,20,15,0.08)',
-                  color: bcsLevel.color,
+                  boxShadow:
+                    '0 1px 0 rgba(255,255,255,0.35) inset, 0 4px 10px -4px rgba(0,0,0,0.22)',
+                  color: '#fff',
                   fontFamily: 'var(--pbt-font-mono)',
                   fontSize: 11,
                   fontWeight: 700,
+                  textShadow: '0 1px 2px rgba(0,0,0,0.35)',
                 }}
               >
                 BCS {bcsLevel.score}/9
@@ -454,7 +475,15 @@ export function PetAnalyzerScreen() {
         </Glass>
 
         {/* ── Card 6: Reference ── */}
-        <Glass radius={22} padding={16}>
+        <Glass
+          radius={22}
+          padding={16}
+          blur={32}
+          glow={null}
+          style={{
+            border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 22%, var(--pbt-glass-border))',
+          }}
+        >
           <div className="flex items-center gap-2 mb-2">
             <Icon.book />
             <Eyebrow>Reference (WSAVA · 2006 NRC DMER)</Eyebrow>
