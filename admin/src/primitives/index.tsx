@@ -3,7 +3,7 @@
  * Adapted from the design-handoff JSX prototypes — typed, themed against
  * the main app's tokens, and trimmed of unused variants.
  */
-import { useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { COLOR, DRIVERS, RADIUS, type DriverKey } from '../lib/tokens';
 import { initialsOf } from '../lib/format';
 
@@ -437,6 +437,120 @@ export function LoadingShimmer({ height = 120 }: { height?: number }) {
 if (typeof document !== 'undefined' && !document.getElementById('pbt-admin-kf')) {
   const s = document.createElement('style');
   s.id = 'pbt-admin-kf';
-  s.textContent = `@keyframes pbt-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }`;
+  s.textContent = `
+    @keyframes pbt-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    @keyframes pbt-modal-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes pbt-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  `;
   document.head.appendChild(s);
+}
+
+// ── Modal primitive ──────────────────────────────────────────
+//
+// Centered glass card on a frosted scrim. Clicking the scrim closes;
+// pressing Escape closes; body scroll is locked while open. Same visual
+// language as the consumer-app modals so the dashboard feels of a piece.
+export function Modal({
+  open,
+  onClose,
+  children,
+  width = 720,
+  ariaLabel,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: ReactNode;
+  width?: number;
+  ariaLabel?: string;
+}) {
+  // Lock body scroll + Esc-to-close while the modal is mounted.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div
+      role="dialog"
+      aria-modal
+      aria-label={ariaLabel}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+        background: 'rgba(20,5,8,0.42)',
+        backdropFilter: 'blur(10px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(10px) saturate(160%)',
+        animation: 'pbt-fade-in 0.18s ease',
+      }}
+    >
+      <div
+        style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: width,
+          maxHeight: '88vh',
+          borderRadius: 24,
+          overflow: 'hidden',
+          background:
+            'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.82))',
+          backdropFilter: 'blur(40px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+          border: '0.5px solid rgba(255,255,255,0.95)',
+          boxShadow: [
+            '0 1px 0 rgba(255,255,255,0.95) inset',
+            '0 -1px 0 rgba(255,255,255,0.5) inset',
+            '0 32px 80px -20px rgba(20,5,8,0.4)',
+            '0 80px 120px -40px rgba(20,5,8,0.5)',
+          ].join(', '),
+          display: 'flex',
+          flexDirection: 'column',
+          animation: 'pbt-modal-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function ModalCloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      onClick={onClose}
+      aria-label="Close"
+      style={{
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        border: 'none',
+        cursor: 'pointer',
+        background: 'rgba(255,255,255,0.7)',
+        color: COLOR.ink,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 16,
+        boxShadow: '0 1px 0 rgba(255,255,255,0.95) inset',
+      }}
+    >
+      ×
+    </button>
+  );
 }

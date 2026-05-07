@@ -120,10 +120,26 @@ interface PersistArgs {
 /**
  * Mirror a session to Supabase training_sessions when the user is signed in.
  * Best-effort: failures don't surface to the user (local copy is canonical).
+ *
+ * The full transcript array is persisted as-is — every ChatMessage with
+ * role 'user' (the staff trainee) AND role 'ai' (the customer roleplay)
+ * is included. Both sides are required for the RAG corpus and the admin
+ * transcript viewer. A sanity log fires below if the transcript ever ends
+ * up single-role so a future regression can't silently drop a side.
  */
 async function persistToSupabase(args: PersistArgs): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
+  // Sanity check — flag silently-broken transcripts before they reach DB.
+  if (args.transcript.length >= 2) {
+    const roles = new Set(args.transcript.map((m) => m.role));
+    if (roles.size < 2) {
+      console.warn(
+        `[persistToSupabase] transcript for ${args.recordId} has only ${[...roles].join(',')} ` +
+          `turns (${args.transcript.length} total). Expected both 'user' and 'ai'.`,
+      );
+    }
+  }
   try {
     const {
       data: { user },

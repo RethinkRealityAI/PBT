@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Glass } from '../primitives/Glass';
 import {
   EmptyState,
@@ -13,6 +13,15 @@ import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { useUserScenarios } from '../data/queries';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
+import type { UserScenario } from '../data/types';
+import { ScenarioDetailModal } from './ScenarioDetailModal';
+
+const DIFFICULTY_LABEL: Record<number, string> = {
+  1: 'Coachable',
+  2: 'Skeptical',
+  3: 'Hostile',
+  4: 'Combative',
+};
 
 export function ScenariosScreen({
   query,
@@ -22,6 +31,7 @@ export function ScenariosScreen({
   onQuery: (q: string) => void;
 }) {
   const scenarios = useUserScenarios(500);
+  const [selected, setSelected] = useState<UserScenario | null>(null);
 
   const filtered = useMemo(
     () =>
@@ -192,6 +202,21 @@ export function ScenariosScreen({
           {filtered.slice(0, 100).map((s) => (
             <div
               key={s.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelected(s)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setSelected(s);
+                }
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.5)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
               style={{
                 display: 'grid',
                 gridTemplateColumns: '2fr 1fr 1fr 90px 90px 100px',
@@ -199,28 +224,28 @@ export function ScenariosScreen({
                 gap: 12,
                 alignItems: 'center',
                 borderBottom: '0.5px solid rgba(60,20,15,0.04)',
+                cursor: 'pointer',
+                transition: 'background 0.12s ease',
               }}
             >
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div
                   style={{
                     fontSize: 13,
                     fontWeight: 700,
                     color: COLOR.ink,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                   }}
                 >
                   {s.title}
                 </div>
-                <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 2 }}>
-                  {s.is_public ? (
-                    <StatusPill tone="info" dot={false}>
-                      Public
-                    </StatusPill>
-                  ) : (
-                    <StatusPill tone="neutral" dot={false}>
-                      Private
-                    </StatusPill>
-                  )}
+                {/* Persona + driver replace the redundant Private/Public pill —
+                    they actually identify the scenario at a glance. */}
+                <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 3 }}>
+                  {[s.persona, s.suggested_driver].filter(Boolean).join(' · ') ||
+                    'No persona / driver captured'}
                 </div>
               </div>
               <div style={{ fontSize: 12, color: COLOR.inkSoft }}>
@@ -233,7 +258,9 @@ export function ScenariosScreen({
                   fontWeight: 600,
                 }}
               >
-                Level {s.difficulty ?? '—'}
+                {s.difficulty != null
+                  ? DIFFICULTY_LABEL[s.difficulty] ?? `L${s.difficulty}`
+                  : '—'}
               </div>
               <div
                 style={{
@@ -255,6 +282,11 @@ export function ScenariosScreen({
           )}
         </Glass>
       </ScreenShell>
+
+      <ScenarioDetailModal
+        scenario={selected}
+        onClose={() => setSelected(null)}
+      />
     </>
   );
 }
