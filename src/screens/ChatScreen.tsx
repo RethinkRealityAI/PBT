@@ -789,6 +789,7 @@ export function ChatScreen() {
         open={showEndingOverlay}
         phase={endingPhase}
         driver={driverKey}
+        scenarioTitle={scenario.pushback.title}
       />
       {/* ── Header ── */}
       <div

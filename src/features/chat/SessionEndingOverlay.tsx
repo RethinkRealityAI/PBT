@@ -28,33 +28,47 @@ export interface SessionEndingOverlayProps {
   phase: 'closing' | 'analyzing' | 'ready';
   /** Driver tint to colour the orb / accents. */
   driver: DriverKey;
+  /** Pushback / scenario title to celebrate by name. */
+  scenarioTitle?: string;
 }
 
-const COPY: Record<SessionEndingOverlayProps['phase'], { eyebrow: string; title: string; sub: string }> = {
-  closing: {
-    eyebrow: 'Session complete',
-    title: 'Wrapping up the conversation',
-    sub: 'Holding for a beat so the closing line lands…',
-  },
-  analyzing: {
-    eyebrow: 'Analyzing your performance',
-    title: 'Building your scorecard',
-    sub: 'Scoring empathy, listening, knowledge, objection handling, confidence, closing, and pacing.',
-  },
-  ready: {
-    eyebrow: 'Done',
-    title: 'Your scorecard is ready',
-    sub: 'Opening it now…',
-  },
-};
+const DEFAULT_TITLE = 'pushback';
+
+function copyFor(
+  phase: SessionEndingOverlayProps['phase'],
+  scenarioTitle: string | undefined,
+): { eyebrow: string; title: string; sub: string } {
+  const title = scenarioTitle?.trim() || DEFAULT_TITLE;
+  switch (phase) {
+    case 'closing':
+      return {
+        eyebrow: 'Session complete',
+        title: `Great work finishing the\n${title} training.`,
+        sub: 'Holding for a beat so the closing line lands…',
+      };
+    case 'analyzing':
+      return {
+        eyebrow: 'Analyzing your performance',
+        title: 'Building your scorecard',
+        sub: 'Scoring empathy, listening, knowledge, objection handling, confidence, closing, and pacing.',
+      };
+    case 'ready':
+      return {
+        eyebrow: 'Done',
+        title: 'Your scorecard is ready',
+        sub: 'Opening it now…',
+      };
+  }
+}
 
 export function SessionEndingOverlay({
   open,
   phase,
   driver,
+  scenarioTitle,
 }: SessionEndingOverlayProps) {
   const reduceMotion = useReducedMotion();
-  const copy = COPY[phase];
+  const copy = copyFor(phase, scenarioTitle);
 
   return (
     <AnimatePresence>
@@ -173,6 +187,7 @@ export function SessionEndingOverlay({
                 letterSpacing: '-0.025em',
                 lineHeight: 1.15,
                 color: 'var(--pbt-text)',
+                whiteSpace: 'pre-line',
               }}
             >
               {copy.title}

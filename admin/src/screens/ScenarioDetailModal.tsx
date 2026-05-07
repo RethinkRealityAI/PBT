@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   DriverChip,
   Eyebrow,
@@ -9,6 +10,14 @@ import {
 import { COLOR, type DriverKey } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
 import type { UserScenario } from '../data/types';
+
+type TabKey = 'overview' | 'notes' | 'usage';
+
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'notes', label: 'Notes & context' },
+  { key: 'usage', label: 'Usage' },
+];
 
 const DIFFICULTY_LABEL: Record<number, string> = {
   1: 'Coachable',
@@ -32,6 +41,7 @@ export function ScenarioDetailModal({
   scenario: UserScenario | null;
   onClose: () => void;
 }) {
+  const [tab, setTab] = useState<TabKey>('overview');
   if (!scenario) return null;
   const driver =
     scenario.suggested_driver as DriverKey | null | undefined;
@@ -39,11 +49,13 @@ export function ScenarioDetailModal({
     scenario.difficulty != null ? DIFFICULTY_LABEL[scenario.difficulty] ?? `L${scenario.difficulty}` : null;
 
   return (
-    <Modal open={true} onClose={onClose} width={760} ariaLabel={scenario.title}>
+    <Modal open={true} onClose={onClose} width={840} ariaLabel={scenario.title}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '70vh', maxHeight: 640 }}>
       {/* Header — driver-tinted gradient, title, status pills */}
       <div
         style={{
           padding: '24px 28px 16px',
+          flexShrink: 0,
           background: driver
             ? `linear-gradient(180deg, color-mix(in oklab, var(--pbt-driver-primary, ${COLOR.brand}) 12%, white), transparent)`
             : 'transparent',
@@ -125,10 +137,49 @@ export function ScenarioDetailModal({
         </div>
       </div>
 
-      {/* Body — scrolls if scenario is long */}
+      {/* Tab bar */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 2,
+          padding: '0 24px',
+          borderBottom: '0.5px solid rgba(60,20,15,0.08)',
+          flexShrink: 0,
+        }}
+      >
+        {TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{
+                padding: '10px 14px',
+                borderRadius: '10px 10px 0 0',
+                border: 'none',
+                cursor: 'pointer',
+                background: active ? 'rgba(255,255,255,0.7)' : 'transparent',
+                color: active ? COLOR.brand : COLOR.inkSoft,
+                fontSize: 13,
+                fontWeight: 700,
+                fontFamily: 'var(--pbt-font)',
+                borderBottom: active
+                  ? `2px solid ${COLOR.brand}`
+                  : '2px solid transparent',
+                marginBottom: -1,
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Body — fixed-height shell with internal scroll per tab. */}
       <div
         style={{
           flex: 1,
+          minHeight: 0,
           overflow: 'auto',
           padding: 24,
           display: 'flex',
@@ -136,62 +187,99 @@ export function ScenarioDetailModal({
           gap: 18,
         }}
       >
-        {/* Pet card */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: 12,
-          }}
-        >
-          <DetailCell label="Breed" value={scenario.breed} />
-          <DetailCell label="Life stage" value={scenario.life_stage} />
-          <DetailCell
-            label="Weight"
-            value={scenario.weight_kg != null ? `${scenario.weight_kg} kg` : null}
-          />
-          <DetailCell label="Owner persona" value={scenario.persona} />
-          <DetailCell label="Pushback type" value={scenario.pushback_id} />
-          <DetailCell
-            label="Difficulty"
-            value={difficultyLabel ?? null}
-          />
-        </div>
+        {tab === 'overview' && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 12,
+            }}
+          >
+            <DetailCell label="Breed" value={scenario.breed} />
+            <DetailCell label="Life stage" value={scenario.life_stage} />
+            <DetailCell
+              label="Weight"
+              value={scenario.weight_kg != null ? `${scenario.weight_kg} kg` : null}
+            />
+            <DetailCell label="Owner persona" value={scenario.persona} />
+            <DetailCell label="Pushback type" value={scenario.pushback_id} />
+            <DetailCell label="Difficulty" value={difficultyLabel ?? null} />
+          </div>
+        )}
 
-        {scenario.pushback_notes && (
-          <DetailParagraph
-            label="What the owner pushed back on"
-            value={scenario.pushback_notes}
-          />
+        {tab === 'notes' && (
+          <>
+            {scenario.pushback_notes && (
+              <DetailParagraph
+                label="What the owner pushed back on"
+                value={scenario.pushback_notes}
+              />
+            )}
+            {scenario.context && (
+              <DetailParagraph label="Context the trainee added" value={scenario.context} />
+            )}
+            {scenario.opening_line && (
+              <DetailParagraph
+                label="Opening line"
+                value={scenario.opening_line}
+                italic
+              />
+            )}
+            {!scenario.context &&
+              !scenario.pushback_notes &&
+              !scenario.opening_line && (
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 14,
+                    background: 'rgba(60,20,15,0.04)',
+                    border: '0.5px dashed rgba(60,20,15,0.12)',
+                    fontSize: 12,
+                    color: COLOR.inkMute,
+                    textAlign: 'center',
+                  }}
+                >
+                  This scenario was saved before we captured rich context.
+                  New scenarios will include the full notes / opening line /
+                  persona.
+                </div>
+              )}
+          </>
         )}
-        {scenario.context && (
-          <DetailParagraph label="Context the trainee added" value={scenario.context} />
+
+        {tab === 'usage' && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 12,
+            }}
+          >
+            <DetailCell label="Plays" value={String(scenario.plays)} />
+            <DetailCell
+              label="Average score"
+              value={scenario.avg_score != null ? String(scenario.avg_score) : null}
+            />
+            <DetailCell
+              label="Visibility"
+              value={scenario.is_public ? 'Public' : 'Private'}
+            />
+            <DetailCell
+              label="Created"
+              value={fmtAgo(new Date(scenario.created_at).getTime())}
+            />
+            <DetailCell
+              label="Updated"
+              value={
+                scenario.updated_at
+                  ? fmtAgo(new Date(scenario.updated_at).getTime())
+                  : null
+              }
+            />
+            <DetailCell label="Scenario ID" value={scenario.id.slice(0, 8)} />
+          </div>
         )}
-        {scenario.opening_line && (
-          <DetailParagraph
-            label="Opening line"
-            value={scenario.opening_line}
-            italic
-          />
-        )}
-        {!scenario.context &&
-          !scenario.pushback_notes &&
-          !scenario.opening_line && (
-            <div
-              style={{
-                padding: 16,
-                borderRadius: 14,
-                background: 'rgba(60,20,15,0.04)',
-                border: '0.5px dashed rgba(60,20,15,0.12)',
-                fontSize: 12,
-                color: COLOR.inkMute,
-                textAlign: 'center',
-              }}
-            >
-              This scenario was saved before we captured rich context. New
-              scenarios will include the full notes / opening line / persona.
-            </div>
-          )}
+      </div>
       </div>
     </Modal>
   );

@@ -49,6 +49,7 @@ const SCORE_UNAVAILABLE: ScoreReport = {
     pacing: '',
   },
   keyMoments: [],
+  turnSentiment: [],
 };
 
 function scenarioSummaryLine(scenario: Scenario): string {
@@ -72,6 +73,16 @@ const END_TOKEN_RX = /\[\s*end[\s_-]*simulation\s*\]/i;
 // scoring + show the ending overlay. Long enough to read, short enough not
 // to feel laggy.
 const END_READ_DELAY_MS = 1500;
+/**
+ * Hard cap on customer (AI) turns. If the model hasn't emitted an end-token
+ * by this many turns, we force-end the session anyway. Without this cap a
+ * model that stays neutral or never recognises the close can leave the user
+ * stuck in a loop of "thanks" → "you're welcome" → "thanks" with no exit.
+ *
+ * The customer-side prompt is also instructed to emit the token by turn 10–12
+ * for genuine closes; this cap is the safety net for when it doesn't.
+ */
+const MAX_CUSTOMER_TURNS = 16;
 
 export type ChatStatus =
   | 'idle'
@@ -293,7 +304,15 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         const cleanMsg: ChatMessage = { ...next, text: cleanText };
         appendTurn(cleanMsg);
 
-        if (hasEndToken) {
+        // Hard turn cap as a safety net — if the model hasn't ended by
+        // MAX_CUSTOMER_TURNS we force the close. Counted AFTER appending
+        // so the cap matches the visible AI turn count.
+        const customerTurns = transcriptRef.current.filter(
+          (m) => m.role === 'ai' && !m._transientError,
+        ).length;
+        const shouldEnd = hasEndToken || customerTurns >= MAX_CUSTOMER_TURNS;
+
+        if (shouldEnd) {
           // Lock input immediately so a fast user can't slip a message in
           // during the read-pause and pollute the transcript. Then queue
           // scoring after a brief read delay; the ending overlay covers

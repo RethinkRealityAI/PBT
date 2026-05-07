@@ -97,6 +97,7 @@ export async function persistRagDocument(args: PersistArgs): Promise<void> {
           }
         : null,
       key_moments: args.scoreReport?.keyMoments ?? null,
+      turn_sentiment: args.scoreReport?.turnSentiment ?? null,
     };
 
     await sb

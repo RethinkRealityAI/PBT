@@ -127,6 +127,7 @@ function ragMetadataFromRecord(record: SessionRecord): Record<string, unknown> {
         }
       : null,
     key_moments: r?.keyMoments ?? null,
+    turn_sentiment: r?.turnSentiment ?? null,
     backfilled: true,
   };
 }
