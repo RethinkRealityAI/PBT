@@ -61,10 +61,28 @@ function scenarioSummaryLine(scenario: Scenario): string {
   return `${pb} · ${scenario.breed}`;
 }
 
-// Token the AI appends to signal end of simulation
-const END_TOKEN = '[END_SIMULATION]';
+// Token the AI appends to signal end of simulation.
+//
+// We accept any bracketed variant (case + spacing tolerant) so the model can
+// emit `[END_SIMULATION]`, `[end simulation]`, `[End_Simulation]`, etc. We
+// require the brackets specifically to avoid false positives when a customer
+// says something like "could we end this simulation?" mid-conversation.
+const END_TOKEN_RX = /\[\s*end[\s_-]*simulation\s*\]/i;
+// How long to leave the AI's closing line on screen before we kick off
+// scoring + show the ending overlay. Long enough to read, short enough not
+// to feel laggy.
+const END_READ_DELAY_MS = 1500;
 
-export type ChatStatus = 'idle' | 'opening' | 'awaitingUser' | 'aiTyping' | 'scoring' | 'complete' | 'error';
+export type ChatStatus =
+  | 'idle'
+  | 'opening'
+  | 'awaitingUser'
+  | 'aiTyping'
+  /** AI delivered its closing line; input is locked, scoring queued. */
+  | 'ending'
+  | 'scoring'
+  | 'complete'
+  | 'error';
 
 export interface UseTextChat {
   messages: ChatMessage[];
@@ -222,17 +240,23 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           { sessionId: recordIdRef.current },
         );
 
-        // Detect end-of-simulation token
-        const hasEndToken = next.text.includes(END_TOKEN);
-        const cleanText = next.text.replace(END_TOKEN, '').trim();
+        // Detect end-of-simulation token. Strip every match (defensive —
+        // model occasionally emits more than one).
+        const hasEndToken = END_TOKEN_RX.test(next.text);
+        const cleanText = next.text.replace(new RegExp(END_TOKEN_RX, 'gi'), '').trim();
         const cleanMsg: ChatMessage = { ...next, text: cleanText };
 
         setMessages((m) => [...m.filter((x) => !x._transientError), cleanMsg]);
-        setStatus('awaitingUser');
 
         if (hasEndToken) {
-          // Let the message render, then auto-score
-          setTimeout(() => void endRef.current(), 400);
+          // Lock input immediately so a fast user can't slip a message in
+          // during the read-pause and pollute the transcript. Then queue
+          // scoring after a brief read delay; the ending overlay covers
+          // the rest of the transition.
+          setStatus('ending');
+          setTimeout(() => void endRef.current(), END_READ_DELAY_MS);
+        } else {
+          setStatus('awaitingUser');
         }
       } catch (err) {
         console.error('[useTextChat] send failed', err);

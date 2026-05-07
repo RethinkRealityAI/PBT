@@ -19,6 +19,7 @@ import {
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
+import { SessionEndingOverlay } from '../features/chat/SessionEndingOverlay';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -747,6 +748,28 @@ export function ChatScreen() {
     }
   }, [chat.messages.length, chat.status]);
 
+  // Auto-navigate to scorecard once scoring completes. The ending overlay
+  // covers the visual transition; the small extra delay lets it linger on
+  // "Your scorecard is ready" before the route swap.
+  useEffect(() => {
+    if (mode !== 'text') return;
+    if (chat.status !== 'complete') return;
+    const t = window.setTimeout(() => go('stats'), 650);
+    return () => window.clearTimeout(t);
+  }, [chat.status, mode, go]);
+
+  const endingPhase: 'closing' | 'analyzing' | 'ready' =
+    chat.status === 'ending'
+      ? 'closing'
+      : chat.status === 'scoring'
+        ? 'analyzing'
+        : 'ready';
+  const showEndingOverlay =
+    mode === 'text' &&
+    (chat.status === 'ending' ||
+      chat.status === 'scoring' ||
+      chat.status === 'complete');
+
   if (!scenario) {
     return (
       <>
@@ -762,6 +785,11 @@ export function ChatScreen() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col lg:max-w-4xl lg:mx-auto lg:w-full">
+      <SessionEndingOverlay
+        open={showEndingOverlay}
+        phase={endingPhase}
+        driver={driverKey}
+      />
       {/* ── Header ── */}
       <div
         className="px-4 pt-[max(env(safe-area-inset-top),12px)] pb-2 lg:pt-8"
@@ -1002,9 +1030,13 @@ export function ChatScreen() {
                 : () => {
                     if (chat.status === 'error' || chat.status === 'idle') {
                       go('home');
-                    } else {
-                      void chat.end().then(() => go('stats')).catch(() => go('stats'));
+                      return;
                     }
+                    // Kick off scoring; the status-watching effect handles
+                    // navigation to /stats once the report lands. The
+                    // SessionEndingOverlay covers the transition so the
+                    // manual-end and auto-end UX are identical.
+                    void chat.end();
                   }
             }
           />
@@ -1019,6 +1051,7 @@ export function ChatScreen() {
             }}
             disabled={
               chat.status === 'aiTyping' ||
+              chat.status === 'ending' ||
               chat.status === 'scoring' ||
               chat.status === 'complete'
             }

@@ -97,7 +97,18 @@ ${scenario.context ?? '(none)'}
 - If staff asks an open question, answer it honestly with one specific detail about your dog.
 - If staff cites the 97% / 12-week trial concretely, take it seriously.
 - Never say the words "ACT method" or "acknowledge / clarify / transform".
-- When the simulation reaches a natural end — a genuine close, a credible recommendation accepted, or a clear stalemate after 8+ customer turns — append exactly [END_SIMULATION] at the very end of your final message, with no space before it. Do this only once.
+- ENDING THE SIMULATION (read carefully):
+  • When the simulation reaches a natural end — a genuine close, a credible recommendation accepted, or a clear stalemate after 8+ customer turns — first deliver ONE in-character closing line that fits the outcome (warm acceptance for a resolved close, polite disengagement for a stalemate).
+  • Then, on a NEW line at the very end of that same message, append the literal token [END_SIMULATION] exactly as written — uppercase, single underscore, surrounded by square brackets.
+  • Output ONLY the bracketed token. NEVER write the words "end simulation", "ending the simulation", "this simulation is over", or any narration of the token. The token is a machine signal, not dialog. The trainee never sees it.
+  • Emit the token AT MOST ONCE in the entire conversation. Once you've emitted it, stop. Do not say anything more.
+  • Do NOT emit the token before turn 6 of the customer side under any circumstances.
+  • Correct example final message:
+      "Okay, that makes sense — let's give it a try. Thanks for taking the time.\n[END_SIMULATION]"
+  • Incorrect (do NOT do these):
+      "Okay let's end the simulation here." ← narrating, no token
+      "[end simulation] thanks!" ← token before content
+      "Alright, end_simulation" ← missing brackets
 `.trim();
 }
 

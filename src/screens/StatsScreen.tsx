@@ -1,6 +1,7 @@
 import { Glass } from '../design-system/Glass';
 import { ScoreRing } from '../design-system/ScoreRing';
 import { PillButton } from '../design-system/PillButton';
+import { Icon } from '../design-system/Icon';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
@@ -31,7 +32,7 @@ export function StatsScreen() {
           </Glass>
         </Page>
         <div
-          className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 gap-2 px-5 lg:left-[240px] lg:right-0 lg:translate-x-0 lg:max-w-none"
+          className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 gap-2 px-5 lg:static lg:translate-x-0 lg:mt-4 lg:max-w-md lg:mx-0 lg:px-0"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
         >
           <PillButton variant="glass" onClick={() => go('home')} fullWidth>Home</PillButton>
@@ -57,14 +58,16 @@ export function StatsScreen() {
       <TopBar showBack title="Scorecard" />
       <Page>
         {/*
-         * Two-column grid on desktop.
-         * Left: overall score card.  Right: dimension breakdown + coach notes.
-         * On mobile: single column, same sequential order as before.
+         * Two-column grid on desktop. Left col is the persistent summary
+         * (sticky on tall screens) — overall score + Run-again CTA + key
+         * moments. Right col holds the dimension breakdown and the coach
+         * notes which can stretch the full content rail. On mobile we
+         * keep a single-column cascade in source order.
          */}
-        <div className="lg:grid lg:grid-cols-[38fr_62fr] lg:gap-8 lg:items-start">
+        <div className="lg:grid lg:grid-cols-[minmax(0,40fr)_minmax(0,60fr)] lg:gap-8 lg:items-start">
 
-        {/* ── Left column: overall score ── */}
-        <div>
+        {/* ── Left column: overall score + run-again ── */}
+        <div className="lg:sticky lg:top-6">
         <Glass radius={28} padding={22} glow="oklch(0.62 0.22 22)">
           <div className="flex items-start gap-4">
             <ScoreRing score={report.overall} label="Overall" size={120} />
@@ -95,6 +98,20 @@ export function StatsScreen() {
               </div>
             </div>
           </div>
+          {/* Desktop: inline Run-again under the ring. Mobile keeps the
+              fixed bottom bar so the CTA stays thumb-reachable. */}
+          <div className="hidden lg:block lg:pt-5">
+            <PillButton
+              fullWidth
+              icon={<Icon.flame />}
+              onClick={() => {
+                chat.reset();
+                go('chat');
+              }}
+            >
+              Run it again
+            </PillButton>
+          </div>
         </Glass>
         </div>
 
@@ -116,64 +133,71 @@ export function StatsScreen() {
         >
           Breakdown
         </div>
-        {DIMENSIONS.map((dim) => {
-          const score = report[dim.key];
-          const band = bandFor(score);
-          const color =
-            band === 'good'
-              ? COLORS.score.good
-              : band === 'ok'
-                ? COLORS.score.ok
-                : COLORS.score.poor;
-          return (
-            <div key={dim.key} style={{ marginBottom: 10 }}>
-              <Glass radius={20} padding={16}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>
-                    {dim.label}
+        {/* Two-up on desktop so 7 dimensions don't form a tall narrow stack. */}
+        <div className="lg:grid lg:grid-cols-2 lg:gap-3">
+          {DIMENSIONS.map((dim) => {
+            const score = report[dim.key];
+            const band = bandFor(score);
+            const color =
+              band === 'good'
+                ? COLORS.score.good
+                : band === 'ok'
+                  ? COLORS.score.ok
+                  : COLORS.score.poor;
+            return (
+              <div
+                key={dim.key}
+                style={{ marginBottom: 10 }}
+                className="lg:mb-0"
+              >
+                <Glass radius={20} padding={16}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>
+                      {dim.label}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 18,
+                        fontWeight: 700,
+                        color,
+                      }}
+                    >
+                      {score}
+                    </div>
                   </div>
                   <div
                     style={{
-                      fontFamily: 'var(--pbt-font-mono)',
-                      fontSize: 18,
-                      fontWeight: 700,
-                      color,
+                      height: 6,
+                      borderRadius: 9999,
+                      background: 'rgba(60,20,15,0.06)',
+                      overflow: 'hidden',
+                      margin: '8px 0',
                     }}
                   >
-                    {score}
+                    <div
+                      style={{
+                        width: `${Math.max(0, Math.min(100, score))}%`,
+                        height: '100%',
+                        background: `linear-gradient(90deg, ${color}, ${color})`,
+                        transition: 'width 0.6s ease',
+                      }}
+                    />
                   </div>
-                </div>
-                <div
-                  style={{
-                    height: 6,
-                    borderRadius: 9999,
-                    background: 'rgba(60,20,15,0.06)',
-                    overflow: 'hidden',
-                    margin: '8px 0',
-                  }}
-                >
                   <div
                     style={{
-                      width: `${Math.max(0, Math.min(100, score))}%`,
-                      height: '100%',
-                      background: `linear-gradient(90deg, ${color}, ${color})`,
-                      transition: 'width 0.6s ease',
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: 'var(--pbt-text-muted)',
                     }}
-                  />
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    lineHeight: 1.5,
-                    color: 'var(--pbt-text-muted)',
-                  }}
-                >
-                  {report.perDimensionNotes[dim.key]}
-                </div>
-              </Glass>
-            </div>
-          );
-        })}
+                  >
+                    {report.perDimensionNotes[dim.key]}
+                  </div>
+                </Glass>
+              </div>
+            );
+          })}
+        </div>
 
         {report.keyMoments.length > 0 && (
           <>
@@ -280,8 +304,10 @@ export function StatsScreen() {
         </div>{/* end right column */}
         </div>{/* end two-column grid */}
       </Page>
+      {/* Mobile-only sticky CTA bar. Desktop has Run-again inline under
+          the score ring; the back arrow in TopBar handles navigation home. */}
       <div
-        className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 gap-2 px-5 lg:left-[240px] lg:right-0 lg:translate-x-0 lg:max-w-none"
+        className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 gap-2 px-5 lg:hidden"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
       >
         <PillButton variant="glass" onClick={() => go('home')} fullWidth>
