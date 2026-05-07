@@ -27,6 +27,8 @@ import {
   type Scenario,
 } from '../data/scenarios';
 import { DRIVER_KEYS, type DriverKey } from '../design-system/tokens';
+import { persistUserScenario } from '../features/scenarios/persistScenario';
+import { logEvent } from '../lib/analytics';
 
 type Tab = 'build' | 'library';
 
@@ -96,7 +98,7 @@ export function CreateScreen() {
     }
     setPushbackError(null);
     setIsSubmitting(true);
-    setScenario({
+    const built: Scenario = {
       breed: breedTrim,
       age,
       pushback,
@@ -106,11 +108,19 @@ export function CreateScreen() {
       pushbackNotes: notesTrim || undefined,
       suggestedDriver: driver,
       weightKg: weight.trim() || undefined,
-    });
+    };
+    setScenario(built);
+    void persistUserScenario(built);
     go('chat');
   };
 
   const startLibraryScenario = (scenario: Scenario) => {
+    logEvent({
+      type: 'card_click',
+      screen: 'create',
+      target: 'library_scenario',
+      meta: { pushback: scenario.pushback.id, breed: scenario.breed },
+    });
     setScenario(scenario);
     go('chat');
   };

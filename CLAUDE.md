@@ -101,6 +101,20 @@ Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL
 - `useCloudSync` debounce-mirrors profile changes once signed in.
 - Email verification gated behind `FLAGS.EMAIL_VERIFICATION` in `src/app/flags.ts`.
 
+## Admin dashboard (admin/)
+
+Standalone Vite app at `admin/`, deployed as `admin.<your-domain>`. Reads telemetry directly from Supabase; admin gating enforced server-side via `profiles.is_admin` + admin RLS policies (migration `20260507000000_admin_telemetry.sql`).
+
+Telemetry capture in the consumer app:
+- `src/lib/analytics.ts` — `logEvent()` writes to `nav_events` (anonymous-safe)
+- `src/services/aiTelemetry.ts` — `recordCall()` / `recordTurns()` write per-call + per-turn signals
+- `src/services/geminiService.ts` — wraps `generateRoleplayMessage` / `evaluateConversation` with timing + tokens + refusal heuristics; takes a `{ sessionId }` option so rows attribute to a `training_sessions` id
+- `src/features/chat/useTextChat.ts` — allocates session id at `open()`, persists `completed`/`abandoned` to Supabase, exposes `abandon()` (called by `ChatAbandonWatcher` in `App.tsx` when user leaves chat mid-flight)
+- `src/features/scenarios/persistScenario.ts` — writes `user_scenarios` on Save
+- `src/features/pet-analyzer/useSavedPets.ts` — writes `analyzer_events` on save
+
+RAG export: `supabase/functions/rag-export` streams `rag_export_v1` view rows as JSONL. Admin-only via RLS.
+
 ## State storage
 
 All `localStorage` keys are namespaced `pbt:` (see `src/lib/storage.ts`). Validators reject corrupt values and reset the slot.

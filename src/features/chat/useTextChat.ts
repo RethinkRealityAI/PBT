@@ -3,6 +3,7 @@ import type { Scenario } from '../../data/scenarios';
 import {
   evaluateConversation,
   generateRoleplayMessage,
+  MODEL_TEXT,
 } from '../../services/geminiService';
 import type { ChatMessage, ScoreReport, SessionRecord } from '../../services/types';
 import {
@@ -11,6 +12,9 @@ import {
   type StorageKeyDef,
 } from '../../lib/storage';
 import { uuid } from '../../lib/id';
+import { getSupabase } from '../auth/supabaseClient';
+import { recordTurns } from '../../services/aiTelemetry';
+import { logEvent } from '../../lib/analytics';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
   key: 'sessions',
@@ -69,6 +73,11 @@ export interface UseTextChat {
   open: () => Promise<void>;
   send: (text: string) => Promise<void>;
   end: () => Promise<void>;
+  /**
+   * Mark the session as abandoned (no scoring). Called when the user
+   * navigates away from the chat without completing.
+   */
+  abandon: (reason?: 'user_exit' | 'timeout' | 'error') => Promise<void>;
   /** Voice pipeline: persist transcript + scorecard into shared chat state + history. */
   applyVoiceSessionComplete: (
     report: ScoreReport | null,
@@ -78,12 +87,72 @@ export interface UseTextChat {
   startedAt: number | null;
 }
 
+interface PersistArgs {
+  scenario: Scenario;
+  recordId: string;
+  transcript: ChatMessage[];
+  durationSeconds: number;
+  mode: 'text' | 'voice';
+  scoreReport: ScoreReport | null;
+  completed: boolean;
+  endedReason: 'completed' | 'abandoned' | 'timeout' | 'error' | 'user_exit';
+}
+
+/**
+ * Mirror a session to Supabase training_sessions when the user is signed in.
+ * Best-effort: failures don't surface to the user (local copy is canonical).
+ */
+async function persistToSupabase(args: PersistArgs): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  try {
+    const {
+      data: { user },
+    } = await sb.auth.getUser();
+    if (!user) return;
+    await sb.from('training_sessions').upsert({
+      id: args.recordId,
+      user_id: user.id,
+      scenario: args.scenario as unknown as Record<string, unknown>,
+      transcript: args.transcript as unknown as Record<string, unknown>[],
+      score_report: args.scoreReport as unknown as Record<string, unknown> | null,
+      score_overall: args.scoreReport?.overall ?? null,
+      duration_seconds: args.durationSeconds,
+      mode: args.mode,
+      completed: args.completed,
+      ended_reason: args.endedReason,
+      pushback_id: args.scenario.pushback.id,
+      driver: args.scenario.suggestedDriver,
+      scenario_summary: scenarioSummaryLine(args.scenario),
+      model_id: MODEL_TEXT,
+      turns: args.transcript.length,
+    });
+
+    if (args.transcript.length > 0) {
+      await recordTurns(
+        args.transcript.map((m, idx) => ({
+          sessionId: args.recordId,
+          turnIdx: idx,
+          role: m.role === 'user' ? 'user' : 'ai',
+          textLen: m.text.length,
+        })),
+      );
+    }
+  } catch (err) {
+    console.warn('[useTextChat] persistToSupabase failed', err);
+  }
+}
+
 export function useTextChat(scenario: Scenario): UseTextChat {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>('idle');
   const [scoreReport, setScoreReport] = useState<ScoreReport | null>(null);
   const [transientError, setTransientError] = useState<string | null>(null);
   const startedAtRef = useRef<number | null>(null);
+  // Allocated at open() so AI telemetry rows can attribute to the session
+  // even before it's saved to history.
+  const recordIdRef = useRef<string | null>(null);
+  const persistedRef = useRef<boolean>(false);
   const messagesRef = useRef<ChatMessage[]>(messages);
   messagesRef.current = messages;
   // Exposed so ChatScreen can call end() after detecting [END_SIMULATION]
@@ -94,6 +163,19 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setStatus('opening');
     setTransientError(null);
     startedAtRef.current = Date.now();
+    recordIdRef.current = uuid();
+    persistedRef.current = false;
+    logEvent({
+      type: 'custom',
+      screen: 'chat',
+      target: 'session_open',
+      meta: {
+        sessionId: recordIdRef.current,
+        scenario: scenario.pushback.id,
+        driver: scenario.suggestedDriver,
+        mode: 'text',
+      },
+    });
 
     const apiKey =
       (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
@@ -106,7 +188,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     }
 
     try {
-      const first = await generateRoleplayMessage(scenario, []);
+      const first = await generateRoleplayMessage(scenario, [], undefined, {
+        sessionId: recordIdRef.current,
+      });
       setMessages([first]);
       setStatus('awaitingUser');
     } catch (err) {
@@ -130,7 +214,12 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       setMessages(currentMessages);
       setStatus('aiTyping');
       try {
-        const next = await generateRoleplayMessage(scenario, currentMessages);
+        const next = await generateRoleplayMessage(
+          scenario,
+          currentMessages,
+          undefined,
+          { sessionId: recordIdRef.current },
+        );
 
         // Detect end-of-simulation token
         const hasEndToken = next.text.includes(END_TOKEN);
@@ -169,7 +258,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
 
     let report: ScoreReport | null = null;
     try {
-      report = await evaluateConversation(scenario, msgs);
+      report = await evaluateConversation(scenario, msgs, {
+        sessionId: recordIdRef.current,
+      });
     } catch (err) {
       console.error('[useTextChat] scoring failed', err);
     }
@@ -178,12 +269,14 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setStatus('complete');
 
     const startedAt = startedAtRef.current ?? Date.now();
+    const recordId = recordIdRef.current ?? uuid();
+    const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
     const record: SessionRecord = {
-      id: uuid(),
+      id: recordId,
       scenarioSummary: scenarioSummaryLine(scenario),
       pushbackId: scenario.pushback.id,
       driver: scenario.suggestedDriver,
-      durationSeconds: Math.round((Date.now() - startedAt) / 1000),
+      durationSeconds,
       mode: 'text',
       scoreReport: effective,
       transcript: msgs,
@@ -191,7 +284,48 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     };
     const existing = readStorage(SESSIONS_KEY);
     writeStorage(SESSIONS_KEY, [record, ...existing].slice(0, MAX_SESSIONS));
+    persistedRef.current = true;
+    void persistToSupabase({
+      scenario,
+      recordId,
+      transcript: msgs,
+      durationSeconds,
+      mode: 'text',
+      scoreReport: effective,
+      completed: true,
+      endedReason: 'completed',
+    });
   }, [scenario]);
+
+  const abandon = useCallback(
+    async (reason: 'user_exit' | 'timeout' | 'error' = 'user_exit') => {
+      // Already finalised? Don't double-write.
+      if (persistedRef.current) return;
+      const msgs = messagesRef.current.filter((m) => !m._transientError);
+      if (msgs.length === 0 && !recordIdRef.current) return;
+      const recordId = recordIdRef.current ?? uuid();
+      const startedAt = startedAtRef.current ?? Date.now();
+      const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
+      persistedRef.current = true;
+      logEvent({
+        type: 'custom',
+        screen: 'chat',
+        target: 'session_abandon',
+        meta: { sessionId: recordId, reason, turns: msgs.length },
+      });
+      void persistToSupabase({
+        scenario,
+        recordId,
+        transcript: msgs,
+        durationSeconds,
+        mode: 'text',
+        scoreReport: null,
+        completed: false,
+        endedReason: reason,
+      });
+    },
+    [scenario],
+  );
 
   // Keep endRef current so the setTimeout in send() calls the latest end()
   endRef.current = end;
@@ -202,6 +336,8 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setStatus('idle');
     setTransientError(null);
     startedAtRef.current = null;
+    recordIdRef.current = null;
+    persistedRef.current = false;
   }, []);
 
   const applyVoiceSessionComplete = useCallback(
@@ -216,9 +352,10 @@ export function useTextChat(scenario: Scenario): UseTextChat {
 
       const t0 = msgs[0]?.timestamp ?? Date.now() - 60_000;
       const durationSeconds = Math.max(1, Math.round((Date.now() - t0) / 1000));
+      const recordId = recordIdRef.current ?? uuid();
 
       const record: SessionRecord = {
-        id: uuid(),
+        id: recordId,
         scenarioSummary: scenarioSummaryLine(scenario),
         pushbackId: scenario.pushback.id,
         driver: scenario.suggestedDriver,
@@ -230,6 +367,17 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       };
       const existing = readStorage(SESSIONS_KEY);
       writeStorage(SESSIONS_KEY, [record, ...existing].slice(0, MAX_SESSIONS));
+      persistedRef.current = true;
+      void persistToSupabase({
+        scenario,
+        recordId,
+        transcript: msgs,
+        durationSeconds,
+        mode: 'voice',
+        scoreReport: effective,
+        completed: true,
+        endedReason: 'completed',
+      });
     },
     [scenario],
   );
@@ -242,6 +390,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     open,
     send,
     end,
+    abandon,
     applyVoiceSessionComplete,
     reset,
     startedAt: startedAtRef.current,
