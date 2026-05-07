@@ -1,11 +1,15 @@
 /**
- * Supabase data access for the admin dashboard.
+ * Admin data hooks.
  *
- * All reads are gated by RLS: only `is_admin = true` profiles get rows back.
- * Hooks return `{ data, loading, error }` and refetch on dependency change.
+ * All reads go through Netlify Functions (`/.netlify/functions/admin-*`)
+ * which verify the caller's JWT + `is_admin` flag server-side and then
+ * query Supabase with the service role. The browser never holds the
+ * service role key, and admin RLS policies are no longer required for
+ * cross-user reads.
  */
 import { useEffect, useState } from 'react';
-import { getSupabase } from '../lib/supabase';
+import { apiFetch, rangeToSince } from '../lib/api';
+import { getAccessToken } from '../lib/supabase';
 import type {
   AdminSession,
   AdminUser,
@@ -52,122 +56,91 @@ function useQuery<T>(
   return state;
 }
 
-const RANGE_DAYS: Record<string, number> = { '24h': 1, '7d': 7, '28d': 28, '90d': 90 };
+export { rangeToSince };
 
-export function rangeStart(range: string): string {
-  const days = RANGE_DAYS[range] ?? 28;
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-}
-
-// ── Users ────────────────────────────────────────────────────
 export function useAdminUsers() {
   return useQuery<AdminUser[]>(
-    async () => {
-      const sb = getSupabase();
-      const { data, error } = await sb
-        .from('profiles')
-        .select('user_id, display_name, echo_primary, echo_secondary, is_admin, created_at')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data ?? []) as AdminUser[];
-    },
+    () => apiFetch<AdminUser[]>('admin-users'),
     [],
     [],
   );
 }
 
-// ── Sessions ─────────────────────────────────────────────────
 export function useAdminSessions(range = '28d', limit = 500) {
   return useQuery<AdminSession[]>(
-    async () => {
-      const sb = getSupabase();
-      const { data, error } = await sb
-        .from('training_sessions')
-        .select(
-          'id, user_id, scenario, scenario_summary, pushback_id, driver, transcript, score_report, score_overall, duration_seconds, mode, completed, ended_reason, flagged, flag_reason, model_id, turns, created_at',
-        )
-        .gte('created_at', rangeStart(range))
-        .order('created_at', { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      return (data ?? []) as AdminSession[];
-    },
+    () =>
+      apiFetch<AdminSession[]>('admin-sessions', {
+        since: rangeToSince(range),
+        limit,
+      }),
     [range, limit],
     [],
   );
 }
 
-// ── AI calls ─────────────────────────────────────────────────
 export function useAiCalls(range = '28d', limit = 5000) {
   return useQuery<AiCall[]>(
-    async () => {
-      const sb = getSupabase();
-      const { data, error } = await sb
-        .from('ai_call_telemetry')
-        .select('*')
-        .gte('created_at', rangeStart(range))
-        .order('created_at', { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      return (data ?? []) as AiCall[];
-    },
+    () =>
+      apiFetch<AiCall[]>('admin-ai-calls', {
+        since: rangeToSince(range),
+        limit,
+      }),
     [range, limit],
     [],
   );
 }
 
-// ── User scenarios ───────────────────────────────────────────
 export function useUserScenarios(limit = 200) {
   return useQuery<UserScenario[]>(
-    async () => {
-      const sb = getSupabase();
-      const { data, error } = await sb
-        .from('user_scenarios')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      return (data ?? []) as UserScenario[];
-    },
+    () => apiFetch<UserScenario[]>('admin-scenarios', { limit }),
     [limit],
     [],
   );
 }
 
-// ── Analyzer events ──────────────────────────────────────────
 export function useAnalyzerEvents(range = '28d', limit = 500) {
   return useQuery<AnalyzerEvent[]>(
-    async () => {
-      const sb = getSupabase();
-      const { data, error } = await sb
-        .from('analyzer_events')
-        .select('*')
-        .gte('created_at', rangeStart(range))
-        .order('created_at', { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      return (data ?? []) as AnalyzerEvent[];
-    },
+    () =>
+      apiFetch<AnalyzerEvent[]>('admin-analyzer', {
+        since: rangeToSince(range),
+        limit,
+      }),
     [range, limit],
     [],
   );
 }
 
-// ── Nav events (lightweight rollup) ──────────────────────────
 export function useNavEvents(range = '7d', limit = 5000) {
   return useQuery<NavEvent[]>(
-    async () => {
-      const sb = getSupabase();
-      const { data, error } = await sb
-        .from('nav_events')
-        .select('*')
-        .gte('created_at', rangeStart(range))
-        .order('created_at', { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      return (data ?? []) as NavEvent[];
-    },
+    () =>
+      apiFetch<NavEvent[]>('admin-nav-events', {
+        since: rangeToSince(range),
+        limit,
+      }),
     [range, limit],
     [],
   );
+}
+
+/** Trigger a JSONL download from the rag-export Netlify Function. */
+export async function downloadRagExport(opts: {
+  since?: string;
+  limit?: number;
+  completedOnly?: boolean;
+}): Promise<void> {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Not signed in');
+  const url = new URL('/.netlify/functions/admin-rag-export', window.location.origin);
+  if (opts.since) url.searchParams.set('since', opts.since);
+  if (opts.limit) url.searchParams.set('limit', String(opts.limit));
+  if (opts.completedOnly) url.searchParams.set('completed', 'true');
+  const res = await fetch(url.toString(), {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Export failed (${res.status})`);
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `pbt-rag-${Date.now()}.jsonl`;
+  a.click();
 }

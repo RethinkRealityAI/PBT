@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { getSupabase } from './lib/supabase';
+import { apiFetch } from './lib/api';
 import { COLOR } from './lib/tokens';
 import { Glass } from './primitives/Glass';
 import { FloatingNav, type AdminScreen, type Range } from './primitives/Shell';
@@ -33,16 +34,12 @@ export function App() {
         setAuth({ status: 'signed_out' });
         return;
       }
-      const { data, error } = await sb
-        .from('profiles')
-        .select('is_admin')
-        .eq('user_id', session.user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error || !data?.is_admin) {
-        setAuth({ status: 'not_admin' });
-      } else {
-        setAuth({ status: 'admin', userId: session.user.id });
+      // Server-side gate: admin-whoami returns 200 only for admins.
+      try {
+        const me = await apiFetch<{ user_id: string }>('admin-whoami');
+        if (!cancelled) setAuth({ status: 'admin', userId: me.user_id });
+      } catch {
+        if (!cancelled) setAuth({ status: 'not_admin' });
       }
     }
     sb.auth.getSession().then(({ data }) => check(data.session));

@@ -12,7 +12,11 @@ import {
   ScreenShell,
   type Range,
 } from '../primitives/Shell';
-import { useAdminSessions, useAdminUsers } from '../data/queries';
+import {
+  downloadRagExport,
+  useAdminSessions,
+  useAdminUsers,
+} from '../data/queries';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo, fmtDuration } from '../lib/format';
 import type { AdminSession } from '../data/types';
@@ -51,45 +55,21 @@ export function SessionsScreen({
   });
 
   const exportCSV = () => {
-    const header = [
-      'id',
-      'user_id',
-      'scenario',
-      'pushback',
-      'driver',
-      'completed',
-      'ended_reason',
-      'score',
-      'turns',
-      'duration_s',
-      'created_at',
-    ];
-    const rows = filtered.map((s) => [
-      s.id,
-      s.user_id,
-      s.scenario_summary ?? '',
-      s.pushback_id ?? '',
-      s.driver ?? '',
-      s.completed,
-      s.ended_reason ?? '',
-      s.score_overall ?? '',
-      s.turns ?? '',
-      s.duration_seconds ?? '',
-      s.created_at,
-    ]);
-    const csv = [header, ...rows]
-      .map((r) =>
-        r
-          .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
-          .join(','),
-      )
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `pbt-sessions-${range}.csv`;
-    a.click();
+    void downloadRagExport({
+      since: new Date(
+        Date.now() -
+          ({ '24h': 1, '7d': 7, '28d': 28, '90d': 90 }[range] ?? 28) *
+            24 *
+            60 *
+            60 *
+            1000,
+      ).toISOString(),
+      completedOnly: filter === 'completed',
+      limit: 5000,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Export failed';
+      alert(msg);
+    });
   };
 
   return (

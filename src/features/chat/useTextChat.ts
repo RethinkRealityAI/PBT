@@ -14,6 +14,7 @@ import {
 import { uuid } from '../../lib/id';
 import { getSupabase } from '../auth/supabaseClient';
 import { recordTurns } from '../../services/aiTelemetry';
+import { persistRagDocument } from '../../services/ragDocument';
 import { logEvent } from '../../lib/analytics';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
@@ -295,6 +296,16 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       completed: true,
       endedReason: 'completed',
     });
+    void persistRagDocument({
+      sessionId: recordId,
+      scenario,
+      transcript: msgs,
+      scoreReport: effective,
+      durationSeconds,
+      mode: 'text',
+      modelId: MODEL_TEXT,
+      completed: true,
+    });
   }, [scenario]);
 
   const abandon = useCallback(
@@ -377,6 +388,16 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         scoreReport: effective,
         completed: true,
         endedReason: 'completed',
+      });
+      void persistRagDocument({
+        sessionId: recordId,
+        scenario,
+        transcript: msgs,
+        scoreReport: effective,
+        durationSeconds,
+        mode: 'voice',
+        modelId: MODEL_TEXT,
+        completed: true,
       });
     },
     [scenario],
