@@ -8,6 +8,7 @@ import {
 import { ScenarioProvider } from './providers/ScenarioProvider';
 import { ChatProvider, useChat } from './providers/ChatProvider';
 import { SessionProvider } from './providers/SessionProvider';
+import { FlagProvider, useFlag } from './providers/FlagProvider';
 import type { Screen } from './routes';
 import { SCREENS_WITH_TAB_BAR } from './routes';
 
@@ -51,20 +52,22 @@ export function App() {
     <ThemeProvider>
       <SessionProvider>
         <ProfileProvider>
-          <ScenarioProvider>
-            <NavigationProvider initial={getInitialScreen()}>
-              <ChatProvider>
-                <AppFrame>
-                  <RouteResolver>
-                    <ScreenSwitch />
-                  </RouteResolver>
-                  <TabBarHost />
-                  <ScreenViewLogger />
-                  <ChatAbandonWatcher />
-                </AppFrame>
-              </ChatProvider>
-            </NavigationProvider>
-          </ScenarioProvider>
+          <FlagProvider>
+            <ScenarioProvider>
+              <NavigationProvider initial={getInitialScreen()}>
+                <ChatProvider>
+                  <AppFrame>
+                    <RouteResolver>
+                      <ScreenSwitch />
+                    </RouteResolver>
+                    <TabBarHost />
+                    <ScreenViewLogger />
+                    <ChatAbandonWatcher />
+                  </AppFrame>
+                </ChatProvider>
+              </NavigationProvider>
+            </ScenarioProvider>
+          </FlagProvider>
         </ProfileProvider>
       </SessionProvider>
     </ThemeProvider>
@@ -119,8 +122,40 @@ function TabBarHost() {
   return <TabBar />;
 }
 
+/**
+ * Each gated screen redirects to home when its flag is off. We check before
+ * rendering so admins can disable a screen without breaking the back stack
+ * or leaving the user on a now-empty page.
+ */
+function useScreenGate(current: Screen): boolean {
+  const { go } = useNavigation();
+  const analyzer = useFlag('screen.analyzer.enabled', true);
+  const actGuide = useFlag('screen.act_guide.enabled', true);
+  const resources = useFlag('screen.resources.enabled', true);
+  const stats = useFlag('screen.stats.enabled', true);
+  const history = useFlag('screen.history.enabled', true);
+  const create = useFlag('screen.create.enabled', true);
+
+  const blocked =
+    (current === 'analyzer' && !analyzer) ||
+    (current === 'actGuide' && !actGuide) ||
+    (current === 'resources' && !resources) ||
+    (current === 'stats' && !stats) ||
+    (current === 'history' && !history) ||
+    (current === 'historyDetail' && !history) ||
+    (current === 'create' && !create);
+
+  useEffect(() => {
+    if (blocked) go('home');
+  }, [blocked, go]);
+
+  return !blocked;
+}
+
 function ScreenSwitch() {
   const { current } = useNavigation();
+  const allowed = useScreenGate(current);
+  if (!allowed) return null;
   switch (current) {
     case 'onboarding':
       return <OnboardingScreen />;

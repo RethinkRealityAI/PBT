@@ -15,7 +15,11 @@ import type {
   AdminUser,
   AiCall,
   AnalyzerEvent,
+  AuditLogRow,
+  FlagDef,
+  FlagRule,
   NavEvent,
+  ScenarioOverrideRow,
   UserScenario,
 } from './types';
 
@@ -120,6 +124,118 @@ export function useNavEvents(range = '7d', limit = 5000) {
     [range, limit],
     [],
   );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Flags & rules
+// ─────────────────────────────────────────────────────────────
+
+export interface FlagsSnapshot {
+  flags: FlagDef[];
+  rules: FlagRule[];
+}
+
+export function useFlagsSnapshot(refreshKey: number = 0) {
+  return useQuery<FlagsSnapshot>(
+    () => apiFetch<FlagsSnapshot>('admin-flags'),
+    [refreshKey],
+    { flags: [], rules: [] },
+  );
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Not signed in');
+  const res = await fetch(`/.netlify/functions/${path}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? `Request failed (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+
+export function upsertFlagRule(rule: Partial<FlagRule>): Promise<FlagRule> {
+  return postJson<FlagRule>('admin-flags', { type: 'rule', op: 'upsert', rule });
+}
+
+export function deleteFlagRule(id: string): Promise<{ ok: true }> {
+  return postJson<{ ok: true }>('admin-flags', { type: 'rule', op: 'delete', id });
+}
+
+export function upsertFlagDef(flag: Partial<FlagDef>): Promise<FlagDef> {
+  return postJson<FlagDef>('admin-flags', { type: 'flag', op: 'upsert', flag });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Scenario overrides
+// ─────────────────────────────────────────────────────────────
+
+export function useScenarioOverrides(refreshKey: number = 0) {
+  return useQuery<ScenarioOverrideRow[]>(
+    () => apiFetch<ScenarioOverrideRow[]>('admin-scenario-overrides'),
+    [refreshKey],
+    [],
+  );
+}
+
+export function upsertScenarioOverride(
+  row: Partial<ScenarioOverrideRow> & { scenario_id: string },
+): Promise<ScenarioOverrideRow> {
+  return postJson<ScenarioOverrideRow>('admin-scenario-overrides', row);
+}
+
+export async function deleteScenarioOverride(
+  scenario_id: string,
+): Promise<{ ok: true }> {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Not signed in');
+  const res = await fetch(
+    `/.netlify/functions/admin-scenario-overrides?op=delete`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ scenario_id }),
+    },
+  );
+  if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+  return (await res.json()) as { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Audit log
+// ─────────────────────────────────────────────────────────────
+
+export function useAuditLog(limit = 100, refreshKey: number = 0) {
+  return useQuery<AuditLogRow[]>(
+    () => apiFetch<AuditLogRow[]>('admin-audit-log', { limit }),
+    [limit, refreshKey],
+    [],
+  );
+}
+
+export async function revertAuditEntry(id: string): Promise<{ ok: true }> {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Not signed in');
+  const res = await fetch(`/.netlify/functions/admin-audit-log?op=revert`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) throw new Error(`Revert failed (${res.status})`);
+  return (await res.json()) as { ok: true };
 }
 
 /** Trigger a JSONL download from the rag-export Netlify Function. */

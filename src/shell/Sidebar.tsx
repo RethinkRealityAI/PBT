@@ -4,20 +4,23 @@ import { Icon } from '../design-system/Icon';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
+import { useFlags } from '../app/providers/FlagProvider';
+import type { FlagKey } from '../services/flagsClient';
 import type { Screen } from '../app/routes';
 
 interface NavItem {
   screen: Screen;
   label: string;
   icon: (props: SVGAttributes<SVGSVGElement>) => ReactElement;
+  flag?: FlagKey;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { screen: 'home', label: 'Train', icon: Icon.flame },
-  { screen: 'create', label: 'Build scenario', icon: Icon.plus },
-  { screen: 'history', label: 'History', icon: Icon.history },
-  { screen: 'analyzer', label: 'Pet Analyzer', icon: Icon.paw },
-  { screen: 'resources', label: 'Library', icon: Icon.book },
+  { screen: 'create', label: 'Build scenario', icon: Icon.plus, flag: 'nav.sidebar.create.enabled' },
+  { screen: 'history', label: 'History', icon: Icon.history, flag: 'nav.sidebar.history.enabled' },
+  { screen: 'analyzer', label: 'Pet Analyzer', icon: Icon.paw, flag: 'nav.sidebar.analyzer.enabled' },
+  { screen: 'resources', label: 'Library', icon: Icon.book, flag: 'nav.sidebar.resources.enabled' },
   { screen: 'settings', label: 'Profile', icon: Icon.user },
 ];
 
@@ -31,6 +34,8 @@ export function Sidebar() {
   const { current, go } = useNavigation();
   const { profile } = useProfile();
   const { resolvedTheme, toggle } = useTheme();
+  const { getFlag } = useFlags();
+  const visibleNav = NAV_ITEMS.filter((n) => !n.flag || getFlag<boolean>(n.flag, true));
 
   return (
     <aside
@@ -98,7 +103,7 @@ export function Sidebar() {
           gap: 2,
         }}
       >
-        {NAV_ITEMS.map(({ screen, label, icon: IconCmp }) => {
+        {visibleNav.map(({ screen, label, icon: IconCmp }) => {
           const active = current === screen;
           return (
             <button

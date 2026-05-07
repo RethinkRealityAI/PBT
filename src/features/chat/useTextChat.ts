@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Scenario } from '../../data/scenarios';
 import {
   evaluateConversation,
@@ -6,6 +6,10 @@ import {
   MODEL_TEXT,
 } from '../../services/geminiService';
 import type { ChatMessage, ScoreReport, SessionRecord } from '../../services/types';
+import { useScenarioOverride } from '../../app/providers/FlagProvider';
+import { seedScenarioId } from '../../data/scenarioOverrides';
+import { LIBRARY_SCENARIOS } from '../../data/scenarios';
+import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
 import {
   readStorage,
   writeStorage,
@@ -150,6 +154,17 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   const [scoreReport, setScoreReport] = useState<ScoreReport | null>(null);
   const [transientError, setTransientError] = useState<string | null>(null);
   const startedAtRef = useRef<number | null>(null);
+  // Look up admin AI overrides (prompt prefix/suffix) for this scenario id.
+  // Only available when the scenario was selected from a flag-aware surface
+  // that stamped `_overrideId`; falls back to no override otherwise.
+  const overrideRow = useScenarioOverride(scenario._overrideId ?? '');
+  const promptOverrides = useMemo<PromptOverrides>(
+    () => ({
+      promptPrefix: overrideRow?.prompt_prefix ?? null,
+      promptSuffix: overrideRow?.prompt_suffix ?? null,
+    }),
+    [overrideRow?.prompt_prefix, overrideRow?.prompt_suffix],
+  );
   // Allocated at open() so AI telemetry rows can attribute to the session
   // even before it's saved to history.
   const recordIdRef = useRef<string | null>(null);
@@ -191,6 +206,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     try {
       const first = await generateRoleplayMessage(scenario, [], undefined, {
         sessionId: recordIdRef.current,
+        promptOverrides,
       });
       setMessages([first]);
       setStatus('awaitingUser');
@@ -203,7 +219,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       setTransientError(friendly);
       setStatus('error');
     }
-  }, [scenario, status]);
+  }, [scenario, status, promptOverrides]);
 
   const send = useCallback(
     async (text: string) => {
@@ -219,7 +235,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           scenario,
           currentMessages,
           undefined,
-          { sessionId: recordIdRef.current },
+          { sessionId: recordIdRef.current, promptOverrides },
         );
 
         // Detect end-of-simulation token
@@ -248,7 +264,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         setStatus('awaitingUser');
       }
     },
-    [scenario],
+    [scenario, promptOverrides],
   );
 
   const end = useCallback(async () => {

@@ -88,3 +88,63 @@ export interface NavEvent {
 }
 
 export type Verdict = AnalyzerEvent['verdict'];
+
+export type FlagSurface = 'screen' | 'nav' | 'scenario' | 'component' | 'field' | 'ai';
+export type FlagValueType = 'boolean' | 'string' | 'number' | 'json';
+
+export interface FlagDef {
+  key: string;
+  surface: FlagSurface;
+  value_type: FlagValueType;
+  default_value: unknown;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlagAudience {
+  drivers?: DriverKey[];
+  user_ids?: string[];
+  anon_session_ids?: string[];
+  clinic_ids?: string[];
+  percentage?: number;
+}
+
+export interface FlagRule {
+  id: string;
+  flag_key: string;
+  priority: number;
+  audience: FlagAudience;
+  value: unknown;
+  enabled: boolean;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScenarioOverrideRow {
+  scenario_id: string;
+  visible: boolean;
+  sort_order: number | null;
+  title_override: string | null;
+  context_override: string | null;
+  opening_line_override: string | null;
+  difficulty_override: number | null;
+  persona_override: string | null;
+  prompt_prefix: string | null;
+  prompt_suffix: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface AuditLogRow {
+  id: string;
+  actor_id: string | null;
+  entity_type: 'flag' | 'flag_rule' | 'scenario_override';
+  entity_id: string;
+  action: 'create' | 'update' | 'delete' | 'revert';
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  note: string | null;
+  created_at: string;
+}

@@ -138,6 +138,12 @@ export interface Scenario {
   openingLine?: string;
   /** Dog weight in kg, as a string (e.g. "32.5"). Optional — absent means not specified. */
   weightKg?: string;
+  /**
+   * Stable id for admin overrides (`seed:<i>` for library scenarios,
+   * `user:<uuid>` for user-built ones). Set when the scenario is selected
+   * for play so AI prompt overrides can be looked up at runtime.
+   */
+  _overrideId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────

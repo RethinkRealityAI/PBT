@@ -14,6 +14,8 @@ import { useSession } from '../app/providers/SessionProvider';
 import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens';
 import { LIBRARY_SCENARIOS } from '../data/scenarios';
+import { useResolvedLibraryScenarios } from '../data/useResolvedScenarios';
+import { useFlag, useFlagValue, IfFlag } from '../app/providers/FlagProvider';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
@@ -178,6 +180,11 @@ export function HomeScreen() {
   const [scoringInfoOpen, setScoringInfoOpen] = useState(false);
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
+  const resolvedLibrary = useResolvedLibraryScenarios();
+  const headlineOverride = useFlagValue<string>('field.home.headline', '');
+  const showActCard = useFlag('component.home.act_guide_card', true);
+  const showLibraryCard = useFlag('component.home.library_card', true);
+  const showEchoCard = useFlag('component.home.echo_profile_card', true);
   const [welcomeOpen, setWelcomeOpen] = useState(() => !readStorage(DASHBOARD_WELCOMED_KEY));
   const [beaconActive, setBeaconActive] = useState(false);
   /** Ripples / Orb CSS pulse / breathing — off until Start Here → scoring modal is closed. */
@@ -204,10 +211,14 @@ export function HomeScreen() {
 
   const driver = ECHO_DRIVERS[profile.primary];
   const driverColors = DRIVER_COLORS[profile.primary];
-  const todaysPick = LIBRARY_SCENARIOS[pickIndex];
-  const total = LIBRARY_SCENARIOS.length;
+  const total = resolvedLibrary.length;
+  const safeIndex = total === 0 ? 0 : pickIndex % total;
+  // If an admin hides every scenario, fall back to the canonical first entry
+  // so the hero card stays renderable. The Start button still routes correctly.
+  const todaysPick = resolvedLibrary[safeIndex]?.scenario ?? LIBRARY_SCENARIOS[0];
   const initials = getDisplayInitials(user);
   const displayName = getDisplayName(user);
+  const headline = headlineOverride.trim() || `What pushback are\nyou ready for today?`;
 
   const startTodaysPick = () => {
     setScenario(todaysPick);
@@ -394,7 +405,7 @@ export function HomeScreen() {
                 whiteSpace: 'pre-line',
               }}
             >
-              {`What pushback are\nyou ready for today?`}
+              {headline}
             </h1>
           </div>
           {initials && (
@@ -443,10 +454,12 @@ export function HomeScreen() {
                   whiteSpace: 'pre-line',
                 }}
               >
-                {`What pushback are\nyou ready for today?`}
+                {headline}
               </h1>
 
-              <SaveProgressBanner />
+              <IfFlag flag="component.home.save_progress_banner">
+                <SaveProgressBanner />
+              </IfFlag>
             </div>
 
             {/* Driver pill — desktop only (mobile: TopBar) */}
@@ -480,7 +493,9 @@ export function HomeScreen() {
             </div>
 
             {/* ACT Guide — just above hero scenario card */}
-            <AcTGuideCard driverColors={driverColors} dark={dark} onClick={() => go('actGuide')} />
+            {showActCard && (
+              <AcTGuideCard driverColors={driverColors} dark={dark} onClick={() => go('actGuide')} />
+            )}
 
             {/* Hero scenario card */}
             <Glass
@@ -749,9 +764,11 @@ export function HomeScreen() {
           {/* ── Right column: quick actions + library + ACT guide + ECHO profile ── */}
           <div>
             {/* Desktop-only save progress banner */}
-            <div className="hidden lg:block mb-4">
-              <SaveProgressBanner />
-            </div>
+            <IfFlag flag="component.home.save_progress_banner">
+              <div className="hidden lg:block mb-4">
+                <SaveProgressBanner />
+              </div>
+            </IfFlag>
 
             <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 14 }}>
               {([
@@ -805,6 +822,7 @@ export function HomeScreen() {
               ))}
             </div>
 
+            {showLibraryCard && (
             <Glass
               radius={RADII.lg}
               padding={16}
@@ -827,7 +845,9 @@ export function HomeScreen() {
                 </div>
               </div>
             </Glass>
+            )}
 
+            {showEchoCard && (
             <Glass
               radius={RADII.lg}
               padding={16}
@@ -874,6 +894,7 @@ export function HomeScreen() {
                 </div>
               </div>
             </Glass>
+            )}
           </div>
         </div>
       </Page>

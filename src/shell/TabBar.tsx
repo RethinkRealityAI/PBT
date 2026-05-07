@@ -4,7 +4,16 @@ import { TABS } from '../app/routes';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
+import { useFlags } from '../app/providers/FlagProvider';
+import type { FlagKey } from '../services/flagsClient';
 import { DRIVER_COLORS } from '../design-system/tokens';
+
+const TAB_FLAG: Record<string, FlagKey> = {
+  home: 'nav.tab.home.enabled',
+  history: 'nav.tab.history.enabled',
+  resources: 'nav.tab.resources.enabled',
+  settings: 'nav.tab.settings.enabled',
+};
 
 const FALLBACK_TAB_BG =
   'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))';
@@ -14,8 +23,13 @@ export function TabBar() {
   const { current, go } = useNavigation();
   const { profile } = useProfile();
   const { resolvedTheme } = useTheme();
+  const { getFlag } = useFlags();
   const dark = resolvedTheme === 'dark';
   const dc = profile ? DRIVER_COLORS[profile.primary] : null;
+  const visibleTabs = TABS.filter((t) => {
+    const flag = TAB_FLAG[t.screen];
+    return flag ? getFlag<boolean>(flag, true) : true;
+  });
   const activeGradient = dc
     ? `linear-gradient(180deg, ${dc.primary}, ${dc.accent})`
     : FALLBACK_TAB_BG;
@@ -35,7 +49,7 @@ export function TabBar() {
         className="pointer-events-auto"
       >
         <div className="flex items-center justify-between gap-1">
-          {TABS.map((tab) => {
+          {visibleTabs.map((tab) => {
             const active = current === tab.screen;
             const IconCmp = Icon[tab.iconKey];
             return (
