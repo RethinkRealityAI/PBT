@@ -33,6 +33,16 @@ export interface ScoreReport {
   betterAlternative: string;
   perDimensionNotes: Record<DimensionKey, string>;
   keyMoments: KeyMoment[];
+  /**
+   * Per-turn sentiment, populated by the scorer model. One entry per turn
+   * in the transcript (aligned by index). Range -1 (hostile) → +1 (warm),
+   * 0 = neutral. Both staff and customer turns are scored — drives the
+   * sentiment chart in the admin session modal.
+   *
+   * Optional: older sessions saved before the scorer schema added this
+   * field will have it as undefined; consumers should fall back gracefully.
+   */
+  turnSentiment?: TurnSentiment[];
 }
 
 export interface KeyMoment {
@@ -40,6 +50,15 @@ export interface KeyMoment {
   type: 'win' | 'miss';
   label: string;
   quote: string;
+}
+
+export interface TurnSentiment {
+  /** 0-based index into the transcript array. */
+  idx: number;
+  /** 'staff' = role 'user' (trainee), 'customer' = role 'ai' (pet owner). */
+  speaker: 'staff' | 'customer';
+  /** -1 (hostile) → +1 (warm), 0 = neutral. */
+  sentiment: number;
 }
 
 export interface SessionRecord {

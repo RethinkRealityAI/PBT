@@ -7,15 +7,9 @@ import { getSupabase } from './supabaseClient';
 import { checkPassword } from './passwordStrength';
 import { FLAGS } from '../../app/flags';
 import { useProfile, type Profile } from '../../app/providers/ProfileProvider';
-import { readStorage, writeStorage, STORAGE_KEYS, type StorageKeyDef } from '../../lib/storage';
-import type { SessionRecord } from '../../services/types';
+import { readStorage, writeStorage, STORAGE_KEYS } from '../../lib/storage';
+import { backfillLocalDataToCloud } from './backfillLocalData';
 import { DRIVER_KEYS, type DriverKey } from '../../design-system/tokens';
-
-const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
-  key: 'sessions',
-  fallback: [],
-  validate: (v): v is SessionRecord[] => Array.isArray(v),
-};
 
 const isDriverKey = (v: unknown): v is DriverKey =>
   typeof v === 'string' && (DRIVER_KEYS as readonly string[]).includes(v);
@@ -76,28 +70,20 @@ export function AccountUpgradeModal({
         });
         if (error) throw error;
         const userId = data.user?.id;
-        if (userId && profile) {
-          await sb.from('profiles').upsert({
-            user_id: userId,
-            display_name: displayName || null,
-            echo_primary: profile.primary,
-            echo_secondary: profile.secondary,
-            echo_tally: profile.tally,
-          });
-          // Backfill local sessions
-          const sessions = readStorage(SESSIONS_KEY);
-          if (sessions.length > 0) {
-            await sb.from('training_sessions').insert(
-              sessions.map((s) => ({
-                user_id: userId,
-                scenario: { summary: s.scenarioSummary, pushbackId: s.pushbackId },
-                transcript: s.transcript,
-                score_report: s.scoreReport,
-                duration_seconds: s.durationSeconds,
-                mode: s.mode,
-              })),
-            );
+        if (userId) {
+          if (profile) {
+            await sb.from('profiles').upsert({
+              user_id: userId,
+              display_name: displayName || null,
+              echo_primary: profile.primary,
+              echo_secondary: profile.secondary,
+              echo_tally: profile.tally,
+            });
           }
+          // Backfill anything they did anonymously: full sessions (with
+          // both staff + AI turns + scorecard), pets, analyzer events,
+          // and rag_documents. Mirrors the sign-in flow below.
+          await backfillLocalDataToCloud(sb, userId);
         }
       } else {
         const { data, error } = await sb.auth.signInWithPassword({ email, password });
@@ -143,6 +129,13 @@ export function AccountUpgradeModal({
             };
             setProfile(hydrated);
           }
+
+          // Backfill anything done anonymously on this device. Idempotent
+          // — re-running for an already-synced returning user is a no-op.
+          // Don't await: don't block the modal close on a slow upload.
+          void backfillLocalDataToCloud(sb, userId).catch((err) =>
+            console.warn('[auth] backfill on sign-in failed', err),
+          );
         }
       }
       onClose();

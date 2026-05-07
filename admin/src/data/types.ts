@@ -56,10 +56,18 @@ export interface UserScenario {
   life_stage: string | null;
   difficulty: number | null;
   pushback_id: string | null;
+  pushback_notes: string | null;
+  weight_kg: number | null;
+  persona: string | null;
+  suggested_driver: string | null;
+  context: string | null;
+  opening_line: string | null;
+  scenario_summary: string | null;
   is_public: boolean;
   plays: number;
   avg_score: number | null;
   created_at: string;
+  updated_at?: string | null;
 }
 
 export interface AnalyzerEvent {

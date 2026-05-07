@@ -38,6 +38,8 @@ export default defineConfig(({ mode }) => {
               'vendor-genai': ['@google/genai'],
               'vendor-supabase': ['@supabase/supabase-js'],
               'vendor-motion': ['motion'],
+              // Admin-only — keeps the consumer bundle from importing it.
+              'vendor-recharts': ['recharts'],
             },
           },
         },

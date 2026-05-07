@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Glass } from '../primitives/Glass';
 import {
   Avatar,
@@ -9,9 +9,15 @@ import {
   Sparkline,
 } from '../primitives';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
-import { useAdminSessions, useAdminUsers } from '../data/queries';
+import {
+  useAdminSessions,
+  useAdminUsers,
+  useAnalyzerEvents,
+  useUserScenarios,
+} from '../data/queries';
 import { COLOR, DRIVERS } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
+import { UserModal } from './UserModal';
 
 export function UsersScreen({
   query,
@@ -22,6 +28,13 @@ export function UsersScreen({
 }) {
   const users = useAdminUsers();
   const sessions = useAdminSessions('90d', 2000);
+  const scenarios = useUserScenarios(500);
+  const analyzerEvents = useAnalyzerEvents('90d', 2000);
+  const [openUserId, setOpenUserId] = useState<string | null>(null);
+
+  const openUser = openUserId
+    ? users.data.find((u) => u.user_id === openUserId) ?? null
+    : null;
 
   const enriched = useMemo(() => {
     const byUser = new Map<string, typeof sessions.data>();
@@ -112,6 +125,21 @@ export function UsersScreen({
             {filtered.map((u) => (
               <div
                 key={u.user_id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setOpenUserId(u.user_id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setOpenUserId(u.user_id);
+                  }
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.6)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '36px 1.6fr 1.4fr 110px 80px 80px 110px',
@@ -119,6 +147,8 @@ export function UsersScreen({
                   gap: 14,
                   alignItems: 'center',
                   borderBottom: '0.5px solid rgba(60,20,15,0.04)',
+                  cursor: 'pointer',
+                  transition: 'background 0.12s ease',
                 }}
               >
                 <Avatar
@@ -202,6 +232,26 @@ export function UsersScreen({
           </Glass>
         )}
       </ScreenShell>
+
+      <UserModal
+        user={openUser}
+        sessions={
+          openUserId
+            ? sessions.data.filter((s) => s.user_id === openUserId)
+            : []
+        }
+        scenarios={
+          openUserId
+            ? scenarios.data.filter((s) => s.creator_id === openUserId)
+            : []
+        }
+        analyzerEvents={
+          openUserId
+            ? analyzerEvents.data.filter((a) => a.user_id === openUserId)
+            : []
+        }
+        onClose={() => setOpenUserId(null)}
+      />
     </>
   );
 }

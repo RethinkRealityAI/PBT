@@ -146,7 +146,22 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
     if (statusRef.current !== 'aiSpeaking') {
       setStatusSync('aiSpeaking');
-      // Discard user-transcription buffer (likely echo of our own audio leaking back).
+      // The user finished a turn; AI is now responding. If there's still
+      // accumulated user transcription that never received a `finished:true`
+      // flag, commit it now — silently dropping it would lose the user's
+      // message from the transcript and put the AI in the position of
+      // appearing to respond to nothing.
+      //
+      // Earlier code wiped the buffer on the assumption that any pending
+      // STT was AI-echo leaking through the mic. That's possible but rare,
+      // and the cost is high: a real user turn deleted from the canonical
+      // record. We trust the model's VAD and accept occasional echo over
+      // dropped turns. The 200-character ceiling guards against runaway
+      // accumulation if STT mis-triggers without a finished flag.
+      const pending = userTextBufferRef.current.trim();
+      if (pending && pending.length <= 200) {
+        addUserMessage(pending);
+      }
       userTextBufferRef.current = '';
       // Do NOT clear aiTextBufferRef here. outputAudioTranscription chunks often arrive
       // in the same message before this audio chunk, or in earlier messages before the
@@ -432,9 +447,15 @@ export function useVoiceSession(): UseVoiceSessionReturn {
               | undefined;
 
             // User speech transcription — buffered, committed on sentence end.
-            // Ignore inputTranscription while AI is speaking — that's almost always echo
-            // of our own audio leaking through the mic, not real user speech.
-            if (serverContent?.inputTranscription && statusRef.current !== 'aiSpeaking') {
+            //
+            // Earlier code dropped inputTranscription whenever AI was
+            // speaking, on the theory that any captured audio was echo.
+            // That cost real user turns whenever the user spoke during the
+            // AI's tail-end. We now ALWAYS accumulate (the model's own VAD
+            // already labels these as user speech) and commit on the
+            // `finished` flag — which the Live API fires per natural
+            // sentence boundary regardless of which side is speaking.
+            if (serverContent?.inputTranscription) {
               const { text, finished } = serverContent.inputTranscription;
               if (text) {
                 userTextBufferRef.current += text;

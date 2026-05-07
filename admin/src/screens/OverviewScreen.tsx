@@ -71,6 +71,7 @@ export function OverviewScreen({
       range === '24h' ? 1 : range === '7d' ? 7 : range === '90d' ? 90 : 28;
     const sessionsByDay = Array.from({ length: days }, () => 0);
     const scoreByDay: number[][] = Array.from({ length: days }, () => []);
+    const usersByDay: Set<string>[] = Array.from({ length: days }, () => new Set());
     const now = Date.now();
     for (const s of sList) {
       const ageDays = Math.floor(
@@ -78,6 +79,7 @@ export function OverviewScreen({
       );
       if (ageDays >= 0 && ageDays < days) {
         sessionsByDay[days - 1 - ageDays]++;
+        usersByDay[days - 1 - ageDays].add(s.user_id);
         if (s.score_overall != null)
           scoreByDay[days - 1 - ageDays].push(s.score_overall);
       }
@@ -85,6 +87,9 @@ export function OverviewScreen({
     const avgScoreByDay = scoreByDay.map((arr) =>
       arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0,
     );
+    // Distinct active users per day — feeds the Active users KPI sparkline
+    // with real movement instead of a flat single point.
+    const activeUsersByDay = usersByDay.map((s) => s.size);
 
     // Driver distribution from primary driver of users.
     const driverDist: Record<DriverKey, number> = {
@@ -111,6 +116,7 @@ export function OverviewScreen({
       totalCost,
       sessionsByDay,
       avgScoreByDay,
+      activeUsersByDay,
       driverDist,
     };
   }, [users.data, sessions.data, aiCalls.data, range]);
@@ -145,7 +151,7 @@ export function OverviewScreen({
                 icon="◔"
                 accent={COLOR.brandSoft}
                 sparkColor={COLOR.brand}
-                sparkData={[stats.totalUsers]}
+                sparkData={stats.activeUsersByDay}
               />
               <Kpi
                 label={`Sessions (${range})`}
