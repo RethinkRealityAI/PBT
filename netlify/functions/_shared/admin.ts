@@ -37,6 +37,15 @@ function envOrThrow(name: string): string {
   return v;
 }
 
+/** First defined env var wins. Returns empty string if all are missing. */
+function envFirst(...names: string[]): string {
+  for (const n of names) {
+    const v = process.env[n];
+    if (v) return v;
+  }
+  return '';
+}
+
 export async function requireAdmin(req: Request): Promise<AdminCtx | Response> {
   const auth = req.headers.get('authorization') ?? '';
   if (!auth.toLowerCase().startsWith('bearer ')) {
@@ -44,18 +53,26 @@ export async function requireAdmin(req: Request): Promise<AdminCtx | Response> {
   }
   const token = auth.slice('bearer '.length);
 
-  let url: string;
-  let anonKey: string;
-  let serviceKey: string;
-  try {
-    url = envOrThrow('SUPABASE_URL') || envOrThrow('VITE_SUPABASE_URL');
-    anonKey =
-      process.env.SUPABASE_ANON_KEY ||
-      envOrThrow('VITE_SUPABASE_PUBLISHABLE_KEY');
-    serviceKey = envOrThrow('SUPABASE_SERVICE_ROLE_KEY');
-  } catch (err) {
-    console.error('[admin] env missing', err);
-    return errorResponse(500, 'Server misconfigured');
+  // Accept the VITE_-prefixed names (default in our Netlify config) OR the
+  // unprefixed Supabase-canonical names. Earlier code called envOrThrow on
+  // the unprefixed name first, which threw before the fallback could run.
+  const url = envFirst('SUPABASE_URL', 'VITE_SUPABASE_URL');
+  const anonKey = envFirst(
+    'SUPABASE_ANON_KEY',
+    'VITE_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_PUBLISHABLE_KEY',
+  );
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  if (!url || !anonKey || !serviceKey) {
+    const missing = [
+      !url && 'SUPABASE_URL/VITE_SUPABASE_URL',
+      !anonKey && 'SUPABASE_ANON_KEY/VITE_SUPABASE_PUBLISHABLE_KEY',
+      !serviceKey && 'SUPABASE_SERVICE_ROLE_KEY',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    console.error('[admin] env missing:', missing);
+    return errorResponse(500, `Server misconfigured: missing ${missing}`);
   }
 
   // Anon client — used only to verify the caller's JWT.

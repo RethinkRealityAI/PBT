@@ -17,6 +17,7 @@ type AdminState =
   | { status: 'loading' }
   | { status: 'signed_out' }
   | { status: 'not_admin' }
+  | { status: 'error'; message: string }
   | { status: 'admin'; userId: string };
 
 export function App() {
@@ -34,12 +35,21 @@ export function App() {
         setAuth({ status: 'signed_out' });
         return;
       }
-      // Server-side gate: admin-whoami returns 200 only for admins.
+      // Server-side gate: admin-whoami returns 200 only for admins. We
+      // distinguish between "not admin" (403 → show the not-authorised card)
+      // and any other error (env misconfig, network, 500 → surface the
+      // actual message so deployment issues are debuggable).
       try {
         const me = await apiFetch<{ user_id: string }>('admin-whoami');
         if (!cancelled) setAuth({ status: 'admin', userId: me.user_id });
-      } catch {
-        if (!cancelled) setAuth({ status: 'not_admin' });
+      } catch (err) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : 'Auth check failed';
+        if (msg === 'Not an admin') {
+          setAuth({ status: 'not_admin' });
+        } else {
+          setAuth({ status: 'error', message: msg });
+        }
       }
     }
     sb.auth.getSession().then(({ data }) => check(data.session));
@@ -77,6 +87,57 @@ export function App() {
           >
             Sign out
           </button>
+        </Glass>
+      </FullCenterMessage>
+    );
+  }
+  if (auth.status === 'error') {
+    return (
+      <FullCenterMessage>
+        <Glass padding={24} radius={16}>
+          <div style={{ fontWeight: 800, color: COLOR.ink, fontSize: 18 }}>
+            Admin endpoint error
+          </div>
+          <div
+            style={{
+              fontSize: 13,
+              color: COLOR.inkMute,
+              marginTop: 6,
+              maxWidth: 480,
+              lineHeight: 1.55,
+            }}
+          >
+            The admin gate (<code>/.netlify/functions/admin-whoami</code>)
+            returned an error. This usually means the Netlify deploy is
+            missing an environment variable. Server said:
+          </div>
+          <pre
+            style={{
+              marginTop: 10,
+              fontFamily: 'var(--pbt-mono)',
+              fontSize: 12,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: 'rgba(60,20,15,0.06)',
+              color: COLOR.ink,
+              maxWidth: 480,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {auth.message}
+          </pre>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button onClick={() => location.reload()} style={signOutBtn}>
+              Retry
+            </button>
+            <button
+              onClick={() => void getSupabase().auth.signOut()}
+              style={{ ...signOutBtn, background: 'rgba(60,20,15,0.08)', color: COLOR.ink }}
+            >
+              Sign out
+            </button>
+          </div>
         </Glass>
       </FullCenterMessage>
     );
