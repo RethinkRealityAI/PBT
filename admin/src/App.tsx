@@ -12,7 +12,7 @@ import { ScenariosScreen } from './screens/ScenariosScreen';
 import { AnalyzerScreen } from './screens/AnalyzerScreen';
 import { QualityScreen } from './screens/QualityScreen';
 import { FlagsScreen } from './screens/FlagsScreen';
-import { ScenarioOverridesScreen } from './screens/ScenarioOverridesScreen';
+import { ScenarioBuilderScreen } from './screens/ScenarioBuilderScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
 import { SignInGate } from './screens/SignInGate';
@@ -160,7 +160,7 @@ export function App() {
         {view === 'analyzer' && <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
         {view === 'quality' && <QualityScreen range={range} onRange={setRange} />}
         {view === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
-        {view === 'overrides' && <ScenarioOverridesScreen query={query} onQuery={setQuery} />}
+        {view === 'overrides' && <ScenarioBuilderScreen query={query} onQuery={setQuery} />}
         {view === 'preview' && <PreviewScreen />}
         {view === 'audit' && <AuditLogScreen />}
       </div>

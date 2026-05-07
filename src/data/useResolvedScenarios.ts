@@ -1,47 +1,76 @@
 /**
- * Hook that returns the runtime view of LIBRARY_SCENARIOS after the admin's
- * scenario_overrides are applied:
+ * Hook that returns the runtime view of LIBRARY_SCENARIOS plus admin-authored
+ * scenarios after the admin's scenario_overrides are applied:
  *   - hidden scenarios are filtered out
  *   - sort_order overrides their order
  *   - persona / difficulty / context / openingLine fields are swapped in
+ *   - admin-authored scenarios (id `admin:<uuid>`) are appended
  *
- * Used by Home + Create's library tab so admins can curate the rotation
- * without a code change.
+ * Each returned item carries the `override` row so callers can read the
+ * card-level fields (card_title_override, info_modal_body, etc.) without
+ * a second lookup.
  */
 import { useMemo } from 'react';
 import type { Scenario } from './scenarios';
 import { LIBRARY_SCENARIOS } from './scenarios';
-import { applyScenarioOverride, seedScenarioId } from './scenarioOverrides';
+import {
+  adminOverrideToScenario,
+  applyScenarioOverride,
+  isAdminScenarioId,
+  seedScenarioId,
+} from './scenarioOverrides';
+import type { ScenarioOverride } from '../services/flagsClient';
 import { useFlags } from '../app/providers/FlagProvider';
 
 export interface ResolvedScenario {
   scenario: Scenario;
   scenarioId: string;
+  override: ScenarioOverride | null;
 }
 
 export function useResolvedLibraryScenarios(): ResolvedScenario[] {
-  const { getOverride } = useFlags();
+  const { snapshot, getOverride } = useFlags();
   return useMemo(() => {
-    const items = LIBRARY_SCENARIOS.map((scenario, i) => {
+    const items: Array<ResolvedScenario & { sort: number | null }> = [];
+
+    LIBRARY_SCENARIOS.forEach((scenario, i) => {
       const scenarioId = seedScenarioId(i);
       const override = getOverride(scenarioId);
-      return {
+      items.push({
         scenario: applyScenarioOverride(scenario, override, scenarioId),
         scenarioId,
         override,
-      };
+        sort: override?.sort_order ?? null,
+      });
     });
+
+    if (snapshot) {
+      for (const o of snapshot.scenarioOverrides) {
+        if (!isAdminScenarioId(o.scenario_id)) continue;
+        const synthesized = adminOverrideToScenario(o);
+        if (!synthesized) continue;
+        items.push({
+          scenario: synthesized,
+          scenarioId: o.scenario_id,
+          override: o,
+          sort: o.sort_order ?? null,
+        });
+      }
+    }
+
     const visible = items.filter(
-      ({ override }) => override == null || override.visible !== false,
+      (it) => it.override == null || it.override.visible !== false,
     );
     visible.sort((a, b) => {
-      const ao = a.override?.sort_order;
-      const bo = b.override?.sort_order;
-      if (ao != null && bo != null) return ao - bo;
-      if (ao != null) return -1;
-      if (bo != null) return 1;
+      if (a.sort != null && b.sort != null) return a.sort - b.sort;
+      if (a.sort != null) return -1;
+      if (b.sort != null) return 1;
       return 0;
     });
-    return visible.map(({ scenario, scenarioId }) => ({ scenario, scenarioId }));
-  }, [getOverride]);
+    return visible.map(({ scenario, scenarioId, override }) => ({
+      scenario,
+      scenarioId,
+      override,
+    }));
+  }, [snapshot, getOverride]);
 }

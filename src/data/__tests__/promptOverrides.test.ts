@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { buildCustomerSystemPrompt } from '../knowledge/promptBuilders';
 import type { Scenario } from '../scenarios';
 import { LIBRARY_SCENARIOS } from '../scenarios';

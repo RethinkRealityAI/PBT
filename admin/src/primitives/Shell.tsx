@@ -27,7 +27,7 @@ export const ADMIN_NAV: NavItem[] = [
   { key: 'analyzer', label: 'Pet Analyzer', icon: '✿' },
   { key: 'quality', label: 'AI Quality', icon: '✺' },
   { key: 'flags', label: 'Flags', icon: '⚑' },
-  { key: 'overrides', label: 'Overrides', icon: '⛯' },
+  { key: 'overrides', label: 'Builder', icon: '⛯' },
   { key: 'preview', label: 'Preview', icon: '◐' },
   { key: 'audit', label: 'Audit', icon: '☷' },
 ];

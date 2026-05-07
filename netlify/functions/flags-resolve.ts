@@ -58,6 +58,18 @@ interface OverrideRow {
   persona_override: string | null;
   prompt_prefix: string | null;
   prompt_suffix: string | null;
+  card_title_override: string | null;
+  card_subtitle_override: string | null;
+  info_modal_title: string | null;
+  info_modal_body: string | null;
+  start_button_label: string | null;
+  card_driver_override: string | null;
+  breed: string | null;
+  life_stage: string | null;
+  pushback_id: string | null;
+  pushback_notes: string | null;
+  suggested_driver: string | null;
+  weight_kg: number | null;
 }
 
 interface ResolvedSnapshot {
@@ -84,8 +96,9 @@ async function loadSnapshot(): Promise<{
     sb
       .from('scenario_overrides')
       .select(
-        'scenario_id, visible, sort_order, title_override, context_override, opening_line_override, difficulty_override, persona_override, prompt_prefix, prompt_suffix',
-      ),
+        'scenario_id, visible, sort_order, title_override, context_override, opening_line_override, difficulty_override, persona_override, prompt_prefix, prompt_suffix, card_title_override, card_subtitle_override, info_modal_title, info_modal_body, start_button_label, card_driver_override, breed, life_stage, pushback_id, pushback_notes, suggested_driver, weight_kg',
+      )
+      .is('deleted_at', null),
   ]);
   if (flagsRes.error) throw flagsRes.error;
   if (rulesRes.error) throw rulesRes.error;

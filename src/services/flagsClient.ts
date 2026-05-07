@@ -73,6 +73,20 @@ export interface ScenarioOverride {
   persona_override: string | null;
   prompt_prefix: string | null;
   prompt_suffix: string | null;
+  // Card-level overrides
+  card_title_override: string | null;
+  card_subtitle_override: string | null;
+  info_modal_title: string | null;
+  info_modal_body: string | null;
+  start_button_label: string | null;
+  card_driver_override: string | null;
+  // Admin-authored scenario fields (only populated for `admin:<uuid>` rows)
+  breed: string | null;
+  life_stage: string | null;
+  pushback_id: string | null;
+  pushback_notes: string | null;
+  suggested_driver: string | null;
+  weight_kg: number | null;
 }
 
 export interface FlagSnapshot {

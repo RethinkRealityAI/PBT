@@ -211,6 +211,29 @@ export async function deleteScenarioOverride(
   return (await res.json()) as { ok: true };
 }
 
+export async function duplicateScenario(
+  scenario_id: string,
+): Promise<ScenarioOverrideRow> {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Not signed in');
+  const res = await fetch(
+    `/.netlify/functions/admin-scenario-overrides?op=duplicate`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ scenario_id }),
+    },
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Duplicate failed (${res.status})`);
+  }
+  return (await res.json()) as ScenarioOverrideRow;
+}
+
 // ─────────────────────────────────────────────────────────────
 // Audit log
 // ─────────────────────────────────────────────────────────────
