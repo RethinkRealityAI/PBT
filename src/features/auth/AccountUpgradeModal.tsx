@@ -6,9 +6,10 @@ import { Segmented } from '../../design-system/Segmented';
 import { getSupabase } from './supabaseClient';
 import { checkPassword } from './passwordStrength';
 import { FLAGS } from '../../app/flags';
-import { useProfile } from '../../app/providers/ProfileProvider';
-import { readStorage, type StorageKeyDef } from '../../lib/storage';
+import { useProfile, type Profile } from '../../app/providers/ProfileProvider';
+import { readStorage, writeStorage, STORAGE_KEYS, type StorageKeyDef } from '../../lib/storage';
 import type { SessionRecord } from '../../services/types';
+import { DRIVER_KEYS, type DriverKey } from '../../design-system/tokens';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
   key: 'sessions',
@@ -16,12 +17,17 @@ const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
   validate: (v): v is SessionRecord[] => Array.isArray(v),
 };
 
+const isDriverKey = (v: unknown): v is DriverKey =>
+  typeof v === 'string' && (DRIVER_KEYS as readonly string[]).includes(v);
+
 export interface AccountUpgradeModalProps {
   open: boolean;
   initialMode?: 'signup' | 'signin';
   onClose: () => void;
-  /** Called after a successful auth, with the display name used (signup only). */
+  /** Called after a successful sign-up, with the display name used. */
   onSuccess?: (displayName: string) => void;
+  /** Called after a successful sign-in. Caller decides where to navigate. */
+  onSignedIn?: () => void;
 }
 
 export function AccountUpgradeModal({
@@ -29,6 +35,7 @@ export function AccountUpgradeModal({
   initialMode = 'signup',
   onClose,
   onSuccess,
+  onSignedIn,
 }: AccountUpgradeModalProps) {
   const [mode, setMode] = useState<'signup' | 'signin'>(initialMode);
   const [email, setEmail] = useState('');
@@ -36,7 +43,7 @@ export function AccountUpgradeModal({
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { profile } = useProfile();
+  const { profile, setProfile } = useProfile();
 
   const pwCheck = useMemo(() => checkPassword(password), [password]);
 
@@ -93,13 +100,57 @@ export function AccountUpgradeModal({
           }
         }
       } else {
-        const { error } = await sb.auth.signInWithPassword({ email, password });
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
         if (error) throw error;
+
+        // ── Sign-in side-effects ─────────────────────────────
+        // Returning users have already accepted terms when they originally
+        // signed up; persist that locally so the routing layer doesn't
+        // bounce a fresh-device sign-in into the onboarding flow.
+        if (!readStorage(STORAGE_KEYS.termsAcceptedAt)) {
+          writeStorage(STORAGE_KEYS.termsAcceptedAt, new Date().toISOString());
+        }
+
+        // Hydrate the profile synchronously from cloud so the caller can
+        // navigate to home without a quiz-redirect flash. useCloudSync's
+        // own hydration runs on the next render — this is just faster.
+        const userId = data.user?.id;
+        if (userId && !profile) {
+          const { data: row } = await sb
+            .from('profiles')
+            .select('echo_primary, echo_secondary, echo_tally, created_at')
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (
+            row &&
+            isDriverKey(row.echo_primary) &&
+            isDriverKey(row.echo_secondary)
+          ) {
+            const tally = (row.echo_tally ?? {}) as Record<string, unknown>;
+            const safeTally: Record<DriverKey, number> = {
+              Activator: typeof tally.Activator === 'number' ? tally.Activator : 0,
+              Energizer: typeof tally.Energizer === 'number' ? tally.Energizer : 0,
+              Analyzer: typeof tally.Analyzer === 'number' ? tally.Analyzer : 0,
+              Harmonizer:
+                typeof tally.Harmonizer === 'number' ? tally.Harmonizer : 0,
+            };
+            const hydrated: Profile = {
+              primary: row.echo_primary,
+              secondary: row.echo_secondary,
+              tally: safeTally,
+              answers: [],
+              takenAt: row.created_at ?? new Date().toISOString(),
+            };
+            setProfile(hydrated);
+          }
+        }
       }
       onClose();
       if (mode === 'signup') {
         const name = displayName.trim() || email.split('@')[0];
         onSuccess?.(name);
+      } else {
+        onSignedIn?.();
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Auth failed';

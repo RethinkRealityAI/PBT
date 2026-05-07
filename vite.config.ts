@@ -26,6 +26,12 @@ export default defineConfig(({ mode }) => {
       },
       build: {
         rollupOptions: {
+          // Two entries — the consumer PWA and the admin dashboard.
+          // Both built into dist/. Netlify routes `/admin/*` → `/admin.html`.
+          input: {
+            main: path.resolve(__dirname, 'index.html'),
+            admin: path.resolve(__dirname, 'admin.html'),
+          },
           output: {
             manualChunks: {
               'vendor-react': ['react', 'react-dom'],

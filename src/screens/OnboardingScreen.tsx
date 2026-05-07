@@ -4,6 +4,7 @@ import { Orb } from '../design-system/Orb';
 import { PillButton } from '../design-system/PillButton';
 import { Icon } from '../design-system/Icon';
 import { useNavigation } from '../app/providers/NavigationProvider';
+import { AccountUpgradeModal } from '../features/auth/AccountUpgradeModal';
 
 const BRAND_RED = 'oklch(0.62 0.22 22)';
 
@@ -28,6 +29,12 @@ const SLIDES: { eyebrow: string; title: string; body: string }[] = [
 export function OnboardingScreen() {
   const { go } = useNavigation();
   const [slide, setSlide] = useState(0);
+  // The "Sign in" link on the landing page now opens this modal instead of
+  // jumping straight to the quiz — that previous behaviour bypassed the
+  // terms gate entirely. Sign-up paths through the modal continue into the
+  // terms screen; sign-in paths land on home (handled by the callbacks
+  // below).
+  const [authOpen, setAuthOpen] = useState<false | 'signin' | 'signup'>(false);
 
   const lastSlide = slide === SLIDES.length - 1;
   const advance = () => {
@@ -181,7 +188,7 @@ export function OnboardingScreen() {
           {lastSlide ? 'Get Started' : 'Continue'}
         </PillButton>
         <button
-          onClick={() => go('quiz')}
+          onClick={() => setAuthOpen('signin')}
           style={{
             fontSize: 13,
             color: 'var(--pbt-text-muted)',
@@ -194,6 +201,19 @@ export function OnboardingScreen() {
           I already have an account · Sign in
         </button>
       </div>
+
+      <AccountUpgradeModal
+        open={authOpen !== false}
+        initialMode={authOpen === false ? 'signup' : authOpen}
+        onClose={() => setAuthOpen(false)}
+        // New sign-up: continue the standard flow — terms first, then quiz.
+        onSuccess={() => go('terms')}
+        // Returning user: skip the onboarding flow and land on home. Terms
+        // are auto-accepted in the modal (they accepted on first sign-up);
+        // useCloudSync hydrates their ECHO profile so RouteResolver doesn't
+        // bounce them to the quiz.
+        onSignedIn={() => go('home')}
+      />
     </div>
   );
 }

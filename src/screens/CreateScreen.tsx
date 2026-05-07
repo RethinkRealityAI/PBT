@@ -27,6 +27,8 @@ import {
   type Scenario,
 } from '../data/scenarios';
 import { DRIVER_KEYS, type DriverKey } from '../design-system/tokens';
+import { persistUserScenario } from '../features/scenarios/persistScenario';
+import { logEvent } from '../lib/analytics';
 
 type Tab = 'build' | 'library';
 
@@ -96,7 +98,7 @@ export function CreateScreen() {
     }
     setPushbackError(null);
     setIsSubmitting(true);
-    setScenario({
+    const built: Scenario = {
       breed: breedTrim,
       age,
       pushback,
@@ -106,11 +108,19 @@ export function CreateScreen() {
       pushbackNotes: notesTrim || undefined,
       suggestedDriver: driver,
       weightKg: weight.trim() || undefined,
-    });
+    };
+    setScenario(built);
+    void persistUserScenario(built);
     go('chat');
   };
 
   const startLibraryScenario = (scenario: Scenario) => {
+    logEvent({
+      type: 'card_click',
+      screen: 'create',
+      target: 'library_scenario',
+      meta: { pushback: scenario.pushback.id, breed: scenario.breed },
+    });
     setScenario(scenario);
     go('chat');
   };
@@ -594,7 +604,7 @@ export function CreateScreen() {
 
       {tab === 'build' && (
         <div
-          className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:left-[240px] lg:right-0 lg:translate-x-0 lg:max-w-none"
+          className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:left-auto lg:right-8 lg:bottom-8 lg:w-[280px] lg:max-w-none lg:translate-x-0 lg:px-0"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
         >
           <PillButton

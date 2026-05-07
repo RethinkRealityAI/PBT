@@ -10,6 +10,12 @@ import {
   weightedOverall,
   type DimensionKey,
 } from '../data/knowledge/scoringRubric';
+import {
+  estimateCostUsd,
+  estimateTokens,
+  isLikelyRefusal,
+  recordCall,
+} from './aiTelemetry';
 
 /** Text / scoring */
 export const MODEL_TEXT = 'gemini-3-flash-preview';
@@ -24,15 +30,36 @@ function getClient(): GoogleGenAI {
   return new GoogleGenAI({ apiKey });
 }
 
-async function withRetry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 1200): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 1200): Promise<{ value: T; retries: number }> {
   let last: unknown;
   for (let i = 0; i < attempts; i++) {
-    try { return await fn(); } catch (e) {
+    try {
+      const value = await fn();
+      return { value, retries: i };
+    } catch (e) {
       last = e;
       if (i < attempts - 1) await new Promise(r => setTimeout(r, delayMs));
     }
   }
   throw last;
+}
+
+const END_TOKEN = '[END_SIMULATION]';
+
+interface CallOptions {
+  /** PBT session id (training_sessions.id). Telemetry rows attribute to it. */
+  sessionId?: string | null;
+}
+
+interface UsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+}
+
+function readUsage(response: unknown): UsageMetadata {
+  if (!response || typeof response !== 'object') return {};
+  const meta = (response as { usageMetadata?: UsageMetadata }).usageMetadata;
+  return meta ?? {};
 }
 
 /**
@@ -43,6 +70,7 @@ export async function generateRoleplayMessage(
   scenario: Scenario,
   history: ChatMessage[],
   userMessage?: string,
+  options: CallOptions = {},
 ): Promise<ChatMessage> {
   const ai = getClient();
   const systemInstruction = buildCustomerSystemPrompt(scenario);
@@ -66,16 +94,51 @@ export async function generateRoleplayMessage(
     });
   }
 
-  return withRetry(async () => {
-    const response = await ai.models.generateContent({
-      model: MODEL_TEXT,
-      contents,
-      config: { systemInstruction },
+  const t0 = performance.now();
+  try {
+    const { value, retries } = await withRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: MODEL_TEXT,
+        contents,
+        config: { systemInstruction },
+      });
+      const text = response.text ?? '';
+      if (!text) throw new Error('Empty response from AI');
+      return { response, text };
     });
-    const text = response.text ?? '';
-    if (!text) throw new Error('Empty response from AI');
-    return { role: 'ai' as const, text, timestamp: Date.now() };
-  });
+
+    const latency = Math.round(performance.now() - t0);
+    const usage = readUsage(value.response);
+    const tokensIn = usage.promptTokenCount ?? estimateTokens(systemInstruction + JSON.stringify(contents));
+    const tokensOut = usage.candidatesTokenCount ?? estimateTokens(value.text);
+    const refusal = isLikelyRefusal(value.text);
+    const endTokenEmitted = value.text.includes(END_TOKEN);
+
+    void recordCall({
+      sessionId: options.sessionId ?? null,
+      callType: 'roleplay',
+      modelId: MODEL_TEXT,
+      latencyMs: latency,
+      tokensIn,
+      tokensOut,
+      costUsd: estimateCostUsd(MODEL_TEXT, tokensIn, tokensOut),
+      refusal,
+      endTokenEmitted,
+      retries,
+    });
+
+    return { role: 'ai' as const, text: value.text, timestamp: Date.now() };
+  } catch (err) {
+    const latency = Math.round(performance.now() - t0);
+    void recordCall({
+      sessionId: options.sessionId ?? null,
+      callType: 'roleplay',
+      modelId: MODEL_TEXT,
+      latencyMs: latency,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
 }
 
 const ZERO_DIMENSIONS: Record<DimensionKey, number> = {
@@ -94,9 +157,11 @@ const ZERO_DIMENSIONS: Record<DimensionKey, number> = {
 export async function evaluateConversation(
   scenario: Scenario,
   transcript: ChatMessage[],
+  options: CallOptions = {},
 ): Promise<ScoreReport> {
   const ai = getClient();
   const systemInstruction = buildScoringSystemPrompt(scenario);
+  const evalT0 = performance.now();
 
   const formatted = transcript
     .map(
@@ -195,9 +260,31 @@ export async function evaluateConversation(
       pacing: parsed.pacing,
     };
     const overall = weightedOverall(dims);
+
+    const latency = Math.round(performance.now() - evalT0);
+    const usage = readUsage(response);
+    const tokensIn = usage.promptTokenCount ?? estimateTokens(formatted);
+    const tokensOut = usage.candidatesTokenCount ?? estimateTokens(raw);
+    void recordCall({
+      sessionId: options.sessionId ?? null,
+      callType: 'evaluate',
+      modelId: MODEL_TEXT,
+      latencyMs: latency,
+      tokensIn,
+      tokensOut,
+      costUsd: estimateCostUsd(MODEL_TEXT, tokensIn, tokensOut),
+    });
+
     return { ...parsed, overall, band: bandFor(overall) };
   } catch (error) {
     console.error('[geminiService] evaluateConversation failed', error);
+    void recordCall({
+      sessionId: options.sessionId ?? null,
+      callType: 'evaluate',
+      modelId: MODEL_TEXT,
+      latencyMs: Math.round(performance.now() - evalT0),
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       ...ZERO_DIMENSIONS,
       overall: 0,

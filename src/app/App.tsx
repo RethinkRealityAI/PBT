@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { ThemeProvider } from './providers/ThemeProvider';
 import { ProfileProvider, useProfile } from './providers/ProfileProvider';
 import {
@@ -6,7 +6,7 @@ import {
   useNavigation,
 } from './providers/NavigationProvider';
 import { ScenarioProvider } from './providers/ScenarioProvider';
-import { ChatProvider } from './providers/ChatProvider';
+import { ChatProvider, useChat } from './providers/ChatProvider';
 import { SessionProvider } from './providers/SessionProvider';
 import type { Screen } from './routes';
 import { SCREENS_WITH_TAB_BAR } from './routes';
@@ -15,6 +15,7 @@ import { mountKeyframes } from '../design-system/keyframes';
 import { AppFrame } from '../shell/AppFrame';
 import { TabBar } from '../shell/TabBar';
 import { useCloudSync } from '../features/auth/useCloudSync';
+import { logEvent, startAnalytics } from '../lib/analytics';
 
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { TermsScreen } from '../screens/TermsScreen';
@@ -43,6 +44,7 @@ export function App() {
   useEffect(() => {
     mountKeyframes();
     getOrCreateSessionId();
+    startAnalytics();
   }, []);
 
   return (
@@ -57,6 +59,8 @@ export function App() {
                     <ScreenSwitch />
                   </RouteResolver>
                   <TabBarHost />
+                  <ScreenViewLogger />
+                  <ChatAbandonWatcher />
                 </AppFrame>
               </ChatProvider>
             </NavigationProvider>
@@ -65,6 +69,35 @@ export function App() {
       </SessionProvider>
     </ThemeProvider>
   );
+}
+
+/** Emits a `screen_view` nav_event each time the current screen changes. */
+function ScreenViewLogger() {
+  const { current } = useNavigation();
+  useEffect(() => {
+    logEvent({ type: 'screen_view', screen: current });
+  }, [current]);
+  return null;
+}
+
+/**
+ * When the user navigates away from `chat` while a session is mid-flight
+ * (status awaitingUser / aiTyping), mark it abandoned so the admin
+ * dashboard sees an honest completion rate.
+ */
+function ChatAbandonWatcher() {
+  const { current } = useNavigation();
+  const chat = useChat();
+  const prevScreenRef = useRef<Screen>(current);
+  useEffect(() => {
+    const prev = prevScreenRef.current;
+    prevScreenRef.current = current;
+    if (prev !== 'chat' || current === 'chat') return;
+    if (chat.status === 'awaitingUser' || chat.status === 'aiTyping' || chat.status === 'opening') {
+      void chat.abandon('user_exit');
+    }
+  }, [current, chat]);
+  return null;
 }
 
 /** Once mounted, if no profile exists and we're not in a pre-quiz screen, route to quiz. */

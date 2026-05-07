@@ -101,6 +101,34 @@ Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL
 - `useCloudSync` debounce-mirrors profile changes once signed in.
 - Email verification gated behind `FLAGS.EMAIL_VERIFICATION` in `src/app/flags.ts`.
 
+## Admin dashboard (admin/)
+
+Second Vite entry of the main repo (`admin.html` → `admin/src/main.tsx`),
+served at `/admin` from the same Netlify deploy. Auth + cross-user reads are
+server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
+check `profiles.is_admin` via the service role, then query Supabase. The
+browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
+
+Migrations:
+- `20260507000000_admin_telemetry.sql` — `is_admin`, telemetry tables, view
+- `20260507100000_rag_documents.sql` — `rag_documents` table; drops the
+  cross-user admin RLS policies (replaced by Netlify Function gating)
+
+Telemetry capture in the consumer app:
+- `src/lib/analytics.ts` — `logEvent()` writes to `nav_events` (anonymous-safe)
+- `src/services/aiTelemetry.ts` — `recordCall()` / `recordTurns()` write per-call + per-turn signals
+- `src/services/geminiService.ts` — wraps `generateRoleplayMessage` / `evaluateConversation` with timing + tokens + refusal heuristics; takes a `{ sessionId }` option so rows attribute to a `training_sessions` id
+- `src/features/chat/useTextChat.ts` — allocates session id at `open()`, persists `completed`/`abandoned` + `rag_documents` row to Supabase, exposes `abandon()` (called by `ChatAbandonWatcher` in `App.tsx` when user leaves chat mid-flight)
+- `src/features/scenarios/persistScenario.ts` — writes `user_scenarios` on Save
+- `src/features/pet-analyzer/useSavedPets.ts` — writes `analyzer_events` on save
+- `src/services/ragDocument.ts` — assembles + upserts `rag_documents` rows on session end
+
+RAG outputs:
+- **Table**: `rag_documents` — one row per session, content + structured
+  metadata, ready to feed an embedder
+- **Export**: `netlify/functions/admin-rag-export` streams `rag_export_v1`
+  view rows as JSONL (admin-only)
+
 ## State storage
 
 All `localStorage` keys are namespaced `pbt:` (see `src/lib/storage.ts`). Validators reject corrupt values and reset the slot.
