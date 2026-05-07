@@ -53,10 +53,16 @@ const itemVariants = {
 };
 
 export function ResultScreen() {
-  const { go } = useNavigation();
+  const { go, history } = useNavigation();
   const { profile } = useProfile();
   const reduceMotion = useReducedMotion();
-  const [stage, setStage] = useState<IntroStage>('cycling');
+  // Animation only plays when arriving from the quiz. Re-opening the
+  // results from Home/Settings goes straight to the locked profile view —
+  // the discovery moment is a one-time celebration, not a recurring intro.
+  const cameFromQuiz = history[history.length - 1] === 'quiz';
+  const [stage, setStage] = useState<IntroStage>(
+    cameFromQuiz ? 'cycling' : 'done',
+  );
   const [cycleIdx, setCycleIdx] = useState(0);
   const [phaseIdx, setPhaseIdx] = useState(0);
   const profileRunKey = profile?.takenAt ?? null;
@@ -67,6 +73,7 @@ export function ResultScreen() {
 
   useEffect(() => {
     if (!profileRunKey) return;
+    if (!cameFromQuiz) return;
 
     setStage('cycling');
     setCycleIdx(0);
@@ -105,7 +112,7 @@ export function ResultScreen() {
       window.clearTimeout(secondaryT);
       window.clearTimeout(doneT);
     };
-  }, [profileRunKey]);
+  }, [profileRunKey, cameFromQuiz]);
 
   if (!profile) return null;
 

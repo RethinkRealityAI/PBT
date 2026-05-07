@@ -1,14 +1,13 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
-import { Chip } from '../design-system/Chip';
 import { PillButton } from '../design-system/PillButton';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { usePetAnalyzer } from '../features/pet-analyzer/usePetAnalyzer';
 import { useSavedPets } from '../features/pet-analyzer/useSavedPets';
-import { BREEDS } from '../data/scenarios';
+import { BreedSearch } from '../features/pet-analyzer/BreedSearch';
+import { isWeightPlausibleFor, resolveBreed } from '../data/breeds';
 import { BCS_LEVELS } from '../data/bcsLevels';
 import { MCS_LEVELS } from '../data/mcsLevels';
 import { COLORS } from '../design-system/tokens';
@@ -25,7 +24,10 @@ export function PetAnalyzerScreen() {
         : COLORS.score.ok;
 
   const bcsLevel = BCS_LEVELS.find((l) => l.score === state.bcs);
-  const isCustomBreed = !BREEDS.includes(state.breed);
+  // Weight outside the breed's typical range → soft hint (not a hard error).
+  const weightPlausible = isWeightPlausibleFor(state.breed, state.weightKg);
+  const breedEntry = resolveBreed(state.breed);
+  const canSave = state.breed.trim().length > 0;
 
   return (
     <>
@@ -162,74 +164,32 @@ export function PetAnalyzerScreen() {
 
               {/* Breed section */}
               <Eyebrow>Breed</Eyebrow>
-              <motion.div
-                className="flex flex-wrap gap-2 mb-2"
-                initial="hidden"
-                animate="visible"
-                variants={{ visible: { transition: { staggerChildren: 0.05 } } }}
-              >
-                {BREEDS.map((b) => (
-                  <motion.div
-                    key={b}
-                    variants={{
-                      hidden: { opacity: 0, scale: 0.8 },
-                      visible: { opacity: 1, scale: 1, transition: { duration: 0.18 } },
-                    }}
-                  >
-                    <Chip active={state.breed === b} onClick={() => update('breed', b)}>
-                      {b}
-                    </Chip>
-                  </motion.div>
-                ))}
-                <motion.div
-                  variants={{
-                    hidden: { opacity: 0, scale: 0.8 },
-                    visible: { opacity: 1, scale: 1, transition: { duration: 0.18 } },
-                  }}
-                >
-                  <Chip
-                    active={isCustomBreed}
-                    onClick={() => { if (!isCustomBreed) update('breed', ''); }}
-                  >
-                    Other
-                  </Chip>
-                </motion.div>
-              </motion.div>
-
-              {/* Custom breed input — always gets a proper glass border */}
-              {isCustomBreed && (
+              <BreedSearch
+                value={state.breed}
+                onChange={(v) => update('breed', v)}
+                onSelectBreed={(entry) => {
+                  // Auto-pre-fill weight to the midpoint of the breed's typical
+                  // adult range when the user picks a known breed and hasn't
+                  // already dialled in something specific. Keeps the analyzer
+                  // immediately useful — most users won't know exact kg.
+                  if (entry && state.weightKg === 12) {
+                    const midpoint = Math.round((entry.sizeKg[0] + entry.sizeKg[1]) / 2);
+                    update('weightKg', midpoint);
+                  }
+                }}
+              />
+              {breedEntry && (
                 <div
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
                     marginTop: 8,
-                    padding: '9px 13px',
-                    borderRadius: 14,
-                    border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 42%, rgba(255,255,255,0.45))',
-                    background: 'color-mix(in oklab, var(--pbt-driver-primary) 10%, rgba(255,255,255,0.12))',
-                    backdropFilter: 'blur(14px) saturate(260%)',
-                    WebkitBackdropFilter: 'blur(14px) saturate(260%)',
-                    boxShadow:
-                      '0 1px 0 rgba(255,255,255,0.85) inset, 0 0 0 1px rgba(255,255,255,0.06) inset',
+                    fontSize: 11,
+                    color: 'var(--pbt-text-muted)',
+                    fontFamily: 'var(--pbt-font-mono)',
+                    letterSpacing: '0.06em',
                   }}
                 >
-                  <Icon.search />
-                  <input
-                    value={state.breed}
-                    onChange={(e) => update('breed', e.target.value)}
-                    placeholder="Type any breed"
-                    autoFocus
-                    style={{
-                      flex: 1,
-                      border: 'none',
-                      outline: 'none',
-                      background: 'transparent',
-                      fontFamily: 'inherit',
-                      fontSize: 14.5,
-                      color: 'var(--pbt-text)',
-                    }}
-                  />
+                  {breedEntry.group} group · typical adult{' '}
+                  {breedEntry.sizeKg[0]}–{breedEntry.sizeKg[1]} kg
                 </div>
               )}
             </div>
@@ -250,12 +210,30 @@ export function PetAnalyzerScreen() {
           <input
             type="range"
             min={2}
-            max={49}
+            max={90}
             step={1}
             value={state.weightKg}
             onChange={(e) => update('weightKg', parseInt(e.target.value, 10))}
             style={{ width: '100%', accentColor: 'var(--pbt-driver-primary)', marginBottom: 16 }}
           />
+          {breedEntry && !weightPlausible && (
+            <div
+              style={{
+                marginTop: -8,
+                marginBottom: 16,
+                padding: '8px 11px',
+                borderRadius: 10,
+                fontSize: 12,
+                color: 'var(--pbt-text)',
+                background: `color-mix(in oklab, ${COLORS.score.poor} 12%, rgba(255,255,255,0.4))`,
+                border: `1px solid color-mix(in oklab, ${COLORS.score.poor} 30%, transparent)`,
+              }}
+            >
+              {state.weightKg} kg is unusual for a {breedEntry.name}
+              {' '}— typical adults are {breedEntry.sizeKg[0]}–{breedEntry.sizeKg[1]} kg.
+              Double-check before recommending a calorie target.
+            </div>
+          )}
 
           {/* Activity selector — full-width glass cards, readable text */}
           <div className="grid grid-cols-2 gap-2">
@@ -500,21 +478,27 @@ export function PetAnalyzerScreen() {
       </Page>
 
       <div
-        className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:left-[240px] lg:right-0 lg:translate-x-0 lg:max-w-none"
+        className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:left-auto lg:right-8 lg:bottom-8 lg:w-[280px] lg:max-w-none lg:translate-x-0 lg:px-0"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
       >
         <PillButton
           size="lg"
           fullWidth
           icon={saved ? <Icon.check /> : <Icon.paw />}
+          disabled={!canSave || saved}
           onClick={() => {
+            if (!canSave) return;
             savePet(state);
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
           }}
           style={saved ? { opacity: 0.7 } : undefined}
         >
-          {saved ? 'Saved to profiles' : 'Save as profile'}
+          {saved
+            ? 'Saved to profiles'
+            : canSave
+              ? 'Save as profile'
+              : 'Pick a breed first'}
         </PillButton>
       </div>
     </>

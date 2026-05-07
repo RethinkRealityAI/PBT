@@ -604,7 +604,7 @@ export function CreateScreen() {
 
       {tab === 'build' && (
         <div
-          className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:left-[240px] lg:right-0 lg:translate-x-0 lg:max-w-none"
+          className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:left-auto lg:right-8 lg:bottom-8 lg:w-[280px] lg:max-w-none lg:translate-x-0 lg:px-0"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
         >
           <PillButton

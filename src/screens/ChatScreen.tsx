@@ -484,6 +484,146 @@ function scenarioLibraryInfoButtonStyle(dc: DriverColors, dark: boolean): CSSPro
   };
 }
 
+/**
+ * Multi-line auto-grow chat composer.
+ *
+ * Replaces a single-line `<input>` whose text scrolled horizontally and got
+ * clipped past the visible width — making it impossible to review what
+ * you've typed on mobile.
+ *
+ * Behaviour:
+ *   - Wraps to new lines naturally as the textarea fills.
+ *   - Auto-grows up to ~5 lines tall, then becomes scrollable so it never
+ *     pushes the AI message off-screen.
+ *   - Enter sends, Shift+Enter inserts a newline (matches ChatGPT, Slack,
+ *     Discord). Mobile users tap the Send button.
+ *   - Font-size 16 to suppress iOS Safari's auto-zoom on focus.
+ */
+interface ChatComposerProps {
+  value: string;
+  onChange: (next: string) => void;
+  onSend: (trimmed: string) => void;
+  disabled: boolean;
+  canSend: boolean;
+}
+
+const COMPOSER_MAX_HEIGHT = 140; // ~5 lines at 16px line-height ~24
+
+function ChatComposer({
+  value,
+  onChange,
+  onSend,
+  disabled,
+  canSend,
+}: ChatComposerProps) {
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize: reset to auto, then snap to scrollHeight (capped). Re-runs
+  // every keystroke so the textarea hugs its content exactly.
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
+  }, [value]);
+
+  const trimmed = value.trim();
+  const sendable = trimmed.length > 0 && canSend && !disabled;
+
+  function trySend() {
+    if (!sendable) return;
+    onSend(trimmed);
+  }
+
+  return (
+    <Glass radius={28} padding={6} blur={18} tint={0.04}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: 8,
+          // Round the inner content area but keep flex alignment honest.
+          paddingRight: 2,
+        }}
+      >
+        <button
+          aria-label="Add"
+          type="button"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 9999,
+            background: 'rgba(255,255,255,0.55)',
+            border: 'none',
+            color: 'var(--pbt-text)',
+            cursor: 'pointer',
+            flexShrink: 0,
+            // Vertical-align with the first line of the textarea.
+            marginBottom: 2,
+          }}
+        >
+          <Icon.plus />
+        </button>
+        <textarea
+          ref={taRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Acknowledge, ask, recommend… (Shift+Enter for new line)"
+          rows={1}
+          disabled={disabled}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              trySend();
+            }
+          }}
+          style={{
+            flex: 1,
+            border: 'none',
+            outline: 'none',
+            background: 'transparent',
+            fontFamily: 'inherit',
+            // 16px prevents iOS Safari focus zoom; matches body text.
+            fontSize: 16,
+            lineHeight: 1.45,
+            color: 'var(--pbt-text)',
+            resize: 'none',
+            padding: '8px 4px',
+            minHeight: 24,
+            maxHeight: COMPOSER_MAX_HEIGHT,
+            overflowY: 'auto',
+            // Wrap long words (URLs, etc) instead of forcing horizontal scroll.
+            wordBreak: 'break-word',
+            overflowWrap: 'break-word',
+          }}
+        />
+        <button
+          aria-label="Send"
+          type="button"
+          disabled={!sendable}
+          onClick={trySend}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 9999,
+            border: 'none',
+            cursor: sendable ? 'pointer' : 'not-allowed',
+            color: '#fff',
+            background: sendable
+              ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
+              : 'rgba(60,20,15,0.12)',
+            flexShrink: 0,
+            marginBottom: 2,
+            transition: 'background 0.15s ease',
+          }}
+        >
+          <Icon.send />
+        </button>
+      </div>
+    </Glass>
+  );
+}
+
 export function ChatScreen() {
   const { go } = useNavigation();
   const { profile } = useProfile();
@@ -870,69 +1010,20 @@ export function ChatScreen() {
           />
         </div>
         {mode === 'text' && (
-          <Glass radius={9999} padding={6} blur={18} tint={0.04}>
-            <div className="flex items-center gap-2">
-              <button
-                aria-label="Add"
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 9999,
-                  background: 'rgba(255,255,255,0.55)',
-                  border: 'none',
-                  color: 'var(--pbt-text)',
-                  cursor: 'pointer',
-                }}
-              >
-                <Icon.plus />
-              </button>
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Acknowledge, ask, recommend…"
-                disabled={chat.status === 'aiTyping' || chat.status === 'scoring' || chat.status === 'complete'}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && draft.trim() && chat.status === 'awaitingUser') {
-                    const text = draft.trim();
-                    setDraft('');
-                    void chat.send(text);
-                  }
-                }}
-                style={{
-                  flex: 1,
-                  border: 'none',
-                  outline: 'none',
-                  background: 'transparent',
-                  fontFamily: 'inherit',
-                  fontSize: 14.5,
-                  color: 'var(--pbt-text)',
-                }}
-              />
-              <button
-                aria-label="Send"
-                disabled={!draft.trim() || chat.status !== 'awaitingUser'}
-                onClick={() => {
-                  const text = draft.trim();
-                  if (!text) return;
-                  setDraft('');
-                  void chat.send(text);
-                }}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 9999,
-                  border: 'none',
-                  cursor: draft.trim() ? 'pointer' : 'not-allowed',
-                  color: '#fff',
-                  background: draft.trim()
-                    ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
-                    : 'rgba(60,20,15,0.12)',
-                }}
-              >
-                <Icon.send />
-              </button>
-            </div>
-          </Glass>
+          <ChatComposer
+            value={draft}
+            onChange={setDraft}
+            onSend={(text) => {
+              setDraft('');
+              void chat.send(text);
+            }}
+            disabled={
+              chat.status === 'aiTyping' ||
+              chat.status === 'scoring' ||
+              chat.status === 'complete'
+            }
+            canSend={chat.status === 'awaitingUser'}
+          />
         )}
       </div>
     </div>
