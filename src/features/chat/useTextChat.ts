@@ -188,10 +188,36 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // even before it's saved to history.
   const recordIdRef = useRef<string | null>(null);
   const persistedRef = useRef<boolean>(false);
-  const messagesRef = useRef<ChatMessage[]>(messages);
-  messagesRef.current = messages;
+
+  /**
+   * Canonical, append-only transcript.
+   *
+   * The `messages` React state mirrors this ref for rendering, but the ref
+   * is the source of truth for persistence. We update it SYNCHRONOUSLY
+   * inside `appendTurn()` so a user turn is captured the moment send() is
+   * called — there is no async window where state can drift, no lost
+   * commits if React re-mounts mid-await, and no possibility for the
+   * functional setMessages to operate on a stale closure.
+   *
+   * Earlier code derived persistence from `messages` via setMessages
+   * callbacks during async send(). Under concurrent rendering / StrictMode
+   * dev double-mount that pattern occasionally dropped user turns from
+   * the persisted transcript, even though the AI was clearly responding
+   * to them. The single-ref invariant rules out the entire failure mode.
+   */
+  const transcriptRef = useRef<ChatMessage[]>([]);
   // Exposed so ChatScreen can call end() after detecting [END_SIMULATION]
   const endRef = useRef<() => Promise<void>>(() => Promise.resolve());
+
+  /** Append a turn to the canonical transcript and re-render the UI. */
+  const appendTurn = useCallback((msg: ChatMessage) => {
+    // Drop any prior transient-error placeholder from both ref + state.
+    transcriptRef.current = [
+      ...transcriptRef.current.filter((m) => !m._transientError),
+      msg,
+    ];
+    setMessages([...transcriptRef.current]);
+  }, []);
 
   const open = useCallback(async () => {
     if (status !== 'idle') return;
@@ -226,7 +252,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       const first = await generateRoleplayMessage(scenario, [], undefined, {
         sessionId: recordIdRef.current,
       });
-      setMessages([first]);
+      appendTurn(first);
       setStatus('awaitingUser');
     } catch (err) {
       console.error('[useTextChat] open failed', err);
@@ -242,16 +268,20 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   const send = useCallback(
     async (text: string) => {
       setTransientError(null);
+      // Append the user turn synchronously to the canonical transcript.
+      // After this line, the user's message is locked in regardless of
+      // what happens during the await — including aborts, re-mounts, or
+      // a failed AI response.
       const userMsg: ChatMessage = { role: 'user', text, timestamp: Date.now() };
-      // Only real messages go into history (no _transientError messages)
-      const realHistory = messagesRef.current.filter((m) => !m._transientError);
-      const currentMessages = [...realHistory, userMsg];
-      setMessages(currentMessages);
+      appendTurn(userMsg);
       setStatus('aiTyping');
       try {
+        // Send the canonical history (which now includes the new user
+        // turn) to the model. Filter out any transient-error sentinel.
+        const historyForModel = transcriptRef.current.filter((m) => !m._transientError);
         const next = await generateRoleplayMessage(
           scenario,
-          currentMessages,
+          historyForModel,
           undefined,
           { sessionId: recordIdRef.current },
         );
@@ -261,8 +291,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         const hasEndToken = END_TOKEN_RX.test(next.text);
         const cleanText = next.text.replace(new RegExp(END_TOKEN_RX, 'gi'), '').trim();
         const cleanMsg: ChatMessage = { ...next, text: cleanText };
-
-        setMessages((m) => [...m.filter((x) => !x._transientError), cleanMsg]);
+        appendTurn(cleanMsg);
 
         if (hasEndToken) {
           // Lock input immediately so a fast user can't slip a message in
@@ -276,23 +305,32 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         }
       } catch (err) {
         console.error('[useTextChat] send failed', err);
-        // Show error as transient UI message — NOT added to real history
+        // Show error as transient UI message — NOT added to canonical
+        // transcript (appendTurn auto-strips the prior transient on next
+        // append). The user message is already committed, so retrying
+        // works without duplicating it.
         const errMsg: ChatMessage = {
           role: 'ai',
           text: 'Connection issue — your message was saved. Tap send to try again.',
           timestamp: Date.now(),
           _transientError: true,
         };
-        setMessages((m) => [...m.filter((x) => !x._transientError), errMsg]);
+        // Show the error sentinel in UI without adding it to the
+        // append-only transcript ref. We keep ref clean of transient
+        // errors so persistence ignores them automatically.
+        setMessages((current) => [
+          ...current.filter((x) => !x._transientError),
+          errMsg,
+        ]);
         setTransientError('Tap send again to retry.');
         setStatus('awaitingUser');
       }
     },
-    [scenario],
+    [scenario, appendTurn],
   );
 
   const end = useCallback(async () => {
-    const msgs = messagesRef.current.filter((m) => !m._transientError);
+    const msgs = transcriptRef.current.filter((m) => !m._transientError);
     if (msgs.length === 0) return;
     setStatus('scoring');
     setTransientError(null);
@@ -352,7 +390,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     async (reason: 'user_exit' | 'timeout' | 'error' = 'user_exit') => {
       // Already finalised? Don't double-write.
       if (persistedRef.current) return;
-      const msgs = messagesRef.current.filter((m) => !m._transientError);
+      const msgs = transcriptRef.current.filter((m) => !m._transientError);
       if (msgs.length === 0 && !recordIdRef.current) return;
       const recordId = recordIdRef.current ?? uuid();
       const startedAt = startedAtRef.current ?? Date.now();
@@ -382,6 +420,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   endRef.current = end;
 
   const reset = useCallback(() => {
+    transcriptRef.current = [];
     setMessages([]);
     setScoreReport(null);
     setStatus('idle');
@@ -395,6 +434,10 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     async (report: ScoreReport | null, transcript: ChatMessage[]) => {
       const msgs = transcript.filter((m) => !m._transientError);
       setTransientError(null);
+      // Voice path bypasses appendTurn (the voice session has its own
+      // append-only ref). Sync the chat hook's ref to match so end()/
+      // abandon() see the same transcript.
+      transcriptRef.current = [...msgs];
       setMessages(msgs);
 
       const effective = report ?? SCORE_UNAVAILABLE;
