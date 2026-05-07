@@ -83,6 +83,12 @@ export interface UseTextChat {
    * navigates away from the chat without completing.
    */
   abandon: (reason?: 'user_exit' | 'timeout' | 'error') => Promise<void>;
+  /**
+   * Soft reset: keep the AI's opening line so the trainee can retry the
+   * same opener, but discard their messages and the in-flight session id.
+   * The previous attempt is still abandoned for admin telemetry.
+   */
+  restart: () => Promise<void>;
   /** Voice pipeline: persist transcript + scorecard into shared chat state + history. */
   applyVoiceSessionComplete: (
     report: ScoreReport | null,
@@ -357,6 +363,30 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Keep endRef current so the setTimeout in send() calls the latest end()
   endRef.current = end;
 
+  const restart = useCallback(async () => {
+    // First mark the in-flight attempt as abandoned so admin telemetry sees
+    // a row for the false start. abandon() is idempotent.
+    if (!persistedRef.current && (recordIdRef.current || messagesRef.current.length > 0)) {
+      await abandon('user_exit');
+    }
+    // Keep only the AI's first message so the trainee retries the same
+    // opener — drop everything after it.
+    const opener = messagesRef.current.find((m) => m.role === 'ai' && !m._transientError) ?? null;
+    setMessages(opener ? [opener] : []);
+    setScoreReport(null);
+    setStatus(opener ? 'awaitingUser' : 'idle');
+    setTransientError(null);
+    startedAtRef.current = Date.now();
+    recordIdRef.current = uuid();
+    persistedRef.current = false;
+    logEvent({
+      type: 'custom',
+      screen: 'chat',
+      target: 'session_restart',
+      meta: { sessionId: recordIdRef.current, kept_opener: opener != null },
+    });
+  }, [abandon]);
+
   const reset = useCallback(() => {
     setMessages([]);
     setScoreReport(null);
@@ -428,6 +458,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     send,
     end,
     abandon,
+    restart,
     applyVoiceSessionComplete,
     reset,
     startedAt: startedAtRef.current,

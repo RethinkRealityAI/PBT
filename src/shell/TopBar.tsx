@@ -10,11 +10,24 @@ export interface TopBarProps {
   trailing?: ReactNode;
   /** Rich middle content (e.g. home greeting + driver). Overrides `title` when both are set. */
   center?: ReactNode;
+  /**
+   * Override the back button's behaviour. Use to intercept navigation —
+   * e.g. ChatScreen opens a confirm-exit modal instead of leaving silently.
+   * If omitted the default `useNavigation().back()` is invoked.
+   */
+  onBack?: () => void;
 }
 
-export function TopBar({ title, showBack = false, trailing, center }: TopBarProps) {
+export function TopBar({
+  title,
+  showBack = false,
+  trailing,
+  center,
+  onBack,
+}: TopBarProps) {
   const { back } = useNavigation();
   const { resolvedTheme, toggle } = useTheme();
+  const handleBack = onBack ?? back;
 
   const middle = center ?? (
     title ? (
@@ -41,7 +54,7 @@ export function TopBar({ title, showBack = false, trailing, center }: TopBarProp
             padding={0}
             blur={20}
             tint={0.45}
-            onClick={back}
+            onClick={handleBack}
             ariaLabel="Back"
             shine={false}
             className="flex h-9 w-9 shrink-0 items-center justify-center"
