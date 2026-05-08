@@ -724,12 +724,19 @@ export function ChatScreen() {
       setMode(nextMode);
       return;
     }
-    // text → voice. The earlier toggle to text fully tore down the live
-    // session, so coming back means we need to re-open it. The mode-
-    // toggle click itself is a user gesture, so we can safely re-init
-    // the AudioContext + WebSocket here without an extra Begin tap.
+    // text → voice. Mark any in-flight text session as abandoned so the
+    // admin row + recordId close out cleanly (idempotent — a no-op if
+    // the user hadn't engaged yet, or if end()/abandon() already fired).
+    // Then reset the chat hook so a stale Gemini reply that resolves
+    // after the toggle can't pollute the voice transcript.
+    void chatRef.current.abandon('user_exit');
+    chatRef.current.reset();
     setMode(nextMode);
     setScenarioDetailsOpen(false);
+    // The mode-toggle click is itself a user gesture, so we can safely
+    // re-init the AudioContext + WebSocket here without an extra Begin
+    // tap. Only fire if voice is fully idle — guards against a stray
+    // double-toggle restarting an already-live session.
     if (scenario && voiceStatusRef.current === 'idle') {
       voiceFinalizeBusyRef.current = false;
       setVoiceAnalyzing(false);

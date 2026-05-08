@@ -44,9 +44,15 @@ export function formatPushbackPromptSection(scenario: Scenario): string {
     // faithfully") caused the model to paste the note in as its first
     // line of dialogue.
     return [
-      'CUSTOM OBJECTION TOPIC (treat as the trainee\'s description of what to push back about — do NOT speak this text verbatim, do NOT quote it back, and do NOT prefix your opener with phrases like "I\'m worried about" copy-pasted from below):',
+      'CUSTOM OBJECTION TOPIC — INSPIRATION ONLY, NOT A SCRIPT.',
+      'The trainee wrote the lines below to describe what they want you to push back about. Treat them as a brief, not as dialogue. Specifically:',
+      '- Do NOT speak this text verbatim.',
+      '- Do NOT quote it back.',
+      '- Do NOT prefix your opener with copy-pasted phrases from below (e.g. "I\'m worried about…").',
+      '- Do paraphrase the underlying concern in your own words, in your own voice, given the breed, life stage, owner persona, and ECHO driver.',
+      '',
+      'Topic:',
       extra,
-      'Improvise an in-character opening line that raises this concern naturally given the breed, life stage, owner persona, and ECHO driver. Use your own words.',
     ].join('\n');
   }
   const base = `${scenario.pushback.title}\nExample phrase you might lead with: ${scenario.pushback.example}`;
