@@ -35,10 +35,19 @@ function trimOverride(s: string | null | undefined): string {
 export function formatPushbackPromptSection(scenario: Scenario): string {
   const extra = scenario.pushbackNotes?.trim();
   if (scenario.pushback.id === 'custom') {
-    const core =
-      extra ??
-      '(Trainee chose “Other” but left details blank — improvise one realistic objection that fits breed, life stage, and persona.)';
-    return `CUSTOM OBJECTION — embody this faithfully:\n${core}`;
+    if (!extra) {
+      return 'CUSTOM OBJECTION TOPIC: (none specified — improvise one realistic objection that fits breed, life stage, and persona.)';
+    }
+    // The trainee's note describes the TOPIC of the objection. The model
+    // must improvise an in-character opening line about it — NOT recite
+    // the note verbatim. Explicit, because earlier wording ("embody this
+    // faithfully") caused the model to paste the note in as its first
+    // line of dialogue.
+    return [
+      'CUSTOM OBJECTION TOPIC (treat as the trainee\'s description of what to push back about — do NOT speak this text verbatim, do NOT quote it back, and do NOT prefix your opener with phrases like "I\'m worried about" copy-pasted from below):',
+      extra,
+      'Improvise an in-character opening line that raises this concern naturally given the breed, life stage, owner persona, and ECHO driver. Use your own words.',
+    ].join('\n');
   }
   const base = `${scenario.pushback.title}\nExample phrase you might lead with: ${scenario.pushback.example}`;
   if (extra) {
@@ -126,6 +135,8 @@ ${scenario.context ?? '(none)'}
 
 # RULES
 - Speak conversational AMERICAN ENGLISH. Use words like "friend", "buddy", "guys" — NOT "mate"/"mates"/"reckon"/"crikey"/"bloke". American spelling (color, behavior, recognize). No Australian or British slang.
+- ADDRESS THE STAFF MEMBER DIRECTLY using SECOND PERSON ("you"). They are speaking to you face-to-face. NEVER use third-person pronouns ("they", "them", "the staff", "the vet") to refer to the person you're talking with — that breaks the simulation. Only use third person when referring to other people who are NOT in the room (e.g., "my husband", "my last vet"). Examples: ✓ "What you just said about the price worries me." ✗ "What they just said about the price worries me."
+- STAY IN SCOPE: respond to what the staff member actually said in the most recent turn. Do not invent quotes, do not respond to things they didn't say, and do not drift to unrelated objections. Keep the conversation rooted in this scenario's pushback topic and the dog's specifics above.
 - Open the conversation with your pushback — do not wait for staff to greet you.
 - ${VARIETY_NUDGE}
 - Soften ONLY when staff demonstrates real acknowledge + clarify before pitching.

@@ -650,6 +650,11 @@ export function ChatScreen() {
   voiceStartRef.current = voice.start;
   const voiceStopRef = useRef(voice.stop);
   voiceStopRef.current = voice.stop;
+  // voiceStatusRef avoids stale-status reads inside event handlers that
+  // depend only on the user's click (e.g. mode toggle re-initializing
+  // the live session).
+  const voiceStatusRef = useRef(voice.status);
+  voiceStatusRef.current = voice.status;
   const voiceFinalizeBusyRef = useRef(false);
   const scenarioIndex = scenario ? seedScenarioIndex(scenario) : -1;
   const scenarioCounterIndex = scenarioIndex >= 0 ? scenarioIndex : undefined;
@@ -716,9 +721,22 @@ export function ChatScreen() {
   const handleModeChange = useCallback((nextMode: 'text' | 'voice') => {
     if (nextMode === 'text') {
       voiceStopRef.current();
+      setMode(nextMode);
+      return;
     }
+    // text → voice. The earlier toggle to text fully tore down the live
+    // session, so coming back means we need to re-open it. The mode-
+    // toggle click itself is a user gesture, so we can safely re-init
+    // the AudioContext + WebSocket here without an extra Begin tap.
     setMode(nextMode);
-  }, []);
+    setScenarioDetailsOpen(false);
+    if (scenario && voiceStatusRef.current === 'idle') {
+      voiceFinalizeBusyRef.current = false;
+      setVoiceAnalyzing(false);
+      setVoiceAnalysisError(null);
+      void voiceStartRef.current(scenario);
+    }
+  }, [scenario]);
 
 useThinkingSound(
     (mode === 'text' && chat.status === 'aiTyping') ||
