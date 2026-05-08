@@ -208,22 +208,36 @@ function ScenarioDetailsPanel({
               zIndex: 41,
               width: 'min(92vw, 580px)',
               // Cap to viewport with edge padding (24px each side incl.
-              // safe-area inset) and scroll inside the glass card if the
-              // content (rubric hints + opening + scoring pills) is taller
-              // than the screen.
-              maxHeight: 'calc(100dvh - max(env(safe-area-inset-top), 24px) - max(env(safe-area-inset-bottom), 24px))',
-              overflowY: 'auto',
-              WebkitOverflowScrolling: 'touch',
+              // safe-area inset). The flex layout below splits a
+              // scrollable body from a sticky Begin Simulation footer
+              // so the CTA never disappears below the fold.
+              maxHeight:
+                'calc(100dvh - max(env(safe-area-inset-top), 24px) - max(env(safe-area-inset-bottom), 24px))',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
               borderRadius: 26,
+              // Glass-card chrome inlined here so the body / footer
+              // split is the actual flex container — Glass wraps its
+              // children in an extra non-flex `<div>`, which would
+              // collapse the column. Tokens come from the same source
+              // as `<Glass blur={24} tint={0.05} backdropSaturatePct={130}>`.
+              border: '1px solid var(--pbt-glass-border)',
+              boxShadow: 'var(--pbt-shadow-glass)',
+              background: 'rgba(255, 255, 255, 0.05)',
+              backdropFilter: 'blur(22px) saturate(130%) brightness(1.02)',
+              WebkitBackdropFilter: 'blur(22px) saturate(130%) brightness(1.02)',
             }}
-            className="pbt-scroll"
           >
-            <Glass
-              radius={26}
-              padding="22px 22px 20px"
-              blur={24}
-              tint={0.05}
-              backdropSaturatePct={130}
+            <div
+              className="pbt-scroll"
+              style={{
+                flex: '1 1 auto',
+                minHeight: 0,
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                padding: onBegin ? '22px 22px 12px' : '22px 22px 20px',
+              }}
             >
               {/* Header row */}
               <div className="flex items-start justify-between gap-2" style={{ marginBottom: 10 }}>
@@ -290,21 +304,23 @@ function ScenarioDetailsPanel({
                 ))}
               </div>
 
-              {/* Objective — full primary text color (muted was illegible on driver glow in dark mode) */}
+              {/* Objective + context + opening — collapsed into one
+                  compact block. The full 7-dimension rubric isn't shown
+                  here (the rubric-hints below are more actionable, and
+                  the scorecard surfaces the dimensions after the run). */}
               <p
                 style={{
-                  margin: '0 0 16px',
-                  fontSize: 13.5,
-                  lineHeight: 1.65,
+                  margin: '0 0 10px',
+                  fontSize: 13,
+                  lineHeight: 1.5,
                   fontWeight: 600,
                   color: 'var(--pbt-text)',
                 }}
               >
                 <strong style={{ fontWeight: 800 }}>Objective:</strong>{' '}
-                Use ACT — Acknowledge, Clarify, Transform — to guide this client from pushback to resolution.
+                Guide this client from pushback to resolution with ACT.
               </p>
 
-              {/* Context + opening — directly on the glass card (no nested grey panel) */}
               {(scenario.context ?? scenario.pushbackNotes) && (
                 <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 600, color: 'var(--pbt-text)' }}>
                   <strong style={{ fontWeight: 800 }}>Context:</strong>{' '}
@@ -326,50 +342,11 @@ function ScenarioDetailsPanel({
                 </em>
               </p>
 
-              {/* Scoring metrics — what will be evaluated */}
-              {onBegin && (
-                <div style={{ marginBottom: 12 }}>
-                  <div
-                    style={{
-                      fontFamily: 'var(--pbt-font-mono)',
-                      fontSize: 9,
-                      letterSpacing: '0.16em',
-                      textTransform: 'uppercase',
-                      color: 'var(--pbt-text-muted)',
-                      marginBottom: 8,
-                    }}
-                  >
-                    Scored on
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      'Empathy & Tone',
-                      'Active Listening',
-                      'Product Knowledge',
-                      'Objection Handling',
-                      'Confidence',
-                      'Closing',
-                      'Pacing',
-                    ].map((label) => (
-                      <span
-                        key={label}
-                        style={{
-                          padding: '4px 10px',
-                          borderRadius: 9999,
-                          background: 'rgba(255,255,255,0.18)',
-                          border: '1px solid rgba(255,255,255,0.38)',
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color: '#000',
-                          letterSpacing: '0.01em',
-                        }}
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Scoring metrics pill row removed — rubric hints below
+                  cover what to do, and the full dimension list re-
+                  appears on the scorecard after the run. Saved ~80px
+                  of modal height to keep the Begin CTA in view on
+                  shorter viewports without scrolling. */}
 
               {/* Coaching hints — what the AI customer + scorer are
                   listening for. Surfaces ACT pattern signals from the
@@ -380,33 +357,46 @@ function ScenarioDetailsPanel({
                   credit. Custom-built scenarios with no taxonomy entry
                   fall back silently. */}
               <ScenarioHints scenario={scenario} />
+              </div>
 
-              {/* Begin Simulation CTA — only shown in voice idle */}
+              {/* Sticky footer — Begin Simulation CTA stays anchored
+                  below the scrollable body so it can't slide off the
+                  bottom of the viewport when content overflows. */}
               {onBegin && (
-                <button
-                  type="button"
-                  onClick={onBegin}
+                <div
                   style={{
-                    width: '100%',
-                    border: 'none',
-                    borderRadius: 9999,
-                    padding: '16px 28px',
-                    background: 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
-                    color: '#fff',
-                    fontFamily: 'var(--pbt-font-mono)',
-                    fontSize: 13,
-                    fontWeight: 800,
-                    letterSpacing: '0.14em',
-                    textTransform: 'uppercase',
-                    cursor: 'pointer',
-                    boxShadow: '0 18px 36px -18px color-mix(in oklab, var(--pbt-driver-primary) 75%, transparent)',
-                    marginTop: 4,
+                    flex: 'none',
+                    padding: '14px 22px max(env(safe-area-inset-bottom), 18px)',
+                    borderTop: '1px solid rgba(255,255,255,0.4)',
+                    background:
+                      'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18))',
                   }}
                 >
-                  Begin simulation
-                </button>
+                  <button
+                    type="button"
+                    onClick={onBegin}
+                    style={{
+                      width: '100%',
+                      border: 'none',
+                      borderRadius: 9999,
+                      padding: '16px 28px',
+                      background:
+                        'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+                      color: '#fff',
+                      fontFamily: 'var(--pbt-font-mono)',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      letterSpacing: '0.14em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      boxShadow:
+                        '0 18px 36px -18px color-mix(in oklab, var(--pbt-driver-primary) 75%, transparent)',
+                    }}
+                  >
+                    Begin simulation
+                  </button>
+                </div>
               )}
-            </Glass>
           </motion.div>
         </>
       )}
