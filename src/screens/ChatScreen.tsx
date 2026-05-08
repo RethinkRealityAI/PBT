@@ -195,17 +195,26 @@ function ScenarioDetailsPanel({
               left: '50%',
               zIndex: 41,
               width: 'min(92vw, 580px)',
+              // Cap to viewport with edge padding (24px each side incl.
+              // safe-area inset) and scroll inside the glass card if the
+              // content (rubric hints + opening + scoring pills) is taller
+              // than the screen.
+              maxHeight: 'calc(100dvh - max(env(safe-area-inset-top), 24px) - max(env(safe-area-inset-bottom), 24px))',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              borderRadius: 26,
             }}
+            className="pbt-scroll"
           >
             <Glass
               radius={26}
-              padding="30px 26px 26px"
+              padding="22px 22px 20px"
               blur={24}
               tint={0.05}
               backdropSaturatePct={130}
             >
               {/* Header row */}
-              <div className="flex items-start justify-between gap-2" style={{ marginBottom: 14 }}>
+              <div className="flex items-start justify-between gap-2" style={{ marginBottom: 10 }}>
                 <div style={{ minWidth: 0 }}>
                   <div
                     style={{
@@ -250,7 +259,7 @@ function ScenarioDetailsPanel({
               </div>
 
               {/* Meta chips row */}
-              <div className="flex flex-wrap gap-2" style={{ marginBottom: 14 }}>
+              <div className="flex flex-wrap gap-2" style={{ marginBottom: 10 }}>
                 {[scenario.breed, scenario.age, scenario.persona].map((tag) => (
                   <span
                     key={tag}
@@ -285,16 +294,16 @@ function ScenarioDetailsPanel({
 
               {/* Context + opening — directly on the glass card (no nested grey panel) */}
               {(scenario.context ?? scenario.pushbackNotes) && (
-                <p style={{ margin: '0 0 14px', fontSize: 13, lineHeight: 1.55, fontWeight: 600, color: 'var(--pbt-text)' }}>
+                <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 600, color: 'var(--pbt-text)' }}>
                   <strong style={{ fontWeight: 800 }}>Context:</strong>{' '}
                   {scenario.context ?? scenario.pushbackNotes}
                 </p>
               )}
               <p
                 style={{
-                  margin: onBegin ? '0 0 14px' : 0,
+                  margin: onBegin ? '0 0 12px' : 0,
                   fontSize: 13,
-                  lineHeight: 1.55,
+                  lineHeight: 1.5,
                   fontWeight: 600,
                   color: 'var(--pbt-text)',
                 }}
@@ -307,7 +316,7 @@ function ScenarioDetailsPanel({
 
               {/* Scoring metrics — what will be evaluated */}
               {onBegin && (
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 12 }}>
                   <div
                     style={{
                       fontFamily: 'var(--pbt-font-mono)',
@@ -408,7 +417,7 @@ function ScenarioHints({ scenario }: { scenario: Scenario }) {
     { heading: 'Take action', items: pb.takeActionPatterns.slice(0, 2) },
   ];
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 12 }}>
       <div
         style={{
           fontFamily: 'var(--pbt-font-mono)',
