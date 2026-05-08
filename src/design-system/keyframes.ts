@@ -17,6 +17,10 @@ export function mountKeyframes(): void {
 @keyframes pbtRingBreath { 0%,100% { transform: scale(1); opacity: .5; } 50% { transform: scale(1.2); opacity: 0; } }
 @keyframes pbtRingExpand { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(1.9); opacity: 0; } }
 @keyframes pbtBarWave { 0%,100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+@keyframes pbt-analyze-pulse {
+  0%, 100% { opacity: 0.78; text-shadow: 0 0 14px color-mix(in oklab, oklch(0.68 0.18 150) 45%, transparent), 0 0 28px color-mix(in oklab, oklch(0.68 0.18 150) 18%, transparent); }
+  50% { opacity: 1; text-shadow: 0 0 22px color-mix(in oklab, oklch(0.68 0.18 150) 75%, transparent), 0 0 44px color-mix(in oklab, oklch(0.68 0.18 150) 35%, transparent); }
+}
 .pbt-scroll::-webkit-scrollbar { width: 0; height: 0; }
 .pbt-scroll { scrollbar-width: none; }
 `;

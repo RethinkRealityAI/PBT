@@ -20,6 +20,7 @@ import { useTheme } from '../app/providers/ThemeProvider';
 import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import { SessionEndingOverlay } from '../features/chat/SessionEndingOverlay';
+import { ScenarioHints } from '../features/scenarios/ScenarioHints';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -71,6 +72,18 @@ const EMOTION_DOT_COLORS: Record<EmotionColor, string> = {
   red: COLORS.score.poor,
   yellow: COLORS.score.ok,
   green: COLORS.score.good,
+};
+
+/** AI message bubble — state border + label vocabulary used in text mode. */
+const AI_STATE_COLOR: Record<EmotionColor, string> = {
+  red: COLORS.score.poor,
+  yellow: COLORS.score.ok,
+  green: COLORS.score.good,
+};
+const AI_STATE_LABEL: Record<EmotionColor, string> = {
+  red: 'Defensive',
+  yellow: 'Receptive',
+  green: 'Convinced',
 };
 
 /** Prev / next chevrons — matches Home scenario card (counter between arrows + Scenario label) */
@@ -194,17 +207,26 @@ function ScenarioDetailsPanel({
               left: '50%',
               zIndex: 41,
               width: 'min(92vw, 580px)',
+              // Cap to viewport with edge padding (24px each side incl.
+              // safe-area inset) and scroll inside the glass card if the
+              // content (rubric hints + opening + scoring pills) is taller
+              // than the screen.
+              maxHeight: 'calc(100dvh - max(env(safe-area-inset-top), 24px) - max(env(safe-area-inset-bottom), 24px))',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              borderRadius: 26,
             }}
+            className="pbt-scroll"
           >
             <Glass
               radius={26}
-              padding="30px 26px 26px"
+              padding="22px 22px 20px"
               blur={24}
               tint={0.05}
               backdropSaturatePct={130}
             >
               {/* Header row */}
-              <div className="flex items-start justify-between gap-2" style={{ marginBottom: 14 }}>
+              <div className="flex items-start justify-between gap-2" style={{ marginBottom: 10 }}>
                 <div style={{ minWidth: 0 }}>
                   <div
                     style={{
@@ -249,7 +271,7 @@ function ScenarioDetailsPanel({
               </div>
 
               {/* Meta chips row */}
-              <div className="flex flex-wrap gap-2" style={{ marginBottom: 14 }}>
+              <div className="flex flex-wrap gap-2" style={{ marginBottom: 10 }}>
                 {[scenario.breed, scenario.age, scenario.persona].map((tag) => (
                   <span
                     key={tag}
@@ -284,16 +306,16 @@ function ScenarioDetailsPanel({
 
               {/* Context + opening — directly on the glass card (no nested grey panel) */}
               {(scenario.context ?? scenario.pushbackNotes) && (
-                <p style={{ margin: '0 0 14px', fontSize: 13, lineHeight: 1.55, fontWeight: 600, color: 'var(--pbt-text)' }}>
+                <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 600, color: 'var(--pbt-text)' }}>
                   <strong style={{ fontWeight: 800 }}>Context:</strong>{' '}
                   {scenario.context ?? scenario.pushbackNotes}
                 </p>
               )}
               <p
                 style={{
-                  margin: onBegin ? '0 0 14px' : 0,
+                  margin: onBegin ? '0 0 12px' : 0,
                   fontSize: 13,
-                  lineHeight: 1.55,
+                  lineHeight: 1.5,
                   fontWeight: 600,
                   color: 'var(--pbt-text)',
                 }}
@@ -306,7 +328,7 @@ function ScenarioDetailsPanel({
 
               {/* Scoring metrics — what will be evaluated */}
               {onBegin && (
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 12 }}>
                   <div
                     style={{
                       fontFamily: 'var(--pbt-font-mono)',
@@ -348,6 +370,16 @@ function ScenarioDetailsPanel({
                   </div>
                 </div>
               )}
+
+              {/* Coaching hints — what the AI customer + scorer are
+                  listening for. Surfaces ACT pattern signals from the
+                  pushback taxonomy without spelling out scripted lines.
+                  Shown whether the panel was opened pre-session (with
+                  the Begin button) or mid-session via the "Scenario
+                  info" link, so trainees can re-check what earns
+                  credit. Custom-built scenarios with no taxonomy entry
+                  fall back silently. */}
+              <ScenarioHints scenario={scenario} />
 
               {/* Begin Simulation CTA — only shown in voice idle */}
               {onBegin && (
@@ -506,9 +538,12 @@ interface ChatComposerProps {
   onSend: (trimmed: string) => void;
   disabled: boolean;
   canSend: boolean;
+  /** Notify the parent when the textarea height changes so it can
+   *  re-pin the message list to the latest AI turn. */
+  onResize?: () => void;
 }
 
-const COMPOSER_MAX_HEIGHT = 140; // ~5 lines at 16px line-height ~24
+const COMPOSER_MAX_HEIGHT = 80; // ~3 lines at 16px line-height ~24 — keeps the AI's latest message visible while typing
 
 function ChatComposer({
   value,
@@ -516,6 +551,7 @@ function ChatComposer({
   onSend,
   disabled,
   canSend,
+  onResize,
 }: ChatComposerProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -526,7 +562,10 @@ function ChatComposer({
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
-  }, [value]);
+    // Tell the parent the layout shifted so it can re-pin the message
+    // list to the latest AI turn.
+    onResize?.();
+  }, [value, onResize]);
 
   const trimmed = value.trim();
   const sendable = trimmed.length > 0 && canSend && !disabled;
@@ -543,33 +582,15 @@ function ChatComposer({
           display: 'flex',
           alignItems: 'flex-end',
           gap: 8,
-          // Round the inner content area but keep flex alignment honest.
+          paddingLeft: 6,
           paddingRight: 2,
         }}
       >
-        <button
-          aria-label="Add"
-          type="button"
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 9999,
-            background: 'rgba(255,255,255,0.55)',
-            border: 'none',
-            color: 'var(--pbt-text)',
-            cursor: 'pointer',
-            flexShrink: 0,
-            // Vertical-align with the first line of the textarea.
-            marginBottom: 2,
-          }}
-        >
-          <Icon.plus />
-        </button>
         <textarea
           ref={taRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Acknowledge, ask, recommend… (Shift+Enter for new line)"
+          placeholder="Acknowledge, ask, recommend…"
           rows={1}
           disabled={disabled}
           onKeyDown={(e) => {
@@ -610,12 +631,21 @@ function ChatComposer({
             border: 'none',
             cursor: sendable ? 'pointer' : 'not-allowed',
             color: '#fff',
-            background: sendable
-              ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
-              : 'rgba(60,20,15,0.12)',
+            // Always driver-tinted; just dim the disabled state instead
+            // of swapping to a neutral grey, so the affordance stays
+            // visually consistent with the rest of the chrome.
+            background:
+              'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+            opacity: sendable ? 1 : 0.42,
             flexShrink: 0,
-            marginBottom: 2,
-            transition: 'background 0.15s ease',
+            // Match the textarea's bottom padding (8px) so the icon's
+            // optical center sits on the same baseline as the typed text.
+            alignSelf: 'flex-end',
+            marginBottom: 4,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'opacity 0.15s ease',
           }}
         >
           <Icon.send />
@@ -638,6 +668,7 @@ export function ChatScreen() {
   const [mode, setMode] = useState<'text' | 'voice'>('voice');
   const [draft, setDraft] = useState('');
   const [voiceAnalyzing, setVoiceAnalyzing] = useState(false);
+  const [voiceReady, setVoiceReady] = useState(false);
   const [voiceAnalysisError, setVoiceAnalysisError] = useState<string | null>(null);
   const [endModalOpen, setEndModalOpen] = useState(false);
   const [exitModalOpen, setExitModalOpen] = useState(false);
@@ -652,7 +683,18 @@ export function ChatScreen() {
   voiceStartRef.current = voice.start;
   const voiceStopRef = useRef(voice.stop);
   voiceStopRef.current = voice.stop;
+  // voiceStatusRef avoids stale-status reads inside event handlers that
+  // depend only on the user's click (e.g. mode toggle re-initializing
+  // the live session).
+  const voiceStatusRef = useRef(voice.status);
+  voiceStatusRef.current = voice.status;
   const voiceFinalizeBusyRef = useRef(false);
+  // Mode + finalize-generation refs: lets in-flight `finalizeVoice` bail
+  // if the user toggled to text mid-scoring instead of stomping on the
+  // now-active text session with a stale `applyVoiceSessionComplete`.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const finalizeGenRef = useRef(0);
   const scenarioIndex = scenario ? seedScenarioIndex(scenario) : -1;
   const scenarioCounterIndex = scenarioIndex >= 0 ? scenarioIndex : undefined;
 
@@ -674,12 +716,35 @@ export function ChatScreen() {
   const finalizeVoice = useCallback(async () => {
     if (voiceFinalizeBusyRef.current) return;
     voiceFinalizeBusyRef.current = true;
+    // Capture the toggle generation so a mode flip mid-scoring abandons
+    // this finalize cleanly rather than overwriting the new text session.
+    const gen = ++finalizeGenRef.current;
     setVoiceAnalyzing(true);
     setVoiceAnalysisError(null);
     try {
       const { report, transcript } = await voiceEndRef.current();
+      if (gen !== finalizeGenRef.current || modeRef.current !== 'voice') {
+        // User toggled away (or another finalize already started). The
+        // voice session has already been ended/torn down by the toggle
+        // path; just drop these results so the live text session isn't
+        // overwritten by a stale `applyVoiceSessionComplete`.
+        setVoiceAnalyzing(false);
+        return;
+      }
       await chatRef.current.applyVoiceSessionComplete(report, transcript);
-      go('stats');
+      if (gen !== finalizeGenRef.current || modeRef.current !== 'voice') {
+        setVoiceAnalyzing(false);
+        return;
+      }
+      // Brief "ready" beat between scoring and navigating to stats so
+      // the trainee sees the completion state, not a sudden cut.
+      setVoiceAnalyzing(false);
+      setVoiceReady(true);
+      window.setTimeout(() => {
+        if (gen !== finalizeGenRef.current || modeRef.current !== 'voice') return;
+        setVoiceReady(false);
+        go('stats');
+      }, 700);
     } catch (err) {
       console.error('[ChatScreen] finalizeVoice error', err);
       setVoiceAnalysisError('Failed to analyze session — check your network and try again.');
@@ -716,11 +781,44 @@ export function ChatScreen() {
   );
 
   const handleModeChange = useCallback((nextMode: 'text' | 'voice') => {
+    // Invalidate any in-flight finalizeVoice so a slow scoring call
+    // can't stomp on the new mode after the toggle.
+    finalizeGenRef.current += 1;
+    voiceFinalizeBusyRef.current = false;
+    setVoiceAnalyzing(false);
+    setVoiceReady(false);
     if (nextMode === 'text') {
       voiceStopRef.current();
+      // A voice session that already finalized left chat.status === 'complete'
+      // on the shared ChatProvider. Without resetting, the moment we flip
+      // mode to 'text' the SessionEndingOverlay shows ("Your scorecard is
+      // ready") AND the auto-navigate-to-stats effect fires, trapping the
+      // user. Reset gives text mode a clean slate, and the auto-open
+      // effect will spin up a fresh AI opener for the same scenario.
+      chatRef.current.reset();
+      setMode(nextMode);
+      return;
     }
+    // text → voice. Mark any in-flight text session as abandoned so the
+    // admin row + recordId close out cleanly (idempotent — a no-op if
+    // the user hadn't engaged yet, or if end()/abandon() already fired).
+    // Then reset the chat hook so a stale Gemini reply that resolves
+    // after the toggle can't pollute the voice transcript.
+    void chatRef.current.abandon('user_exit');
+    chatRef.current.reset();
     setMode(nextMode);
-  }, []);
+    setScenarioDetailsOpen(false);
+    // The mode-toggle click is itself a user gesture, so we can safely
+    // re-init the AudioContext + WebSocket here without an extra Begin
+    // tap. Only fire if voice is fully idle — guards against a stray
+    // double-toggle restarting an already-live session.
+    if (scenario && voiceStatusRef.current === 'idle') {
+      voiceFinalizeBusyRef.current = false;
+      setVoiceAnalyzing(false);
+      setVoiceAnalysisError(null);
+      void voiceStartRef.current(scenario);
+    }
+  }, [scenario]);
 
 useThinkingSound(
     (mode === 'text' && chat.status === 'aiTyping') ||
@@ -749,12 +847,18 @@ useThinkingSound(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, scenario, chat.status]);
 
-  // Auto-scroll on new messages
+  // Pin the message list to the bottom — used on new messages AND when
+  // the composer grows during typing so the AI's latest turn stays in
+  // view instead of getting pushed off the top.
+  const pinScrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, []);
+
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [chat.messages.length, chat.status]);
+    pinScrollToBottom();
+  }, [chat.messages.length, chat.status, pinScrollToBottom]);
 
   // Auto-navigate to scorecard once scoring completes. The ending overlay
   // covers the visual transition; the small extra delay lets it linger on
@@ -766,17 +870,17 @@ useThinkingSound(
     return () => window.clearTimeout(t);
   }, [chat.status, mode, go]);
 
-  const endingPhase: 'closing' | 'analyzing' | 'ready' =
-    chat.status === 'ending'
-      ? 'closing'
-      : chat.status === 'scoring'
-        ? 'analyzing'
-        : 'ready';
+  // Overlay phase mapping. Note: we deliberately DO NOT show the overlay
+  // during `ending` (status set the moment the AI emits its closing
+  // line). Letting the closing message land in the chat bubble first —
+  // visible to the trainee — and only covering with the analyzing
+  // overlay once the scorer call actually starts ('scoring') prevents
+  // the user from missing the AI's wrap-up.
+  const endingPhase: 'analyzing' | 'ready' =
+    chat.status === 'scoring' ? 'analyzing' : 'ready';
   const showEndingOverlay =
     mode === 'text' &&
-    (chat.status === 'ending' ||
-      chat.status === 'scoring' ||
-      chat.status === 'complete');
+    (chat.status === 'scoring' || chat.status === 'complete');
 
   if (!scenario) {
     return (
@@ -897,59 +1001,116 @@ useThinkingSound(
             )}
 
             <div className="flex flex-col gap-12" style={{ gap: 10 }}>
-              {chat.messages.map((m, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems:
-                      m.role === 'user' ? 'flex-end' : 'flex-start',
-                    animation: 'pbtFadeUp 0.3s ease',
-                  }}
-                >
+              {chat.messages.map((m, i) => {
+                if (m.role === 'user') {
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-end',
+                        animation: 'pbtFadeUp 0.3s ease',
+                      }}
+                    >
+                      <div
+                        style={{
+                          maxWidth: '78%',
+                          padding: '10px 14px',
+                          borderRadius: 22,
+                          fontSize: 14.5,
+                          lineHeight: 1.4,
+                          background:
+                            'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+                          color: '#fff',
+                          border: 'none',
+                          boxShadow:
+                            '0 6px 16px -6px color-mix(in oklab, var(--pbt-driver-primary) 40%, transparent)',
+                        }}
+                      >
+                        {m.text}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: 'var(--pbt-font-mono)',
+                          fontSize: 9,
+                          letterSpacing: '0.12em',
+                          textTransform: 'uppercase',
+                          color: 'var(--pbt-text-muted)',
+                          marginTop: 4,
+                        }}
+                      >
+                        You
+                      </div>
+                    </div>
+                  );
+                }
+                const emotion = m.emotion ?? 'red';
+                const stateColor = AI_STATE_COLOR[emotion];
+                const stateLabel = AI_STATE_LABEL[emotion];
+                return (
                   <div
+                    key={i}
                     style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      animation: 'pbtFadeUp 0.3s ease',
                       maxWidth: '78%',
-                      padding: '10px 14px',
-                      borderRadius: 22,
-                      fontSize: 14.5,
-                      lineHeight: 1.4,
-                      background:
-                        m.role === 'user'
-                          ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
-                          : 'rgba(255,255,255,0.42)',
-                      color: m.role === 'user' ? '#fff' : 'var(--pbt-text)',
-                      backdropFilter:
-                        m.role === 'user' ? undefined : 'blur(22px) saturate(260%) brightness(1.03)',
-                      WebkitBackdropFilter:
-                        m.role === 'user' ? undefined : 'blur(22px) saturate(260%) brightness(1.03)',
-                      border:
-                        m.role === 'user'
-                          ? 'none'
-                          : '1px solid rgba(255,255,255,0.65)',
-                      boxShadow:
-                        m.role === 'user'
-                          ? '0 6px 16px -6px color-mix(in oklab, var(--pbt-driver-primary) 40%, transparent)'
-                          : '0 1px 0 rgba(255,255,255,0.9) inset, 0 4px 12px -6px rgba(60,20,15,0.08)',
                     }}
                   >
-                    {m.text}
+                    <div
+                      style={{
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 9,
+                        letterSpacing: '0.14em',
+                        textTransform: 'uppercase',
+                        color: stateColor,
+                        marginBottom: 4,
+                        marginLeft: 6,
+                        textShadow: `0 0 8px color-mix(in oklab, ${stateColor} 35%, transparent)`,
+                        transition: 'color 0.4s ease',
+                      }}
+                    >
+                      {stateLabel}
+                    </div>
+                    <div
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: 22,
+                        fontSize: 14.5,
+                        lineHeight: 1.4,
+                        background: 'rgba(255,255,255,0.42)',
+                        color: 'var(--pbt-text)',
+                        backdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
+                        WebkitBackdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
+                        border: `1px solid color-mix(in oklab, ${stateColor} 70%, rgba(255,255,255,0.55))`,
+                        boxShadow: [
+                          '0 1px 0 rgba(255,255,255,0.9) inset',
+                          '0 4px 12px -6px rgba(60,20,15,0.08)',
+                          `0 0 14px -2px color-mix(in oklab, ${stateColor} 38%, transparent)`,
+                        ].join(', '),
+                        transition: 'border-color 0.4s ease, box-shadow 0.4s ease',
+                      }}
+                    >
+                      {m.text}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 9,
+                        letterSpacing: '0.12em',
+                        textTransform: 'uppercase',
+                        color: 'var(--pbt-text-muted)',
+                        marginTop: 4,
+                        marginLeft: 6,
+                      }}
+                    >
+                      {scenario.persona}
+                    </div>
                   </div>
-                  <div
-                    style={{
-                      fontFamily: 'var(--pbt-font-mono)',
-                      fontSize: 9,
-                      letterSpacing: '0.12em',
-                      textTransform: 'uppercase',
-                      color: 'var(--pbt-text-muted)',
-                      marginTop: 4,
-                    }}
-                  >
-                    {m.role === 'user' ? 'You' : scenario.persona}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {chat.status === 'aiTyping' && <TypingIndicator />}
               {chat.status === 'scoring' && (
                 <div
@@ -975,6 +1136,7 @@ useThinkingSound(
           <VoiceMode
             voice={voice}
             isAnalyzing={voiceAnalyzing}
+            isReady={voiceReady}
             analysisError={voiceAnalysisError}
             onBegin={beginVoice}
             onRetry={voiceAnalysisError ? finalizeVoice : beginVoice}
@@ -1069,6 +1231,7 @@ useThinkingSound(
               chat.status === 'complete'
             }
             canSend={chat.status === 'awaitingUser'}
+            onResize={pinScrollToBottom}
           />
         )}
       </div>
@@ -1183,6 +1346,7 @@ const STATUS_LABELS: Record<string, string> = {
 function VoiceMode({
   voice,
   isAnalyzing,
+  isReady: isReadyProp,
   analysisError,
   onBegin,
   onRetry,
@@ -1190,6 +1354,8 @@ function VoiceMode({
 }: {
   voice: ReturnType<typeof useVoiceSession>;
   isAnalyzing: boolean;
+  /** Brief "Your scorecard is ready" beat between scoring and stats. */
+  isReady: boolean;
   analysisError: string | null;
   onBegin: () => void;
   onRetry?: () => void;
@@ -1234,30 +1400,55 @@ function VoiceMode({
         }}
       >
 
-      {/* Status label */}
-      <div
-        style={{
-          marginBottom: 14,
-          fontFamily: 'var(--pbt-font-mono)',
-          fontSize: 11,
-          letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-          color: isThinking
-            ? `color-mix(in oklab, ${dc.primary} 24%, oklch(0.52 0.10 240))`
-            : 'var(--pbt-text-muted)',
-          textAlign: 'center',
-          minHeight: 18,
-          transition: 'color 0.4s ease',
-        }}
-      >
-        {isConnecting
-          ? 'Connecting…'
-          : isReady
-          ? 'Voice ready'
-          : isAnalyzing
-          ? 'Analyzing session…'
-          : STATUS_LABELS[voice.status] ?? ''}
-      </div>
+      {/* Status label — pumped up between the End tap and the scorecard
+          navigation. "Analyzing session…" pulses in green; "Your
+          scorecard is ready" lands as the brief completion beat before
+          we route to stats. Other states stay quiet. */}
+      {isAnalyzing || isReadyProp ? (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            marginBottom: 14,
+            fontFamily: 'var(--pbt-font-display)',
+            fontSize: 22,
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
+            color: 'oklch(0.68 0.18 150)',
+            textShadow:
+              '0 0 18px color-mix(in oklab, oklch(0.68 0.18 150) 55%, transparent), 0 0 36px color-mix(in oklab, oklch(0.68 0.18 150) 25%, transparent)',
+            textAlign: 'center',
+            minHeight: 28,
+            animation: isAnalyzing
+              ? 'pbt-analyze-pulse 1.6s ease-in-out infinite'
+              : 'pbtFadeUp 0.32s ease-out',
+          }}
+        >
+          {isReadyProp ? 'Your scorecard is ready' : 'Analyzing session…'}
+        </div>
+      ) : (
+        <div
+          style={{
+            marginBottom: 14,
+            fontFamily: 'var(--pbt-font-mono)',
+            fontSize: 11,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            color: isThinking
+              ? `color-mix(in oklab, ${dc.primary} 24%, oklch(0.52 0.10 240))`
+              : 'var(--pbt-text-muted)',
+            textAlign: 'center',
+            minHeight: 18,
+            transition: 'color 0.4s ease',
+          }}
+        >
+          {isConnecting
+            ? 'Connecting…'
+            : isReady
+            ? 'Voice ready'
+            : STATUS_LABELS[voice.status] ?? ''}
+        </div>
+      )}
 
       {/* Orb — nudged down so stack breathes vs header; ring glow stays symmetric */}
       <div

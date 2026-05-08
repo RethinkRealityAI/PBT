@@ -49,6 +49,16 @@ export function BreedSearch({
 
   const suggestions = useMemo(() => searchBreeds(value, 8), [value]);
   const showPopular = value.trim().length === 0;
+  // Resolve a known breed entry whenever the input matches one exactly.
+  // Used to render the confirmed-state "selected pill" with size info,
+  // distinct from the search input where free text would otherwise just
+  // sit alongside the magnifying-glass icon.
+  const committedEntry = useMemo<BreedEntry | null>(() => {
+    if (!value.trim()) return null;
+    const top = searchBreeds(value, 1)[0];
+    return top && top.name.toLowerCase() === value.trim().toLowerCase() ? top : null;
+  }, [value]);
+  const isCommitted = !showPopular && !open;
 
   // Close on outside click.
   useEffect(() => {
@@ -94,6 +104,95 @@ export function BreedSearch({
 
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
+      {/* Confirmed-state pill — replaces the small in-input value with a
+          prominent, driver-tinted card so the trainee sees their choice
+          clearly. Tapping "Change" or × clears + reopens the search. */}
+      {isCommitted && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '12px 14px',
+            borderRadius: 14,
+            background:
+              'color-mix(in oklab, var(--pbt-driver-primary) 18%, rgba(255,255,255,0.55))',
+            border:
+              '1px solid color-mix(in oklab, var(--pbt-driver-primary) 60%, rgba(255,255,255,0.45))',
+            boxShadow:
+              '0 1px 0 rgba(255,255,255,0.85) inset, 0 6px 14px -10px color-mix(in oklab, var(--pbt-driver-primary) 38%, transparent)',
+            backdropFilter: 'blur(14px) saturate(220%)',
+            WebkitBackdropFilter: 'blur(14px) saturate(220%)',
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background:
+                'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+              flexShrink: 0,
+            }}
+          />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 700,
+                color: 'var(--pbt-text)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {value}
+            </div>
+            {committedEntry && (
+              <div
+                style={{
+                  fontFamily: 'var(--pbt-font-mono)',
+                  fontSize: 10,
+                  letterSpacing: '0.06em',
+                  color: 'var(--pbt-text-muted)',
+                  marginTop: 2,
+                }}
+              >
+                {committedEntry.group} · {committedEntry.sizeKg[0]}–
+                {committedEntry.sizeKg[1]} kg
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onChange('');
+              onSelectBreed?.(null);
+              setOpen(true);
+              window.setTimeout(() => inputRef.current?.focus(), 0);
+            }}
+            style={{
+              flexShrink: 0,
+              padding: '6px 12px',
+              borderRadius: 9999,
+              border: '1px solid rgba(255,255,255,0.55)',
+              background: 'rgba(255,255,255,0.42)',
+              fontFamily: 'var(--pbt-font-mono)',
+              fontSize: 10,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+              cursor: 'pointer',
+              color: 'var(--pbt-driver-primary)',
+            }}
+          >
+            Change
+          </button>
+        </div>
+      )}
+
+      {!isCommitted && (
       <div
         style={{
           display: 'flex',
@@ -166,9 +265,11 @@ export function BreedSearch({
           </button>
         )}
       </div>
+      )}
 
-      {/* Empty-state quick picks */}
-      {open && showPopular && (
+      {/* Empty-state quick picks — always shown when no value, no need
+          to focus the input first. */}
+      {showPopular && (
         <div style={{ marginTop: 10 }}>
           <div
             style={{
@@ -187,7 +288,7 @@ export function BreedSearch({
             {POPULAR_BREEDS.map((b) => (
               <Chip
                 key={b}
-                onClick={() => commit(b, null)}
+                onClick={() => commit(b, searchBreeds(b, 1)[0] ?? null)}
               >
                 {b}
               </Chip>

@@ -428,11 +428,15 @@ export function useVoiceSession(): UseVoiceSessionReturn {
                   setEmotion(next);
                   // Convinced → next AI turn IS the closing line; prime the
                   // end so we trigger the natural-end after this same turn's
-                  // turnComplete fires. Only require enough turns to have
-                  // happened that this isn't a premature signal.
+                  // turnComplete fires. Require at least 4 prior AI turns
+                  // (~ a 4-exchange conversation) so a polite trainee
+                  // greeting can't shift the model green prematurely and
+                  // cut the session off in the first minute. The voice
+                  // prompt's own "never end before turn 10" rule is for
+                  // the model; this fallback just catches its failures.
                   if (
                     next === 'green' &&
-                    transcriptRef.current.filter((m) => m.role === 'ai').length >= 2
+                    transcriptRef.current.filter((m) => m.role === 'ai').length >= 4
                   ) {
                     endPrimedRef.current = true;
                   }

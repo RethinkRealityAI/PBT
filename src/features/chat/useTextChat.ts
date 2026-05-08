@@ -3,6 +3,7 @@ import type { Scenario } from '../../data/scenarios';
 import {
   evaluateConversation,
   generateRoleplayMessage,
+  MODEL_LIVE,
   MODEL_TEXT,
 } from '../../services/geminiService';
 import type { ChatMessage, ScoreReport, SessionRecord } from '../../services/types';
@@ -73,10 +74,11 @@ function scenarioSummaryLine(scenario: Scenario): string {
 // require the brackets specifically to avoid false positives when a customer
 // says something like "could we end this simulation?" mid-conversation.
 const END_TOKEN_RX = /\[\s*end[\s_-]*simulation\s*\]/i;
-// How long to leave the AI's closing line on screen before we kick off
-// scoring + show the ending overlay. Long enough to read, short enough not
-// to feel laggy.
-const END_READ_DELAY_MS = 1500;
+// How long to leave the AI's closing line on screen — visible, no
+// overlay — before we kick off scoring. Bumped to 3s so the trainee
+// can actually read the wrap-up; the analyzing overlay only appears
+// once the scorer call starts.
+const END_READ_DELAY_MS = 3000;
 /**
  * Hard cap on customer (AI) turns. If the model hasn't emitted an end-token
  * by this many turns, we force-end the session anyway. Without this cap a
@@ -180,7 +182,7 @@ async function persistToSupabase(args: PersistArgs): Promise<void> {
       pushback_id: args.scenario.pushback.id,
       driver: args.scenario.suggestedDriver,
       scenario_summary: scenarioSummaryLine(args.scenario),
-      model_id: MODEL_TEXT,
+      model_id: args.mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
       turns: args.transcript.length,
     });
 
@@ -322,9 +324,17 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         );
 
         // Detect end-of-simulation token. Strip every match (defensive —
-        // model occasionally emits more than one).
+        // model occasionally emits more than one) and clean up the
+        // artifacts the strip leaves behind: the model often emits the
+        // token mid-sentence ("Thanks for listening [END_SIMULATION],
+        // have a great day"), which would otherwise leave " ," / "  ."
+        // gaps in the saved transcript and on screen.
         const hasEndToken = END_TOKEN_RX.test(next.text);
-        const cleanText = next.text.replace(new RegExp(END_TOKEN_RX, 'gi'), '').trim();
+        const cleanText = next.text
+          .replace(new RegExp(END_TOKEN_RX, 'gi'), ' ')
+          .replace(/\s+([,;:.!?])/g, '$1')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
         const cleanMsg: ChatMessage = { ...next, text: cleanText };
         appendTurn(cleanMsg);
 
@@ -508,13 +518,35 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       transcriptRef.current = [...msgs];
       setMessages(msgs);
 
+      // Empty-transcript guard. If the user clicked End before the AI's
+      // opener even landed (or the live socket hung up before any audio),
+      // there's nothing to score and nothing useful for the RAG corpus.
+      // Skip local history + RAG and write a single abandoned admin row
+      // so the session shows up in telemetry but doesn't poison
+      // downstream scoring or fine-tuning.
+      const recordId = recordIdRef.current ?? uuid();
+      if (msgs.length === 0) {
+        setStatus('idle');
+        persistedRef.current = true;
+        void persistToSupabase({
+          scenario,
+          recordId,
+          transcript: [],
+          durationSeconds: 1,
+          mode: 'voice',
+          scoreReport: null,
+          completed: false,
+          endedReason: 'abandoned',
+        });
+        return;
+      }
+
       const effective = report ?? SCORE_UNAVAILABLE;
       setScoreReport(effective);
       setStatus('complete');
 
       const t0 = msgs[0]?.timestamp ?? Date.now() - 60_000;
       const durationSeconds = Math.max(1, Math.round((Date.now() - t0) / 1000));
-      const recordId = recordIdRef.current ?? uuid();
 
       const record: SessionRecord = {
         id: recordId,
@@ -547,7 +579,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         scoreReport: effective,
         durationSeconds,
         mode: 'voice',
-        modelId: MODEL_TEXT,
+        modelId: MODEL_LIVE,
         completed: true,
       });
     },

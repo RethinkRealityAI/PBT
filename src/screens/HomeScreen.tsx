@@ -13,7 +13,8 @@ import { useScenario } from '../app/providers/ScenarioProvider';
 import { useSession } from '../app/providers/SessionProvider';
 import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens';
-import { LIBRARY_SCENARIOS } from '../data/scenarios';
+import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
+import { ScenarioHints } from '../features/scenarios/ScenarioHints';
 import { useResolvedLibraryScenarios } from '../data/useResolvedScenarios';
 import { useFlag, useFlagValue, IfFlag } from '../app/providers/FlagProvider';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
@@ -931,6 +932,7 @@ export function HomeScreen() {
         open={scenarioInfoOpen}
         title={infoModalTitle || cardTitle}
         body={infoModalBody}
+        scenario={todaysPick}
         onClose={() => setScenarioInfoOpen(false)}
       />
     </>
@@ -941,11 +943,16 @@ function ScenarioInfoModal({
   open,
   title,
   body,
+  scenario,
   onClose,
 }: {
   open: boolean;
   title: string;
   body: string;
+  /** Scenario for surfacing the same ACT-aligned hints the Begin
+   *  Simulation modal shows — gives the trainee a preview of what
+   *  earns credit before they start. */
+  scenario?: Scenario;
   onClose: () => void;
 }) {
   return (
@@ -1022,17 +1029,21 @@ function ScenarioInfoModal({
                   <Icon.close />
                 </button>
               </div>
-              <div
-                style={{
-                  fontSize: 14,
-                  lineHeight: 1.6,
-                  color: 'var(--pbt-text)',
-                  whiteSpace: 'pre-wrap',
-                  fontWeight: 500,
-                }}
-              >
-                {body}
-              </div>
+              {body && (
+                <div
+                  style={{
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    color: 'var(--pbt-text)',
+                    whiteSpace: 'pre-wrap',
+                    fontWeight: 500,
+                    marginBottom: scenario ? 14 : 0,
+                  }}
+                >
+                  {body}
+                </div>
+              )}
+              {scenario && <ScenarioHints scenario={scenario} />}
             </Glass>
           </motion.div>
         </>

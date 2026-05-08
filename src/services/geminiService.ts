@@ -97,17 +97,55 @@ export async function generateRoleplayMessage(
     });
   }
 
+  // Structured output: model returns { emotion, text } so we can render
+  // the AI bubble's state border (red/yellow/green) without parsing free
+  // text. Mirrors the voice mode's `updateEmotion` tool call so both
+  // modes use the same vocabulary downstream.
+  const responseSchema = {
+    type: Type.OBJECT,
+    required: ['emotion', 'text'],
+    properties: {
+      emotion: {
+        type: Type.STRING,
+        enum: ['red', 'yellow', 'green'],
+        description:
+          "The customer's resolution state for this turn. red = defensive/resistant, yellow = listening/receptive, green = convinced/resolved. Start at red. Move to yellow when the trainee shows real empathy or asks a clarifying question. Move to green only after the trainee has clarified the root concern AND offered a credible solution.",
+      },
+      text: {
+        type: Type.STRING,
+        description: 'Your in-character reply to the trainee. 1–3 sentences.',
+      },
+    },
+  } as const;
+
   const t0 = performance.now();
   try {
     const { value, retries } = await withRetry(async () => {
       const response = await ai.models.generateContent({
         model: MODEL_TEXT,
         contents,
-        config: { systemInstruction },
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema,
+        },
       });
-      const text = response.text ?? '';
+      const raw = response.text ?? '';
+      if (!raw) throw new Error('Empty response from AI');
+      let parsed: { emotion?: string; text?: string } = {};
+      try {
+        parsed = JSON.parse(raw) as { emotion?: string; text?: string };
+      } catch {
+        // Fallback: model occasionally drifts and returns raw prose
+        // despite the schema. Treat the whole thing as `text` and
+        // default to 'red' so the UI still has something to render.
+        parsed = { text: raw };
+      }
+      const text = (parsed.text ?? '').trim();
       if (!text) throw new Error('Empty response from AI');
-      return { response, text };
+      const emotion: 'red' | 'yellow' | 'green' =
+        parsed.emotion === 'green' || parsed.emotion === 'yellow' ? parsed.emotion : 'red';
+      return { response, text, emotion };
     });
 
     const latency = Math.round(performance.now() - t0);
@@ -130,7 +168,7 @@ export async function generateRoleplayMessage(
       retries,
     });
 
-    return { role: 'ai' as const, text: value.text, timestamp: Date.now() };
+    return { role: 'ai' as const, text: value.text, emotion: value.emotion, timestamp: Date.now() };
   } catch (err) {
     const latency = Math.round(performance.now() - t0);
     void recordCall({
