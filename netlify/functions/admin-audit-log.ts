@@ -62,21 +62,30 @@ export default async (req: Request): Promise<Response> => {
   const row = entry as AuditRow;
   // Restore strategy: write `before` back. If the original action was
   // 'create', reverting means deleting the current row.
+  //
+  // Every mutation result is checked — a silent failure here would leave
+  // the DB in a state inconsistent with the audit row we're about to
+  // write below ("revert succeeded" while the entity wasn't actually
+  // touched), making any later recovery much harder to reason about.
+  let mutErr: { message: string } | null = null;
   if (row.entity_type === 'flag_rule') {
     if (row.action === 'create') {
-      await ctx.sb.from('flag_rules').delete().eq('id', row.entity_id);
+      mutErr = (await ctx.sb.from('flag_rules').delete().eq('id', row.entity_id)).error;
     } else if (row.before) {
-      await ctx.sb.from('flag_rules').upsert(row.before);
+      mutErr = (await ctx.sb.from('flag_rules').upsert(row.before)).error;
     }
   } else if (row.entity_type === 'flag') {
-    if (row.before) await ctx.sb.from('flags').upsert(row.before);
+    if (row.before) mutErr = (await ctx.sb.from('flags').upsert(row.before)).error;
   } else if (row.entity_type === 'scenario_override') {
     if (row.action === 'create') {
-      await ctx.sb.from('scenario_overrides').delete().eq('scenario_id', row.entity_id);
+      mutErr = (
+        await ctx.sb.from('scenario_overrides').delete().eq('scenario_id', row.entity_id)
+      ).error;
     } else if (row.before) {
-      await ctx.sb.from('scenario_overrides').upsert(row.before);
+      mutErr = (await ctx.sb.from('scenario_overrides').upsert(row.before)).error;
     }
   }
+  if (mutErr) return errorResponse(500, `Revert failed: ${mutErr.message}`);
 
   await writeAuditLog(ctx, {
     entity_type: row.entity_type,

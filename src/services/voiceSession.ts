@@ -448,14 +448,17 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
             // User speech transcription — buffered, committed on sentence end.
             //
-            // Earlier code dropped inputTranscription whenever AI was
-            // speaking, on the theory that any captured audio was echo.
-            // That cost real user turns whenever the user spoke during the
-            // AI's tail-end. We now ALWAYS accumulate (the model's own VAD
-            // already labels these as user speech) and commit on the
-            // `finished` flag — which the Live API fires per natural
-            // sentence boundary regardless of which side is speaking.
-            if (serverContent?.inputTranscription) {
+            // Drop inputTranscription while the AI is speaking: those events
+            // are almost always echo from the AI's own audio bleeding back
+            // through the mic. Capturing them as user turns confused the
+            // model (perceived barge-in), polluted the transcript with the
+            // AI's own words attributed to "user", and produced visible
+            // stalls. Real user barge-in is signalled by the model via
+            // `interrupted: true`, after which we transition out of
+            // aiSpeaking and resume buffering normally. A user turn that
+            // ended just before AI started is still captured by the
+            // pending-buffer commit at the top of playAudioChunk.
+            if (serverContent?.inputTranscription && statusRef.current !== 'aiSpeaking') {
               const { text, finished } = serverContent.inputTranscription;
               if (text) {
                 userTextBufferRef.current += text;

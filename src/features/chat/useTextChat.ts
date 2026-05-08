@@ -208,7 +208,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Look up admin AI overrides (prompt prefix/suffix) for this scenario id.
   // Only available when the scenario was selected from a flag-aware surface
   // that stamped `_overrideId`; falls back to no override otherwise.
-  const overrideRow = useScenarioOverride(scenario._overrideId ?? '');
+  // Note: ChatProvider mounts this hook with a null scenario placeholder
+  // before the user picks one, so we must guard the property access.
+  const overrideRow = useScenarioOverride(scenario?._overrideId ?? '');
   const promptOverrides = useMemo<PromptOverrides>(
     () => ({
       promptPrefix: overrideRow?.prompt_prefix ?? null,
@@ -463,12 +465,13 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   const restart = useCallback(async () => {
     // First mark the in-flight attempt as abandoned so admin telemetry sees
     // a row for the false start. abandon() is idempotent.
-    if (!persistedRef.current && (recordIdRef.current || messagesRef.current.length > 0)) {
+    if (!persistedRef.current && (recordIdRef.current || transcriptRef.current.length > 0)) {
       await abandon('user_exit');
     }
     // Keep only the AI's first message so the trainee retries the same
     // opener — drop everything after it.
-    const opener = messagesRef.current.find((m) => m.role === 'ai' && !m._transientError) ?? null;
+    const opener = transcriptRef.current.find((m) => m.role === 'ai' && !m._transientError) ?? null;
+    transcriptRef.current = opener ? [opener] : [];
     setMessages(opener ? [opener] : []);
     setScoreReport(null);
     setStatus(opener ? 'awaitingUser' : 'idle');
