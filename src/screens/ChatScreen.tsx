@@ -20,6 +20,7 @@ import { useTheme } from '../app/providers/ThemeProvider';
 import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import { SessionEndingOverlay } from '../features/chat/SessionEndingOverlay';
+import { getPushbackKnowledge } from '../data/knowledge/pushbackTaxonomy';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -349,6 +350,13 @@ function ScenarioDetailsPanel({
                 </div>
               )}
 
+              {/* Coaching hints — what the AI customer + scorer are
+                  listening for. Surfaces ACT pattern signals from the
+                  pushback taxonomy without spelling out scripted lines.
+                  Only rendered for known seed pushbacks (custom-built
+                  scenarios fall back silently). */}
+              {onBegin && <ScenarioHints scenario={scenario} />}
+
               {/* Begin Simulation CTA — only shown in voice idle */}
               {onBegin && (
                 <button
@@ -379,6 +387,74 @@ function ScenarioDetailsPanel({
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+/**
+ * Pre-session coaching hints. Pulls from the same `PUSHBACK_KNOWLEDGE`
+ * the AI customer is grounded against, so the trainee sees a few cues
+ * for what will earn credit on this scenario *without* the exact lines
+ * to recite. Renders nothing when the pushback isn't in the taxonomy
+ * (custom-built scenarios) — preserves the surprise-value of the
+ * roleplay.
+ */
+function ScenarioHints({ scenario }: { scenario: Scenario }) {
+  const pb = getPushbackKnowledge(scenario.pushback.id);
+  if (!pb) return null;
+  // Trim each pattern set to 2 cues so the panel stays scannable.
+  const sections: Array<{ heading: string; items: string[] }> = [
+    { heading: 'Acknowledge', items: pb.acknowledgePatterns.slice(0, 2) },
+    { heading: 'Clarify', items: pb.clarifyQuestions.slice(0, 2) },
+    { heading: 'Take action', items: pb.takeActionPatterns.slice(0, 2) },
+  ];
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div
+        style={{
+          fontFamily: 'var(--pbt-font-mono)',
+          fontSize: 9,
+          letterSpacing: '0.16em',
+          textTransform: 'uppercase',
+          color: 'var(--pbt-text-muted)',
+          marginBottom: 8,
+        }}
+      >
+        What earns credit
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {sections.map((section) => (
+          <div key={section.heading}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: 'var(--pbt-driver-primary)',
+                letterSpacing: '0.02em',
+                marginBottom: 4,
+                textTransform: 'uppercase',
+              }}
+            >
+              {section.heading}
+            </div>
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: 16,
+                fontSize: 12.5,
+                lineHeight: 1.5,
+                color: 'var(--pbt-text)',
+              }}
+            >
+              {section.items.map((item, i) => (
+                <li key={i} style={{ marginBottom: 2 }}>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -636,6 +712,7 @@ export function ChatScreen() {
   const [mode, setMode] = useState<'text' | 'voice'>('voice');
   const [draft, setDraft] = useState('');
   const [voiceAnalyzing, setVoiceAnalyzing] = useState(false);
+  const [voiceReady, setVoiceReady] = useState(false);
   const [voiceAnalysisError, setVoiceAnalysisError] = useState<string | null>(null);
   const [endModalOpen, setEndModalOpen] = useState(false);
   const [exitModalOpen, setExitModalOpen] = useState(false);
@@ -682,7 +759,14 @@ export function ChatScreen() {
     try {
       const { report, transcript } = await voiceEndRef.current();
       await chatRef.current.applyVoiceSessionComplete(report, transcript);
-      go('stats');
+      // Brief "ready" beat between scoring and navigating to stats so
+      // the trainee sees the completion state, not a sudden cut.
+      setVoiceAnalyzing(false);
+      setVoiceReady(true);
+      window.setTimeout(() => {
+        setVoiceReady(false);
+        go('stats');
+      }, 700);
     } catch (err) {
       console.error('[ChatScreen] finalizeVoice error', err);
       setVoiceAnalysisError('Failed to analyze session — check your network and try again.');
@@ -721,6 +805,13 @@ export function ChatScreen() {
   const handleModeChange = useCallback((nextMode: 'text' | 'voice') => {
     if (nextMode === 'text') {
       voiceStopRef.current();
+      // A voice session that already finalized left chat.status === 'complete'
+      // on the shared ChatProvider. Without resetting, the moment we flip
+      // mode to 'text' the SessionEndingOverlay shows ("Your scorecard is
+      // ready") AND the auto-navigate-to-stats effect fires, trapping the
+      // user. Reset gives text mode a clean slate, and the auto-open
+      // effect will spin up a fresh AI opener for the same scenario.
+      chatRef.current.reset();
       setMode(nextMode);
       return;
     }
@@ -1004,6 +1095,7 @@ useThinkingSound(
           <VoiceMode
             voice={voice}
             isAnalyzing={voiceAnalyzing}
+            isReady={voiceReady}
             analysisError={voiceAnalysisError}
             onBegin={beginVoice}
             onRetry={voiceAnalysisError ? finalizeVoice : beginVoice}
@@ -1213,6 +1305,7 @@ const STATUS_LABELS: Record<string, string> = {
 function VoiceMode({
   voice,
   isAnalyzing,
+  isReady: isReadyProp,
   analysisError,
   onBegin,
   onRetry,
@@ -1220,6 +1313,8 @@ function VoiceMode({
 }: {
   voice: ReturnType<typeof useVoiceSession>;
   isAnalyzing: boolean;
+  /** Brief "Your scorecard is ready" beat between scoring and stats. */
+  isReady: boolean;
   analysisError: string | null;
   onBegin: () => void;
   onRetry?: () => void;
@@ -1264,30 +1359,55 @@ function VoiceMode({
         }}
       >
 
-      {/* Status label */}
-      <div
-        style={{
-          marginBottom: 14,
-          fontFamily: 'var(--pbt-font-mono)',
-          fontSize: 11,
-          letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-          color: isThinking
-            ? `color-mix(in oklab, ${dc.primary} 24%, oklch(0.52 0.10 240))`
-            : 'var(--pbt-text-muted)',
-          textAlign: 'center',
-          minHeight: 18,
-          transition: 'color 0.4s ease',
-        }}
-      >
-        {isConnecting
-          ? 'Connecting…'
-          : isReady
-          ? 'Voice ready'
-          : isAnalyzing
-          ? 'Analyzing session…'
-          : STATUS_LABELS[voice.status] ?? ''}
-      </div>
+      {/* Status label — pumped up between the End tap and the scorecard
+          navigation. "Analyzing session…" pulses in green; "Your
+          scorecard is ready" lands as the brief completion beat before
+          we route to stats. Other states stay quiet. */}
+      {isAnalyzing || isReadyProp ? (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            marginBottom: 14,
+            fontFamily: 'var(--pbt-font-display)',
+            fontSize: 22,
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
+            color: 'oklch(0.68 0.18 150)',
+            textShadow:
+              '0 0 18px color-mix(in oklab, oklch(0.68 0.18 150) 55%, transparent), 0 0 36px color-mix(in oklab, oklch(0.68 0.18 150) 25%, transparent)',
+            textAlign: 'center',
+            minHeight: 28,
+            animation: isAnalyzing
+              ? 'pbt-analyze-pulse 1.6s ease-in-out infinite'
+              : 'pbtFadeUp 0.32s ease-out',
+          }}
+        >
+          {isReadyProp ? 'Your scorecard is ready' : 'Analyzing session…'}
+        </div>
+      ) : (
+        <div
+          style={{
+            marginBottom: 14,
+            fontFamily: 'var(--pbt-font-mono)',
+            fontSize: 11,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            color: isThinking
+              ? `color-mix(in oklab, ${dc.primary} 24%, oklch(0.52 0.10 240))`
+              : 'var(--pbt-text-muted)',
+            textAlign: 'center',
+            minHeight: 18,
+            transition: 'color 0.4s ease',
+          }}
+        >
+          {isConnecting
+            ? 'Connecting…'
+            : isReady
+            ? 'Voice ready'
+            : STATUS_LABELS[voice.status] ?? ''}
+        </div>
+      )}
 
       {/* Orb — nudged down so stack breathes vs header; ring glow stays symmetric */}
       <div
