@@ -596,15 +596,35 @@ export function CreateScreen() {
               </Glass>
             </Section>
 
+            {/*
+              Desktop: inline CTA at the end of the form, right-aligned. We
+              used to render a corner FAB but it floated awkwardly over
+              content. Inline + auto-width is calmer and keeps the button
+              visually anchored to the form it submits. Mobile users still
+              get the sticky bottom bar below.
+            */}
+            <div className="hidden lg:flex lg:justify-end lg:pt-2 lg:pb-4">
+              <PillButton
+                size="lg"
+                icon={<Icon.spark />}
+                onClick={handleGenerate}
+                disabled={isSubmitting}
+                style={isSubmitting ? { opacity: 0.65 } : undefined}
+              >
+                Start scenario
+              </PillButton>
+            </div>
+
             <div style={{ height: 90 }} className="lg:hidden" />
             </div>
           </div>
         )}
       </Page>
 
+      {/* Mobile-only sticky CTA. Desktop has the inline button above. */}
       {tab === 'build' && (
         <div
-          className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:left-auto lg:right-8 lg:bottom-8 lg:w-[280px] lg:max-w-none lg:translate-x-0 lg:px-0"
+          className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:hidden"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
         >
           <PillButton

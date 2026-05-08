@@ -133,7 +133,23 @@ ${scenario.context ?? '(none)'}
 - If staff asks an open question, answer it honestly with one specific detail about your dog.
 - If staff cites the 97% / 12-week trial concretely, take it seriously.
 - Never say the words "ACT method" or "acknowledge / clarify / transform".
-- When the simulation reaches a natural end — a genuine close, a credible recommendation accepted, or a clear stalemate after 8+ customer turns — append exactly [END_SIMULATION] at the very end of your final message, with no space before it. Do this only once.${suffixBlock}
+- ENDING THE SIMULATION (read carefully — ending well is part of being realistic):
+  • The simulation MUST end when ANY of these is true:
+      (a) You have credibly accepted a recommendation. ("Okay, let's try it." / "Alright, I'll book the recheck." / "Sounds good — I'll grab the bag on my way out.")
+      (b) The trainee has clearly closed the conversation. (They say goodbye, thanks, "I appreciate it", "have a good one", "see you next time", or signal they're wrapping up.)
+      (c) Stalemate: the trainee has not made meaningful progress AND you've been at this for 10+ customer turns. Politely disengage.
+  • A real customer who got their question answered DOESN'T keep talking. Do not invent new objections to extend the scene. Do not loop on "thanks → you're welcome → thanks". Once you've genuinely accepted, end.
+  • To end: deliver ONE in-character closing line that fits the outcome (warm acceptance for a resolved close, polite disengagement for a stalemate), then on a NEW line at the end of that same message append the literal token [END_SIMULATION] — uppercase, single underscore, surrounded by square brackets, no leading/trailing words on that line.
+  • Output ONLY the bracketed token. NEVER write the words "end simulation", "ending the simulation", "this simulation is over", or any narration of the token. The token is a machine signal, not dialog. The trainee never sees it.
+  • Emit the token AT MOST ONCE in the entire conversation. Once you've emitted it, stop. Do not say anything more.
+  • Earliest you may emit: customer turn 4 (so the trainee gets at least a few exchanges).
+  • Correct example final message:
+      "Okay, that makes sense — let's give it a try. Thanks for taking the time.\n[END_SIMULATION]"
+  • Incorrect (do NOT do these):
+      "Okay let's end the simulation here." ← narrating, no token
+      "[end simulation] thanks!" ← token before content
+      "Alright, end_simulation" ← missing brackets
+      "Thanks!" → next turn → "Thanks again!" → next turn ← looping, never emitting the token${suffixBlock}
 `.trim();
 }
 
@@ -178,7 +194,20 @@ Return JSON with keys for each dimension (0–100 integer), the weighted overall
 the band (good/ok/poor), the legacy 1–10 ACT scores (acknowledgeScore,
 clarifyScore, takeActionScore), a multi-paragraph critique, a betterAlternative
 example line, a perDimensionNotes object (one short coaching note per dimension),
-and a keyMoments array of up to 3 moments of note (with type=win|miss, label, quote, ts).
+a keyMoments array of up to 3 moments of note (with type=win|miss, label, quote, ts),
+and a turnSentiment array — ONE entry per turn in the transcript, in order.
+
+# turnSentiment FORMAT
+- One object per transcript turn. Index 0 maps to turn 1 in the input.
+- Fields:
+    idx       (integer, starts at 0)
+    speaker   ("staff" if STAFF spoke that turn, "customer" if CUSTOMER spoke)
+    sentiment (number from -1.0 to +1.0; -1 = hostile, 0 = neutral, +1 = warm)
+- Score the affect/tone of that single turn — not the running average. A
+  customer who pushes back hostilely on turn 1 then accepts warmly on turn 8
+  should produce a sentiment arc that visibly shifts from negative to positive.
+- Sentiment for STAFF turns reflects how warm/empathetic vs flat/clinical the
+  trainee sounds. Useful for spotting tone problems even when the score is OK.
 
 # GUARDRAILS
 - ${NON_SHAMING_FRAMING}

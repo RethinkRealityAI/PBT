@@ -20,6 +20,7 @@ import {
 import { COLOR } from '../lib/tokens';
 import { fmtAgo, fmtDuration } from '../lib/format';
 import type { AdminSession } from '../data/types';
+import { SessionModal } from './SessionModal';
 
 export function SessionsScreen({
   range,
@@ -261,200 +262,21 @@ export function SessionsScreen({
           </Glass>
         )}
 
-        {open && (
-          <SessionDrawer
-            sessionId={open}
-            onClose={() => setOpen(null)}
-            sessions={sessions.data}
-          />
-        )}
+        <SessionModal
+          session={open ? sessions.data.find((s) => s.id === open) ?? null : null}
+          user={
+            open
+              ? users.data.find(
+                  (u) =>
+                    u.user_id ===
+                    sessions.data.find((s) => s.id === open)?.user_id,
+                ) ?? null
+              : null
+          }
+          onClose={() => setOpen(null)}
+        />
       </ScreenShell>
     </>
   );
 }
 
-function SessionDrawer({
-  sessionId,
-  onClose,
-  sessions,
-}: {
-  sessionId: string;
-  onClose: () => void;
-  sessions: AdminSession[];
-}) {
-  const s = sessions.find((x) => x.id === sessionId);
-  if (!s) return null;
-  return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(20,5,8,0.32)',
-          backdropFilter: 'blur(2px)',
-          zIndex: 50,
-        }}
-      />
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: 'min(900px, 95vw)',
-          zIndex: 51,
-          background: '#fcf9f7',
-          boxShadow: '-12px 0 40px -8px rgba(60,20,15,0.18)',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div
-          style={{
-            padding: 20,
-            borderBottom: '0.5px solid rgba(60,20,15,0.08)',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 12,
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 800,
-                color: COLOR.inkMute,
-                fontFamily: 'var(--pbt-mono)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.10em',
-              }}
-            >
-              {s.id}
-            </div>
-            <div
-              style={{
-                fontSize: 20,
-                fontWeight: 800,
-                color: COLOR.ink,
-                marginTop: 2,
-              }}
-            >
-              {s.scenario_summary ?? s.pushback_id ?? 'Session'}
-            </div>
-            <div style={{ fontSize: 12, color: COLOR.inkMute, marginTop: 4 }}>
-              {s.driver ?? '—'} · {s.mode ?? '—'} ·{' '}
-              {fmtDuration(s.duration_seconds ?? 0)} · {s.turns ?? 0} turns
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-              {s.completed ? (
-                <StatusPill tone="success">Completed</StatusPill>
-              ) : (
-                <StatusPill tone="neutral">{s.ended_reason ?? 'Abandoned'}</StatusPill>
-              )}
-              {s.flagged && <StatusPill tone="warn">{s.flag_reason ?? 'Flagged'}</StatusPill>}
-              {s.model_id && (
-                <StatusPill tone="info" dot={false}>
-                  {s.model_id}
-                </StatusPill>
-              )}
-            </div>
-          </div>
-          <ScoreBadge score={s.score_overall} size="lg" />
-          <button
-            onClick={onClose}
-            style={{
-              border: 'none',
-              background: 'rgba(255,255,255,0.7)',
-              borderRadius: 8,
-              width: 32,
-              height: 32,
-              cursor: 'pointer',
-              fontSize: 16,
-            }}
-          >
-            ×
-          </button>
-        </div>
-
-        <div
-          style={{
-            flex: 1,
-            overflow: 'auto',
-            padding: 24,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-          }}
-        >
-          {(s.transcript ?? []).map((t, i) => {
-            const isStaff = t.role === 'user';
-            return (
-              <div
-                key={i}
-                style={{
-                  display: 'flex',
-                  flexDirection: isStaff ? 'row-reverse' : 'row',
-                  gap: 10,
-                  alignItems: 'flex-start',
-                }}
-              >
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: '50%',
-                    background: isStaff
-                      ? COLOR.brandSoft
-                      : 'oklch(0.92 0.06 30)',
-                    color: isStaff ? COLOR.brand : 'oklch(0.40 0.14 30)',
-                    fontSize: 11,
-                    fontWeight: 800,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {isStaff ? 'TX' : 'OW'}
-                </div>
-                <div style={{ maxWidth: '78%' }}>
-                  <div
-                    style={{
-                      padding: '12px 14px',
-                      borderRadius: 14,
-                      background: isStaff ? COLOR.brand : '#fff',
-                      color: isStaff ? '#fff' : COLOR.ink,
-                      fontSize: 13,
-                      lineHeight: 1.5,
-                      boxShadow: isStaff
-                        ? '0 4px 10px -4px oklch(0.55 0.22 22 / 0.5)'
-                        : '0 1px 2px rgba(0,0,0,0.04), 0 0 0 0.5px rgba(60,20,15,0.08)',
-                    }}
-                  >
-                    {t.text}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: COLOR.inkMute,
-                      marginTop: 4,
-                      textAlign: isStaff ? 'right' : 'left',
-                    }}
-                  >
-                    Turn {i + 1} · {isStaff ? 'Staff' : 'Pet owner'}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-          {(!s.transcript || s.transcript.length === 0) && (
-            <EmptyState
-              title="No transcript"
-              subtitle="Session abandoned before any turns"
-            />
-          )}
-        </div>
-      </div>
-    </>
-  );
-}

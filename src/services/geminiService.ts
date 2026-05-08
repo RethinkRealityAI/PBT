@@ -229,6 +229,20 @@ export async function evaluateConversation(
                 required: ['ts', 'type', 'label', 'quote'],
               },
             },
+            // Per-turn sentiment arc — drives the sentiment chart in the
+            // admin session modal. One entry per transcript turn.
+            turnSentiment: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  idx: { type: Type.INTEGER },
+                  speaker: { type: Type.STRING },
+                  sentiment: { type: Type.NUMBER },
+                },
+                required: ['idx', 'speaker', 'sentiment'],
+              },
+            },
           },
           required: [
             'empathyTone',
@@ -245,6 +259,7 @@ export async function evaluateConversation(
             'betterAlternative',
             'perDimensionNotes',
             'keyMoments',
+            'turnSentiment',
           ],
         },
       },

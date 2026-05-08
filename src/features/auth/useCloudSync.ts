@@ -4,6 +4,10 @@ import { useProfile, type Profile } from '../../app/providers/ProfileProvider';
 import { getSupabase } from './supabaseClient';
 import { FLAGS } from '../../app/flags';
 import { DRIVER_KEYS, type DriverKey } from '../../design-system/tokens';
+import {
+  backfillLocalDataToCloud,
+  hasLocalDataToBackfill,
+} from './backfillLocalData';
 
 const DEBOUNCE_MS = 1500;
 
@@ -27,6 +31,31 @@ export function useCloudSync() {
   const { profile, setProfile } = useProfile();
   const profileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydratedForUserRef = useRef<string | null>(null);
+  const backfilledForUserRef = useRef<string | null>(null);
+
+  // ── Anonymous → signed-in backfill ───────────────────────────
+  // Catches every auth path (sign-up, sign-in, magic link, external
+  // OAuth). The modal triggers this directly too, but having it here
+  // means a session restored on a fresh page load also backfills any
+  // anonymous activity that happened in this browser.
+  useEffect(() => {
+    if (!FLAGS.CLOUD_SYNC) return;
+    if (!user) {
+      backfilledForUserRef.current = null;
+      return;
+    }
+    if (backfilledForUserRef.current === user.id) return;
+    if (!hasLocalDataToBackfill()) {
+      backfilledForUserRef.current = user.id;
+      return;
+    }
+    const sb = getSupabase();
+    if (!sb) return;
+    backfilledForUserRef.current = user.id;
+    void backfillLocalDataToCloud(sb, user.id).catch((err) =>
+      console.warn('[cloud-sync] backfill failed', err),
+    );
+  }, [user]);
 
   // ── Pull (one-shot per sign-in) ─────────────────────────────
   useEffect(() => {
