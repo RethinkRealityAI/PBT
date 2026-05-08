@@ -92,6 +92,18 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const naturalEndHandlerRef = useRef<(() => void) | null>(null);
   /** After endSimulation, wait until queued TTS finishes — reschedule as audio chunks arrive. */
   const pendingNaturalEndRef = useRef(false);
+  /**
+   * Client-side end fallback. The model is supposed to call `endSimulation`
+   * after shifting to GREEN and delivering its closing line, but it skips
+   * the tool call often enough to leave the conversation looping. Instead
+   * of relying solely on the tool call, we prime this ref the moment
+   * emotion shifts to green (the model's "convinced" signal) and trigger
+   * the natural-end on the very next `turnComplete` — which is when the
+   * closing line audio has fully arrived. That way "convinced + final
+   * statement" reliably ends the session, even if the model forgets the
+   * tool call.
+   */
+  const endPrimedRef = useRef(false);
   const naturalEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Gates mic audio until the AI delivers its first complete turn (prevents double opening)
   const openingDeliveredRef = useRef(false);
@@ -285,6 +297,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       naturalEndTimerRef.current = null;
     }
     pendingNaturalEndRef.current = false;
+    endPrimedRef.current = false;
     stopRecording();
     if (playbackCtxRef.current?.state !== 'closed') {
       try { playbackCtxRef.current?.close(); } catch { /* already closed */ }
@@ -309,6 +322,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       finalizePromiseRef.current = null;
       openingDeliveredRef.current = false;
       pendingNaturalEndRef.current = false;
+      endPrimedRef.current = false;
       if (naturalEndTimerRef.current) {
         clearTimeout(naturalEndTimerRef.current);
         naturalEndTimerRef.current = null;
@@ -410,7 +424,18 @@ export function useVoiceSession(): UseVoiceSessionReturn {
                 } catch { args = {}; }
 
                 if (fc.name === 'updateEmotion') {
-                  setEmotion(((args.emotion as string)?.toLowerCase().trim() as EmotionColor) ?? 'red');
+                  const next = ((args.emotion as string)?.toLowerCase().trim() as EmotionColor) ?? 'red';
+                  setEmotion(next);
+                  // Convinced → next AI turn IS the closing line; prime the
+                  // end so we trigger the natural-end after this same turn's
+                  // turnComplete fires. Only require enough turns to have
+                  // happened that this isn't a premature signal.
+                  if (
+                    next === 'green' &&
+                    transcriptRef.current.filter((m) => m.role === 'ai').length >= 2
+                  ) {
+                    endPrimedRef.current = true;
+                  }
                 }
                 // Note: don't commit accumulated AI text here for endSimulation —
                 // the same message may carry the closing line in serverContent.modelTurn
@@ -515,6 +540,21 @@ export function useVoiceSession(): UseVoiceSessionReturn {
               if (finalText) setLiveAiText(finalText);
               openingDeliveredRef.current = true;
               if (statusRef.current === 'thinking') setStatusSync('listening');
+
+              // Convinced + closing line just landed — trigger the natural
+              // end ourselves so the session finalizes regardless of
+              // whether the model called endSimulation. Skip if the turn
+              // was interrupted (user barge-in) — the AI didn't actually
+              // finish its closing, so let the conversation continue.
+              if (
+                endPrimedRef.current &&
+                !pendingNaturalEndRef.current &&
+                !serverContent?.interrupted
+              ) {
+                endPrimedRef.current = false;
+                pendingNaturalEndRef.current = true;
+                queueMicrotask(() => scheduleNaturalEndAfterPlayback());
+              }
             }
           },
           onerror: (e: unknown) => {

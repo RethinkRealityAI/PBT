@@ -722,16 +722,7 @@ export function ChatScreen() {
     setMode(nextMode);
   }, []);
 
-  const handleVoiceEnd = useCallback(() => {
-    if (voice.messages.length === 0 && (voice.status === 'idle' || voice.status === 'error')) {
-      voiceStopRef.current();
-      go('home');
-      return;
-    }
-    void finalizeVoice();
-  }, [finalizeVoice, go, voice.messages.length, voice.status]);
-
-  useThinkingSound(
+useThinkingSound(
     (mode === 'text' && chat.status === 'aiTyping') ||
       (mode === 'voice' && voice.status === 'thinking'),
   );
@@ -1043,17 +1034,24 @@ export function ChatScreen() {
             scenario={scenario}
             mode={mode}
             onModeChange={handleModeChange}
-            onEnd={
-              mode === 'voice'
-                ? handleVoiceEnd
-                : () => {
-                    if (chat.status === 'error' || chat.status === 'idle') {
-                      go('home');
-                      return;
-                    }
-                    setEndModalOpen(true);
-                  }
-            }
+            onEnd={() => {
+              // Voice with no active session yet → just leave.
+              if (
+                mode === 'voice' &&
+                voice.messages.length === 0 &&
+                (voice.status === 'idle' || voice.status === 'error')
+              ) {
+                voiceStopRef.current();
+                go('home');
+                return;
+              }
+              // Text in error / idle → just leave.
+              if (mode === 'text' && (chat.status === 'error' || chat.status === 'idle')) {
+                go('home');
+                return;
+              }
+              setEndModalOpen(true);
+            }}
           />
         </div>
         {mode === 'text' && (
@@ -1077,19 +1075,32 @@ export function ChatScreen() {
     </div>
     <EndSessionModal
       open={endModalOpen}
+      mode={mode}
       onClose={() => setEndModalOpen(false)}
       onSave={() => {
         setEndModalOpen(false);
-        void chat.end().then(() => go('stats')).catch(() => go('stats'));
+        if (mode === 'voice') {
+          void finalizeVoice();
+        } else {
+          void chat.end().then(() => go('stats')).catch(() => go('stats'));
+        }
       }}
       onRestart={() => {
         setEndModalOpen(false);
+        // Restart only offered in text mode — voice would need to tear
+        // down + re-establish the WebSocket, which is too heavy for the
+        // "retry the same opener" intent.
         void chat.restart();
       }}
       onEnd={() => {
         setEndModalOpen(false);
-        void chat.abandon('user_exit');
-        go('home');
+        if (mode === 'voice') {
+          voiceStopRef.current();
+          go('home');
+        } else {
+          void chat.abandon('user_exit');
+          go('home');
+        }
       }}
     />
     <ExitChatModal
@@ -1097,12 +1108,21 @@ export function ChatScreen() {
       onClose={() => setExitModalOpen(false)}
       onSave={() => {
         setExitModalOpen(false);
-        void chat.end().then(() => go('stats')).catch(() => go('stats'));
+        if (mode === 'voice') {
+          void finalizeVoice();
+        } else {
+          void chat.end().then(() => go('stats')).catch(() => go('stats'));
+        }
       }}
       onDiscard={() => {
         setExitModalOpen(false);
-        void chat.abandon('user_exit');
-        go('home');
+        if (mode === 'voice') {
+          voiceStopRef.current();
+          go('home');
+        } else {
+          void chat.abandon('user_exit');
+          go('home');
+        }
       }}
     />
     </>
@@ -1482,31 +1502,37 @@ function VoiceMode({
 
 function EndSessionModal({
   open,
+  mode,
   onClose,
   onSave,
   onRestart,
   onEnd,
 }: {
   open: boolean;
+  mode: 'text' | 'voice';
   onClose: () => void;
   onSave: () => void;
   onRestart: () => void;
   onEnd: () => void;
 }) {
+  // Voice mode hides Restart — re-establishing the Live API socket is too
+  // heavy for the "retry the same opener" intent; teardown + reconnect
+  // would take longer than the user's patience for a soft reset.
+  const subtitle =
+    mode === 'voice'
+      ? 'Save it to your history with a full scorecard, or end without saving.'
+      : 'Save it to your history with a full scorecard, restart with the same opener, or end without saving.';
   return (
-    <ModalShell
-      open={open}
-      onClose={onClose}
-      title="End this session?"
-      subtitle="Save it to your history with a full scorecard, restart with the same opener, or end without saving."
-    >
+    <ModalShell open={open} onClose={onClose} title="End this session?" subtitle={subtitle}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <ModalActionButton tone="primary" onClick={onSave}>
           Save & score
         </ModalActionButton>
-        <ModalActionButton tone="secondary" onClick={onRestart}>
-          Restart with same opener
-        </ModalActionButton>
+        {mode === 'text' && (
+          <ModalActionButton tone="secondary" onClick={onRestart}>
+            Restart with same opener
+          </ModalActionButton>
+        )}
         <ModalActionButton tone="quiet" onClick={onEnd}>
           End without saving
         </ModalActionButton>
