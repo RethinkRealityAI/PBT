@@ -207,24 +207,37 @@ function ScenarioDetailsPanel({
               left: '50%',
               zIndex: 41,
               width: 'min(92vw, 580px)',
-              // Cap to viewport with edge padding (24px each side incl.
-              // safe-area inset) and scroll inside the glass card if the
-              // content (rubric hints + opening + scoring pills) is taller
-              // than the screen.
-              maxHeight: 'calc(100dvh - max(env(safe-area-inset-top), 24px) - max(env(safe-area-inset-bottom), 24px))',
-              overflowY: 'auto',
-              WebkitOverflowScrolling: 'touch',
-              borderRadius: 26,
             }}
-            className="pbt-scroll"
           >
             <Glass
               radius={26}
-              padding="22px 22px 20px"
+              padding={0}
               blur={24}
               tint={0.05}
               backdropSaturatePct={130}
+              style={{
+                // Cap to viewport with edge padding (24px each side incl.
+                // safe-area inset). Body scrolls inside; footer button
+                // (Begin simulation) is anchored outside the scroll
+                // container so it never slides off the bottom of the
+                // screen on shorter viewports.
+                maxHeight:
+                  'calc(100dvh - max(env(safe-area-inset-top), 24px) - max(env(safe-area-inset-bottom), 24px))',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }}
             >
+              <div
+                className="pbt-scroll"
+                style={{
+                  flex: '1 1 auto',
+                  minHeight: 0,
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  padding: onBegin ? '22px 22px 12px' : '22px 22px 20px',
+                }}
+              >
               {/* Header row */}
               <div className="flex items-start justify-between gap-2" style={{ marginBottom: 10 }}>
                 <div style={{ minWidth: 0 }}>
@@ -380,31 +393,45 @@ function ScenarioDetailsPanel({
                   credit. Custom-built scenarios with no taxonomy entry
                   fall back silently. */}
               <ScenarioHints scenario={scenario} />
+              </div>
 
-              {/* Begin Simulation CTA — only shown in voice idle */}
+              {/* Sticky footer — Begin Simulation CTA stays anchored
+                  below the scrollable body so it can't slide off the
+                  bottom of the viewport when content overflows. */}
               {onBegin && (
-                <button
-                  type="button"
-                  onClick={onBegin}
+                <div
                   style={{
-                    width: '100%',
-                    border: 'none',
-                    borderRadius: 9999,
-                    padding: '16px 28px',
-                    background: 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
-                    color: '#fff',
-                    fontFamily: 'var(--pbt-font-mono)',
-                    fontSize: 13,
-                    fontWeight: 800,
-                    letterSpacing: '0.14em',
-                    textTransform: 'uppercase',
-                    cursor: 'pointer',
-                    boxShadow: '0 18px 36px -18px color-mix(in oklab, var(--pbt-driver-primary) 75%, transparent)',
-                    marginTop: 4,
+                    flex: 'none',
+                    padding: '14px 22px max(env(safe-area-inset-bottom), 18px)',
+                    borderTop: '1px solid rgba(255,255,255,0.4)',
+                    background:
+                      'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18))',
                   }}
                 >
-                  Begin simulation
-                </button>
+                  <button
+                    type="button"
+                    onClick={onBegin}
+                    style={{
+                      width: '100%',
+                      border: 'none',
+                      borderRadius: 9999,
+                      padding: '16px 28px',
+                      background:
+                        'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+                      color: '#fff',
+                      fontFamily: 'var(--pbt-font-mono)',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      letterSpacing: '0.14em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      boxShadow:
+                        '0 18px 36px -18px color-mix(in oklab, var(--pbt-driver-primary) 75%, transparent)',
+                    }}
+                  >
+                    Begin simulation
+                  </button>
+                </div>
               )}
             </Glass>
           </motion.div>
