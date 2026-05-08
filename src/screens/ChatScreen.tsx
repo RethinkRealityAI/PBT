@@ -207,37 +207,38 @@ function ScenarioDetailsPanel({
               left: '50%',
               zIndex: 41,
               width: 'min(92vw, 580px)',
+              // Cap to viewport with edge padding (24px each side incl.
+              // safe-area inset). The flex layout below splits a
+              // scrollable body from a sticky Begin Simulation footer
+              // so the CTA never disappears below the fold.
+              maxHeight:
+                'calc(100dvh - max(env(safe-area-inset-top), 24px) - max(env(safe-area-inset-bottom), 24px))',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              borderRadius: 26,
+              // Glass-card chrome inlined here so the body / footer
+              // split is the actual flex container — Glass wraps its
+              // children in an extra non-flex `<div>`, which would
+              // collapse the column. Tokens come from the same source
+              // as `<Glass blur={24} tint={0.05} backdropSaturatePct={130}>`.
+              border: '1px solid var(--pbt-glass-border)',
+              boxShadow: 'var(--pbt-shadow-glass)',
+              background: 'rgba(255, 255, 255, 0.05)',
+              backdropFilter: 'blur(22px) saturate(130%) brightness(1.02)',
+              WebkitBackdropFilter: 'blur(22px) saturate(130%) brightness(1.02)',
             }}
           >
-            <Glass
-              radius={26}
-              padding={0}
-              blur={24}
-              tint={0.05}
-              backdropSaturatePct={130}
+            <div
+              className="pbt-scroll"
               style={{
-                // Cap to viewport with edge padding (24px each side incl.
-                // safe-area inset). Body scrolls inside; footer button
-                // (Begin simulation) is anchored outside the scroll
-                // container so it never slides off the bottom of the
-                // screen on shorter viewports.
-                maxHeight:
-                  'calc(100dvh - max(env(safe-area-inset-top), 24px) - max(env(safe-area-inset-bottom), 24px))',
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
+                flex: '1 1 auto',
+                minHeight: 0,
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                padding: onBegin ? '22px 22px 12px' : '22px 22px 20px',
               }}
             >
-              <div
-                className="pbt-scroll"
-                style={{
-                  flex: '1 1 auto',
-                  minHeight: 0,
-                  overflowY: 'auto',
-                  WebkitOverflowScrolling: 'touch',
-                  padding: onBegin ? '22px 22px 12px' : '22px 22px 20px',
-                }}
-              >
               {/* Header row */}
               <div className="flex items-start justify-between gap-2" style={{ marginBottom: 10 }}>
                 <div style={{ minWidth: 0 }}>
@@ -303,21 +304,23 @@ function ScenarioDetailsPanel({
                 ))}
               </div>
 
-              {/* Objective — full primary text color (muted was illegible on driver glow in dark mode) */}
+              {/* Objective + context + opening — collapsed into one
+                  compact block. The full 7-dimension rubric isn't shown
+                  here (the rubric-hints below are more actionable, and
+                  the scorecard surfaces the dimensions after the run). */}
               <p
                 style={{
-                  margin: '0 0 16px',
-                  fontSize: 13.5,
-                  lineHeight: 1.65,
+                  margin: '0 0 10px',
+                  fontSize: 13,
+                  lineHeight: 1.5,
                   fontWeight: 600,
                   color: 'var(--pbt-text)',
                 }}
               >
                 <strong style={{ fontWeight: 800 }}>Objective:</strong>{' '}
-                Use ACT — Acknowledge, Clarify, Transform — to guide this client from pushback to resolution.
+                Guide this client from pushback to resolution with ACT.
               </p>
 
-              {/* Context + opening — directly on the glass card (no nested grey panel) */}
               {(scenario.context ?? scenario.pushbackNotes) && (
                 <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 600, color: 'var(--pbt-text)' }}>
                   <strong style={{ fontWeight: 800 }}>Context:</strong>{' '}
@@ -339,50 +342,11 @@ function ScenarioDetailsPanel({
                 </em>
               </p>
 
-              {/* Scoring metrics — what will be evaluated */}
-              {onBegin && (
-                <div style={{ marginBottom: 12 }}>
-                  <div
-                    style={{
-                      fontFamily: 'var(--pbt-font-mono)',
-                      fontSize: 9,
-                      letterSpacing: '0.16em',
-                      textTransform: 'uppercase',
-                      color: 'var(--pbt-text-muted)',
-                      marginBottom: 8,
-                    }}
-                  >
-                    Scored on
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      'Empathy & Tone',
-                      'Active Listening',
-                      'Product Knowledge',
-                      'Objection Handling',
-                      'Confidence',
-                      'Closing',
-                      'Pacing',
-                    ].map((label) => (
-                      <span
-                        key={label}
-                        style={{
-                          padding: '4px 10px',
-                          borderRadius: 9999,
-                          background: 'rgba(255,255,255,0.18)',
-                          border: '1px solid rgba(255,255,255,0.38)',
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color: '#000',
-                          letterSpacing: '0.01em',
-                        }}
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Scoring metrics pill row removed — rubric hints below
+                  cover what to do, and the full dimension list re-
+                  appears on the scorecard after the run. Saved ~80px
+                  of modal height to keep the Begin CTA in view on
+                  shorter viewports without scrolling. */}
 
               {/* Coaching hints — what the AI customer + scorer are
                   listening for. Surfaces ACT pattern signals from the
@@ -433,7 +397,6 @@ function ScenarioDetailsPanel({
                   </button>
                 </div>
               )}
-            </Glass>
           </motion.div>
         </>
       )}
