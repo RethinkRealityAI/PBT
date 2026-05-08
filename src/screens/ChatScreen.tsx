@@ -506,9 +506,12 @@ interface ChatComposerProps {
   onSend: (trimmed: string) => void;
   disabled: boolean;
   canSend: boolean;
+  /** Notify the parent when the textarea height changes so it can
+   *  re-pin the message list to the latest AI turn. */
+  onResize?: () => void;
 }
 
-const COMPOSER_MAX_HEIGHT = 140; // ~5 lines at 16px line-height ~24
+const COMPOSER_MAX_HEIGHT = 80; // ~3 lines at 16px line-height ~24 — keeps the AI's latest message visible while typing
 
 function ChatComposer({
   value,
@@ -516,6 +519,7 @@ function ChatComposer({
   onSend,
   disabled,
   canSend,
+  onResize,
 }: ChatComposerProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -526,7 +530,10 @@ function ChatComposer({
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
-  }, [value]);
+    // Tell the parent the layout shifted so it can re-pin the message
+    // list to the latest AI turn.
+    onResize?.();
+  }, [value, onResize]);
 
   const trimmed = value.trim();
   const sendable = trimmed.length > 0 && canSend && !disabled;
@@ -543,33 +550,15 @@ function ChatComposer({
           display: 'flex',
           alignItems: 'flex-end',
           gap: 8,
-          // Round the inner content area but keep flex alignment honest.
+          paddingLeft: 6,
           paddingRight: 2,
         }}
       >
-        <button
-          aria-label="Add"
-          type="button"
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 9999,
-            background: 'rgba(255,255,255,0.55)',
-            border: 'none',
-            color: 'var(--pbt-text)',
-            cursor: 'pointer',
-            flexShrink: 0,
-            // Vertical-align with the first line of the textarea.
-            marginBottom: 2,
-          }}
-        >
-          <Icon.plus />
-        </button>
         <textarea
           ref={taRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Acknowledge, ask, recommend… (Shift+Enter for new line)"
+          placeholder="Acknowledge, ask, recommend…"
           rows={1}
           disabled={disabled}
           onKeyDown={(e) => {
@@ -610,12 +599,21 @@ function ChatComposer({
             border: 'none',
             cursor: sendable ? 'pointer' : 'not-allowed',
             color: '#fff',
-            background: sendable
-              ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
-              : 'rgba(60,20,15,0.12)',
+            // Always driver-tinted; just dim the disabled state instead
+            // of swapping to a neutral grey, so the affordance stays
+            // visually consistent with the rest of the chrome.
+            background:
+              'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+            opacity: sendable ? 1 : 0.42,
             flexShrink: 0,
-            marginBottom: 2,
-            transition: 'background 0.15s ease',
+            // Match the textarea's bottom padding (8px) so the icon's
+            // optical center sits on the same baseline as the typed text.
+            alignSelf: 'flex-end',
+            marginBottom: 4,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'opacity 0.15s ease',
           }}
         >
           <Icon.send />
@@ -749,12 +747,18 @@ useThinkingSound(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, scenario, chat.status]);
 
-  // Auto-scroll on new messages
+  // Pin the message list to the bottom — used on new messages AND when
+  // the composer grows during typing so the AI's latest turn stays in
+  // view instead of getting pushed off the top.
+  const pinScrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, []);
+
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [chat.messages.length, chat.status]);
+    pinScrollToBottom();
+  }, [chat.messages.length, chat.status, pinScrollToBottom]);
 
   // Auto-navigate to scorecard once scoring completes. The ending overlay
   // covers the visual transition; the small extra delay lets it linger on
@@ -1069,6 +1073,7 @@ useThinkingSound(
               chat.status === 'complete'
             }
             canSend={chat.status === 'awaitingUser'}
+            onResize={pinScrollToBottom}
           />
         )}
       </div>
