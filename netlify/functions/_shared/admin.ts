@@ -114,3 +114,47 @@ export function readRange(req: Request): { since: string; limit: number } {
   const limit = Math.min(5000, Number(params.get('limit') ?? 1000));
   return { since, limit };
 }
+
+/**
+ * Append a row to admin_audit_log. Best-effort — failures are logged but
+ * don't block the calling function (the data write has already happened).
+ */
+export async function writeAuditLog(
+  ctx: AdminCtx,
+  entry: {
+    entity_type: 'flag' | 'flag_rule' | 'scenario_override';
+    entity_id: string;
+    action: 'create' | 'update' | 'delete' | 'revert';
+    before?: unknown;
+    after?: unknown;
+    note?: string;
+  },
+): Promise<void> {
+  const { error } = await ctx.sb.from('admin_audit_log').insert({
+    actor_id: ctx.user.id,
+    entity_type: entry.entity_type,
+    entity_id: entry.entity_id,
+    action: entry.action,
+    before: entry.before ?? null,
+    after: entry.after ?? null,
+    note: entry.note ?? null,
+  });
+  if (error) console.error('[admin] audit log insert failed', error);
+}
+
+/**
+ * Service-role Supabase client that does NOT require the caller to be an
+ * admin. Used by the public `flags-resolve` endpoint, which serves resolved
+ * flag values to anonymous + authed consumer-app sessions. Throws if the
+ * required env vars are missing.
+ */
+export function getServiceClient(): SupabaseClient {
+  const url = envFirst('SUPABASE_URL', 'VITE_SUPABASE_URL');
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  if (!url || !serviceKey) {
+    throw new Error('Server misconfigured: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  }
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}

@@ -11,6 +11,26 @@ import {
 } from './clinicalReference';
 import { DIMENSIONS } from './scoringRubric';
 
+/**
+ * Bounded admin-side prompt overrides. The canonical customer prompt and
+ * scoring rubric remain authoritative — these wrap the customer turn only.
+ * Scoring is never overridden so clinical accuracy + 7-dim grading are
+ * preserved regardless of admin tinkering.
+ */
+export interface PromptOverrides {
+  promptPrefix?: string | null;
+  promptSuffix?: string | null;
+}
+
+const MAX_OVERRIDE_LEN = 1500;
+
+function trimOverride(s: string | null | undefined): string {
+  if (!s) return '';
+  const cleaned = s.trim();
+  if (cleaned.length === 0) return '';
+  return cleaned.slice(0, MAX_OVERRIDE_LEN);
+}
+
 /** Pushback copy + trainee specifics for prompts (text + voice + scoring). */
 export function formatPushbackPromptSection(scenario: Scenario): string {
   const extra = scenario.pushbackNotes?.trim();
@@ -46,8 +66,15 @@ or improvise something true to your driver type, breed, and pushback category.
 /**
  * Builds the system prompt that drives the AI customer in roleplay.
  * Pulls in driver knowledge + pushback context + clinical guardrails.
+ *
+ * Optional `overrides.promptPrefix` is inserted before the canonical
+ * sections; `overrides.promptSuffix` is appended after the rules block.
+ * Both are length-capped so an admin can't accidentally bury the rubric.
  */
-export function buildCustomerSystemPrompt(scenario: Scenario): string {
+export function buildCustomerSystemPrompt(
+  scenario: Scenario,
+  overrides: PromptOverrides = {},
+): string {
   const driver = DRIVER_KNOWLEDGE[scenario.suggestedDriver];
   const pushback = getPushbackKnowledge(scenario.pushback.id);
   const pushbackBlock = formatPushbackPromptSection(scenario);
@@ -58,8 +85,17 @@ export function buildCustomerSystemPrompt(scenario: Scenario): string {
     4: 'You are combative: you stay difficult throughout. Soften only after multiple strong, evidence-backed turns — but do soften when the trainee earns it.',
   };
 
+  const prefix = trimOverride(overrides.promptPrefix);
+  const suffix = trimOverride(overrides.promptSuffix);
+  const prefixBlock = prefix
+    ? `# ADMIN NOTES (apply on top of the canonical brief below)\n${prefix}\n\n`
+    : '';
+  const suffixBlock = suffix
+    ? `\n\n# ADMIN ADDENDUM\n${suffix}`
+    : '';
+
   return `
-You are roleplaying a Royal Canin customer pushing back during an in-clinic conversation.
+${prefixBlock}You are roleplaying a Royal Canin customer pushing back during an in-clinic conversation.
 You are NOT the staff member. You are the OWNER of the dog. Stay in character.
 Reply in 1–3 sentences per turn. Never break character. Never grade the staff.
 Never mention that you are an AI.
@@ -113,7 +149,7 @@ ${scenario.context ?? '(none)'}
       "Okay let's end the simulation here." ← narrating, no token
       "[end simulation] thanks!" ← token before content
       "Alright, end_simulation" ← missing brackets
-      "Thanks!" → next turn → "Thanks again!" → next turn ← looping, never emitting the token
+      "Thanks!" → next turn → "Thanks again!" → next turn ← looping, never emitting the token${suffixBlock}
 `.trim();
 }
 
@@ -187,10 +223,13 @@ and a turnSentiment array — ONE entry per turn in the transcript, in order.
  * Mirrors customer prompt but accommodates voice-specific concerns
  * (turn length, tool calls).
  */
-export function buildVoiceSystemPrompt(scenario: Scenario): string {
+export function buildVoiceSystemPrompt(
+  scenario: Scenario,
+  overrides: PromptOverrides = {},
+): string {
   // Replace the text-mode "open immediately" rule with a voice-mode equivalent
   // that prevents a double-opening when the kickoff text triggers the model.
-  const base = buildCustomerSystemPrompt(scenario).replace(
+  const base = buildCustomerSystemPrompt(scenario, overrides).replace(
     '- Open the conversation with your pushback — do not wait for staff to greet you.',
     '- Wait for the text cue to begin. When it arrives, deliver EXACTLY ONE opening pushback line, then go completely silent and wait for the staff member to speak first. Do NOT add a second statement or follow-up after your opening.',
   );

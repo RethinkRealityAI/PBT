@@ -639,6 +639,8 @@ export function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [voiceAnalyzing, setVoiceAnalyzing] = useState(false);
   const [voiceAnalysisError, setVoiceAnalysisError] = useState<string | null>(null);
+  const [endModalOpen, setEndModalOpen] = useState(false);
+  const [exitModalOpen, setExitModalOpen] = useState(false);
   // Open by default in voice mode so Begin Simulation lives inside the panel
   const [scenarioDetailsOpen, setScenarioDetailsOpen] = useState(mode === 'voice');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -653,6 +655,21 @@ export function ChatScreen() {
   const voiceFinalizeBusyRef = useRef(false);
   const scenarioIndex = scenario ? seedScenarioIndex(scenario) : -1;
   const scenarioCounterIndex = scenarioIndex >= 0 ? scenarioIndex : undefined;
+
+  // Count of user turns committed to the session — gates the back-button
+  // confirm modal (only shown once the user has actually engaged).
+  const userTurns = chat.messages.filter((m) => m.role === 'user' && !m._transientError).length;
+
+  const handleBackPress = useCallback(() => {
+    // 0–1 user turns: not a meaningful session yet, leave silently. The
+    // existing ChatAbandonWatcher will still emit a training_sessions row
+    // for admin telemetry if there's any in-flight state.
+    if (userTurns < 2 || chat.status === 'idle' || chat.status === 'complete' || chat.status === 'error') {
+      go('home');
+      return;
+    }
+    setExitModalOpen(true);
+  }, [userTurns, chat.status, go]);
 
   const finalizeVoice = useCallback(async () => {
     if (voiceFinalizeBusyRef.current) return;
@@ -784,6 +801,7 @@ export function ChatScreen() {
   }
 
   return (
+    <>
     <div className="flex h-full min-h-0 flex-1 flex-col lg:max-w-4xl lg:mx-auto lg:w-full">
       <SessionEndingOverlay
         open={showEndingOverlay}
@@ -800,7 +818,7 @@ export function ChatScreen() {
         <div className="flex items-center gap-3">
           <button
             aria-label="Back to dashboard"
-            onClick={() => go('home')}
+            onClick={handleBackPress}
             style={{
               width: 32,
               height: 32,
@@ -1033,11 +1051,7 @@ export function ChatScreen() {
                       go('home');
                       return;
                     }
-                    // Kick off scoring; the status-watching effect handles
-                    // navigation to /stats once the report lands. The
-                    // SessionEndingOverlay covers the transition so the
-                    // manual-end and auto-end UX are identical.
-                    void chat.end();
+                    setEndModalOpen(true);
                   }
             }
           />
@@ -1061,6 +1075,37 @@ export function ChatScreen() {
         )}
       </div>
     </div>
+    <EndSessionModal
+      open={endModalOpen}
+      onClose={() => setEndModalOpen(false)}
+      onSave={() => {
+        setEndModalOpen(false);
+        void chat.end().then(() => go('stats')).catch(() => go('stats'));
+      }}
+      onRestart={() => {
+        setEndModalOpen(false);
+        void chat.restart();
+      }}
+      onEnd={() => {
+        setEndModalOpen(false);
+        void chat.abandon('user_exit');
+        go('home');
+      }}
+    />
+    <ExitChatModal
+      open={exitModalOpen}
+      onClose={() => setExitModalOpen(false)}
+      onSave={() => {
+        setExitModalOpen(false);
+        void chat.end().then(() => go('stats')).catch(() => go('stats'));
+      }}
+      onDiscard={() => {
+        setExitModalOpen(false);
+        void chat.abandon('user_exit');
+        go('home');
+      }}
+    />
+    </>
   );
 }
 
@@ -1447,5 +1492,216 @@ function VoiceMode({
       </div>
 
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Session-end + back-confirm modals
+// ─────────────────────────────────────────────────────────────
+
+function EndSessionModal({
+  open,
+  onClose,
+  onSave,
+  onRestart,
+  onEnd,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: () => void;
+  onRestart: () => void;
+  onEnd: () => void;
+}) {
+  return (
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      title="End this session?"
+      subtitle="Save it to your history with a full scorecard, restart with the same opener, or end without saving."
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <ModalActionButton tone="primary" onClick={onSave}>
+          Save & score
+        </ModalActionButton>
+        <ModalActionButton tone="secondary" onClick={onRestart}>
+          Restart with same opener
+        </ModalActionButton>
+        <ModalActionButton tone="quiet" onClick={onEnd}>
+          End without saving
+        </ModalActionButton>
+      </div>
+    </ModalShell>
+  );
+}
+
+function ExitChatModal({
+  open,
+  onClose,
+  onSave,
+  onDiscard,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      title="Save your progress?"
+      subtitle="You're leaving mid-session. Save it to your history with a full scorecard, or discard and head back."
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <ModalActionButton tone="primary" onClick={onSave}>
+          Save & score
+        </ModalActionButton>
+        <ModalActionButton tone="quiet" onClick={onDiscard}>
+          Discard & leave
+        </ModalActionButton>
+      </div>
+    </ModalShell>
+  );
+}
+
+function ModalShell({
+  open,
+  onClose,
+  title,
+  subtitle,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.button
+            type="button"
+            aria-label="Close"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 70,
+              border: 'none',
+              background: 'rgba(20, 12, 14, 0.36)',
+              backdropFilter: 'blur(6px)',
+              cursor: 'default',
+            }}
+          />
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="end-session-modal-title"
+            initial={{ opacity: 0, scale: 0.94, x: '-50%', y: '-46%' }}
+            animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+            exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-46%' }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              zIndex: 71,
+              width: 'min(94vw, 420px)',
+              borderRadius: 28,
+            }}
+          >
+            <Glass radius={28} padding="24px 22px" blur={26} tint={0.06}>
+              <h2
+                id="end-session-modal-title"
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 600,
+                  letterSpacing: '-0.02em',
+                  color: 'var(--pbt-text)',
+                }}
+              >
+                {title}
+              </h2>
+              {subtitle && (
+                <p
+                  style={{
+                    margin: '8px 0 18px',
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    color: 'var(--pbt-text-muted)',
+                  }}
+                >
+                  {subtitle}
+                </p>
+              )}
+              {children}
+            </Glass>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function ModalActionButton({
+  tone,
+  onClick,
+  children,
+}: {
+  tone: 'primary' | 'secondary' | 'quiet';
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const styles: Record<typeof tone, CSSProperties> = {
+    primary: {
+      background:
+        'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+      color: '#fff',
+      border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 28%, rgba(255,255,255,0.45))',
+      boxShadow: [
+        '0 1px 0 rgba(255,255,255,0.38) inset',
+        '0 -1px 0 rgba(0,0,0,0.10) inset',
+        '0 6px 18px -6px color-mix(in oklab, var(--pbt-driver-primary) 35%, transparent)',
+      ].join(', '),
+      fontWeight: 700,
+    },
+    secondary: {
+      background: 'rgba(255,255,255,0.42)',
+      color: 'var(--pbt-text)',
+      border: '1px solid rgba(255,255,255,0.6)',
+      backdropFilter: 'blur(14px)',
+      WebkitBackdropFilter: 'blur(14px)',
+      fontWeight: 600,
+    },
+    quiet: {
+      background: 'transparent',
+      color: 'var(--pbt-text-muted)',
+      border: '1px solid rgba(60,20,15,0.16)',
+      fontWeight: 600,
+    },
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        width: '100%',
+        padding: '12px 16px',
+        borderRadius: 14,
+        cursor: 'pointer',
+        fontFamily: 'var(--pbt-font-body)',
+        fontSize: 14,
+        letterSpacing: '-0.005em',
+        ...styles[tone],
+      }}
+    >
+      {children}
+    </button>
   );
 }

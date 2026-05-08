@@ -4,6 +4,7 @@ import type { ChatMessage, ScoreReport } from './types';
 import {
   buildCustomerSystemPrompt,
   buildScoringSystemPrompt,
+  type PromptOverrides,
 } from '../data/knowledge/promptBuilders';
 import {
   bandFor,
@@ -49,6 +50,8 @@ const END_TOKEN = '[END_SIMULATION]';
 interface CallOptions {
   /** PBT session id (training_sessions.id). Telemetry rows attribute to it. */
   sessionId?: string | null;
+  /** Bounded admin overrides (prompt prefix/suffix). Scoring prompt is never touched. */
+  promptOverrides?: PromptOverrides;
 }
 
 interface UsageMetadata {
@@ -73,7 +76,7 @@ export async function generateRoleplayMessage(
   options: CallOptions = {},
 ): Promise<ChatMessage> {
   const ai = getClient();
-  const systemInstruction = buildCustomerSystemPrompt(scenario);
+  const systemInstruction = buildCustomerSystemPrompt(scenario, options.promptOverrides);
 
   // Strip any transient error messages from history before sending to the model
   const cleanHistory = history.filter((m) => !m._transientError);

@@ -14,6 +14,8 @@ import { useSession } from '../app/providers/SessionProvider';
 import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens';
 import { LIBRARY_SCENARIOS } from '../data/scenarios';
+import { useResolvedLibraryScenarios } from '../data/useResolvedScenarios';
+import { useFlag, useFlagValue, IfFlag } from '../app/providers/FlagProvider';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
@@ -176,8 +178,14 @@ export function HomeScreen() {
   const { setScenario } = useScenario();
   const [pickIndex, setPickIndex] = useState(0);
   const [scoringInfoOpen, setScoringInfoOpen] = useState(false);
+  const [scenarioInfoOpen, setScenarioInfoOpen] = useState(false);
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
+  const resolvedLibrary = useResolvedLibraryScenarios();
+  const headlineOverride = useFlagValue<string>('field.home.headline', '');
+  const showActCard = useFlag('component.home.act_guide_card', true);
+  const showLibraryCard = useFlag('component.home.library_card', true);
+  const showEchoCard = useFlag('component.home.echo_profile_card', true);
   const [welcomeOpen, setWelcomeOpen] = useState(() => !readStorage(DASHBOARD_WELCOMED_KEY));
   const [beaconActive, setBeaconActive] = useState(false);
   /** Ripples / Orb CSS pulse / breathing — off until Start Here → scoring modal is closed. */
@@ -204,10 +212,37 @@ export function HomeScreen() {
 
   const driver = ECHO_DRIVERS[profile.primary];
   const driverColors = DRIVER_COLORS[profile.primary];
-  const todaysPick = LIBRARY_SCENARIOS[pickIndex];
-  const total = LIBRARY_SCENARIOS.length;
+  const total = resolvedLibrary.length;
+  const safeIndex = total === 0 ? 0 : pickIndex % total;
+  // If an admin hides every scenario, fall back to the canonical first entry
+  // so the hero card stays renderable. The Start button still routes correctly.
+  const resolvedSlot = resolvedLibrary[safeIndex];
+  const todaysPick = resolvedSlot?.scenario ?? LIBRARY_SCENARIOS[0];
+  const todaysOverride = resolvedSlot?.override ?? null;
+  const cardDriverKey =
+    (todaysOverride?.card_driver_override as
+      | 'Activator'
+      | 'Energizer'
+      | 'Analyzer'
+      | 'Harmonizer'
+      | null) ?? todaysPick.suggestedDriver;
+  // Card-level driver tint can be detached from the AI's scenario driver so
+  // an admin can theme a card differently from the conversation behaviour.
+  const cardDriverColors = DRIVER_COLORS[cardDriverKey] ?? driverColors;
   const initials = getDisplayInitials(user);
   const displayName = getDisplayName(user);
+  const headline = headlineOverride.trim() || `What pushback are\nyou ready for today?`;
+  const cardTitle =
+    todaysOverride?.card_title_override?.trim() ||
+    todaysPick.pushback.title;
+  const cardSubtitle =
+    todaysOverride?.card_subtitle_override?.trim() ||
+    `${todaysPick.breed}, ${todaysPick.age}. Driver: ${todaysPick.suggestedDriver}.`;
+  const startButtonLabel =
+    todaysOverride?.start_button_label?.trim() || 'Start scenario';
+  const infoModalTitle = todaysOverride?.info_modal_title?.trim() || '';
+  const infoModalBody = todaysOverride?.info_modal_body?.trim() || '';
+  const hasScenarioInfo = infoModalBody.length > 0;
 
   const startTodaysPick = () => {
     setScenario(todaysPick);
@@ -231,7 +266,11 @@ export function HomeScreen() {
   const openScoringInfo = (e: MouseEvent) => {
     e.stopPropagation();
     if (beaconActive) pendingStartHereRef.current = true;
-    setScoringInfoOpen(true);
+    if (hasScenarioInfo) {
+      setScenarioInfoOpen(true);
+    } else {
+      setScoringInfoOpen(true);
+    }
   };
 
   return (
@@ -394,7 +433,7 @@ export function HomeScreen() {
                 whiteSpace: 'pre-line',
               }}
             >
-              {`What pushback are\nyou ready for today?`}
+              {headline}
             </h1>
           </div>
           {initials && (
@@ -443,10 +482,12 @@ export function HomeScreen() {
                   whiteSpace: 'pre-line',
                 }}
               >
-                {`What pushback are\nyou ready for today?`}
+                {headline}
               </h1>
 
-              <SaveProgressBanner />
+              <IfFlag flag="component.home.save_progress_banner">
+                <SaveProgressBanner />
+              </IfFlag>
             </div>
 
             {/* Driver pill — desktop only (mobile: TopBar) */}
@@ -480,7 +521,9 @@ export function HomeScreen() {
             </div>
 
             {/* ACT Guide — just above hero scenario card */}
-            <AcTGuideCard driverColors={driverColors} dark={dark} onClick={() => go('actGuide')} />
+            {showActCard && (
+              <AcTGuideCard driverColors={driverColors} dark={dark} onClick={() => go('actGuide')} />
+            )}
 
             {/* Hero scenario card */}
             <Glass
@@ -651,7 +694,7 @@ export function HomeScreen() {
                 }}
               >
                 {(() => {
-                  const title = todaysPick.pushback.title.replace('Switching brands', 'Switching\u00A0brands');
+                  const title = cardTitle.replace('Switching brands', 'Switching\u00A0brands');
                   const words = title.split(' ');
                   return words.length > 4
                     ? words.slice(0, 4).join(' ') + '…'
@@ -667,7 +710,7 @@ export function HomeScreen() {
                   paddingRight: 108,
                 }}
               >
-                {todaysPick.breed}, {todaysPick.age}. Driver: {todaysPick.suggestedDriver}.
+                {cardSubtitle}
               </p>
               <div className="flex w-full min-w-0 items-center justify-between gap-4">
                 <PillButton
@@ -679,7 +722,7 @@ export function HomeScreen() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  Start scenario
+                  {startButtonLabel}
                 </PillButton>
                 <motion.div
                   style={{
@@ -749,9 +792,11 @@ export function HomeScreen() {
           {/* ── Right column: quick actions + library + ACT guide + ECHO profile ── */}
           <div>
             {/* Desktop-only save progress banner */}
-            <div className="hidden lg:block mb-4">
-              <SaveProgressBanner />
-            </div>
+            <IfFlag flag="component.home.save_progress_banner">
+              <div className="hidden lg:block mb-4">
+                <SaveProgressBanner />
+              </div>
+            </IfFlag>
 
             <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 14 }}>
               {([
@@ -805,6 +850,7 @@ export function HomeScreen() {
               ))}
             </div>
 
+            {showLibraryCard && (
             <Glass
               radius={RADII.lg}
               padding={16}
@@ -827,7 +873,9 @@ export function HomeScreen() {
                 </div>
               </div>
             </Glass>
+            )}
 
+            {showEchoCard && (
             <Glass
               radius={RADII.lg}
               padding={16}
@@ -874,11 +922,122 @@ export function HomeScreen() {
                 </div>
               </div>
             </Glass>
+            )}
           </div>
         </div>
       </Page>
       <ScoringInfoModal open={scoringInfoOpen} onClose={handleScoringModalClosed} />
+      <ScenarioInfoModal
+        open={scenarioInfoOpen}
+        title={infoModalTitle || cardTitle}
+        body={infoModalBody}
+        onClose={() => setScenarioInfoOpen(false)}
+      />
     </>
+  );
+}
+
+function ScenarioInfoModal({
+  open,
+  title,
+  body,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  body: string;
+  onClose: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.button
+            type="button"
+            aria-label="Close scenario info"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 60,
+              border: 'none',
+              background: 'rgba(20, 12, 14, 0.32)',
+              backdropFilter: 'blur(4px)',
+              cursor: 'default',
+            }}
+          />
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            initial={{ opacity: 0, scale: 0.94, x: '-50%', y: '-48%' }}
+            animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+            exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-48%' }}
+            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            className="pbt-scroll"
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              zIndex: 61,
+              width: 'min(94vw, 480px)',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              borderRadius: 28,
+            }}
+          >
+            <Glass radius={28} padding="24px 22px" blur={26} tint={0.06}>
+              <div className="flex items-start justify-between gap-3" style={{ marginBottom: 12 }}>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: 18,
+                    fontWeight: 600,
+                    lineHeight: 1.25,
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  {title}
+                </h2>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={onClose}
+                  style={{
+                    flexShrink: 0,
+                    width: 30,
+                    height: 30,
+                    borderRadius: '50%',
+                    border: '1px solid rgba(255,255,255,0.50)',
+                    background: 'rgba(255,255,255,0.22)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--pbt-text-muted)',
+                  }}
+                >
+                  <Icon.close />
+                </button>
+              </div>
+              <div
+                style={{
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  color: 'var(--pbt-text)',
+                  whiteSpace: 'pre-wrap',
+                  fontWeight: 500,
+                }}
+              >
+                {body}
+              </div>
+            </Glass>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
 

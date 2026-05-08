@@ -96,3 +96,77 @@ export interface NavEvent {
 }
 
 export type Verdict = AnalyzerEvent['verdict'];
+
+export type FlagSurface = 'screen' | 'nav' | 'scenario' | 'component' | 'field' | 'ai';
+export type FlagValueType = 'boolean' | 'string' | 'number' | 'json';
+
+export interface FlagDef {
+  key: string;
+  surface: FlagSurface;
+  value_type: FlagValueType;
+  default_value: unknown;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlagAudience {
+  drivers?: DriverKey[];
+  user_ids?: string[];
+  anon_session_ids?: string[];
+  clinic_ids?: string[];
+  percentage?: number;
+}
+
+export interface FlagRule {
+  id: string;
+  flag_key: string;
+  priority: number;
+  audience: FlagAudience;
+  value: unknown;
+  enabled: boolean;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScenarioOverrideRow {
+  scenario_id: string;
+  visible: boolean;
+  sort_order: number | null;
+  title_override: string | null;
+  context_override: string | null;
+  opening_line_override: string | null;
+  difficulty_override: number | null;
+  persona_override: string | null;
+  prompt_prefix: string | null;
+  prompt_suffix: string | null;
+  card_title_override: string | null;
+  card_subtitle_override: string | null;
+  info_modal_title: string | null;
+  info_modal_body: string | null;
+  start_button_label: string | null;
+  card_driver_override: DriverKey | null;
+  breed: string | null;
+  life_stage: string | null;
+  pushback_id: string | null;
+  pushback_notes: string | null;
+  suggested_driver: DriverKey | null;
+  weight_kg: number | null;
+  deleted_at: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface AuditLogRow {
+  id: string;
+  actor_id: string | null;
+  entity_type: 'flag' | 'flag_rule' | 'scenario_override';
+  entity_id: string;
+  action: 'create' | 'update' | 'delete' | 'revert';
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  note: string | null;
+  created_at: string;
+}

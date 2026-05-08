@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Scenario } from '../../data/scenarios';
 import {
   evaluateConversation,
@@ -6,6 +6,10 @@ import {
   MODEL_TEXT,
 } from '../../services/geminiService';
 import type { ChatMessage, ScoreReport, SessionRecord } from '../../services/types';
+import { useScenarioOverride } from '../../app/providers/FlagProvider';
+import { seedScenarioId } from '../../data/scenarioOverrides';
+import { LIBRARY_SCENARIOS } from '../../data/scenarios';
+import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
 import {
   readStorage,
   writeStorage,
@@ -108,6 +112,12 @@ export interface UseTextChat {
    * navigates away from the chat without completing.
    */
   abandon: (reason?: 'user_exit' | 'timeout' | 'error') => Promise<void>;
+  /**
+   * Soft reset: keep the AI's opening line so the trainee can retry the
+   * same opener, but discard their messages and the in-flight session id.
+   * The previous attempt is still abandoned for admin telemetry.
+   */
+  restart: () => Promise<void>;
   /** Voice pipeline: persist transcript + scorecard into shared chat state + history. */
   applyVoiceSessionComplete: (
     report: ScoreReport | null,
@@ -195,6 +205,17 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   const [scoreReport, setScoreReport] = useState<ScoreReport | null>(null);
   const [transientError, setTransientError] = useState<string | null>(null);
   const startedAtRef = useRef<number | null>(null);
+  // Look up admin AI overrides (prompt prefix/suffix) for this scenario id.
+  // Only available when the scenario was selected from a flag-aware surface
+  // that stamped `_overrideId`; falls back to no override otherwise.
+  const overrideRow = useScenarioOverride(scenario._overrideId ?? '');
+  const promptOverrides = useMemo<PromptOverrides>(
+    () => ({
+      promptPrefix: overrideRow?.prompt_prefix ?? null,
+      promptSuffix: overrideRow?.prompt_suffix ?? null,
+    }),
+    [overrideRow?.prompt_prefix, overrideRow?.prompt_suffix],
+  );
   // Allocated at open() so AI telemetry rows can attribute to the session
   // even before it's saved to history.
   const recordIdRef = useRef<string | null>(null);
@@ -262,6 +283,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     try {
       const first = await generateRoleplayMessage(scenario, [], undefined, {
         sessionId: recordIdRef.current,
+        promptOverrides,
       });
       appendTurn(first);
       setStatus('awaitingUser');
@@ -274,7 +296,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       setTransientError(friendly);
       setStatus('error');
     }
-  }, [scenario, status]);
+  }, [scenario, status, promptOverrides]);
 
   const send = useCallback(
     async (text: string) => {
@@ -294,7 +316,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           scenario,
           historyForModel,
           undefined,
-          { sessionId: recordIdRef.current },
+          { sessionId: recordIdRef.current, promptOverrides },
         );
 
         // Detect end-of-simulation token. Strip every match (defensive —
@@ -345,7 +367,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         setStatus('awaitingUser');
       }
     },
-    [scenario, appendTurn],
+    [scenario, appendTurn, promptOverrides],
   );
 
   const end = useCallback(async () => {
@@ -438,6 +460,30 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Keep endRef current so the setTimeout in send() calls the latest end()
   endRef.current = end;
 
+  const restart = useCallback(async () => {
+    // First mark the in-flight attempt as abandoned so admin telemetry sees
+    // a row for the false start. abandon() is idempotent.
+    if (!persistedRef.current && (recordIdRef.current || messagesRef.current.length > 0)) {
+      await abandon('user_exit');
+    }
+    // Keep only the AI's first message so the trainee retries the same
+    // opener — drop everything after it.
+    const opener = messagesRef.current.find((m) => m.role === 'ai' && !m._transientError) ?? null;
+    setMessages(opener ? [opener] : []);
+    setScoreReport(null);
+    setStatus(opener ? 'awaitingUser' : 'idle');
+    setTransientError(null);
+    startedAtRef.current = Date.now();
+    recordIdRef.current = uuid();
+    persistedRef.current = false;
+    logEvent({
+      type: 'custom',
+      screen: 'chat',
+      target: 'session_restart',
+      meta: { sessionId: recordIdRef.current, kept_opener: opener != null },
+    });
+  }, [abandon]);
+
   const reset = useCallback(() => {
     transcriptRef.current = [];
     setMessages([]);
@@ -514,6 +560,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     send,
     end,
     abandon,
+    restart,
     applyVoiceSessionComplete,
     reset,
     startedAt: startedAtRef.current,
