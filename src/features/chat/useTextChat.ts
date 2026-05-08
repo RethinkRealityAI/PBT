@@ -465,12 +465,13 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   const restart = useCallback(async () => {
     // First mark the in-flight attempt as abandoned so admin telemetry sees
     // a row for the false start. abandon() is idempotent.
-    if (!persistedRef.current && (recordIdRef.current || messagesRef.current.length > 0)) {
+    if (!persistedRef.current && (recordIdRef.current || transcriptRef.current.length > 0)) {
       await abandon('user_exit');
     }
     // Keep only the AI's first message so the trainee retries the same
     // opener — drop everything after it.
-    const opener = messagesRef.current.find((m) => m.role === 'ai' && !m._transientError) ?? null;
+    const opener = transcriptRef.current.find((m) => m.role === 'ai' && !m._transientError) ?? null;
+    transcriptRef.current = opener ? [opener] : [];
     setMessages(opener ? [opener] : []);
     setScoreReport(null);
     setStatus(opener ? 'awaitingUser' : 'idle');

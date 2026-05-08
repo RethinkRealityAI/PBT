@@ -1183,14 +1183,15 @@ function VoiceMode({
   const isConnecting = voice.status === 'connecting';
   const hasStartError = voice.status === 'error' && !!voice.error;
 
-  // Big transcript display:
-  // - AI line: render ONLY `voice.liveAiText`. The voice session keeps it blank while
-  //   the AI is speaking and fills it (full, sanitized) at turnComplete. We do NOT fall
-  //   back to the last committed message — that would re-show the previous turn's text
-  //   during the next turn's speech, defeating the "blank while speaking" rule.
-  // - User line: last committed user message (input transcription is sentence-level).
-  const userMessages = voice.messages.filter((m) => m.role === 'user');
-  const lastUserMsg = userMessages[userMessages.length - 1];
+  // Voice transcript display:
+  // - AI line: render ONLY `voice.liveAiText`. The voice session keeps it
+  //   blank while the AI is speaking and fills it (full, sanitized) at
+  //   turnComplete. We do NOT fall back to the last committed message —
+  //   that would re-show the previous turn's text during the next turn's
+  //   speech, defeating the "blank while speaking" rule.
+  // - User line: intentionally NOT rendered. The full user transcript is
+  //   still captured on `voice.messages` and persisted with the saved
+  //   session for the admin dashboard.
   const aiDisplayText = voice.liveAiText;
 
   const orbSize = 'min(44vw, 168px)';
@@ -1465,30 +1466,10 @@ function VoiceMode({
             {aiDisplayText}
           </motion.div>
         )}
-        {lastUserMsg && (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={lastUserMsg.timestamp}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 0.58, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-              style={{
-                textAlign: 'center',
-                fontSize: 'clamp(12px, 3vw, 14px)',
-                fontWeight: 400,
-                lineHeight: 1.5,
-                color: 'var(--pbt-text-muted)',
-                maxWidth: 340,
-                width: '100%',
-                wordBreak: 'break-word',
-                overflowWrap: 'break-word',
-              }}
-            >
-              You: {lastUserMsg.text}
-            </motion.div>
-          </AnimatePresence>
-        )}
+        {/* User transcript intentionally not rendered in voice mode — it's
+            still captured on voice.messages so the admin dashboard / saved
+            session record gets the full two-sided transcript, but the
+            voice UI shows only the AI line. */}
       </div>
 
     </div>
