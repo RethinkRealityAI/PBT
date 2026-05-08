@@ -94,9 +94,15 @@ export default async (req: Request): Promise<Response> => {
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
+    // Match the consumer's flags-resolve filter: soft-deleted admin
+    // scenarios are tombstones, not part of the live library. Without
+    // this, the Scenario Builder list would show admin-authored
+    // scenarios that the admin had already deleted — they're still
+    // physically present so audit-log revert can resurrect them.
     const { data, error } = await ctx.sb
       .from('scenario_overrides')
       .select('*')
+      .is('deleted_at', null)
       .order('updated_at', { ascending: false });
     if (error) return errorResponse(500, error.message);
     return jsonResponse(data ?? []);
