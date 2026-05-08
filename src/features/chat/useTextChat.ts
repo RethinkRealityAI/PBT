@@ -74,10 +74,11 @@ function scenarioSummaryLine(scenario: Scenario): string {
 // require the brackets specifically to avoid false positives when a customer
 // says something like "could we end this simulation?" mid-conversation.
 const END_TOKEN_RX = /\[\s*end[\s_-]*simulation\s*\]/i;
-// How long to leave the AI's closing line on screen before we kick off
-// scoring + show the ending overlay. Long enough to read, short enough not
-// to feel laggy.
-const END_READ_DELAY_MS = 1500;
+// How long to leave the AI's closing line on screen — visible, no
+// overlay — before we kick off scoring. Bumped to 3s so the trainee
+// can actually read the wrap-up; the analyzing overlay only appears
+// once the scorer call starts.
+const END_READ_DELAY_MS = 3000;
 /**
  * Hard cap on customer (AI) turns. If the model hasn't emitted an end-token
  * by this many turns, we force-end the session anyway. Without this cap a

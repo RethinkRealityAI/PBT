@@ -74,6 +74,18 @@ const EMOTION_DOT_COLORS: Record<EmotionColor, string> = {
   green: COLORS.score.good,
 };
 
+/** AI message bubble — state border + label vocabulary used in text mode. */
+const AI_STATE_COLOR: Record<EmotionColor, string> = {
+  red: COLORS.score.poor,
+  yellow: COLORS.score.ok,
+  green: COLORS.score.good,
+};
+const AI_STATE_LABEL: Record<EmotionColor, string> = {
+  red: 'Defensive',
+  yellow: 'Receptive',
+  green: 'Convinced',
+};
+
 /** Prev / next chevrons — matches Home scenario card (counter between arrows + Scenario label) */
 function ScenarioArrowNav({
   onPrev,
@@ -742,6 +754,12 @@ export function ChatScreen() {
   const voiceStatusRef = useRef(voice.status);
   voiceStatusRef.current = voice.status;
   const voiceFinalizeBusyRef = useRef(false);
+  // Mode + finalize-generation refs: lets in-flight `finalizeVoice` bail
+  // if the user toggled to text mid-scoring instead of stomping on the
+  // now-active text session with a stale `applyVoiceSessionComplete`.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const finalizeGenRef = useRef(0);
   const scenarioIndex = scenario ? seedScenarioIndex(scenario) : -1;
   const scenarioCounterIndex = scenarioIndex >= 0 ? scenarioIndex : undefined;
 
@@ -763,16 +781,32 @@ export function ChatScreen() {
   const finalizeVoice = useCallback(async () => {
     if (voiceFinalizeBusyRef.current) return;
     voiceFinalizeBusyRef.current = true;
+    // Capture the toggle generation so a mode flip mid-scoring abandons
+    // this finalize cleanly rather than overwriting the new text session.
+    const gen = ++finalizeGenRef.current;
     setVoiceAnalyzing(true);
     setVoiceAnalysisError(null);
     try {
       const { report, transcript } = await voiceEndRef.current();
+      if (gen !== finalizeGenRef.current || modeRef.current !== 'voice') {
+        // User toggled away (or another finalize already started). The
+        // voice session has already been ended/torn down by the toggle
+        // path; just drop these results so the live text session isn't
+        // overwritten by a stale `applyVoiceSessionComplete`.
+        setVoiceAnalyzing(false);
+        return;
+      }
       await chatRef.current.applyVoiceSessionComplete(report, transcript);
+      if (gen !== finalizeGenRef.current || modeRef.current !== 'voice') {
+        setVoiceAnalyzing(false);
+        return;
+      }
       // Brief "ready" beat between scoring and navigating to stats so
       // the trainee sees the completion state, not a sudden cut.
       setVoiceAnalyzing(false);
       setVoiceReady(true);
       window.setTimeout(() => {
+        if (gen !== finalizeGenRef.current || modeRef.current !== 'voice') return;
         setVoiceReady(false);
         go('stats');
       }, 700);
@@ -812,6 +846,12 @@ export function ChatScreen() {
   );
 
   const handleModeChange = useCallback((nextMode: 'text' | 'voice') => {
+    // Invalidate any in-flight finalizeVoice so a slow scoring call
+    // can't stomp on the new mode after the toggle.
+    finalizeGenRef.current += 1;
+    voiceFinalizeBusyRef.current = false;
+    setVoiceAnalyzing(false);
+    setVoiceReady(false);
     if (nextMode === 'text') {
       voiceStopRef.current();
       // A voice session that already finalized left chat.status === 'complete'
@@ -895,17 +935,17 @@ useThinkingSound(
     return () => window.clearTimeout(t);
   }, [chat.status, mode, go]);
 
-  const endingPhase: 'closing' | 'analyzing' | 'ready' =
-    chat.status === 'ending'
-      ? 'closing'
-      : chat.status === 'scoring'
-        ? 'analyzing'
-        : 'ready';
+  // Overlay phase mapping. Note: we deliberately DO NOT show the overlay
+  // during `ending` (status set the moment the AI emits its closing
+  // line). Letting the closing message land in the chat bubble first —
+  // visible to the trainee — and only covering with the analyzing
+  // overlay once the scorer call actually starts ('scoring') prevents
+  // the user from missing the AI's wrap-up.
+  const endingPhase: 'analyzing' | 'ready' =
+    chat.status === 'scoring' ? 'analyzing' : 'ready';
   const showEndingOverlay =
     mode === 'text' &&
-    (chat.status === 'ending' ||
-      chat.status === 'scoring' ||
-      chat.status === 'complete');
+    (chat.status === 'scoring' || chat.status === 'complete');
 
   if (!scenario) {
     return (
@@ -1026,59 +1066,116 @@ useThinkingSound(
             )}
 
             <div className="flex flex-col gap-12" style={{ gap: 10 }}>
-              {chat.messages.map((m, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems:
-                      m.role === 'user' ? 'flex-end' : 'flex-start',
-                    animation: 'pbtFadeUp 0.3s ease',
-                  }}
-                >
+              {chat.messages.map((m, i) => {
+                if (m.role === 'user') {
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-end',
+                        animation: 'pbtFadeUp 0.3s ease',
+                      }}
+                    >
+                      <div
+                        style={{
+                          maxWidth: '78%',
+                          padding: '10px 14px',
+                          borderRadius: 22,
+                          fontSize: 14.5,
+                          lineHeight: 1.4,
+                          background:
+                            'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+                          color: '#fff',
+                          border: 'none',
+                          boxShadow:
+                            '0 6px 16px -6px color-mix(in oklab, var(--pbt-driver-primary) 40%, transparent)',
+                        }}
+                      >
+                        {m.text}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: 'var(--pbt-font-mono)',
+                          fontSize: 9,
+                          letterSpacing: '0.12em',
+                          textTransform: 'uppercase',
+                          color: 'var(--pbt-text-muted)',
+                          marginTop: 4,
+                        }}
+                      >
+                        You
+                      </div>
+                    </div>
+                  );
+                }
+                const emotion = m.emotion ?? 'red';
+                const stateColor = AI_STATE_COLOR[emotion];
+                const stateLabel = AI_STATE_LABEL[emotion];
+                return (
                   <div
+                    key={i}
                     style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      animation: 'pbtFadeUp 0.3s ease',
                       maxWidth: '78%',
-                      padding: '10px 14px',
-                      borderRadius: 22,
-                      fontSize: 14.5,
-                      lineHeight: 1.4,
-                      background:
-                        m.role === 'user'
-                          ? 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))'
-                          : 'rgba(255,255,255,0.42)',
-                      color: m.role === 'user' ? '#fff' : 'var(--pbt-text)',
-                      backdropFilter:
-                        m.role === 'user' ? undefined : 'blur(22px) saturate(260%) brightness(1.03)',
-                      WebkitBackdropFilter:
-                        m.role === 'user' ? undefined : 'blur(22px) saturate(260%) brightness(1.03)',
-                      border:
-                        m.role === 'user'
-                          ? 'none'
-                          : '1px solid rgba(255,255,255,0.65)',
-                      boxShadow:
-                        m.role === 'user'
-                          ? '0 6px 16px -6px color-mix(in oklab, var(--pbt-driver-primary) 40%, transparent)'
-                          : '0 1px 0 rgba(255,255,255,0.9) inset, 0 4px 12px -6px rgba(60,20,15,0.08)',
                     }}
                   >
-                    {m.text}
+                    <div
+                      style={{
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 9,
+                        letterSpacing: '0.14em',
+                        textTransform: 'uppercase',
+                        color: stateColor,
+                        marginBottom: 4,
+                        marginLeft: 6,
+                        textShadow: `0 0 8px color-mix(in oklab, ${stateColor} 35%, transparent)`,
+                        transition: 'color 0.4s ease',
+                      }}
+                    >
+                      {stateLabel}
+                    </div>
+                    <div
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: 22,
+                        fontSize: 14.5,
+                        lineHeight: 1.4,
+                        background: 'rgba(255,255,255,0.42)',
+                        color: 'var(--pbt-text)',
+                        backdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
+                        WebkitBackdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
+                        border: `1px solid color-mix(in oklab, ${stateColor} 70%, rgba(255,255,255,0.55))`,
+                        boxShadow: [
+                          '0 1px 0 rgba(255,255,255,0.9) inset',
+                          '0 4px 12px -6px rgba(60,20,15,0.08)',
+                          `0 0 14px -2px color-mix(in oklab, ${stateColor} 38%, transparent)`,
+                        ].join(', '),
+                        transition: 'border-color 0.4s ease, box-shadow 0.4s ease',
+                      }}
+                    >
+                      {m.text}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 9,
+                        letterSpacing: '0.12em',
+                        textTransform: 'uppercase',
+                        color: 'var(--pbt-text-muted)',
+                        marginTop: 4,
+                        marginLeft: 6,
+                      }}
+                    >
+                      {scenario.persona}
+                    </div>
                   </div>
-                  <div
-                    style={{
-                      fontFamily: 'var(--pbt-font-mono)',
-                      fontSize: 9,
-                      letterSpacing: '0.12em',
-                      textTransform: 'uppercase',
-                      color: 'var(--pbt-text-muted)',
-                      marginTop: 4,
-                    }}
-                  >
-                    {m.role === 'user' ? 'You' : scenario.persona}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {chat.status === 'aiTyping' && <TypingIndicator />}
               {chat.status === 'scoring' && (
                 <div

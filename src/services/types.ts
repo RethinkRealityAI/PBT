@@ -1,9 +1,21 @@
 import type { DimensionKey } from '../data/knowledge/scoringRubric';
 
+/**
+ * AI emotion / resolution state — same vocabulary the voice session uses
+ * (red = defensive, yellow = receptive, green = convinced). Voice mode
+ * gets this from the `updateEmotion` tool call; text mode gets it from
+ * a structured-output field on each customer reply. Used to render the
+ * state border + label on the AI bubble.
+ */
+export type AiEmotion = 'red' | 'yellow' | 'green';
+
 export interface ChatMessage {
   role: 'user' | 'ai';
   text: string;
   timestamp: number;
+  /** Customer's resolution state at the moment of this turn. AI turns
+   *  only; user turns leave it undefined. */
+  emotion?: AiEmotion;
   /** Internal flag — message is a transient error, never sent to the model */
   _transientError?: true;
 }
