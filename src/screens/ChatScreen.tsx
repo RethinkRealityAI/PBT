@@ -374,9 +374,12 @@ function ScenarioDetailsPanel({
               {/* Coaching hints — what the AI customer + scorer are
                   listening for. Surfaces ACT pattern signals from the
                   pushback taxonomy without spelling out scripted lines.
-                  Only rendered for known seed pushbacks (custom-built
-                  scenarios fall back silently). */}
-              {onBegin && <ScenarioHints scenario={scenario} />}
+                  Shown whether the panel was opened pre-session (with
+                  the Begin button) or mid-session via the "Scenario
+                  info" link, so trainees can re-check what earns
+                  credit. Custom-built scenarios with no taxonomy entry
+                  fall back silently. */}
+              <ScenarioHints scenario={scenario} />
 
               {/* Begin Simulation CTA — only shown in voice idle */}
               {onBegin && (
