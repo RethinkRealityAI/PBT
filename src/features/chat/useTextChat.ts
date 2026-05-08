@@ -208,7 +208,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Look up admin AI overrides (prompt prefix/suffix) for this scenario id.
   // Only available when the scenario was selected from a flag-aware surface
   // that stamped `_overrideId`; falls back to no override otherwise.
-  const overrideRow = useScenarioOverride(scenario._overrideId ?? '');
+  // Note: ChatProvider mounts this hook with a null scenario placeholder
+  // before the user picks one, so we must guard the property access.
+  const overrideRow = useScenarioOverride(scenario?._overrideId ?? '');
   const promptOverrides = useMemo<PromptOverrides>(
     () => ({
       promptPrefix: overrideRow?.prompt_prefix ?? null,
