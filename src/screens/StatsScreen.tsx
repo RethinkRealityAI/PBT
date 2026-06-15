@@ -7,12 +7,13 @@ import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useChat } from '../app/providers/ChatProvider';
 import { DIMENSIONS, bandFor } from '../data/knowledge/scoringRubric';
+import { normalizeScoreReport } from '../services/types';
 import { COLORS } from '../design-system/tokens';
 
 export function StatsScreen() {
   const { go } = useNavigation();
   const chat = useChat();
-  const report = chat.scoreReport;
+  const report = chat.scoreReport ? normalizeScoreReport(chat.scoreReport) : null;
 
   if (!report) {
     const hasMessages = chat.messages.length > 0;

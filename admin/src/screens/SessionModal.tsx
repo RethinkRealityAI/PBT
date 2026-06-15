@@ -81,16 +81,19 @@ function readScoreReport(report: AdminSession['score_report']) {
   const r = report as Record<string, unknown>;
   const num = (v: unknown) => (typeof v === 'number' ? v : null);
   const str = (v: unknown) => (typeof v === 'string' ? v : null);
+  // ACT-first dimensions (Phase 2). Older session rows carry the previous
+  // 7 sales dimensions + 1–10 ACT subscores; fall back to those so historic
+  // sessions still show a breakdown instead of blanks.
+  const scale10 = (v: unknown) => (typeof v === 'number' ? Math.round(v * 10) : null);
+  const pick = (...vals: Array<number | null>) => vals.find((v) => v != null) ?? null;
   return {
     overall: num(r.overall),
     band: str(r.band),
-    empathyTone: num(r.empathyTone),
-    activeListening: num(r.activeListening),
-    productKnowledge: num(r.productKnowledge),
-    objectionHandling: num(r.objectionHandling),
-    confidence: num(r.confidence),
-    closingEffectiveness: num(r.closingEffectiveness),
-    pacing: num(r.pacing),
+    acknowledge: pick(num(r.acknowledge), scale10(r.acknowledgeScore), num(r.empathyTone)),
+    clarify: pick(num(r.clarify), scale10(r.clarifyScore), num(r.activeListening)),
+    transform: pick(num(r.transform), scale10(r.takeActionScore), num(r.objectionHandling)),
+    empathy: pick(num(r.empathy), num(r.empathyTone)),
+    rapport: pick(num(r.rapport), num(r.pacing)),
     critique: str(r.critique),
     betterAlternative: str(r.betterAlternative),
     perDimensionNotes: (r.perDimensionNotes ?? {}) as Record<string, string>,
@@ -569,13 +572,11 @@ function ScoringTab({ scoring }: { scoring: ReturnType<typeof readScoreReport> }
     return <EmptyState title="No scorecard" subtitle="This session wasn't scored." />;
   }
   const dims: Array<[string, number | null]> = [
-    ['Empathy & tone', scoring.empathyTone],
-    ['Active listening', scoring.activeListening],
-    ['Product knowledge', scoring.productKnowledge],
-    ['Objection handling', scoring.objectionHandling],
-    ['Confidence', scoring.confidence],
-    ['Closing', scoring.closingEffectiveness],
-    ['Pacing', scoring.pacing],
+    ['Acknowledge', scoring.acknowledge],
+    ['Clarify', scoring.clarify],
+    ['Transform', scoring.transform],
+    ['Empathy & warmth', scoring.empathy],
+    ['Rapport & pacing', scoring.rapport],
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

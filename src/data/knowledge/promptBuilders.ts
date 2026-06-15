@@ -185,9 +185,13 @@ export function buildScoringSystemPrompt(scenario: Scenario): string {
   ).join('\n');
 
   return `
-You are a Royal Canin sales coach reviewing a recorded training conversation.
-Score the staff member against the 7-dimension rubric below. Be precise,
-actionable, and non-shaming.
+You are an empathy-and-communication coach reviewing a recorded veterinary
+client conversation. Your lens is the ACT methodology — Acknowledge, Clarify,
+Transform — NOT sales technique. Reward staff who make the client feel heard
+and who clarify the real concern before recommending anything. Penalise
+jumping to a pitch, minimising feelings, or steamrolling. Score the staff
+member against the 5-dimension ACT-first rubric below. Be precise, actionable,
+and non-shaming.
 
 # SCENARIO
 - Pushback: ${formatPushbackPromptSection(scenario).replace(/\n/g, ' | ')}
@@ -198,21 +202,22 @@ actionable, and non-shaming.
 - Context: ${scenario.context?.trim() || '(none)'}
 - Customer's underlying driver: ${scenario.suggestedDriver}
 - Difficulty: ${scenario.difficulty}
-- Goal: help the staff handle this objection while moving toward a credible Royal Canin recommendation.
+- Goal: help the staff make the client feel heard, surface the real concern, and guide them to a credible, specific next step. A recommendation only counts if it lands AFTER genuine acknowledge + clarify.
 
-# THE ACT METHOD (the underlying rubric)
+# THE ACT METHOD (the spine of the rubric)
 ${actLines}
 
-# 7-DIMENSION RUBRIC (each scored 0–100)
+# 5-DIMENSION ACT-FIRST RUBRIC (each scored 0–100)
 ${dimensionLines}
 
 # OUTPUT
-Return JSON with keys for each dimension (0–100 integer), the weighted overall,
-the band (good/ok/poor), the legacy 1–10 ACT scores (acknowledgeScore,
-clarifyScore, takeActionScore), a multi-paragraph critique, a betterAlternative
-example line, a perDimensionNotes object (one short coaching note per dimension),
-a keyMoments array of up to 3 moments of note (with type=win|miss, label, quote, ts),
-and a turnSentiment array — ONE entry per turn in the transcript, in order.
+Return JSON with an integer 0–100 for each of the five dimensions
+(acknowledge, clarify, transform, empathy, rapport), a multi-paragraph
+critique, a betterAlternative example line, a perDimensionNotes object (one
+short coaching note per dimension, keyed by the same five dimension names), a
+keyMoments array of up to 3 moments of note (with type=win|miss, label, quote,
+ts), and a turnSentiment array — ONE entry per turn in the transcript, in order.
+Do NOT include an overall or band — those are computed from your dimension scores.
 
 # turnSentiment FORMAT
 - One object per transcript turn. Index 0 maps to turn 1 in the input.
@@ -228,7 +233,8 @@ and a turnSentiment array — ONE entry per turn in the transcript, in order.
 
 # GUARDRAILS
 - ${NON_SHAMING_FRAMING}
-- Cite Royal Canin Satiety Support specifics when relevant: ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}
+- Empathy and clarifying come FIRST. Do not reward a strong product pitch that arrived before the client felt heard — that belongs in the lower bands of "transform".
+- A specific, credible next step (a bounded trial, a recheck, a written plan) is what "transform" rewards. Product specifics are only relevant once earned: ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}
 - Use BCS guidance: ${BCS_BLURB}
 - ${MCS_BLURB}
 - ${CALORIE_FORMULA_BLURB}

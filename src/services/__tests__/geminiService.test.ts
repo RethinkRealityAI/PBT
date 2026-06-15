@@ -63,26 +63,19 @@ describe('generateRoleplayMessage', () => {
 
 describe('evaluateConversation', () => {
   const validScores = {
-    empathyTone: 92,
-    activeListening: 80,
-    productKnowledge: 85,
-    objectionHandling: 78,
-    confidence: 75,
-    closingEffectiveness: 90,
-    pacing: 70,
-    acknowledgeScore: 8,
-    clarifyScore: 7,
-    takeActionScore: 9,
+    acknowledge: 92,
+    clarify: 80,
+    transform: 78,
+    empathy: 88,
+    rapport: 70,
     critique: 'Solid handling.',
     betterAlternative: 'You could have...',
     perDimensionNotes: {
-      empathyTone: 'Warm.',
-      activeListening: 'Could ask more.',
-      productKnowledge: 'Good citing.',
-      objectionHandling: 'Bit defensive.',
-      confidence: 'Hedged once.',
-      closingEffectiveness: 'Strong close.',
-      pacing: 'A little fast.',
+      acknowledge: 'Warm.',
+      clarify: 'Could ask more.',
+      transform: 'Bit defensive.',
+      empathy: 'Genuinely kind.',
+      rapport: 'A little fast.',
     },
     keyMoments: [{ ts: '0:30', type: 'win', label: 'Acknowledge', quote: '...' }],
   };
@@ -95,7 +88,7 @@ describe('evaluateConversation', () => {
     ]);
     expect(result.overall).toBeGreaterThan(0);
     expect(['good', 'ok', 'poor']).toContain(result.band);
-    expect(result.empathyTone).toBe(92);
+    expect(result.acknowledge).toBe(92);
     expect(result.critique).toBe('Solid handling.');
   });
 

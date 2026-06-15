@@ -33,20 +33,16 @@ describe('promptBuilders', () => {
     expect(p.toLowerCase()).toContain('never mention that you are an ai');
   });
 
-  it('scoring prompt lists all 7 dimensions and the ACT method', () => {
+  it('scoring prompt lists all 5 ACT-first dimensions and the ACT method', () => {
     const p = buildScoringSystemPrompt(scenario);
-    [
-      'empathyTone',
-      'activeListening',
-      'productKnowledge',
-      'objectionHandling',
-      'confidence',
-      'closingEffectiveness',
-      'pacing',
-    ].forEach((k) => expect(p).toContain(k));
+    ['acknowledge', 'clarify', 'transform', 'empathy', 'rapport'].forEach((k) =>
+      expect(p).toContain(k),
+    );
     expect(p).toContain('Acknowledge');
     expect(p).toContain('Clarify');
     expect(p).toContain('Transform');
+    // The overhaul is explicitly empathy-first, not sales-first.
+    expect(p).not.toContain('sales coach');
   });
 
   it('voice prompt extends customer prompt with tool-call guidance', () => {

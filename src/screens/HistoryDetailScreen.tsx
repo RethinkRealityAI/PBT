@@ -9,7 +9,7 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { DIMENSIONS, bandFor } from '../data/knowledge/scoringRubric';
 import { COLORS } from '../design-system/tokens';
 import { readStorage, type StorageKeyDef } from '../lib/storage';
-import type { SessionRecord, ChatMessage } from '../services/types';
+import { normalizeScoreReport, type SessionRecord, type ChatMessage } from '../services/types';
 import { getSelectedSessionId } from '../lib/selectedSession';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
@@ -108,7 +108,7 @@ export function HistoryDetailScreen() {
 }
 
 function ScorecardView({ session }: { session: SessionRecord }) {
-  const report = session.scoreReport;
+  const report = normalizeScoreReport(session.scoreReport);
   const headline =
     report.band === 'good'
       ? 'Strong session.'

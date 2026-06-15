@@ -183,13 +183,11 @@ export async function generateRoleplayMessage(
 }
 
 const ZERO_DIMENSIONS: Record<DimensionKey, number> = {
-  empathyTone: 0,
-  activeListening: 0,
-  productKnowledge: 0,
-  objectionHandling: 0,
-  confidence: 0,
-  closingEffectiveness: 0,
-  pacing: 0,
+  acknowledge: 0,
+  clarify: 0,
+  transform: 0,
+  empathy: 0,
+  rapport: 0,
 };
 
 /**
@@ -221,37 +219,28 @@ export async function evaluateConversation(
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            empathyTone: { type: Type.INTEGER },
-            activeListening: { type: Type.INTEGER },
-            productKnowledge: { type: Type.INTEGER },
-            objectionHandling: { type: Type.INTEGER },
-            confidence: { type: Type.INTEGER },
-            closingEffectiveness: { type: Type.INTEGER },
-            pacing: { type: Type.INTEGER },
-            acknowledgeScore: { type: Type.INTEGER, description: '1-10' },
-            clarifyScore: { type: Type.INTEGER, description: '1-10' },
-            takeActionScore: { type: Type.INTEGER, description: '1-10' },
+            acknowledge: { type: Type.INTEGER, description: '0-100' },
+            clarify: { type: Type.INTEGER, description: '0-100' },
+            transform: { type: Type.INTEGER, description: '0-100' },
+            empathy: { type: Type.INTEGER, description: '0-100' },
+            rapport: { type: Type.INTEGER, description: '0-100' },
             critique: { type: Type.STRING },
             betterAlternative: { type: Type.STRING },
             perDimensionNotes: {
               type: Type.OBJECT,
               properties: {
-                empathyTone: { type: Type.STRING },
-                activeListening: { type: Type.STRING },
-                productKnowledge: { type: Type.STRING },
-                objectionHandling: { type: Type.STRING },
-                confidence: { type: Type.STRING },
-                closingEffectiveness: { type: Type.STRING },
-                pacing: { type: Type.STRING },
+                acknowledge: { type: Type.STRING },
+                clarify: { type: Type.STRING },
+                transform: { type: Type.STRING },
+                empathy: { type: Type.STRING },
+                rapport: { type: Type.STRING },
               },
               required: [
-                'empathyTone',
-                'activeListening',
-                'productKnowledge',
-                'objectionHandling',
-                'confidence',
-                'closingEffectiveness',
-                'pacing',
+                'acknowledge',
+                'clarify',
+                'transform',
+                'empathy',
+                'rapport',
               ],
             },
             keyMoments: {
@@ -283,16 +272,11 @@ export async function evaluateConversation(
             },
           },
           required: [
-            'empathyTone',
-            'activeListening',
-            'productKnowledge',
-            'objectionHandling',
-            'confidence',
-            'closingEffectiveness',
-            'pacing',
-            'acknowledgeScore',
-            'clarifyScore',
-            'takeActionScore',
+            'acknowledge',
+            'clarify',
+            'transform',
+            'empathy',
+            'rapport',
             'critique',
             'betterAlternative',
             'perDimensionNotes',
@@ -307,13 +291,11 @@ export async function evaluateConversation(
     if (!raw) throw new Error('Empty score response');
     const parsed = JSON.parse(raw) as Omit<ScoreReport, 'overall' | 'band'>;
     const dims: Record<DimensionKey, number> = {
-      empathyTone: parsed.empathyTone,
-      activeListening: parsed.activeListening,
-      productKnowledge: parsed.productKnowledge,
-      objectionHandling: parsed.objectionHandling,
-      confidence: parsed.confidence,
-      closingEffectiveness: parsed.closingEffectiveness,
-      pacing: parsed.pacing,
+      acknowledge: parsed.acknowledge,
+      clarify: parsed.clarify,
+      transform: parsed.transform,
+      empathy: parsed.empathy,
+      rapport: parsed.rapport,
     };
     const overall = weightedOverall(dims);
 
@@ -345,20 +327,15 @@ export async function evaluateConversation(
       ...ZERO_DIMENSIONS,
       overall: 0,
       band: 'poor',
-      acknowledgeScore: 0,
-      clarifyScore: 0,
-      takeActionScore: 0,
       critique:
         'We could not score this session right now. Please try again, or check your network.',
       betterAlternative: '—',
       perDimensionNotes: {
-        empathyTone: '',
-        activeListening: '',
-        productKnowledge: '',
-        objectionHandling: '',
-        confidence: '',
-        closingEffectiveness: '',
-        pacing: '',
+        acknowledge: '',
+        clarify: '',
+        transform: '',
+        empathy: '',
+        rapport: '',
       },
       keyMoments: [],
     };
