@@ -19,7 +19,9 @@ import type {
   FlagDef,
   FlagRule,
   NavEvent,
+  PlatformReportRow,
   ScenarioOverrideRow,
+  SessionFeedbackRow,
   UserScenario,
 } from './types';
 
@@ -106,6 +108,30 @@ export function useAnalyzerEvents(range = '28d', limit = 500) {
   return useQuery<AnalyzerEvent[]>(
     () =>
       apiFetch<AnalyzerEvent[]>('admin-analyzer', {
+        since: rangeToSince(range),
+        limit,
+      }),
+    [range, limit],
+    [],
+  );
+}
+
+export function useSessionFeedback(range = '28d', limit = 1000) {
+  return useQuery<SessionFeedbackRow[]>(
+    () =>
+      apiFetch<SessionFeedbackRow[]>('admin-feedback', {
+        since: rangeToSince(range),
+        limit,
+      }),
+    [range, limit],
+    [],
+  );
+}
+
+export function usePlatformReports(range = '28d', limit = 1000) {
+  return useQuery<PlatformReportRow[]>(
+    () =>
+      apiFetch<PlatformReportRow[]>('admin-reports', {
         since: rangeToSince(range),
         limit,
       }),
