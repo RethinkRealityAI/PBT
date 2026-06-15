@@ -98,6 +98,9 @@ export interface UseTextChat {
   messages: ChatMessage[];
   status: ChatStatus;
   scoreReport: ScoreReport | null;
+  /** Current session id (training_sessions.id) — null before open().
+   *  Surfaced so the post-session feedback tool can attribute responses. */
+  sessionId: string | null;
   transientError: string | null;
   open: () => Promise<void>;
   send: (text: string) => Promise<void>;
@@ -583,6 +586,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     messages,
     status,
     scoreReport,
+    sessionId: recordIdRef.current,
     transientError,
     open,
     send,

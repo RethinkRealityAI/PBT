@@ -14,6 +14,8 @@ import { DRIVER_COLORS } from '../design-system/tokens';
 import { clearAllStorage } from '../lib/storage';
 import { AccountUpgradeModal } from '../features/auth/AccountUpgradeModal';
 import { getSupabase } from '../features/auth/supabaseClient';
+import { ReportModal } from '../features/reporting/ReportModal';
+import type { ReportKind } from '../features/reporting/usePlatformReport';
 
 export function SettingsScreen() {
   const { go, replace } = useNavigation();
@@ -21,6 +23,7 @@ export function SettingsScreen() {
   const { theme, setTheme } = useTheme();
   const { user } = useSession();
   const [authMode, setAuthMode] = useState<'signup' | 'signin' | null>(null);
+  const [reportKind, setReportKind] = useState<ReportKind | null>(null);
 
   if (!profile) {
     return (
@@ -172,6 +175,23 @@ export function SettingsScreen() {
           open={authMode !== null}
           initialMode={authMode ?? 'signup'}
           onClose={() => setAuthMode(null)}
+        />
+
+        <SectionHeader>Feedback</SectionHeader>
+        <Glass radius={20} padding={4} style={{ marginBottom: 16 }}>
+          <Row label="Report a problem" onClick={() => setReportKind('bug')}>
+            <span style={{ color: 'var(--pbt-text-muted)' }}>→</span>
+          </Row>
+          <Row label="Suggest an improvement" onClick={() => setReportKind('suggestion')}>
+            <span style={{ color: 'var(--pbt-text-muted)' }}>→</span>
+          </Row>
+        </Glass>
+
+        <ReportModal
+          open={reportKind !== null}
+          initialKind={reportKind ?? 'bug'}
+          screen="settings"
+          onClose={() => setReportKind(null)}
         />
 
         <SectionHeader>About</SectionHeader>
