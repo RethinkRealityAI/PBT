@@ -5,17 +5,90 @@ import { PillButton } from '../design-system/PillButton';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { usePetAnalyzer } from '../features/pet-analyzer/usePetAnalyzer';
-import { useSavedPets } from '../features/pet-analyzer/useSavedPets';
+import { useSavedPets, type VisionSaveMeta } from '../features/pet-analyzer/useSavedPets';
+import { usePetVision } from '../features/pet-analyzer/usePetVision';
+import { PetVisionCard } from '../features/pet-analyzer/PetVisionCard';
 import { BreedSearch } from '../features/pet-analyzer/BreedSearch';
 import { isWeightPlausibleFor, resolveBreed } from '../data/breeds';
 import { BCS_LEVELS } from '../data/bcsLevels';
 import { MCS_LEVELS } from '../data/mcsLevels';
 import { COLORS } from '../design-system/tokens';
+import { useNavigation } from '../app/providers/NavigationProvider';
+import { useScenario } from '../app/providers/ScenarioProvider';
+import { PUSHBACK_CATEGORIES, type Scenario } from '../data/scenarios';
+import {
+  visionLifeStageToLabel,
+  type PetVisionResult,
+} from '../services/petVisionService';
+
+/** Build a training scenario from a vision analysis so the analyzed pet
+ *  flows straight into a roleplay (the "feeds into the platform" handoff). */
+function scenarioFromVision(
+  breed: string,
+  weightKg: number,
+  result: PetVisionResult,
+): Scenario {
+  const pushbackId =
+    result.bcs >= 7
+      ? 'weight-denial'
+      : result.dermatitis.severity !== 'none'
+        ? 'rx-diet'
+        : 'cost';
+  const pushback =
+    PUSHBACK_CATEGORIES.find((p) => p.id === pushbackId) ?? PUSHBACK_CATEGORIES[0];
+  const contextBits = [
+    `${breed || result.breed}, ${result.ageEstimate}.`,
+    `Estimated body condition score ${result.bcs}/9.`,
+  ];
+  if (result.dermatitis.severity !== 'none') {
+    contextBits.push(
+      `Visible skin/coat signs (${result.dermatitis.severity}): ${
+        result.dermatitis.indicators.join(', ') || result.dermatitis.note
+      }.`,
+    );
+  }
+  return {
+    breed: breed || result.breed,
+    age: visionLifeStageToLabel(result.lifeStage),
+    pushback,
+    persona: 'Devoted',
+    difficulty: 2,
+    context: contextBits.join(' '),
+    suggestedDriver: 'Harmonizer',
+    weightKg: String(weightKg),
+  };
+}
 
 export function PetAnalyzerScreen() {
   const { state, update, calorieTarget, reference, verdictResult } = usePetAnalyzer();
   const { savePet } = useSavedPets();
+  const vision = usePetVision();
+  const { go } = useNavigation();
+  const { setScenario } = useScenario();
   const [saved, setSaved] = useState(false);
+
+  // Vision provenance to attach on save — present once a photo has been
+  // analysed (and the user may have edited the seeded fields afterwards).
+  const visionMeta: VisionSaveMeta | undefined =
+    vision.status === 'done' && vision.result?.isDog
+      ? {
+          ageEstimate: vision.result.ageEstimate,
+          breedConfidence: vision.result.breedConfidence,
+          lifeStage: vision.result.lifeStage,
+          dermatitis: vision.result.dermatitis,
+        }
+      : undefined;
+
+  const handleVisionPick = async (file: File) => {
+    const r = await vision.analyzeFile(file);
+    // Seed the editable fields from the estimate; the user can override any
+    // of them before saving. Weight isn't derivable from a photo, so we leave
+    // it on whatever the breed pre-fill / slider set.
+    if (r?.isDog) {
+      if (r.breed && r.breed !== 'Unknown') update('breed', r.breed);
+      update('bcs', r.bcs);
+    }
+  };
   const verdictColor =
     verdictResult.verdict === 'good'
       ? COLORS.score.good
@@ -43,6 +116,9 @@ export function PetAnalyzerScreen() {
 
         {/* ── Left column ── */}
         <div>
+
+        {/* ── Card 0: Photo analysis (AI vision) ── */}
+        <PetVisionCard vision={vision} onPick={handleVisionPick} />
 
         {/* ── Card 1: Pet name + Breed ── */}
         <Glass
@@ -478,9 +554,27 @@ export function PetAnalyzerScreen() {
       </Page>
 
       <div
-        className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:left-auto lg:right-8 lg:bottom-8 lg:w-[280px] lg:max-w-none lg:translate-x-0 lg:px-0"
+        className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 flex-col gap-2 px-5 lg:left-auto lg:right-8 lg:bottom-8 lg:w-[280px] lg:max-w-none lg:translate-x-0 lg:px-0"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
       >
+        {vision.status === 'done' && vision.result?.isDog && (
+          <PillButton
+            size="lg"
+            fullWidth
+            variant="glass"
+            icon={<Icon.flame />}
+            disabled={!canSave}
+            onClick={() => {
+              if (!canSave || !vision.result) return;
+              setScenario(
+                scenarioFromVision(state.breed, state.weightKg, vision.result),
+              );
+              go('chat');
+            }}
+          >
+            Train with this pet
+          </PillButton>
+        )}
         <PillButton
           size="lg"
           fullWidth
@@ -488,7 +582,7 @@ export function PetAnalyzerScreen() {
           disabled={!canSave || saved}
           onClick={() => {
             if (!canSave) return;
-            savePet(state);
+            savePet(state, visionMeta);
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
           }}

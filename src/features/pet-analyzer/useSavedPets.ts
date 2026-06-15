@@ -5,10 +5,28 @@ import { uuid } from '../../lib/id';
 import { calorieFor } from '../../data/calorieTable';
 import { getSupabase } from '../auth/supabaseClient';
 import { logEvent } from '../../lib/analytics';
+import type {
+  PetVisionDermatitis,
+  VisionLifeStage,
+} from '../../services/petVisionService';
+
+/**
+ * Optional Pet Vision provenance attached at save time. Present only when the
+ * pet's fields were seeded from a photo analysis (and possibly hand-corrected).
+ * The raw image is never stored — only these structured fields.
+ */
+export interface VisionSaveMeta {
+  ageEstimate?: string;
+  breedConfidence?: number;
+  lifeStage?: VisionLifeStage;
+  dermatitis?: PetVisionDermatitis;
+}
 
 export interface SavedPet extends PetState {
   id: string;
   savedAt: string;
+  source?: 'manual' | 'vision';
+  vision?: VisionSaveMeta;
 }
 
 const SAVED_PETS_KEY = {
@@ -26,13 +44,18 @@ function adminVerdict(state: PetState): 'on_track' | 'watch' | 'adjust' | 'conce
   return 'adjust';
 }
 
-async function persistAnalyzerEvent(state: PetState, petId: string | null): Promise<void> {
+async function persistAnalyzerEvent(
+  state: PetState,
+  petId: string | null,
+  vision?: VisionSaveMeta,
+): Promise<void> {
   const verdict = adminVerdict(state);
+  const source = vision ? 'vision' : 'manual';
   logEvent({
     type: 'custom',
     screen: 'analyzer',
     target: 'analyzer_save',
-    meta: { breed: state.breed, bcs: state.bcs, mcs: state.mcs, verdict },
+    meta: { breed: state.breed, bcs: state.bcs, mcs: state.mcs, verdict, source },
   });
 
   const sb = getSupabase();
@@ -52,6 +75,10 @@ async function persistAnalyzerEvent(state: PetState, petId: string | null): Prom
       activity: state.activity,
       kcal_target: calorieFor(state.weightKg, state.activity),
       verdict,
+      source,
+      age_estimate: vision?.ageEstimate ?? null,
+      breed_confidence: vision?.breedConfidence ?? null,
+      dermatitis: vision?.dermatitis ?? null,
     });
   } catch (err) {
     console.warn('[saved-pets] persistAnalyzerEvent failed', err);
@@ -63,14 +90,20 @@ export function useSavedPets() {
     readStorage(SAVED_PETS_KEY),
   );
 
-  const savePet = useCallback((state: PetState) => {
-    const pet: SavedPet = { ...state, id: uuid(), savedAt: new Date().toISOString() };
+  const savePet = useCallback((state: PetState, vision?: VisionSaveMeta) => {
+    const pet: SavedPet = {
+      ...state,
+      id: uuid(),
+      savedAt: new Date().toISOString(),
+      source: vision ? 'vision' : 'manual',
+      vision,
+    };
     setSavedPets((prev) => {
       const next = [pet, ...prev.filter((p) => p.name !== state.name || p.breed !== state.breed)];
       writeStorage(SAVED_PETS_KEY, next);
       return next;
     });
-    void persistAnalyzerEvent(state, pet.id);
+    void persistAnalyzerEvent(state, pet.id, vision);
     return pet;
   }, []);
 
