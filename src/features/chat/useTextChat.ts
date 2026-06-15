@@ -521,6 +521,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       // so the session shows up in telemetry but doesn't poison
       // downstream scoring or fine-tuning.
       const recordId = recordIdRef.current ?? uuid();
+      // Voice sessions never call open(), so the ref may be unset. Pin it so
+      // sessionId is exposed (post-session feedback attributes to it).
+      recordIdRef.current = recordId;
       if (msgs.length === 0) {
         setStatus('idle');
         persistedRef.current = true;

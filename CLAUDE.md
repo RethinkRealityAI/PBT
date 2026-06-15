@@ -62,14 +62,21 @@ Drivers: Activator · Energizer · Analyzer · Harmonizer.
 
 ## AI integration (CRITICAL — preserve)
 
-Two services, both call `@google/genai`:
+Services call `@google/genai`:
 
 
-| Function                  | Model                          | Purpose         |
-| ------------------------- | ------------------------------ | --------------- |
-| `generateRoleplayMessage` | `gemini-2.5-flash`             | Customer turn   |
-| `evaluateConversation`    | `gemini-2.5-flash` (JSON mode) | 7-dim scorecard |
-| `ai.live.connect`         | `gemini-2.0-flash-live-001`    | Voice mode      |
+| Function                  | Model                          | Purpose                       |
+| ------------------------- | ------------------------------ | ----------------------------- |
+| `generateRoleplayMessage` | `gemini-2.5-flash`             | Customer turn                 |
+| `evaluateConversation`    | `gemini-2.5-flash` (JSON mode) | ACT-first 5-dim scorecard     |
+| `analyzePetPhoto`         | `gemini-2.5-flash` (multimodal)| Pet Vision (breed/BCS/derm)   |
+| `ai.live.connect`         | `gemini-2.0-flash-live-001`    | Voice mode                    |
+
+**Scoring is ACT-first (Phase 2):** 5 dimensions — `acknowledge`, `clarify`,
+`transform`, `empathy`, `rapport` (see `scoringRubric.ts`). ACT pillars carry
+70% of the weight; empathy + rapport the rest. `normalizeScoreReport` (in
+`services/types.ts`) backfills these from pre-Phase-2 records so historic
+sessions still render.
 
 
 Use published model IDs that match your API key (AI Studio). Preview aliases may 404.
@@ -113,6 +120,14 @@ Migrations:
 - `20260507000000_admin_telemetry.sql` — `is_admin`, telemetry tables, view
 - `20260507100000_rag_documents.sql` — `rag_documents` table; drops the
   cross-user admin RLS policies (replaced by Netlify Function gating)
+- `20260601000000_phase2_june.sql` — Pet Vision columns on `analyzer_events`
+  (source/age_estimate/breed_confidence/dermatitis), `session_feedback` +
+  `platform_reports` tables (anonymous-safe insert, admin select), and the
+  `vision` AI call type
+
+June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`)
+and **Platform Reports** (`admin-reports` → `platform_reports`). Pet Vision
+data surfaces in the existing **Pet Analyzer** screen via `analyzer_events`.
 
 Telemetry capture in the consumer app:
 - `src/lib/analytics.ts` — `logEvent()` writes to `nav_events` (anonymous-safe)
@@ -120,7 +135,10 @@ Telemetry capture in the consumer app:
 - `src/services/geminiService.ts` — wraps `generateRoleplayMessage` / `evaluateConversation` with timing + tokens + refusal heuristics; takes a `{ sessionId }` option so rows attribute to a `training_sessions` id
 - `src/features/chat/useTextChat.ts` — allocates session id at `open()`, persists `completed`/`abandoned` + `rag_documents` row to Supabase, exposes `abandon()` (called by `ChatAbandonWatcher` in `App.tsx` when user leaves chat mid-flight)
 - `src/features/scenarios/persistScenario.ts` — writes `user_scenarios` on Save
-- `src/features/pet-analyzer/useSavedPets.ts` — writes `analyzer_events` on save
+- `src/features/pet-analyzer/useSavedPets.ts` — writes `analyzer_events` on save (incl. Pet Vision provenance)
+- `src/features/pet-analyzer/usePetVision.ts` + `src/services/petVisionService.ts` — multimodal photo analysis (results-only; raw image never stored)
+- `src/features/feedback/useSessionFeedback.ts` — writes `session_feedback` (post-session rating)
+- `src/features/reporting/usePlatformReport.ts` — writes `platform_reports` (bug/suggestion)
 - `src/services/ragDocument.ts` — assembles + upserts `rag_documents` rows on session end
 
 RAG outputs:
@@ -210,4 +228,4 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. `**npm test` — 110 tests.** Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. `**npm test` — 139 tests.** Production build: `npm run build`.
