@@ -98,4 +98,19 @@ describe('evaluateConversation', () => {
     expect(result.overall).toBe(0);
     expect(result.band).toBe('poor');
   });
+
+  it('coerces a missing/invalid dimension to 0 instead of NaN/undefined', async () => {
+    // Model drifts and omits `transform`, returns a non-number for `rapport`.
+    const partial = { ...validScores } as Record<string, unknown>;
+    delete partial.transform;
+    partial.rapport = 'n/a';
+    generateContent.mockResolvedValueOnce({ text: JSON.stringify(partial) });
+    const result = await evaluateConversation(SEED_SCENARIOS[0], [
+      { role: 'user', text: 'hi', timestamp: 1 },
+    ]);
+    expect(result.transform).toBe(0);
+    expect(result.rapport).toBe(0);
+    expect(Number.isNaN(result.overall)).toBe(false);
+    expect(result.acknowledge).toBe(92);
+  });
 });

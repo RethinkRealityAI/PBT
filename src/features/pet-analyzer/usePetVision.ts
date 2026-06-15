@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   analyzePetPhoto,
   type PetVisionResult,
@@ -51,6 +51,9 @@ export function usePetVision(): UsePetVision {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const previewRef = useRef<string | null>(null);
+  // Monotonic id so a slow analysis from an earlier pick can't overwrite the
+  // result/preview of a later one (user picks photo A then B in quick succession).
+  const reqIdRef = useRef(0);
 
   const reset = useCallback(() => {
     if (previewRef.current) {
@@ -62,6 +65,15 @@ export function usePetVision(): UsePetVision {
     setPreviewUrl(null);
     setError(null);
   }, []);
+
+  // Revoke any outstanding preview object URL when the hook unmounts (e.g.
+  // the user navigates away from the analyzer) so it doesn't leak.
+  useEffect(
+    () => () => {
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    },
+    [],
+  );
 
   const analyzeFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -75,6 +87,9 @@ export function usePetVision(): UsePetVision {
       return null;
     }
 
+    const reqId = ++reqIdRef.current;
+    const isCurrent = () => reqId === reqIdRef.current;
+
     setError(null);
     setStatus('analyzing');
     setResult(null);
@@ -83,8 +98,16 @@ export function usePetVision(): UsePetVision {
     try {
       parts = await readFileParts(file);
     } catch {
-      setError('Could not read that image. Try another photo.');
-      setStatus('error');
+      if (isCurrent()) {
+        setError('Could not read that image. Try another photo.');
+        setStatus('error');
+      }
+      return null;
+    }
+
+    // A newer pick superseded this one while we were reading the file — drop it.
+    if (!isCurrent()) {
+      URL.revokeObjectURL(parts.previewUrl);
       return null;
     }
 
@@ -95,6 +118,7 @@ export function usePetVision(): UsePetVision {
 
     try {
       const r = await analyzePetPhoto(parts.base64, parts.mimeType);
+      if (!isCurrent()) return null; // superseded mid-analysis — ignore stale result
       setResult(r);
       setStatus('done');
       logEvent({
@@ -111,6 +135,7 @@ export function usePetVision(): UsePetVision {
       return r;
     } catch (err) {
       console.error('[usePetVision] analyze failed', err);
+      if (!isCurrent()) return null;
       const msg = err instanceof Error ? err.message : '';
       setError(
         msg.toLowerCase().includes('api key')

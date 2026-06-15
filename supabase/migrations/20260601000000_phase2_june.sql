@@ -28,7 +28,9 @@ alter table public.analyzer_events
   -- (and possibly hand-corrected before saving).
   add column if not exists source text check (source in ('manual','vision')) default 'manual',
   add column if not exists age_estimate text,
-  add column if not exists breed_confidence numeric,
+  -- 0.0–1.0 model confidence in the breed call (NOT a percentage).
+  add column if not exists breed_confidence numeric
+    check (breed_confidence is null or (breed_confidence >= 0 and breed_confidence <= 1)),
   -- Structured dermatitis findings: { severity, indicators[], note }.
   add column if not exists dermatitis jsonb;
 

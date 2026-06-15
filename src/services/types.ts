@@ -1,5 +1,7 @@
 import {
+  bandFor,
   normalizeDimensions,
+  weightedOverall,
   type DimensionKey,
   type LegacyScoreFields,
 } from '../data/knowledge/scoringRubric';
@@ -104,9 +106,17 @@ export function normalizeScoreReport(report: ScoreReport): ScoreReport {
         return n.rapport ?? n.pacing ?? '';
     }
   };
+  // Recompute overall/band from the (possibly backfilled) dimensions so the
+  // ScoreRing + band headline never contradict the per-dimension bars. For a
+  // current record this is a no-op (same dims, same weighting); for a legacy
+  // record it replaces the old 7-dimension weighting with the ACT-first one
+  // the bars now reflect.
+  const overall = weightedOverall(dims);
   return {
     ...report,
     ...dims,
+    overall,
+    band: bandFor(overall),
     perDimensionNotes: {
       acknowledge: legacyNote('acknowledge'),
       clarify: legacyNote('clarify'),

@@ -290,12 +290,20 @@ export async function evaluateConversation(
     const raw = response.text ?? '';
     if (!raw) throw new Error('Empty score response');
     const parsed = JSON.parse(raw) as Omit<ScoreReport, 'overall' | 'band'>;
+    // Coerce each dimension to a clamped 0–100 integer. The schema marks them
+    // required, but a drifting model can still omit one or return a non-number;
+    // without this the canonical report (and the RAG/persistence consumers that
+    // read it un-normalized) would carry undefined → NaN bars.
+    const dim = (v: unknown): number =>
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(0, Math.min(100, Math.round(v)))
+        : 0;
     const dims: Record<DimensionKey, number> = {
-      acknowledge: parsed.acknowledge,
-      clarify: parsed.clarify,
-      transform: parsed.transform,
-      empathy: parsed.empathy,
-      rapport: parsed.rapport,
+      acknowledge: dim(parsed.acknowledge),
+      clarify: dim(parsed.clarify),
+      transform: dim(parsed.transform),
+      empathy: dim(parsed.empathy),
+      rapport: dim(parsed.rapport),
     };
     const overall = weightedOverall(dims);
 
@@ -313,7 +321,7 @@ export async function evaluateConversation(
       costUsd: estimateCostUsd(MODEL_TEXT, tokensIn, tokensOut),
     });
 
-    return { ...parsed, overall, band: bandFor(overall) };
+    return { ...parsed, ...dims, overall, band: bandFor(overall) };
   } catch (error) {
     console.error('[geminiService] evaluateConversation failed', error);
     void recordCall({

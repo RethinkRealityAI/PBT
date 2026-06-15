@@ -82,10 +82,19 @@ export function PetAnalyzerScreen() {
   const handleVisionPick = async (file: File) => {
     const r = await vision.analyzeFile(file);
     // Seed the editable fields from the estimate; the user can override any
-    // of them before saving. Weight isn't derivable from a photo, so we leave
-    // it on whatever the breed pre-fill / slider set.
+    // of them before saving.
     if (r?.isDog) {
-      if (r.breed && r.breed !== 'Unknown') update('breed', r.breed);
+      if (r.breed && r.breed !== 'Unknown') {
+        update('breed', r.breed);
+        // Weight can't be read from a photo. If the detected breed is one we
+        // know and the user hasn't dialled in a weight yet (still the 12 kg
+        // default), seed the breed midpoint so the calorie target is
+        // meaningful — same heuristic BreedSearch uses on manual selection.
+        const entry = resolveBreed(r.breed);
+        if (entry && state.weightKg === 12) {
+          update('weightKg', Math.round((entry.sizeKg[0] + entry.sizeKg[1]) / 2));
+        }
+      }
       update('bcs', r.bcs);
     }
   };

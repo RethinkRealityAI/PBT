@@ -46,7 +46,6 @@ function adminVerdict(state: PetState): 'on_track' | 'watch' | 'adjust' | 'conce
 
 async function persistAnalyzerEvent(
   state: PetState,
-  petId: string | null,
   vision?: VisionSaveMeta,
 ): Promise<void> {
   const verdict = adminVerdict(state);
@@ -67,7 +66,12 @@ async function persistAnalyzerEvent(
     const mcsMap: Record<string, number> = { normal: 1, mild: 2, moderate: 3, severe: 4 };
     await sb.from('analyzer_events').insert({
       user_id: user?.id ?? null,
-      pet_id: petId,
+      // pet_records is only populated by the sign-up backfill, never on a live
+      // save — so we cannot reference a pet_records(id) here without violating
+      // the FK (which would silently reject the whole event). The local
+      // SavedPet id lives in localStorage only; admin telemetry reads
+      // analyzer_events directly and doesn't need the linkage.
+      pet_id: null,
       breed: state.breed,
       weight_kg: state.weightKg,
       bcs: state.bcs,
@@ -103,7 +107,7 @@ export function useSavedPets() {
       writeStorage(SAVED_PETS_KEY, next);
       return next;
     });
-    void persistAnalyzerEvent(state, pet.id, vision);
+    void persistAnalyzerEvent(state, vision);
     return pet;
   }, []);
 
