@@ -61,6 +61,16 @@ describe('resolveWeights', () => {
     for (const v of Object.values(w)) expect(v).toBeCloseTo(0.2, 5);
   });
 
+  it('falls back to code defaults if every weight is zero (no broken scoring)', () => {
+    const config: SimulationConfig = {
+      scoring: { dimensions: DIMENSIONS.map((d) => ({ key: d.key, weight: 0 })) },
+    };
+    const w = resolveWeights(config);
+    const sum = Object.values(w).reduce((a, b) => a + b, 0);
+    expect(sum).toBeCloseTo(1, 5);
+    expect(w.acknowledge).toBeCloseTo(0.24, 5);
+  });
+
   it('lets an admin zero-out a dimension and re-weights the rest', () => {
     const config: SimulationConfig = {
       scoring: {

@@ -11,7 +11,7 @@
  * Delivery: this object rides the existing flags snapshot
  * (`flags-resolve` → FlagProvider) the same way scenario overrides do.
  */
-import { DIMENSIONS, type DimensionKey } from './scoringRubric';
+import { DIMENSIONS, dimensionWeights, type DimensionKey } from './scoringRubric';
 import { DRIVER_KNOWLEDGE, type DriverKnowledge } from './driverProfiles';
 import {
   PUSHBACK_KNOWLEDGE,
@@ -93,9 +93,12 @@ export function resolveWeights(
 ): Record<DimensionKey, number> {
   const dims = resolveDimensions(config);
   const total = dims.reduce((s, d) => s + (d.weight > 0 ? d.weight : 0), 0);
+  // Safety net: an all-zero (or negative) weighting would make every session
+  // score 0. Fall back to the code defaults rather than silently break scoring.
+  if (total <= 0) return dimensionWeights();
   const out = {} as Record<DimensionKey, number>;
   for (const d of dims) {
-    out[d.key] = total > 0 ? d.weight / total : 0;
+    out[d.key] = d.weight > 0 ? d.weight / total : 0;
   }
   return out;
 }

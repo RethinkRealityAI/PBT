@@ -37,9 +37,14 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options        = "DENY"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy        = "strict-origin-when-cross-origin"
+    # SAMEORIGIN (not DENY) so the admin dashboard's same-origin preview
+    # iframes — the Scenario Builder "Test in app" panel and the Preview
+    # screen, which embed the consumer at /?pbt_preview=1 — can render.
+    # Third-party framing (clickjacking) is still blocked.
+    X-Frame-Options         = "SAMEORIGIN"
+    Content-Security-Policy  = "frame-ancestors 'self'"
+    X-Content-Type-Options  = "nosniff"
+    Referrer-Policy         = "strict-origin-when-cross-origin"
 
 [[headers]]
   for = "/assets/*"
