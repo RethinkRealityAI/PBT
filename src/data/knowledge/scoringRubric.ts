@@ -193,11 +193,13 @@ export function dimensionWeights(): Record<DimensionKey, number> {
   );
 }
 
-export function weightedOverall(scores: Record<DimensionKey, number>): number {
-  const w = dimensionWeights();
+export function weightedOverall(
+  scores: Record<DimensionKey, number>,
+  weights: Record<DimensionKey, number> = dimensionWeights(),
+): number {
   let total = 0;
-  for (const k of Object.keys(w) as DimensionKey[]) {
-    total += (scores[k] ?? 0) * w[k];
+  for (const k of Object.keys(weights) as DimensionKey[]) {
+    total += (scores[k] ?? 0) * weights[k];
   }
   return Math.round(total);
 }

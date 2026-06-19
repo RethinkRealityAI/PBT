@@ -1,6 +1,4 @@
 import type { Scenario } from '../scenarios';
-import { DRIVER_KNOWLEDGE } from './driverProfiles';
-import { getPushbackKnowledge } from './pushbackTaxonomy';
 import { ACT_STEPS } from './actGuide';
 import {
   BCS_BLURB,
@@ -9,7 +7,12 @@ import {
   NON_SHAMING_FRAMING,
   PRODUCT_ANCHORS,
 } from './clinicalReference';
-import { DIMENSIONS } from './scoringRubric';
+import {
+  resolveDimensions,
+  resolveDriverKnowledge,
+  resolvePushbackKnowledge,
+  type SimulationConfig,
+} from './simulationConfig';
 
 /**
  * Bounded admin-side prompt overrides. The canonical customer prompt and
@@ -89,9 +92,10 @@ or improvise something true to your driver type, breed, and pushback category.
 export function buildCustomerSystemPrompt(
   scenario: Scenario,
   overrides: PromptOverrides = {},
+  config: SimulationConfig = {},
 ): string {
-  const driver = DRIVER_KNOWLEDGE[scenario.suggestedDriver];
-  const pushback = getPushbackKnowledge(scenario.pushback.id);
+  const driver = resolveDriverKnowledge(scenario.suggestedDriver, config);
+  const pushback = resolvePushbackKnowledge(scenario.pushback.id, config);
   const pushbackBlock = formatPushbackPromptSection(scenario);
   const difficultyLine: Record<number, string> = {
     1: 'You are coachable: you push back once but yield when staff demonstrates real listening. Reward genuine empathy with clear softening.',
@@ -100,8 +104,14 @@ export function buildCustomerSystemPrompt(
     4: 'You are combative: you stay difficult throughout. Soften only after multiple strong, evidence-backed turns — but do soften when the trainee earns it.',
   };
 
-  const prefix = trimOverride(overrides.promptPrefix);
-  const suffix = trimOverride(overrides.promptSuffix);
+  // Combine the global (config) customer-prompt wraps with the per-scenario
+  // ones; both are length-capped so neither can bury the canonical brief.
+  const prefix = [trimOverride(config.customerPromptPrefix), trimOverride(overrides.promptPrefix)]
+    .filter(Boolean)
+    .join('\n\n');
+  const suffix = [trimOverride(overrides.promptSuffix), trimOverride(config.customerPromptSuffix)]
+    .filter(Boolean)
+    .join('\n\n');
   const prefixBlock = prefix
     ? `# ADMIN NOTES (apply on top of the canonical brief below)\n${prefix}\n\n`
     : '';
@@ -174,17 +184,27 @@ ${scenario.context ?? '(none)'}
  * Builds the system prompt for the scoring evaluator.
  * Returns a JSON-typed scorecard against the 7 dimensions.
  */
-export function buildScoringSystemPrompt(scenario: Scenario): string {
-  const dimensionLines = DIMENSIONS.map(
-    (d) =>
-      `- ${d.key} (${d.label}, weight ${d.weight}): ${d.description} | EXCELLENT (≥85): ${d.bands.excellent.example} | NEEDS WORK (<70): ${d.bands.needsWork.example}`,
-  ).join('\n');
+export function buildScoringSystemPrompt(
+  scenario: Scenario,
+  config: SimulationConfig = {},
+): string {
+  const dimensionLines = resolveDimensions(config)
+    .map(
+      (d) =>
+        `- ${d.key} (${d.label}, weight ${d.weight}): ${d.description} | EXCELLENT (≥85): ${d.excellentExample} | NEEDS WORK (<70): ${d.needsWorkExample}`,
+    )
+    .join('\n');
 
   const actLines = ACT_STEPS.map(
     (s) => `${s.label}: ${s.goal}`,
   ).join('\n');
 
-  return `
+  const scoringPrefix = trimOverride(config.scoring?.promptPrefix);
+  const scoringSuffix = trimOverride(config.scoring?.promptSuffix);
+  const prefixBlock = scoringPrefix ? `${scoringPrefix}\n\n` : '';
+  const suffixBlock = scoringSuffix ? `\n\n# ADMIN SCORING ADDENDUM\n${scoringSuffix}` : '';
+
+  return `${prefixBlock}
 You are an empathy-and-communication coach reviewing a recorded veterinary
 client conversation. Your lens is the ACT methodology — Acknowledge, Clarify,
 Transform — NOT sales technique. Reward staff who make the client feel heard
@@ -237,7 +257,7 @@ Do NOT include an overall or band — those are computed from your dimension sco
 - A specific, credible next step (a bounded trial, a recheck, a written plan) is what "transform" rewards. Product specifics are only relevant once earned: ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}
 - Use BCS guidance: ${BCS_BLURB}
 - ${MCS_BLURB}
-- ${CALORIE_FORMULA_BLURB}
+- ${CALORIE_FORMULA_BLURB}${suffixBlock}
 `.trim();
 }
 
@@ -249,10 +269,11 @@ Do NOT include an overall or band — those are computed from your dimension sco
 export function buildVoiceSystemPrompt(
   scenario: Scenario,
   overrides: PromptOverrides = {},
+  config: SimulationConfig = {},
 ): string {
   // Replace the text-mode "open immediately" rule with a voice-mode equivalent
   // that prevents a double-opening when the kickoff text triggers the model.
-  const base = buildCustomerSystemPrompt(scenario, overrides).replace(
+  const base = buildCustomerSystemPrompt(scenario, overrides, config).replace(
     '- Open the conversation with your pushback — do not wait for staff to greet you.',
     '- Wait for the text cue to begin. When it arrives, deliver EXACTLY ONE opening pushback line, then go completely silent and wait for the staff member to speak first. Do NOT add a second statement or follow-up after your opening.',
   );

@@ -4,6 +4,7 @@ import type { Scenario } from '../data/scenarios';
 import type { ChatMessage, ScoreReport } from './types';
 import { buildVoiceSystemPrompt } from '../data/knowledge/promptBuilders';
 import { evaluateConversation, MODEL_LIVE } from './geminiService';
+import { useSimulationConfig } from '../app/providers/FlagProvider';
 
 export type EmotionColor = 'red' | 'yellow' | 'green';
 export type VoiceStatus =
@@ -68,6 +69,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [liveAiText, setLiveAiText] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Global admin simulation config — held in a ref so the prompt build + the
+  // post-session scoring (both inside callbacks) read the latest value.
+  const simulationConfig = useSimulationConfig();
+  const configRef = useRef(simulationConfig);
+  configRef.current = simulationConfig;
 
   // Session stored as a Promise (reference pattern) — all sends via .then()
   const sessionPromiseRef = useRef<Promise<unknown> | null>(null);
@@ -362,7 +369,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       const sessionPromise = (ai.live.connect as (opts: unknown) => Promise<unknown>)({
         model: MODEL_LIVE,
         config: {
-          systemInstruction: buildVoiceSystemPrompt(scenario),
+          systemInstruction: buildVoiceSystemPrompt(scenario, {}, configRef.current ?? undefined),
           tools: [
             {
               functionDeclarations: [
@@ -658,7 +665,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       let report: ScoreReport | null = null;
       if (transcriptSnapshot.length && scenario) {
         try {
-          report = await evaluateConversation(scenario, transcriptSnapshot);
+          report = await evaluateConversation(scenario, transcriptSnapshot, {
+            config: configRef.current ?? undefined,
+          });
         } catch {
           report = null;
         }

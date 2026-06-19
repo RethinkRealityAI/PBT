@@ -10,6 +10,7 @@
  * fallback when the network is unavailable, and they document every flag
  * key the consumer app reads.
  */
+import type { SimulationConfig } from '../data/knowledge/simulationConfig';
 
 export type FlagKey =
   | 'screen.analyzer.enabled'
@@ -92,6 +93,8 @@ export interface ScenarioOverride {
 export interface FlagSnapshot {
   flags: Record<string, unknown>;
   scenarioOverrides: ScenarioOverride[];
+  /** Global admin simulation config (scoring, drivers, pushbacks, prompt wraps). */
+  simulationConfig?: SimulationConfig | null;
   fetchedAt: number;
 }
 

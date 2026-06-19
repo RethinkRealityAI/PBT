@@ -106,17 +106,21 @@ export function normalizeScoreReport(report: ScoreReport): ScoreReport {
         return n.rapport ?? n.pacing ?? '';
     }
   };
-  // Recompute overall/band from the (possibly backfilled) dimensions so the
-  // ScoreRing + band headline never contradict the per-dimension bars. For a
-  // current record this is a no-op (same dims, same weighting); for a legacy
-  // record it replaces the old 7-dimension weighting with the ACT-first one
-  // the bars now reflect.
-  const overall = weightedOverall(dims);
+  // Current (ACT-first) records natively carry all five dimensions; their
+  // stored overall/band are authoritative — and may have been computed with
+  // admin-tuned scoring weights we can't see here, so we must NOT recompute
+  // them with the static defaults. Only LEGACY records (missing the native
+  // dimensions) get a recomputed overall/band from the backfilled values, so
+  // the ScoreRing + band headline don't contradict the per-dimension bars.
+  const isNewShape = (
+    ['acknowledge', 'clarify', 'transform', 'empathy', 'rapport'] as DimensionKey[]
+  ).every((k) => typeof (report as unknown as Record<string, unknown>)[k] === 'number');
+  const overall = isNewShape ? report.overall : weightedOverall(dims);
   return {
     ...report,
     ...dims,
     overall,
-    band: bandFor(overall),
+    band: isNewShape ? report.band : bandFor(overall),
     perDimensionNotes: {
       acknowledge: legacyNote('acknowledge'),
       clarify: legacyNote('clarify'),

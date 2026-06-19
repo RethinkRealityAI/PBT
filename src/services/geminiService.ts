@@ -12,6 +12,10 @@ import {
   type DimensionKey,
 } from '../data/knowledge/scoringRubric';
 import {
+  resolveWeights,
+  type SimulationConfig,
+} from '../data/knowledge/simulationConfig';
+import {
   estimateCostUsd,
   estimateTokens,
   isLikelyRefusal,
@@ -50,8 +54,10 @@ const END_TOKEN = '[END_SIMULATION]';
 interface CallOptions {
   /** PBT session id (training_sessions.id). Telemetry rows attribute to it. */
   sessionId?: string | null;
-  /** Bounded admin overrides (prompt prefix/suffix). Scoring prompt is never touched. */
+  /** Bounded per-scenario admin overrides (customer prompt prefix/suffix). */
   promptOverrides?: PromptOverrides;
+  /** Global admin simulation config (scoring weights/prompt, driver + pushback edits). */
+  config?: SimulationConfig;
 }
 
 interface UsageMetadata {
@@ -76,7 +82,11 @@ export async function generateRoleplayMessage(
   options: CallOptions = {},
 ): Promise<ChatMessage> {
   const ai = getClient();
-  const systemInstruction = buildCustomerSystemPrompt(scenario, options.promptOverrides);
+  const systemInstruction = buildCustomerSystemPrompt(
+    scenario,
+    options.promptOverrides,
+    options.config,
+  );
 
   // Strip any transient error messages from history before sending to the model
   const cleanHistory = history.filter((m) => !m._transientError);
@@ -199,7 +209,7 @@ export async function evaluateConversation(
   options: CallOptions = {},
 ): Promise<ScoreReport> {
   const ai = getClient();
-  const systemInstruction = buildScoringSystemPrompt(scenario);
+  const systemInstruction = buildScoringSystemPrompt(scenario, options.config);
   const evalT0 = performance.now();
 
   const formatted = transcript
@@ -305,7 +315,7 @@ export async function evaluateConversation(
       empathy: dim(parsed.empathy),
       rapport: dim(parsed.rapport),
     };
-    const overall = weightedOverall(dims);
+    const overall = weightedOverall(dims, resolveWeights(options.config));
 
     const latency = Math.round(performance.now() - evalT0);
     const usage = readUsage(response);
