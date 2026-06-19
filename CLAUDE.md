@@ -124,10 +124,35 @@ Migrations:
   (source/age_estimate/breed_confidence/dermatitis), `session_feedback` +
   `platform_reports` tables (anonymous-safe insert, admin select), and the
   `vision` AI call type
+- `20260602000000_simulation_config.sql` — singleton `simulation_config`
+  (id='global', jsonb), admin-only RLS; audit-log entity type extended
 
-June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`)
-and **Platform Reports** (`admin-reports` → `platform_reports`). Pet Vision
-data surfaces in the existing **Pet Analyzer** screen via `analyzer_events`.
+June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
+**Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
+(`admin-simulation-config` → `simulation_config`). Pet Vision data surfaces in
+the existing **Pet Analyzer** screen via `analyzer_events`.
+
+## Simulation config (admin-tunable prompts + scoring)
+
+`src/data/knowledge/simulationConfig.ts` defines `SimulationConfig` — an
+optional, deep-merged layer over the hardcoded scoring rubric / driver profiles
+/ pushback taxonomy (code defaults are always the fallback). It lets the admin
+**Simulation** screen tune, without a deploy:
+- scoring dimension labels/descriptions/**weights** (normalised at runtime) +
+  band examples, and a scoring-prompt prefix/suffix
+- the 4 ECHO driver personas (`driverProfiles`) and the pushback taxonomy
+  (`pushbackTaxonomy`, incl. brand-new pushback ids)
+- a global customer-prompt prefix/suffix
+
+Flow: admin edits → `admin-simulation-config` → `simulation_config` table →
+`flags-resolve` snapshot → `FlagProvider.getSimulationConfig()` /
+`useSimulationConfig()` → `useTextChat` + `voiceSession` pass it into
+`promptBuilders` (`buildCustomerSystemPrompt` / `buildScoringSystemPrompt` /
+`buildVoiceSystemPrompt`) and `evaluateConversation` (resolved weights). The
+dimension KEYS stay fixed (the `ScoreReport` schema is typed); admins re-weight
+/ relabel / re-describe them but don't add/remove keys. `normalizeScoreReport`
+keeps the config-weighted `overall` authoritative for current records and only
+recomputes for legacy ones.
 
 Telemetry capture in the consumer app:
 - `src/lib/analytics.ts` — `logEvent()` writes to `nav_events` (anonymous-safe)

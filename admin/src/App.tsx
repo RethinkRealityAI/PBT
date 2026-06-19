@@ -17,6 +17,7 @@ import { FlagsScreen } from './screens/FlagsScreen';
 import { ScenarioBuilderScreen } from './screens/ScenarioBuilderScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
+import { SimulationScreen } from './screens/SimulationScreen';
 import { SignInGate } from './screens/SignInGate';
 
 type AdminState =
@@ -165,6 +166,7 @@ export function App() {
         {view === 'reports' && <ReportsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
         {view === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
         {view === 'overrides' && <ScenarioBuilderScreen query={query} onQuery={setQuery} />}
+        {view === 'simulation' && <SimulationScreen />}
         {view === 'preview' && <PreviewScreen />}
         {view === 'audit' && <AuditLogScreen />}
       </div>
