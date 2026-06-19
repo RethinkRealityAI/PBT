@@ -122,7 +122,7 @@ export function readRange(req: Request): { since: string; limit: number } {
 export async function writeAuditLog(
   ctx: AdminCtx,
   entry: {
-    entity_type: 'flag' | 'flag_rule' | 'scenario_override';
+    entity_type: 'flag' | 'flag_rule' | 'scenario_override' | 'simulation_config';
     entity_id: string;
     action: 'create' | 'update' | 'delete' | 'revert';
     before?: unknown;

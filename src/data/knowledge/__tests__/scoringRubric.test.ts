@@ -95,6 +95,31 @@ describe('scoringRubric', () => {
     });
   });
 
+  it('rewards a strong ACT performance with a good band and penalises a weak one', () => {
+    // A trainee who acknowledges, clarifies, and transforms well scores high.
+    const strongAct = weightedOverall({
+      acknowledge: 90,
+      clarify: 88,
+      transform: 86,
+      empathy: 84,
+      rapport: 80,
+    });
+    expect(strongAct).toBeGreaterThanOrEqual(85);
+    expect(bandFor(strongAct)).toBe('good');
+
+    // A trainee who skips acknowledge/clarify and jumps to a pitch scores low,
+    // even with otherwise polished delivery — ACT carries 70% of the weight.
+    const pitchFirst = weightedOverall({
+      acknowledge: 20,
+      clarify: 25,
+      transform: 55,
+      empathy: 60,
+      rapport: 70,
+    });
+    expect(pitchFirst).toBeLessThan(70);
+    expect(bandFor(pitchFirst)).toBe('poor');
+  });
+
   it.each([
     [100, 'good'],
     [85, 'good'],

@@ -261,6 +261,27 @@ export async function duplicateScenario(
 }
 
 // ─────────────────────────────────────────────────────────────
+// Simulation config
+// ─────────────────────────────────────────────────────────────
+
+export function useAdminSimulationConfig(refreshKey: number = 0) {
+  return useQuery<Record<string, unknown>>(
+    () =>
+      apiFetch<{ config: Record<string, unknown> }>('admin-simulation-config').then(
+        (res) => res.config ?? {},
+      ),
+    [refreshKey],
+    {},
+  );
+}
+
+export function saveSimulationConfig(
+  config: Record<string, unknown>,
+): Promise<{ config: Record<string, unknown> }> {
+  return postJson<{ config: Record<string, unknown> }>('admin-simulation-config', { config });
+}
+
+// ─────────────────────────────────────────────────────────────
 // Audit log
 // ─────────────────────────────────────────────────────────────
 

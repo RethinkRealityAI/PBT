@@ -99,6 +99,29 @@ describe('evaluateConversation', () => {
     expect(result.band).toBe('poor');
   });
 
+  it('applies admin-tuned scoring weights to the overall', async () => {
+    // Weight acknowledge at 1.0 and everything else at 0 → overall == acknowledge.
+    generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScores) });
+    const result = await evaluateConversation(
+      SEED_SCENARIOS[0],
+      [{ role: 'user', text: 'hi', timestamp: 1 }],
+      {
+        config: {
+          scoring: {
+            dimensions: [
+              { key: 'acknowledge', weight: 1 },
+              { key: 'clarify', weight: 0 },
+              { key: 'transform', weight: 0 },
+              { key: 'empathy', weight: 0 },
+              { key: 'rapport', weight: 0 },
+            ],
+          },
+        },
+      },
+    );
+    expect(result.overall).toBe(validScores.acknowledge); // 92
+  });
+
   it('coerces a missing/invalid dimension to 0 instead of NaN/undefined', async () => {
     // Model drifts and omits `transform`, returns a non-number for `rapport`.
     const partial = { ...validScores } as Record<string, unknown>;

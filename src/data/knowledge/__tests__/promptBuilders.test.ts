@@ -65,4 +65,38 @@ describe('promptBuilders', () => {
     const p2 = buildCustomerSystemPrompt(SEED_SCENARIOS[1]);
     expect(p1).not.toEqual(p2);
   });
+
+  describe('simulation config', () => {
+    it('customer prompt reflects an admin driver-persona override', () => {
+      const config = { drivers: { Activator: { motivation: 'ZZ_CUSTOM_MOTIVE' } } };
+      const activatorScenario = SEED_SCENARIOS.find((s) => s.suggestedDriver === 'Activator')!;
+      const p = buildCustomerSystemPrompt(activatorScenario, {}, config);
+      expect(p).toContain('ZZ_CUSTOM_MOTIVE');
+    });
+
+    it('customer prompt reflects a global config prompt prefix', () => {
+      const p = buildCustomerSystemPrompt(scenario, {}, {
+        customerPromptPrefix: 'GLOBAL_ADMIN_NOTE_XYZ',
+      });
+      expect(p).toContain('GLOBAL_ADMIN_NOTE_XYZ');
+    });
+
+    it('scoring prompt reflects an admin dimension label + weight + scoring prefix', () => {
+      const p = buildScoringSystemPrompt(scenario, {
+        scoring: {
+          dimensions: [{ key: 'acknowledge', label: 'ZZ_VALIDATE', weight: 0.4 }],
+          promptPrefix: 'SCORING_PREAMBLE_ABC',
+        },
+      });
+      expect(p).toContain('ZZ_VALIDATE');
+      expect(p).toContain('weight 0.4');
+      expect(p).toContain('SCORING_PREAMBLE_ABC');
+    });
+
+    it('falls back to code defaults when config is empty', () => {
+      const withEmpty = buildScoringSystemPrompt(scenario, {});
+      const withNone = buildScoringSystemPrompt(scenario);
+      expect(withEmpty).toEqual(withNone);
+    });
+  });
 });
