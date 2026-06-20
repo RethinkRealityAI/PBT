@@ -3,13 +3,27 @@ import { Glass } from '../../design-system/Glass';
 import { PillButton } from '../../design-system/PillButton';
 import { Icon } from '../../design-system/Icon';
 import { Segmented } from '../../design-system/Segmented';
-import { COLORS } from '../../design-system/tokens';
 import { usePlatformReport, type ReportKind } from './usePlatformReport';
 
-/**
- * Platform Reporting Tool modal — file a bug or a suggestion. Routed to the
- * admin dashboard via `platform_reports`.
- */
+const BUG_SUBJECTS = [
+  'Feature not working',
+  'AI not responding',
+  'Voice mode issue',
+  'Button not working',
+  'App crashes / glitches',
+  'Scoring issue',
+  'Other',
+] as const;
+
+const SUGGESTION_SUBJECTS = [
+  'New feature idea',
+  'UI improvement',
+  'Content request',
+  'Better AI responses',
+  'Accessibility',
+  'Other',
+] as const;
+
 export function ReportModal({
   open,
   initialKind = 'bug',
@@ -18,18 +32,18 @@ export function ReportModal({
 }: {
   open: boolean;
   initialKind?: ReportKind;
-  /** Screen the user came from, captured as context. */
   screen?: string;
   onClose: () => void;
 }) {
   const { status, submitReport, reset } = usePlatformReport();
   const [kind, setKind] = useState<ReportKind>(initialKind);
+  const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
 
-  // Reset to a clean slate whenever the modal (re)opens.
   useEffect(() => {
     if (open) {
       setKind(initialKind);
+      setSubject('');
       setMessage('');
       reset();
     }
@@ -37,7 +51,28 @@ export function ReportModal({
 
   if (!open) return null;
 
+  const subjects = kind === 'bug' ? BUG_SUBJECTS : SUGGESTION_SUBJECTS;
   const canSubmit = message.trim().length > 0 && status !== 'submitting';
+
+  const handleSubmit = () => {
+    const prefixed = subject
+      ? `[${subject}]\n\n${message}`
+      : message;
+    void submitReport({ kind, message: prefixed, screen });
+  };
+
+  const pillBase: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '5px 12px',
+    borderRadius: 100,
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: 'pointer',
+    border: '1px solid rgba(0,0,0,0.1)',
+    transition: 'all 0.15s',
+    whiteSpace: 'nowrap' as const,
+  };
 
   return (
     <div
@@ -61,17 +96,18 @@ export function ReportModal({
       <Glass
         radius={28}
         padding={0}
-        glow="oklch(0.62 0.22 22)"
+        glow="var(--pbt-driver-primary)"
         backdropSaturatePct={235}
         style={{
-          maxWidth: 400,
+          maxWidth: 520,
           width: '100%',
           background:
             'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.30) 100%)',
         }}
       >
-        <div style={{ padding: 22 }} onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-start justify-between" style={{ marginBottom: 14 }}>
+        <div style={{ padding: 26 }} onClick={(e) => e.stopPropagation()}>
+          {/* Header */}
+          <div className="flex items-start justify-between" style={{ marginBottom: 16 }}>
             <div>
               <div
                 style={{
@@ -122,7 +158,7 @@ export function ReportModal({
 
           {status === 'done' ? (
             <div>
-              <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--pbt-text)', marginTop: 0 }}>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--pbt-text)', marginTop: 0, marginBottom: 20 }}>
                 Your {kind === 'bug' ? 'report' : 'suggestion'} reached our
                 triage queue. We read every one.
               </p>
@@ -132,46 +168,107 @@ export function ReportModal({
             </div>
           ) : (
             <>
-              <div style={{ marginBottom: 12 }}>
+              {/* Kind toggle */}
+              <div style={{ marginBottom: 16 }}>
                 <Segmented
                   value={kind}
-                  onChange={(v) => setKind(v as ReportKind)}
+                  onChange={(v) => { setKind(v as ReportKind); setSubject(''); }}
                   ariaLabel="Report type"
                   options={[
-                    { value: 'bug', label: 'Bug' },
+                    { value: 'bug', label: 'Bug report' },
                     { value: 'suggestion', label: 'Suggestion' },
                   ]}
                 />
               </div>
 
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder={
-                  kind === 'bug'
-                    ? 'What happened? What did you expect instead?'
-                    : "What would make this better?"
-                }
-                rows={4}
-                autoFocus
-                style={{
-                  width: '100%',
-                  marginBottom: 12,
-                  padding: '12px 14px',
-                  borderRadius: 16,
-                  border: '1px solid rgba(255,255,255,0.5)',
-                  background: 'rgba(255,255,255,0.4)',
-                  fontFamily: 'inherit',
-                  fontSize: 16,
-                  lineHeight: 1.45,
-                  color: 'var(--pbt-text)',
-                  resize: 'none',
-                  outline: 'none',
-                }}
-              />
+              {/* Subject pills */}
+              <div style={{ marginBottom: 14 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    color: 'var(--pbt-text-muted)',
+                    marginBottom: 8,
+                  }}
+                >
+                  Quick subject
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {subjects.map((s) => {
+                    const selected = subject === s;
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => setSubject(selected ? '' : s)}
+                        style={{
+                          ...pillBase,
+                          background: selected
+                            ? 'var(--pbt-driver-primary)'
+                            : 'rgba(255,255,255,0.45)',
+                          color: selected ? '#fff' : 'var(--pbt-text)',
+                          border: selected
+                            ? '1px solid transparent'
+                            : '1px solid rgba(0,0,0,0.1)',
+                          boxShadow: selected
+                            ? '0 2px 8px -2px color-mix(in oklab, var(--pbt-driver-primary) 40%, transparent)'
+                            : 'none',
+                        }}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Message textarea */}
+              <div style={{ marginBottom: 4 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    color: 'var(--pbt-text-muted)',
+                    marginBottom: 8,
+                  }}
+                >
+                  {kind === 'bug' ? 'What happened?' : 'Your idea'}
+                </div>
+                <textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder={
+                    kind === 'bug'
+                      ? 'What happened? What did you expect instead?'
+                      : 'What would make this better? Any details help.'
+                  }
+                  rows={6}
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    padding: '13px 15px',
+                    borderRadius: 16,
+                    border: '1px solid rgba(255,255,255,0.5)',
+                    background: 'rgba(255,255,255,0.4)',
+                    fontFamily: 'inherit',
+                    fontSize: 15,
+                    lineHeight: 1.55,
+                    color: 'var(--pbt-text)',
+                    resize: 'vertical',
+                    outline: 'none',
+                    minHeight: 130,
+                  }}
+                />
+                <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--pbt-text-muted)', marginTop: 4 }}>
+                  {message.trim().length} chars
+                </div>
+              </div>
 
               {status === 'error' && (
-                <div style={{ marginBottom: 10, fontSize: 12.5, color: COLORS.score.poor }}>
+                <div style={{ marginBottom: 10, fontSize: 12.5, color: 'oklch(0.52 0.18 25)' }}>
                   {message.trim().length === 0
                     ? 'Add a short description first.'
                     : "Couldn't send that — tap submit to try again."}
@@ -181,7 +278,7 @@ export function ReportModal({
               <PillButton
                 fullWidth
                 disabled={!canSubmit}
-                onClick={() => void submitReport({ kind, message, screen })}
+                onClick={handleSubmit}
               >
                 {status === 'submitting' ? 'Sending…' : 'Submit'}
               </PillButton>

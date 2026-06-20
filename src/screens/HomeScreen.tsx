@@ -20,6 +20,7 @@ import { useFlag, useFlagValue, IfFlag } from '../app/providers/FlagProvider';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
+import { ReportModal } from '../features/reporting/ReportModal';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -189,6 +190,7 @@ export function HomeScreen() {
   const showEchoCard = useFlag('component.home.echo_profile_card', true);
   const [welcomeOpen, setWelcomeOpen] = useState(() => !readStorage(DASHBOARD_WELCOMED_KEY));
   const [beaconActive, setBeaconActive] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   /** Ripples / Orb CSS pulse / breathing — off until Start Here → scoring modal is closed. */
   const [heroOrbMotion, setHeroOrbMotion] = useState(() => readStorage(SEEN_START_HERE_KEY));
   const pendingStartHereRef = useRef(false);
@@ -926,7 +928,41 @@ export function HomeScreen() {
             )}
           </div>
         </div>
+
+        {/* "Report a problem" — subtle glassmorphic pill, driver-accented border */}
+        <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 24, paddingTop: 8 }}>
+          <button
+            onClick={() => setReportOpen(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '7px 16px',
+              borderRadius: 100,
+              border: `1px solid color-mix(in oklab, ${driverColors.primary} 35%, rgba(255,255,255,0.28))`,
+              background: dark ? 'rgba(10,10,14,0.18)' : 'rgba(255,255,255,0.32)',
+              backdropFilter: 'blur(12px) saturate(200%)',
+              WebkitBackdropFilter: 'blur(12px) saturate(200%)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22)',
+              color: 'var(--pbt-text-muted)',
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: 'pointer',
+              letterSpacing: '0.01em',
+              transition: 'opacity 0.18s, border-color 0.18s',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.75'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+              <line x1="4" y1="22" x2="4" y2="15"/>
+            </svg>
+            Report a problem
+          </button>
+        </div>
       </Page>
+      <ReportModal open={reportOpen} screen="home" onClose={() => setReportOpen(false)} />
       <ScoringInfoModal open={scoringInfoOpen} onClose={handleScoringModalClosed} />
       <ScenarioInfoModal
         open={scenarioInfoOpen}

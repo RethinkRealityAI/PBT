@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Royal Canin × Salvus Immersa — AI Scenario Definition Template</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Brand */
+  --navy:#111827; --navy2:#1e293b; --navy3:#f1f5f9;
+  --teal:#0d9488; --teal-lt:rgba(13,148,136,.08); --teal-mid:rgba(13,148,136,.22);
+  --gold:#d97706; --gold-lt:#fffbeb;
+  --red:#dc2626; --red-lt:#fef2f2;
+  --green:#059669; --green-lt:#ecfdf5;
+  --silver:#e2e8f0; --muted:#64748b; --txt:#0f172a;
+  --bg:#f8fafc; --card:#fff;
+  --radius:14px; --radius-sm:9px;
+  --shadow:0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.05);
+  --shadow-md:0 4px 20px rgba(0,0,0,.08),0 1px 4px rgba(0,0,0,.04);
+  --shadow-lg:0 16px 48px rgba(0,0,0,.12),0 4px 12px rgba(0,0,0,.06);
+  --sidebar-w:256px; --topbar-h:56px;
+  /* Glass */
+  --glass-light:rgba(255,255,255,0.72);
+  --glass-border:rgba(255,255,255,0.55);
+  --glass-shadow:0 2px 20px rgba(0,0,0,.08),inset 0 1px 0 rgba(255,255,255,.8);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px;scroll-behavior:smooth;-webkit-font-smoothing:antialiased}
+body{font-family:"DM Sans",system-ui,sans-serif;background:var(--bg);color:var(--txt);min-height:100vh}
+
+/* ── TOPBAR ── */
+.topbar{
+  position:fixed;top:0;left:0;right:0;height:var(--topbar-h);
+  background:rgba(17,24,39,.95);
+  backdrop-filter:blur(20px) saturate(180%);
+  -webkit-backdrop-filter:blur(20px) saturate(180%);
+  border-bottom:1px solid rgba(255,255,255,.08);
+  display:flex;align-items:center;padding:0 20px;gap:14px;z-index:100;
+  box-shadow:0 4px 24px rgba(0,0,0,.24)
+}
+.tb-brand{display:flex;align-items:center;gap:10px;flex:1}
+.tb-dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px rgba(13,148,136,.6)}
+.tb-name{font-family:"Space Grotesk",sans-serif;font-size:12px;font-weight:700;color:#7dd3c8;letter-spacing:.1em;text-transform:uppercase}
+.tb-sep{width:1px;height:18px;background:rgba(255,255,255,.12)}
+.tb-title{font-family:"Space Grotesk",sans-serif;font-size:12px;font-weight:500;color:rgba(255,255,255,.38)}
+.tb-actions{display:flex;gap:8px}
+.btn{
+  display:inline-flex;align-items:center;gap:7px;padding:8px 16px;
+  border-radius:100px;font-family:"Space Grotesk",sans-serif;font-size:12px;
+  font-weight:600;cursor:pointer;border:none;transition:all .18s;white-space:nowrap;
+  letter-spacing:.01em
+}
+.btn svg{width:14px;height:14px;flex-shrink:0}
+.btn-ghost{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.65)}
+.btn-ghost:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.22);color:#fff}
+.btn-teal{background:var(--teal);color:#fff;box-shadow:0 2px 10px rgba(13,148,136,.35)}
+.btn-teal:hover{background:#0f766e;transform:translateY(-1px);box-shadow:0 4px 18px rgba(13,148,136,.45)}
+.btn-gold{background:var(--gold);color:#fff;box-shadow:0 2px 10px rgba(217,119,6,.3)}
+.btn-gold:hover{background:#b45309;transform:translateY(-1px)}
+.btn-print{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.8)}
+.btn-print:hover{background:rgba(255,255,255,.16);color:#fff}
+
+/* ── LAYOUT ── */
+.layout{display:flex;padding-top:var(--topbar-h);min-height:100vh}
+
+/* ── SIDEBAR ── */
+.sidebar{
+  position:fixed;top:var(--topbar-h);bottom:0;left:0;width:var(--sidebar-w);
+  background:rgba(17,24,39,.97);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+  border-right:1px solid rgba(255,255,255,.06);
+  overflow-y:auto;z-index:90;display:flex;flex-direction:column;transition:transform .28s cubic-bezier(.4,0,.2,1)
+}
+.sb-inner{padding:18px 0;flex:1}
+.sb-label{
+  padding:6px 18px 7px;font-size:10px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:rgba(255,255,255,.25);font-family:"Space Grotesk",sans-serif
+}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:10px 14px;
+  cursor:pointer;color:rgba(255,255,255,.42);margin:1px 10px;
+  border-radius:9px;transition:all .15s;text-decoration:none
+}
+.nav-item:hover{background:rgba(255,255,255,.07);color:rgba(255,255,255,.8)}
+.nav-item.active{background:rgba(13,148,136,.16);color:#7dd3c8}
+.nav-icon{width:16px;height:16px;flex-shrink:0;opacity:.8}
+.nav-item.active .nav-icon{opacity:1}
+.nav-lbl{font-family:"Space Grotesk",sans-serif;font-size:13px;font-weight:500;flex:1}
+.nav-badge{
+  font-size:9px;font-weight:700;padding:2px 7px;border-radius:100px;
+  background:rgba(13,148,136,.18);color:var(--teal);letter-spacing:.04em
+}
+.nav-item.active .nav-badge{background:var(--teal);color:#fff}
+.sb-divider{height:1px;background:rgba(255,255,255,.06);margin:10px 18px}
+
+/* Progress summary in sidebar */
+.sb-progress{margin:12px 14px 0;padding:12px 14px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07)}
+.sb-progress-title{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:10px;font-family:"Space Grotesk",sans-serif}
+.sp-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.sp-label{font-size:11px;color:rgba(255,255,255,.38);flex:1;font-family:"Space Grotesk",sans-serif}
+.sp-dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.12);flex-shrink:0;transition:background .3s}
+.sp-dot.done{background:var(--teal)}
+.sp-dot.partial{background:var(--gold)}
+
+.sb-footer{padding:14px 18px;border-top:1px solid rgba(255,255,255,.06);margin-top:auto}
+.sb-contact{font-size:11px;color:rgba(255,255,255,.28);line-height:1.65}
+.sb-contact a{color:rgba(13,148,136,.8);text-decoration:none}
+.sb-contact a:hover{color:var(--teal)}
+
+/* ── MAIN ── */
+.main{margin-left:var(--sidebar-w);flex:1;min-width:0}
+.cw{max-width:820px;margin:0 auto;padding:36px 32px 100px}
+
+/* ── HERO ── */
+.hero{
+  background:linear-gradient(145deg,#111827 0%,#1e3a5f 50%,#1a2f3e 100%);
+  border-radius:var(--radius);overflow:hidden;margin-bottom:24px;position:relative
+}
+.hero::before{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(ellipse at 65% 40%,rgba(13,148,136,.22) 0%,transparent 65%);
+  pointer-events:none
+}
+.hero-bar{height:3px;background:linear-gradient(90deg,var(--teal),rgba(13,148,136,.3))}
+.hero-body{padding:30px 32px;display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;position:relative}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:7px;
+  background:rgba(13,148,136,.15);border:1px solid rgba(13,148,136,.3);
+  border-radius:100px;padding:5px 12px;
+  font-size:10.5px;font-weight:700;color:#7dd3c8;
+  letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px;
+  font-family:"Space Grotesk",sans-serif
+}
+.hero-pulse{width:6px;height:6px;border-radius:50%;background:var(--teal);animation:pulse 2.2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.65)}}
+.hero h1{
+  font-family:"Space Grotesk",sans-serif;font-size:28px;font-weight:700;
+  color:#fff;line-height:1.15;margin-bottom:8px;letter-spacing:-.02em
+}
+.hero h1 span{color:#7dd3c8}
+.hero-sub{font-size:13.5px;color:rgba(255,255,255,.5);line-height:1.65;max-width:460px}
+.hero-meta{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.hero-chip{
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+  border-radius:7px;padding:5px 11px;font-size:11.5px;color:rgba(255,255,255,.5);
+  font-family:"Space Grotesk",sans-serif
+}
+.hero-chip strong{color:rgba(255,255,255,.8);font-weight:600}
+.hero-stat{text-align:right}
+.hero-stat-num{
+  font-family:"Space Grotesk",sans-serif;font-size:48px;font-weight:800;
+  color:rgba(13,148,136,.18);line-height:1
+}
+.hero-stat-lbl{font-size:11px;font-weight:600;color:rgba(255,255,255,.25);letter-spacing:.07em;text-transform:uppercase;margin-top:2px;font-family:"Space Grotesk",sans-serif}
+
+/* ── ACT FLOW ── */
+.act-flow{
+  display:flex;align-items:center;gap:0;margin-bottom:22px;
+  background:var(--glass-light);backdrop-filter:blur(12px) saturate(180%);
+  -webkit-backdrop-filter:blur(12px) saturate(180%);
+  border:1px solid var(--glass-border);border-radius:var(--radius);
+  box-shadow:var(--glass-shadow);overflow:hidden
+}
+.act-step{flex:1;padding:14px 18px;text-align:center;position:relative}
+.act-step:not(:last-child)::after{
+  content:"→";position:absolute;right:-10px;top:50%;transform:translateY(-50%);
+  color:var(--muted);font-size:16px;font-weight:300;z-index:1
+}
+.act-step-letter{
+  font-family:"Space Grotesk",sans-serif;font-size:26px;font-weight:800;
+  line-height:1;margin-bottom:4px
+}
+.act-step-name{font-family:"Space Grotesk",sans-serif;font-size:12px;font-weight:700;letter-spacing:.04em}
+.act-step-weight{
+  display:inline-block;margin-top:5px;
+  font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:500;
+  padding:2px 7px;border-radius:100px;
+}
+.act-a .act-step-letter{color:var(--teal)}
+.act-a .act-step-name{color:var(--teal)}
+.act-a .act-step-weight{background:rgba(13,148,136,.1);color:var(--teal)}
+.act-c .act-step-letter{color:#3b82f6}
+.act-c .act-step-name{color:#3b82f6}
+.act-c .act-step-weight{background:rgba(59,130,246,.1);color:#3b82f6}
+.act-t .act-step-letter{color:var(--green)}
+.act-t .act-step-name{color:var(--green)}
+.act-t .act-step-weight{background:rgba(5,150,105,.1);color:var(--green)}
+.act-e .act-step-letter{color:var(--gold)}
+.act-e .act-step-name{color:var(--gold)}
+.act-e .act-step-weight{background:rgba(217,119,6,.1);color:var(--gold)}
+.act-r .act-step-letter{color:#8b5cf6}
+.act-r .act-step-name{color:#8b5cf6}
+.act-r .act-step-weight{background:rgba(139,92,246,.1);color:#8b5cf6}
+
+/* ── SECTION CARDS ── */
+.sec-card{
+  background:var(--glass-light);
+  backdrop-filter:blur(14px) saturate(160%);
+  -webkit-backdrop-filter:blur(14px) saturate(160%);
+  border:1px solid var(--glass-border);border-radius:var(--radius);
+  margin-bottom:16px;overflow:hidden;
+  box-shadow:var(--glass-shadow);
+  scroll-margin-top:calc(var(--topbar-h)+16px)
+}
+.sec-hdr{
+  display:flex;align-items:center;gap:12px;padding:16px 22px;
+  cursor:pointer;user-select:none;border-bottom:1px solid rgba(0,0,0,.05);
+  transition:background .12s
+}
+.sec-hdr:hover{background:rgba(0,0,0,.02)}
+.sec-num{
+  width:30px;height:30px;border-radius:9px;display:flex;align-items:center;
+  justify-content:center;font-family:"Space Grotesk",sans-serif;
+  font-size:13px;font-weight:700;color:#fff;flex-shrink:0;letter-spacing:.02em
+}
+.sec-num.teal{background:var(--teal)}
+.sec-num.navy{background:var(--navy2)}
+.sec-num.green{background:var(--green)}
+.sec-num.red{background:var(--red)}
+.sec-num.gold{background:var(--gold)}
+.sec-num.gray{background:var(--muted)}
+.sec-title-wrap{flex:1}
+.sec-title{font-family:"Space Grotesk",sans-serif;font-size:16px;font-weight:700;color:var(--navy);letter-spacing:-.01em}
+.sec-desc{font-size:12px;color:var(--muted);margin-top:2px}
+.sec-status{
+  font-size:11px;font-weight:700;padding:3px 9px;border-radius:100px;
+  white-space:nowrap;font-family:"Space Grotesk",sans-serif;letter-spacing:.02em
+}
+.sec-status.done{background:rgba(5,150,105,.1);color:var(--green)}
+.sec-status.partial{background:rgba(217,119,6,.1);color:var(--gold)}
+.sec-status.todo{background:var(--navy3);color:var(--muted)}
+.sec-status.ref{background:rgba(217,119,6,.1);color:var(--gold)}
+.chevron{width:17px;height:17px;color:var(--muted);transition:transform .2s;flex-shrink:0}
+.chevron.open{transform:rotate(0deg)}
+.chevron:not(.open){transform:rotate(-90deg)}
+.sec-body{padding:24px 22px}
+.sec-body.hidden{display:none}
+
+/* ── CALLOUT ── */
+.callout{
+  border-radius:var(--radius-sm);padding:13px 15px;margin-bottom:18px;
+  display:flex;gap:11px;align-items:flex-start;
+  border:1px solid transparent
+}
+.callout.info{background:var(--teal-lt);border-color:var(--teal-mid)}
+.callout.warn{background:var(--gold-lt);border-color:rgba(217,119,6,.22)}
+.callout.danger{background:var(--red-lt);border-color:rgba(220,38,38,.18)}
+.callout.success{background:var(--green-lt);border-color:rgba(5,150,105,.2)}
+.callout-icon{
+  width:19px;height:19px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:10px;font-weight:700;color:#fff;
+  flex-shrink:0;margin-top:1px
+}
+.callout.info .callout-icon{background:var(--teal)}
+.callout.warn .callout-icon{background:var(--gold)}
+.callout.danger .callout-icon{background:var(--red)}
+.callout.success .callout-icon{background:var(--green)}
+.callout-body{flex:1}
+.callout-title{
+  font-family:"Space Grotesk",sans-serif;font-size:13px;font-weight:700;
+  color:var(--navy);margin-bottom:3px
+}
+.callout-text{font-size:13px;color:var(--txt);line-height:1.65}
+
+/* ── FORM ELEMENTS ── */
+.fg{display:grid;gap:15px}
+.fg.c2{grid-template-columns:1fr 1fr}
+.fg.c1{grid-template-columns:1fr}
+.fg.c3{grid-template-columns:1fr 1fr 1fr}
+.fgrp{display:flex;flex-direction:column;gap:6px}
+.fgrp.s2{grid-column:span 2}
+.fgrp.s3{grid-column:span 3}
+.fgrp label{
+  font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--muted);font-family:"Space Grotesk",sans-serif
+}
+.fgrp .hint{font-size:11.5px;color:#94a3b8;line-height:1.5;margin-top:2px}
+input[type=text],input[type=email],select,textarea{
+  background:rgba(248,250,252,.8);border:1.5px solid var(--silver);
+  border-radius:var(--radius-sm);color:var(--txt);
+  font-family:"DM Sans",sans-serif;font-size:14px;padding:10px 13px;
+  outline:none;transition:all .18s;width:100%;resize:vertical;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.03)
+}
+input:hover,textarea:hover,select:hover{border-color:rgba(13,148,136,.4);background:#fff}
+input:focus,textarea:focus,select:focus{
+  border-color:var(--teal);background:#fff;
+  box-shadow:0 0 0 3px rgba(13,148,136,.1),inset 0 1px 2px rgba(0,0,0,.02)
+}
+textarea{min-height:78px;line-height:1.6}
+textarea.tall{min-height:108px}
+select{cursor:pointer;appearance:auto}
+.divider{height:1px;background:rgba(0,0,0,.06);margin:20px 0}
+.sub-hdr{
+  font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+  margin-bottom:13px;margin-top:4px;display:flex;align-items:center;gap:8px
+}
+.sub-hdr::after{content:"";flex:1;height:1px;background:rgba(0,0,0,.06)}
+
+/* Character counter */
+.char-counter{font-family:"JetBrains Mono",monospace;font-size:10px;color:#94a3b8;text-align:right;margin-top:3px}
+.char-counter.warn{color:var(--gold)}
+.char-counter.ok{color:var(--green)}
+
+/* ── PILLAR CARDS (ACT dimensions) ── */
+.pillar-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:6px}
+.pillar{border-radius:var(--radius-sm);overflow:hidden;border:1px solid rgba(0,0,0,.07);box-shadow:var(--shadow)}
+.pillar-hdr{padding:10px 14px;display:flex;align-items:center;gap:9px}
+.pillar-hdr.ack{background:linear-gradient(135deg,rgba(13,148,136,.18),rgba(13,148,136,.08));border-bottom:2px solid rgba(13,148,136,.3)}
+.pillar-hdr.clar{background:linear-gradient(135deg,rgba(59,130,246,.14),rgba(59,130,246,.06));border-bottom:2px solid rgba(59,130,246,.28)}
+.pillar-hdr.trans{background:linear-gradient(135deg,rgba(5,150,105,.14),rgba(5,150,105,.06));border-bottom:2px solid rgba(5,150,105,.28)}
+.pillar-hdr.emph{background:linear-gradient(135deg,rgba(217,119,6,.14),rgba(217,119,6,.06));border-bottom:2px solid rgba(217,119,6,.28)}
+.pillar-hdr.rapp{background:linear-gradient(135deg,rgba(139,92,246,.14),rgba(139,92,246,.06));border-bottom:2px solid rgba(139,92,246,.28)}
+.pillar-num{
+  width:22px;height:22px;border-radius:7px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:#fff;flex-shrink:0;
+  font-family:"Space Grotesk",sans-serif
+}
+.ack .pillar-num{background:var(--teal)}
+.clar .pillar-num{background:#3b82f6}
+.trans .pillar-num{background:var(--green)}
+.emph .pillar-num{background:var(--gold)}
+.rapp .pillar-num{background:#8b5cf6}
+.pillar-lbl{font-family:"Space Grotesk",sans-serif;font-size:13px;font-weight:700;flex:1}
+.ack .pillar-lbl{color:var(--teal)}
+.clar .pillar-lbl{color:#3b82f6}
+.trans .pillar-lbl{color:var(--green)}
+.emph .pillar-lbl{color:var(--gold)}
+.rapp .pillar-lbl{color:#8b5cf6}
+.pillar-weight{
+  font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:500;
+  padding:2px 7px;border-radius:100px;background:rgba(0,0,0,.06);color:var(--muted)
+}
+.pillar-body{background:rgba(255,255,255,.6);padding:12px 14px}
+.pillar-body .hint{font-size:11.5px;color:var(--muted);margin-bottom:8px;line-height:1.55}
+.pillar-body textarea{
+  background:rgba(255,255,255,.75);min-height:78px;
+  border-color:rgba(0,0,0,.1)
+}
+.pillar-body textarea:focus{border-color:var(--teal)}
+
+/* ── REDFLAG CARDS ── */
+.redflag-grid{display:grid;grid-template-columns:1fr;gap:11px}
+.redflag{border-radius:var(--radius-sm);overflow:hidden;border:1px solid rgba(220,38,38,.15);box-shadow:var(--shadow)}
+.redflag-hdr{background:linear-gradient(135deg,rgba(220,38,38,.12),rgba(220,38,38,.05));border-bottom:2px solid rgba(220,38,38,.2);padding:10px 14px;display:flex;align-items:center;gap:9px}
+.redflag-icon{width:22px;height:22px;border-radius:7px;background:var(--red);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;font-family:"Space Grotesk",sans-serif}
+.redflag-lbl{font-family:"Space Grotesk",sans-serif;font-size:13px;font-weight:700;color:var(--red)}
+.redflag-body{background:rgba(255,255,255,.6);padding:12px 14px}
+.redflag-body .hint{font-size:11.5px;color:var(--muted);margin-bottom:8px;line-height:1.55}
+.redflag-body textarea{background:rgba(255,255,255,.75);min-height:68px;border-color:rgba(220,38,38,.18)}
+.redflag-body textarea:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(220,38,38,.08)}
+
+/* ── EXAMPLE TABLE ── */
+.eg-table{width:100%;border-collapse:collapse;margin-bottom:6px;font-size:13.5px}
+.eg-table td{padding:9px 12px;vertical-align:top;border:1px solid rgba(0,0,0,.07);line-height:1.6}
+.eg-table td:first-child{
+  font-weight:600;color:var(--navy);
+  background:rgba(241,245,249,.7);width:28%;white-space:nowrap;
+  font-family:"Space Grotesk",sans-serif;font-size:12px;letter-spacing:.01em
+}
+.eg-table td:last-child{background:rgba(255,255,255,.6)}
+
+/* ── RUBRIC SUMMARY ── */
+.rubric-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:4px}
+.rs-pill{
+  background:rgba(255,255,255,.7);border:1px solid rgba(13,148,136,.18);
+  border-radius:var(--radius-sm);padding:12px 14px;
+  box-shadow:var(--shadow)
+}
+.rs-pill .rs-num{
+  font-family:"Space Grotesk",sans-serif;font-size:10px;font-weight:700;
+  color:var(--teal);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px
+}
+.rs-pill .rs-text{font-size:12.5px;color:var(--txt);line-height:1.5}
+
+/* ── OBJECTION ROWS ── */
+.obj-row{display:flex;gap:9px;align-items:flex-start;margin-bottom:9px}
+.obj-badge{
+  width:22px;height:22px;border-radius:50%;background:var(--red);
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:700;color:#fff;flex-shrink:0;margin-top:10px;
+  font-family:"Space Grotesk",sans-serif
+}
+.obj-row input{flex:1}
+
+/* ── GUIDE CARDS ── */
+.guide-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:18px}
+.guide-card{
+  border-radius:var(--radius-sm);padding:15px;
+  background:rgba(255,255,255,.6);border:1px solid rgba(0,0,0,.07);
+  box-shadow:var(--shadow)
+}
+.guide-card .gc-part{
+  font-family:"Space Grotesk",sans-serif;font-size:10px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px
+}
+.guide-card .gc-title{font-family:"Space Grotesk",sans-serif;font-size:14px;font-weight:700;color:var(--navy);margin-bottom:3px}
+.guide-card .gc-desc{font-size:12.5px;color:var(--muted);line-height:1.55}
+.guide-card.teal-c{border-left:3px solid var(--teal)}.guide-card.teal-c .gc-part{color:var(--teal)}
+.guide-card.navy-c{border-left:3px solid #3b82f6}.guide-card.navy-c .gc-part{color:#3b82f6}
+.guide-card.green-c{border-left:3px solid var(--green)}.guide-card.green-c .gc-part{color:var(--green)}
+.guide-card.red-c{border-left:3px solid var(--red)}.guide-card.red-c .gc-part{color:var(--red)}
+
+/* ── SUBMIT SECTION ── */
+.submit-card{
+  background:linear-gradient(145deg,rgba(13,148,136,.07),rgba(13,148,136,.03));
+  border:1px solid rgba(13,148,136,.2);border-radius:var(--radius);
+  padding:24px;margin-top:8px;
+  box-shadow:var(--shadow)
+}
+
+/* ── SUCCESS / ERROR BARS ── */
+.success-bar{
+  position:fixed;bottom:20px;right:20px;background:var(--green);color:#fff;
+  border-radius:100px;padding:10px 20px;
+  font-family:"Space Grotesk",sans-serif;font-size:13px;font-weight:600;
+  box-shadow:var(--shadow-lg);transform:translateY(80px);opacity:0;
+  transition:all .35s cubic-bezier(.2,1,.3,1);z-index:200
+}
+.success-bar.show{transform:translateY(0);opacity:1}
+
+/* ── MOBILE BOTTOM BAR ── */
+.mob-bar{
+  display:none;position:fixed;bottom:0;left:0;right:0;
+  background:rgba(17,24,39,.96);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+  border-top:1px solid rgba(255,255,255,.08);
+  padding:10px 14px;gap:8px;z-index:150;
+  box-shadow:0 -8px 32px rgba(0,0,0,.28)
+}
+.mob-bar .btn{flex:1;justify-content:center;padding:10px 8px;font-size:12px}
+
+/* ── MOBILE NAV ── */
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:95;backdrop-filter:blur(2px)}
+.sidebar-overlay.show{display:block}
+.mob-menu-btn{display:none;background:none;border:none;cursor:pointer;padding:5px;color:rgba(255,255,255,.75)}
+.mob-menu-btn svg{width:21px;height:21px}
+.sidebar-close{
+  display:none;position:absolute;top:12px;right:12px;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+  color:rgba(255,255,255,.6);border-radius:7px;
+  padding:5px 10px;cursor:pointer;font-size:16px;line-height:1
+}
+
+/* ── PRINT ── */
+@media print{
+  .topbar,.sidebar,.mob-bar,.sidebar-overlay,.success-bar{display:none!important}
+  .main{margin-left:0!important}
+  .cw{padding:0!important;max-width:100%!important}
+  .sec-body.hidden{display:block!important}
+  body{background:#fff!important;font-size:13px}
+  .sec-card,.pillar,.redflag,.guide-card,.rs-pill,.act-flow{
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    background:#fff!important;
+    box-shadow:none!important;
+    border-color:#ddd!important;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact
+  }
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#111827!important}
+  input,textarea,select{background:#fff!important;border-color:#ccc!important;box-shadow:none!important}
+  .pillar-hdr.ack,.pillar-hdr.clar,.pillar-hdr.trans,.pillar-hdr.emph,.pillar-hdr.rapp{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  :root{--sidebar-w:240px}
+  .cw{padding:24px 18px 100px}
+  .hero-body{grid-template-columns:1fr;gap:10px}
+  .hero-stat{display:none}
+  .hero h1{font-size:24px}
+}
+@media(max-width:700px){
+  :root{--topbar-h:52px}
+  .topbar{padding:0 14px;gap:10px}
+  .tb-title{display:none}
+  .tb-sep{display:none}
+  .tb-name{font-size:11px}
+  .tb-actions{display:none}
+  .mob-menu-btn{display:flex}
+  .sidebar{transform:translateX(-100%);width:280px;z-index:100}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar-close{display:block}
+  .main{margin-left:0!important}
+  .cw{padding:18px 13px 90px}
+  .hero-body{padding:22px 18px;grid-template-columns:1fr}
+  .hero-stat{display:none}
+  .hero h1{font-size:21px}
+  .hero-sub{font-size:13px}
+  .hero-meta{gap:7px}
+  .hero-chip{font-size:11px;padding:4px 9px}
+  .sec-hdr{padding:13px 16px;gap:9px}
+  .sec-title{font-size:15px}
+  .sec-desc{font-size:11px}
+  .sec-status{display:none}
+  .sec-body{padding:17px 15px}
+  .fg.c2,.fg.c3{grid-template-columns:1fr!important}
+  .fgrp.s2,.fgrp.s3{grid-column:span 1!important}
+  .guide-grid{grid-template-columns:1fr!important}
+  .pillar-grid{grid-template-columns:1fr!important}
+  .rubric-summary{grid-template-columns:1fr 1fr!important}
+  .act-flow{flex-direction:column}
+  .act-step:not(:last-child)::after{content:"↓";right:auto;top:auto;bottom:-12px;left:50%;transform:translateX(-50%)}
+  .mob-bar{display:flex}
+  input[type=text],input[type=email],select,textarea{
+    font-size:16px!important;padding:12px 13px
+  }
+  .eg-table{font-size:12px}
+  .eg-table td:first-child{width:34%}
+  .callout{padding:11px 13px;gap:9px}
+  .callout-text{font-size:12.5px}
+  .obj-badge{margin-top:12px}
+}
+@media(max-width:380px){
+  .hero h1{font-size:18px}
+  .rubric-summary{grid-template-columns:1fr!important}
+  .act-flow{padding:4px}
+}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="tb-brand">
+    <div class="tb-dot"></div>
+    <span class="tb-name">Royal Canin × Salvus Immersa</span>
+    <div class="tb-sep"></div>
+    <span class="tb-title">AI Scenario Definition Template</span>
+  </div>
+  <div class="tb-actions">
+    <button class="btn btn-ghost" onclick="clearForm()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+      Clear
+    </button>
+    <button class="btn btn-print" onclick="exportJSON()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9,15 12,18 15,15"/></svg>
+      Export JSON
+    </button>
+    <button class="btn btn-print" onclick="window.print()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+      Print / PDF
+    </button>
+    <button class="btn btn-teal" onclick="saveData()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>
+      Save Progress
+    </button>
+  </div>
+  <button class="mob-menu-btn" onclick="openSidebar()" aria-label="Open navigation">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+</div>
+
+<!-- Mobile bottom bar -->
+<div class="mob-bar">
+  <button class="btn btn-ghost" onclick="saveData()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>
+    Save
+  </button>
+  <button class="btn btn-teal" onclick="submitScenario()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    Submit
+  </button>
+  <button class="btn btn-print" onclick="window.print()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+    PDF
+  </button>
+</div>
+
+<div class="sidebar-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
+
+<div class="layout">
+
+<!-- SIDEBAR -->
+<nav class="sidebar" id="sidebar">
+  <button class="sidebar-close" onclick="closeSidebar()">✕</button>
+  <div class="sb-inner">
+    <div class="sb-label">Learn the framework</div>
+    <a class="nav-item active" href="#intro" onclick="setActive(this);closeSidebar()">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span class="nav-lbl">How It Works</span>
+    </a>
+    <a class="nav-item" href="#reference" onclick="setActive(this);closeSidebar()">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+      <span class="nav-lbl">Reference Example</span>
+      <span class="nav-badge">REF</span>
+    </a>
+    <a class="nav-item" href="#worked" onclick="setActive(this);closeSidebar()">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span class="nav-lbl">Worked Example</span>
+      <span class="nav-badge">EX</span>
+    </a>
+    <div class="sb-divider"></div>
+    <div class="sb-label">Your Scenario</div>
+    <a class="nav-item" href="#part1" onclick="setActive(this);closeSidebar()">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+      <span class="nav-lbl">Part 1 — Setup</span>
+    </a>
+    <a class="nav-item" href="#part2" onclick="setActive(this);closeSidebar()">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span class="nav-lbl">Part 2 — Persona</span>
+    </a>
+    <a class="nav-item" href="#part3" onclick="setActive(this);closeSidebar()">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,11 12,14 22,4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      <span class="nav-lbl">Part 3 — ACT Rubric</span>
+    </a>
+    <a class="nav-item" href="#part4" onclick="setActive(this);closeSidebar()">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span class="nav-lbl">Part 4 — Lose Condition</span>
+    </a>
+    <a class="nav-item" href="#meta" onclick="setActive(this);closeSidebar()">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
+      <span class="nav-lbl">Notes &amp; Submit</span>
+    </a>
+    <div class="sb-divider"></div>
+
+    <!-- Progress dots -->
+    <div class="sb-progress">
+      <div class="sb-progress-title">Your progress</div>
+      <div class="sp-row"><div class="sp-dot" id="sp-1"></div><span class="sp-label">Part 1 — Setup</span></div>
+      <div class="sp-row"><div class="sp-dot" id="sp-2"></div><span class="sp-label">Part 2 — Persona</span></div>
+      <div class="sp-row"><div class="sp-dot" id="sp-3"></div><span class="sp-label">Part 3 — ACT Rubric</span></div>
+      <div class="sp-row"><div class="sp-dot" id="sp-4"></div><span class="sp-label">Part 4 — Lose Condition</span></div>
+    </div>
+  </div>
+
+  <div class="sb-footer">
+    <div class="sb-contact">
+      Submit completed templates to:<br>
+      <a href="mailto:dapo@rethinkreality.ai">dapo@rethinkreality.ai</a><br>
+      Subject: <em>RC Scenario Template</em>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN CONTENT -->
+<main class="main">
+<div class="cw">
+
+<!-- HERO -->
+<div class="hero" id="intro">
+  <div class="hero-bar"></div>
+  <div class="hero-body">
+    <div>
+      <div class="hero-badge"><span class="hero-pulse"></span>Objection Handling Training</div>
+      <h1>AI Scenario<br><span>Definition Template</span></h1>
+      <p class="hero-sub">Define the customer personas, objections, and win conditions that power your AI training simulations. The more specific your inputs, the more realistic and effective the experience.</p>
+      <div class="hero-meta">
+        <div class="hero-chip"><strong>Programme:</strong> Pet Nutrition Advisory</div>
+        <div class="hero-chip"><strong>ACT-First Scoring</strong> v2.0 &nbsp;|&nbsp; June 2026</div>
+        <div class="hero-chip"><strong>Auto-saved</strong> to your browser</div>
+      </div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">4</div>
+      <div class="hero-stat-lbl">Parts</div>
+    </div>
+  </div>
+</div>
+
+<!-- ACT FLOW DIAGRAM -->
+<div class="act-flow">
+  <div class="act-step act-a">
+    <div class="act-step-letter">A</div>
+    <div class="act-step-name">Acknowledge</div>
+    <div class="act-step-weight">24%</div>
+  </div>
+  <div class="act-step act-c">
+    <div class="act-step-letter">C</div>
+    <div class="act-step-name">Clarify</div>
+    <div class="act-step-weight">24%</div>
+  </div>
+  <div class="act-step act-t">
+    <div class="act-step-letter">T</div>
+    <div class="act-step-name">Transform</div>
+    <div class="act-step-weight">22%</div>
+  </div>
+  <div class="act-step act-e">
+    <div class="act-step-letter">E</div>
+    <div class="act-step-name">Empathy</div>
+    <div class="act-step-weight">18%</div>
+  </div>
+  <div class="act-step act-r">
+    <div class="act-step-letter">R</div>
+    <div class="act-step-name">Rapport</div>
+    <div class="act-step-weight">12%</div>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<div class="sec-card">
+  <div class="sec-hdr" onclick="toggle(this)">
+    <div class="sec-num navy">i</div>
+    <div class="sec-title-wrap">
+      <div class="sec-title">How This Works</div>
+      <div class="sec-desc">Read this before filling in the template</div>
+    </div>
+    <span class="sec-status ref">Read First</span>
+    <svg class="chevron open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>
+  </div>
+  <div class="sec-body">
+    <div class="callout info">
+      <div class="callout-icon">i</div>
+      <div class="callout-body">
+        <div class="callout-title">What the AI does with your template</div>
+        <div class="callout-text">The AI plays the customer persona you define, scored on five <strong>ACT-first dimensions</strong>: Acknowledge (24%), Clarify (24%), Transform (22%), Empathy &amp; warmth (18%), and Rapport &amp; pacing (12%). The customer stays guarded until the learner genuinely acknowledges their feeling, opens up once real questions are asked, and only agrees once a specific, credible next step is offered &mdash; in that order. Pitching before the client feels heard scores low on Transform and does not resolve the scenario.</div>
+      </div>
+    </div>
+    <div class="guide-grid">
+      <div class="guide-card teal-c">
+        <div class="gc-part">Part 1</div>
+        <div class="gc-title">The Setup</div>
+        <div class="gc-desc">Name the scenario and describe the situation. What does the learner know before the conversation starts?</div>
+      </div>
+      <div class="guide-card navy-c">
+        <div class="gc-part">Part 2</div>
+        <div class="gc-title">The Persona</div>
+        <div class="gc-desc">Define the AI customer: name, emotional state, opening line, and the 2&ndash;4 objections they will raise.</div>
+      </div>
+      <div class="guide-card green-c">
+        <div class="gc-part">Part 3</div>
+        <div class="gc-title">Win Condition (ACT Rubric)</div>
+        <div class="gc-desc">The ACT-aligned behaviours &mdash; Acknowledge, Clarify, Transform, Empathy &amp; Rapport &mdash; the learner must demonstrate for the AI to concede.</div>
+      </div>
+      <div class="guide-card red-c">
+        <div class="gc-part">Part 4</div>
+        <div class="gc-title">Lose Condition</div>
+        <div class="gc-desc">Specific words, tones, or sequences that cause the AI to push back harder or end the conversation badly.</div>
+      </div>
+    </div>
+    <div class="callout warn" style="margin-top:0">
+      <div class="callout-icon">!</div>
+      <div class="callout-body">
+        <div class="callout-title">Tips for great scenarios (ACT method)</div>
+        <div class="callout-text">Think of a real interaction that went badly. The learner must follow the <strong>ACT arc</strong> to win: first <strong>Acknowledge</strong> the client&rsquo;s feeling without immediately countering it; then <strong>Clarify</strong> with open questions to surface the real concern; then <strong>Transform</strong> with a specific, bounded Royal Canin trial + follow-up checkpoint. A learner who pitches before the client feels heard should <em>not</em> resolve the scenario. Scoring bands: <strong>&ge;85 Good · 70&ndash;84 OK · &lt;70 Needs work</strong>.</div>
+      </div>
+    </div>
+    <div class="callout info" style="margin-bottom:0">
+      <div class="callout-icon">i</div>
+      <div class="callout-body">
+        <div class="callout-title">What else the platform does (for context)</div>
+        <div class="callout-text"><strong>ACT-first scoring</strong> runs for both text and voice roleplay. The <strong>Pet Vision Analyzer</strong> lets learners upload a dog photo for an AI estimate of breed, life stage, Body Condition Score (1&ndash;9), and dermatitis indicators &mdash; the analysed pet can flow straight into a training scenario. Learners can rate session realism via the <strong>Simulation Feedback Tool</strong>, and admins can tune scoring weights, driver personas, and pushback taxonomy live via the <strong>Admin Simulation panel</strong>.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- REFERENCE EXAMPLE -->
+<div class="sec-card" id="reference">
+  <div class="sec-hdr" onclick="toggle(this)">
+    <div class="sec-num gold">R</div>
+    <div class="sec-title-wrap">
+      <div class="sec-title">Reference: How We Structure Scenarios</div>
+      <div class="sec-desc">Veterinary example &mdash; shows the ACT framework in action</div>
+    </div>
+    <span class="sec-status ref">Reference</span>
+    <svg class="chevron open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>
+  </div>
+  <div class="sec-body">
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px;font-style:italic">This example shows how the ACT framework maps to a real clinical scenario. Use it as your guide when completing the template below.</p>
+    <table class="eg-table">
+      <tr><td>Scenario Title</td><td><strong>The Prescription Diet Skeptic</strong></td></tr>
+      <tr><td>Context</td><td>Marco brings in Archie, his 6-year-old Labrador, for a check-up. Recent bloodwork revealed early-stage Chronic Kidney Disease (CKD). The vet has recommended transitioning Archie to Royal Canin Renal Support. Marco is at reception asking questions before committing to the purchase.</td></tr>
+      <tr><td>Learning Objective</td><td>Handle price and value skepticism around a prescription diet by demonstrating the clinical rationale clearly and compassionately, without being dismissive of the owner&rsquo;s concerns.</td></tr>
+      <tr><td>AI Persona</td><td>&ldquo;Marco&rdquo; &mdash; an intelligent, research-minded owner. He trusts the vet but is naturally skeptical of premium pricing. He has already Googled CKD diets and is ready to push back with questions. He is not hostile &mdash; he just wants evidence and reassurance that this is worth it for Archie.</td></tr>
+      <tr><td>Opening Line</td><td><em>&ldquo;The vet said I should switch Archie to this Renal Support food, but honestly, it looks like any other kibble to me and it costs nearly three times as much. Is this just a money thing, or does it actually make a difference?&rdquo;</em></td></tr>
+    </table>
+    <div class="divider"></div>
+    <div class="sub-hdr">Resolution Rubric &mdash; ACT Win Condition</div>
+    <div class="rubric-summary">
+      <div class="rs-pill">
+        <div class="rs-num">Acknowledge</div>
+        <div class="rs-text">Validate Marco&rsquo;s research instinct and the price concern openly. <em>&ldquo;It&rsquo;s a fair question &mdash; and honestly it&rsquo;s the right one to ask.&rdquo;</em> Do not jump straight to the science.</div>
+      </div>
+      <div class="rs-pill">
+        <div class="rs-num">Clarify</div>
+        <div class="rs-text">Ask what the bloodwork showed &mdash; specifically creatinine and phosphorus. Understand what Marco already knows to meet him where he is before explaining further.</div>
+      </div>
+      <div class="rs-pill">
+        <div class="rs-num">Transform</div>
+        <div class="rs-text">Explain that impaired kidneys cannot filter phosphorus effectively and that Renal Support controls phosphorus content precisely. Offer a 4-week trial with a follow-up blood panel at week 8 as the bounded next step.</div>
+      </div>
+    </div>
+    <div class="callout danger" style="margin-top:16px;margin-bottom:0">
+      <div class="callout-icon">!</div>
+      <div class="callout-body">
+        <div class="callout-title">Failure Condition</div>
+        <div class="callout-text">If the learner launches into the science before acknowledging Marco&rsquo;s concern, or responds defensively to the price question, Marco becomes more skeptical and the conversation stalls. Saying &ldquo;it&rsquo;s what the vet prescribed&rdquo; without explaining why counts as a failure to Transform.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WORKED EXAMPLE -->
+<div class="sec-card" id="worked">
+  <div class="sec-hdr" onclick="toggle(this)">
+    <div class="sec-num teal">E</div>
+    <div class="sec-title-wrap">
+      <div class="sec-title">Worked Example: &ldquo;Food is Love&rdquo; Objection</div>
+      <div class="sec-desc">A fully completed scenario in your exact context &mdash; use this as your model</div>
+    </div>
+    <span class="sec-status ref">Example</span>
+    <svg class="chevron open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>
+  </div>
+  <div class="sec-body">
+    <div class="sub-hdr">Part 1 &mdash; The Setup</div>
+    <table class="eg-table">
+      <tr><td>Title</td><td>Overcoming the &ldquo;Food is Love&rdquo; Objection</td></tr>
+      <tr><td>Context</td><td>Routine vet visit. Buster (a Lab mix, 5 yrs) is 15 lbs overweight, putting severe strain on his joints. The clinic worker needs to transition his owner to Royal Canin Weight Care.</td></tr>
+      <tr><td>Learning Objective</td><td>Handle guilt-driven resistance to dietary change without shaming the owner, while clearly communicating the health benefit of Weight Care.</td></tr>
+    </table>
+    <div class="divider"></div>
+    <div class="sub-hdr">Part 2 &mdash; The Persona</div>
+    <table class="eg-table">
+      <tr><td>Name &amp; Profile</td><td>&ldquo;Sarah&rdquo; &mdash; a loving but highly defensive pet owner. She feels guilty that Buster is overweight but equates treats with love. Will not respond to shame or clinical coldness.</td></tr>
+      <tr><td>Opening Line</td><td><em>&ldquo;I know the vet said he&rsquo;s a little chunky, but Buster just loves his treats and gives me those puppy dog eyes! I can&rsquo;t put him on a diet &mdash; he&rsquo;ll be miserable and hungry all the time.&rdquo;</em></td></tr>
+      <tr><td>Key Objections</td><td>
+        &bull; &ldquo;Specialty dog food like Royal Canin is just an overpriced marketing scam.&rdquo;<br>
+        &bull; &ldquo;Standard kibble is fine &mdash; he just has a slow metabolism.&rdquo;<br>
+        &bull; &ldquo;It&rsquo;s too expensive, I can&rsquo;t afford premium food right now.&rdquo;
+      </td></tr>
+    </table>
+    <div class="divider"></div>
+    <div class="sub-hdr">Part 3 &mdash; ACT Resolution Rubric (Win Condition)</div>
+    <div class="pillar-grid">
+      <div class="pillar">
+        <div class="pillar-hdr ack"><div class="pillar-num">1</div><div class="pillar-lbl">Acknowledge</div><span class="pillar-weight">24%</span></div>
+        <div class="pillar-body" style="font-size:13px;color:var(--txt);line-height:1.6">Validate her love for Buster without any judgment — <em>before</em> any product mention. e.g., <em>&ldquo;I can see how much Buster means to you &mdash; changing his routine after years together is genuinely hard.&rdquo;</em> No &ldquo;I understand, but&hellip;&rdquo;</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-hdr clar"><div class="pillar-num">2</div><div class="pillar-lbl">Clarify</div><span class="pillar-weight">24%</span></div>
+        <div class="pillar-body" style="font-size:13px;color:var(--txt);line-height:1.6">Ask open questions to surface the real concern before recommending. e.g., <em>&ldquo;Walk me through Buster&rsquo;s day &mdash; you mentioned the stairs are tougher for him; tell me more about that.&rdquo;</em></div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-hdr trans"><div class="pillar-num">3</div><div class="pillar-lbl">Transform</div><span class="pillar-weight">22%</span></div>
+        <div class="pillar-body" style="font-size:13px;color:var(--txt);line-height:1.6">Reframe &amp; offer a specific, bounded trial + follow-up. e.g., <em>&ldquo;Per day, with portion control, it&rsquo;s less than a coffee &mdash; let&rsquo;s try 4 weeks and I&rsquo;ll see Buster back at week two for a weigh-in.&rdquo;</em></div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-hdr emph"><div class="pillar-num">4</div><div class="pillar-lbl">Empathy &amp; Warmth</div><span class="pillar-weight">18%</span></div>
+        <div class="pillar-body" style="font-size:13px;color:var(--txt);line-height:1.6">Warm, non-judgmental tone throughout. Use Buster&rsquo;s name. Never make Sarah feel blamed for his weight. Avoid &ldquo;obese,&rdquo; &ldquo;overfeeding,&rdquo; or clinical coldness.</div>
+      </div>
+    </div>
+    <div class="pillar-grid" style="margin-top:12px">
+      <div class="pillar" style="grid-column:1/-1">
+        <div class="pillar-hdr rapp"><div class="pillar-num">5</div><div class="pillar-lbl">Rapport &amp; Pacing</div><span class="pillar-weight">12%</span></div>
+        <div class="pillar-body" style="font-size:13px;color:var(--txt);line-height:1.6">Match Sarah&rsquo;s energy &mdash; she is a Harmonizer type: slower pace, emotionally led. Neither rush to close nor stall. The conversation should feel collaborative, not transactional.</div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="sub-hdr">Part 4 &mdash; Failure Rubric (Lose Condition)</div>
+    <div class="redflag-grid">
+      <div class="redflag">
+        <div class="redflag-hdr"><div class="redflag-icon">!</div><div class="redflag-lbl">Red Flag Words</div></div>
+        <div class="redflag-body" style="font-size:13px;color:var(--txt);line-height:1.6">Using &ldquo;obese&rdquo;, &ldquo;fat&rdquo;, or anything that implies the owner is to blame for Buster&rsquo;s weight.</div>
+      </div>
+      <div class="redflag">
+        <div class="redflag-hdr"><div class="redflag-icon">!</div><div class="redflag-lbl">Arguing Price First</div></div>
+        <div class="redflag-body" style="font-size:13px;color:var(--txt);line-height:1.6">Debating cost before establishing the medical and nutritional value of the food.</div>
+      </div>
+      <div class="redflag">
+        <div class="redflag-hdr"><div class="redflag-icon">!</div><div class="redflag-lbl">Lecturing Tone</div></div>
+        <div class="redflag-body" style="font-size:13px;color:var(--txt);line-height:1.6">Using clinical or condescending language without first acknowledging her emotional bond with Buster.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- YOUR SCENARIO -->
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="callout success" style="margin:24px 0 18px">
+  <div class="callout-icon">&#9998;</div>
+  <div class="callout-body">
+    <div class="callout-title">Your Turn &mdash; Fill In Your Scenario Below</div>
+    <div class="callout-text">Complete each section for the scenario you want to build. Use the worked example above as a guide. Part 3 maps directly to the five ACT scoring dimensions &mdash; the more specific you are, the more accurately the AI scores the interaction. Aim for 3&ndash;5 completed scenarios for the Phase 1 pilot. Your progress auto-saves as you type.</div>
+  </div>
+</div>
+
+<!-- PART 1: SETUP -->
+<div class="sec-card" id="part1">
+  <div class="sec-hdr" onclick="toggle(this)">
+    <div class="sec-num teal">1</div>
+    <div class="sec-title-wrap">
+      <div class="sec-title">Part 1 &mdash; The Setup</div>
+      <div class="sec-desc">Name the scenario and describe the situation the learner is walking into</div>
+    </div>
+    <span class="sec-status todo" id="status-1">Not Started</span>
+    <svg class="chevron open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>
+  </div>
+  <div class="sec-body">
+    <div class="fg c2">
+      <div class="fgrp s2">
+        <label>Scenario Title *</label>
+        <input type="text" id="f_title" placeholder="e.g., Overcoming the Price Objection on Prescription Diets" oninput="autoSave();countChars(this,80)">
+        <div class="char-counter" id="cc-f_title">0 / 80</div>
+        <div class="hint">Give this scenario a short, descriptive name that captures the core challenge.</div>
+      </div>
+      <div class="fgrp s2">
+        <label>Background Context *</label>
+        <textarea id="f_context" class="tall" placeholder="Where does this take place? What does the learner know before they walk in? What is the dog's/cat's condition, and what Royal Canin product should they be recommending?" oninput="autoSave();countChars(this,500)"></textarea>
+        <div class="char-counter" id="cc-f_context">0 / 500</div>
+      </div>
+      <div class="fgrp s2">
+        <label>Learning Objective *</label>
+        <textarea id="f_objective" placeholder="What specific skill should the learner practise? e.g., Handle price objections while reinforcing the clinical value of the product." oninput="autoSave();countChars(this,300)"></textarea>
+        <div class="char-counter" id="cc-f_objective">0 / 300</div>
+        <div class="hint">Keep this to one focused skill &mdash; scenarios work best when they train one thing at a time.</div>
+      </div>
+      <div class="fgrp">
+        <label>Royal Canin Product(s) Featured</label>
+        <input type="text" id="f_product" placeholder="e.g., Weight Care, Mobility Support, Renal Support" oninput="autoSave()">
+      </div>
+      <div class="fgrp">
+        <label>Target Learner</label>
+        <select id="f_learner" onchange="autoSave()">
+          <option value="">Select audience...</option>
+          <option>Vet clinic reception staff</option>
+          <option>Vet nurses / technicians</option>
+          <option>Sales representatives</option>
+          <option>Veterinarians</option>
+          <option>All of the above</option>
+          <option>Other (specify in notes)</option>
+        </select>
+      </div>
+      <div class="fgrp">
+        <label>Estimated Difficulty</label>
+        <select id="f_difficulty" onchange="autoSave()">
+          <option value="">Select level...</option>
+          <option value="1">1 — Coachable: open-minded, pushes back once, yields to genuine listening</option>
+          <option value="2">2 — Skeptical: questions advice, needs clear evidence-backed reasoning</option>
+          <option value="3">3 — Hostile: frustrated or defensive, needs empathy + persistence</option>
+          <option value="4">4 — Combative: highly resistant, emotionally charged, softens only after multiple strong turns</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PART 2: PERSONA -->
+<div class="sec-card" id="part2">
+  <div class="sec-hdr" onclick="toggle(this)">
+    <div class="sec-num navy">2</div>
+    <div class="sec-title-wrap">
+      <div class="sec-title">Part 2 &mdash; The Persona (The AI Customer)</div>
+      <div class="sec-desc">Define who the AI is playing and how they behave</div>
+    </div>
+    <span class="sec-status todo" id="status-2">Not Started</span>
+    <svg class="chevron open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>
+  </div>
+  <div class="sec-body">
+    <div class="callout info" style="margin-bottom:18px">
+      <div class="callout-icon">i</div>
+      <div class="callout-body">
+        <div class="callout-text">The more vivid and specific your persona, the more realistic the simulation. Think about a real customer type you encounter regularly &mdash; give them a name, a reason for their resistance, and an opening line that immediately creates the conflict.</div>
+      </div>
+    </div>
+    <div class="fg c2">
+      <div class="fgrp">
+        <label>Persona First Name *</label>
+        <input type="text" id="f_name" placeholder="e.g., Sarah, Marco, Mrs Thompson" oninput="autoSave()">
+      </div>
+      <div class="fgrp">
+        <label>Owner Persona Type</label>
+        <select id="f_ctype" onchange="autoSave()">
+          <option value="">Select persona...</option>
+          <option value="skeptical">Skeptical — questions recommendations, needs evidence</option>
+          <option value="anxious">Anxious — worried about change, needs reassurance</option>
+          <option value="busy">Busy — time-pressured, wants quick, clear answers</option>
+          <option value="bargain-hunter">Bargain-hunter — price-led, needs clear value justification</option>
+          <option value="devoted">Devoted — emotionally attached, equates food with love</option>
+        </select>
+      </div>
+      <div class="fgrp">
+        <label>Pet Life Stage</label>
+        <select id="f_life_stage" onchange="autoSave()">
+          <option value="">Select life stage...</option>
+          <option value="puppy">Puppy (&lt;1 yr)</option>
+          <option value="junior">Junior (1–3 yrs)</option>
+          <option value="adult">Adult (3–7 yrs)</option>
+          <option value="senior">Senior (7+ yrs)</option>
+        </select>
+      </div>
+      <div class="fgrp">
+        <label>Learner&rsquo;s ECHO Driver Profile</label>
+        <select id="f_driver" onchange="autoSave()">
+          <option value="">Select driver (optional)...</option>
+          <option value="Activator">Activator — direct, fast-paced, outcome-focused</option>
+          <option value="Energizer">Energizer — enthusiastic, persuasion-led, social</option>
+          <option value="Analyzer">Analyzer — evidence-driven, methodical, detail-oriented</option>
+          <option value="Harmonizer">Harmonizer — empathetic, relationship-first, consensus-seeking</option>
+        </select>
+        <div class="hint">If set, the AI customer&rsquo;s pacing will adapt to the learner&rsquo;s driver style.</div>
+      </div>
+      <div class="fgrp s2">
+        <label>Personality &amp; Emotional State *</label>
+        <textarea id="f_personality" placeholder="How are they feeling? What drives their resistance? e.g., 'Defensive and guilty — she knows her dog is overweight but feels judged. Equates feeding treats with showing love. Will shut down if she feels shamed.'" oninput="autoSave();countChars(this,400)"></textarea>
+        <div class="char-counter" id="cc-f_personality">0 / 400</div>
+        <div class="hint">Include both their surface behaviour AND the underlying motivation. This is what the AI uses to stay in character.</div>
+      </div>
+      <div class="fgrp s2">
+        <label>The Opening Line *</label>
+        <textarea id="f_opening" placeholder="Write the EXACT sentence the AI should say to open the conversation and create the conflict. This is the first thing the learner hears. Make it realistic and challenging." oninput="autoSave();countChars(this,300)"></textarea>
+        <div class="char-counter" id="cc-f_opening">0 / 300</div>
+        <div class="hint">This should immediately put the learner in a difficult position. The conflict must be clear from the first line.</div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="sub-hdr">Key Objections the AI Will Raise</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:13px">List 2–4 specific pushbacks the AI should use during the conversation. These are the obstacles the learner must overcome.</p>
+    <div class="obj-row"><div class="obj-badge">1</div><input type="text" id="f_obj1" placeholder="e.g., That food is way too expensive for what it is." oninput="autoSave()"></div>
+    <div class="obj-row"><div class="obj-badge">2</div><input type="text" id="f_obj2" placeholder="e.g., My dog has always eaten standard kibble and she seems fine." oninput="autoSave()"></div>
+    <div class="obj-row"><div class="obj-badge">3</div><input type="text" id="f_obj3" placeholder="e.g., The vet is just trying to upsell me." oninput="autoSave()"></div>
+    <div class="obj-row"><div class="obj-badge" style="background:var(--muted)">4</div><input type="text" id="f_obj4" placeholder="Optional 4th objection" oninput="autoSave()"></div>
+  </div>
+</div>
+
+<!-- PART 3: RESOLUTION RUBRIC -->
+<div class="sec-card" id="part3">
+  <div class="sec-hdr" onclick="toggle(this)">
+    <div class="sec-num green">3</div>
+    <div class="sec-title-wrap">
+      <div class="sec-title">Part 3 &mdash; ACT Resolution Rubric (Win Condition)</div>
+      <div class="sec-desc">Define what good looks like for each ACT dimension so the AI scores accurately</div>
+    </div>
+    <span class="sec-status todo" id="status-3">Not Started</span>
+    <svg class="chevron open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>
+  </div>
+  <div class="sec-body">
+    <div class="callout success">
+      <div class="callout-icon">&#10003;</div>
+      <div class="callout-body">
+        <div class="callout-title">Five ACT-first dimensions &mdash; define what &ldquo;good&rdquo; looks like for this scenario</div>
+        <div class="callout-text">The platform scores on five weighted dimensions. For each, describe the specific behaviours this scenario should reward &mdash; what the learner says, what the customer feels, and how you can tell it was done well vs. poorly. Scoring bands: <strong>&ge;85 Good · 70&ndash;84 OK · &lt;70 Needs work</strong>.</div>
+      </div>
+    </div>
+    <div class="pillar-grid">
+      <div class="pillar">
+        <div class="pillar-hdr ack"><div class="pillar-num">1</div><div class="pillar-lbl">Acknowledge</div><span class="pillar-weight">24%</span></div>
+        <div class="pillar-body">
+          <div class="hint">Did the staff member validate the client&rsquo;s feeling <em>first</em> — before clarifying or recommending — without minimising or arguing? Use the pet&rsquo;s name. No &ldquo;I understand, but…&rdquo;</div>
+          <textarea id="f_p1" placeholder="e.g., Must acknowledge the owner's emotional bond before any product mention. 'I can see how much [pet name] means to you — changing that routine after years together is genuinely hard.'" oninput="autoSave();countChars(this,400)"></textarea>
+          <div class="char-counter" id="cc-f_p1">0 / 400</div>
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-hdr clar"><div class="pillar-num">2</div><div class="pillar-lbl">Clarify</div><span class="pillar-weight">24%</span></div>
+        <div class="pillar-body">
+          <div class="hint">Did the staff ask open questions (&ldquo;What…&rdquo;, &ldquo;How…&rdquo;, &ldquo;Walk me through…&rdquo;) to surface the real concern before pivoting?</div>
+          <textarea id="f_p2" placeholder="e.g., Must ask at least one open question about the pet's routine or the owner's specific concern before introducing the product. Must reflect back what they heard before pivoting." oninput="autoSave();countChars(this,400)"></textarea>
+          <div class="char-counter" id="cc-f_p2">0 / 400</div>
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-hdr trans"><div class="pillar-num">3</div><div class="pillar-lbl">Transform</div><span class="pillar-weight">22%</span></div>
+        <div class="pillar-body">
+          <div class="hint">Did the staff reframe the objection and guide the client toward a specific, credible Royal Canin next step with a bounded trial + follow-up checkpoint? No retreating or steamrolling.</div>
+          <textarea id="f_p3" placeholder="e.g., Must propose a specific 4-week trial with a mid-point weigh-in. Must connect the product to the concern raised in Clarify — not a generic pitch. Must not cave if the owner pushes back once." oninput="autoSave();countChars(this,400)"></textarea>
+          <div class="char-counter" id="cc-f_p3">0 / 400</div>
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-hdr emph"><div class="pillar-num">4</div><div class="pillar-lbl">Empathy &amp; Warmth</div><span class="pillar-weight">18%</span></div>
+        <div class="pillar-body">
+          <div class="hint">Across the whole conversation, was the tone warm, non-judgmental, and attuned to the client — not clinical, defensive, or shaming?</div>
+          <textarea id="f_p4" placeholder="e.g., Must use the pet's name at least twice. Must never imply the owner is at fault. Should soften delivery when the owner becomes emotional. Avoid clinical language without context." oninput="autoSave();countChars(this,400)"></textarea>
+          <div class="char-counter" id="cc-f_p4">0 / 400</div>
+        </div>
+      </div>
+    </div>
+    <div class="pillar-grid" style="margin-top:12px">
+      <div class="pillar" style="grid-column:1/-1">
+        <div class="pillar-hdr rapp"><div class="pillar-num">5</div><div class="pillar-lbl">Rapport &amp; Pacing</div><span class="pillar-weight">12%</span></div>
+        <div class="pillar-body">
+          <div class="hint">Did the staff match the client&rsquo;s energy and build trust — neither rushing nor stalling? Consider the owner persona and ECHO driver profile.</div>
+          <textarea id="f_p5" placeholder="e.g., If the owner is anxious/Harmonizer type, must slow down and not jump to a close. If Activator, should get to the point efficiently. Must not talk past the client or freeze when pushed back on." oninput="autoSave();countChars(this,400)"></textarea>
+          <div class="char-counter" id="cc-f_p5">0 / 400</div>
+        </div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="fg c1">
+      <div class="fgrp">
+        <label>Overall Win Condition (plain English summary)</label>
+        <textarea id="f_win" placeholder="Summarise in 1–2 sentences: 'The AI will agree to try the product when the learner has...'" oninput="autoSave()"></textarea>
+        <div class="hint">This becomes the pass criteria shown to learners after the simulation.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PART 4: FAILURE RUBRIC -->
+<div class="sec-card" id="part4">
+  <div class="sec-hdr" onclick="toggle(this)">
+    <div class="sec-num red">4</div>
+    <div class="sec-title-wrap">
+      <div class="sec-title">Part 4 &mdash; Failure Rubric (Lose Condition)</div>
+      <div class="sec-desc">Define what &ldquo;bad&rdquo; looks like so the AI can push back appropriately</div>
+    </div>
+    <span class="sec-status todo" id="status-4">Not Started</span>
+    <svg class="chevron open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>
+  </div>
+  <div class="sec-body">
+    <div class="callout danger">
+      <div class="callout-icon">!</div>
+      <div class="callout-body">
+        <div class="callout-text">These are the behaviours that cause the AI to become more defensive, escalate emotionally, or disengage entirely. Be specific &mdash; vague instructions like &ldquo;bad tone&rdquo; are hard to programme. Name the exact words or behaviours where possible.</div>
+      </div>
+    </div>
+    <div class="redflag-grid">
+      <div class="redflag">
+        <div class="redflag-hdr"><div class="redflag-icon">!</div><div class="redflag-lbl">Red Flag Words / Phrases</div></div>
+        <div class="redflag-body">
+          <div class="hint">Specific words that will immediately put the customer on the defensive.</div>
+          <textarea id="f_rf1" placeholder="List the words or phrases the learner must NEVER use in this scenario..." oninput="autoSave();countChars(this,400)"></textarea>
+          <div class="char-counter" id="cc-f_rf1">0 / 400</div>
+        </div>
+      </div>
+      <div class="redflag">
+        <div class="redflag-hdr"><div class="redflag-icon">!</div><div class="redflag-lbl">Tone / Attitude Failures</div></div>
+        <div class="redflag-body">
+          <div class="hint">What tone or attitude should trigger a negative AI response? e.g., condescending, dismissive, overly aggressive close.</div>
+          <textarea id="f_rf2" placeholder="Describe the tone or attitude that should cause the AI to push back..." oninput="autoSave();countChars(this,400)"></textarea>
+          <div class="char-counter" id="cc-f_rf2">0 / 400</div>
+        </div>
+      </div>
+      <div class="redflag">
+        <div class="redflag-hdr"><div class="redflag-icon">!</div><div class="redflag-lbl">Process / Sequence Failures</div></div>
+        <div class="redflag-body">
+          <div class="hint">What order errors should cause the AI to shut down? e.g., leading with price before establishing clinical need.</div>
+          <textarea id="f_rf3" placeholder="Describe sequence or process errors that should cause the AI to disengage..." oninput="autoSave();countChars(this,400)"></textarea>
+          <div class="char-counter" id="cc-f_rf3">0 / 400</div>
+        </div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="fg c1">
+      <div class="fgrp">
+        <label>Overall Lose Condition (plain English summary)</label>
+        <textarea id="f_lose" placeholder="Summarise: 'The AI will disengage or become hostile if the learner...'" oninput="autoSave()"></textarea>
+        <div class="hint">This becomes the fail feedback shown to learners after the simulation.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADDITIONAL CONTEXT & SUBMIT -->
+<div class="sec-card" id="meta">
+  <div class="sec-hdr" onclick="toggle(this)">
+    <div class="sec-num gray">+</div>
+    <div class="sec-title-wrap">
+      <div class="sec-title">Additional Notes &amp; Context</div>
+      <div class="sec-desc">Anything else the development team needs to know</div>
+    </div>
+    <svg class="chevron open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18,15 12,9 6,15"/></svg>
+  </div>
+  <div class="sec-body">
+    <div class="fg c2">
+      <div class="fgrp">
+        <label>Submitted By</label>
+        <input type="text" id="f_submitter" placeholder="Your name" oninput="autoSave()">
+      </div>
+      <div class="fgrp">
+        <label>Date</label>
+        <input type="text" id="f_date" placeholder="e.g., June 2026" oninput="autoSave()">
+      </div>
+      <div class="fgrp s2">
+        <label>Additional Notes</label>
+        <textarea id="f_notes" class="tall" placeholder="Any other context: real incidents that inspired this scenario, specific product claims to feature, regulatory constraints, suggestions for how the AI should react at specific moments, etc." oninput="autoSave()"></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SUBMIT FOOTER -->
+<div class="submit-card" id="submit-section">
+  <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:var(--navy);margin-bottom:5px">Submit your completed scenario</div>
+  <div style="font-size:13px;color:var(--muted);margin-bottom:20px">Fill in your name and email below, then click <strong>Submit Scenario</strong>. Your answers will be saved to our system. You can also export a JSON copy or print to PDF for your records.</div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px;margin-bottom:20px">
+    <div class="fgrp">
+      <label>Your Name <span style="color:var(--red)">*</span></label>
+      <input type="text" id="f_submitter_name" placeholder="Full name" oninput="autoSave()">
+    </div>
+    <div class="fgrp">
+      <label>Your Email <span style="color:var(--red)">*</span></label>
+      <input type="email" id="f_submitter_email" placeholder="name@royalcanin.com" oninput="autoSave()">
+    </div>
+    <div class="fgrp">
+      <label>Your Role</label>
+      <input type="text" id="f_submitter_role" placeholder="e.g. Veterinary Trainer" oninput="autoSave()">
+    </div>
+  </div>
+
+  <div id="submit-error" style="display:none;background:var(--red-lt);border:1px solid rgba(220,38,38,.2);border-radius:9px;padding:12px 15px;color:var(--red);font-size:13px;margin-bottom:15px;"></div>
+  <div id="submit-success" style="display:none;background:var(--green-lt);border:1px solid rgba(5,150,105,.2);border-radius:9px;padding:15px;color:var(--green);font-size:14px;margin-bottom:15px;">
+    <div style="font-weight:700;margin-bottom:4px;font-family:'Space Grotesk',sans-serif">✓ Scenario submitted successfully!</div>
+    <div id="submit-ref" style="font-size:13px;opacity:.8"></div>
+  </div>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <button class="btn btn-teal" id="submit-btn" onclick="submitScenario()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      Submit Scenario
+    </button>
+    <button class="btn btn-gold" onclick="exportJSON()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9,15 12,18 15,15"/></svg>
+      Export JSON
+    </button>
+    <button class="btn btn-print" onclick="window.print()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+      Print / PDF
+    </button>
+    <span style="font-size:12px;color:var(--muted)">JSON export is a structured backup — submitted scenarios go directly into our system.</span>
+  </div>
+</div>
+
+</div><!-- /cw -->
+</main>
+</div><!-- /layout -->
+
+<div class="success-bar" id="save-bar">✓ Progress saved</div>
+
+<script>
+// ── Toggle sections ──────────────────────────────────────
+function toggle(hdr){
+  const body=hdr.nextElementSibling;
+  const ch=hdr.querySelector(".chevron");
+  const isHidden=body.classList.contains("hidden");
+  body.classList.toggle("hidden",!isHidden);
+  ch.classList.toggle("open",isHidden);
+}
+
+// ── Active nav ────────────────────────────────────────────
+function setActive(el){
+  document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active"));
+  el.classList.add("active");
+}
+
+// Scroll spy
+const SECTIONS=["intro","reference","worked","part1","part2","part3","part4","meta"];
+const NAV_LINKS=document.querySelectorAll(".nav-item");
+window.addEventListener("scroll",()=>{
+  let cur="";
+  SECTIONS.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el&&el.getBoundingClientRect().top<130) cur=id;
+  });
+  NAV_LINKS.forEach(l=>{
+    const href=l.getAttribute("href");
+    if(href) l.classList.toggle("active",href.replace("#","")===cur);
+  });
+});
+
+// ── Character counters ────────────────────────────────────
+function countChars(el,max){
+  const n=el.value.length;
+  const ccId="cc-"+el.id;
+  const cc=document.getElementById(ccId);
+  if(!cc)return;
+  cc.textContent=n+" / "+max;
+  cc.className="char-counter"+(n>max*0.9?" warn":(n>20?" ok":""));
+}
+
+// ── Field map ────────────────────────────────────────────
+const FIELDS=[
+  "f_title","f_context","f_objective","f_product","f_learner","f_difficulty",
+  "f_name","f_ctype","f_life_stage","f_driver","f_personality","f_opening",
+  "f_obj1","f_obj2","f_obj3","f_obj4",
+  "f_p1","f_p2","f_p3","f_p4","f_p5","f_win",
+  "f_rf1","f_rf2","f_rf3","f_lose",
+  "f_submitter","f_date","f_notes",
+  "f_submitter_name","f_submitter_email","f_submitter_role"
+];
+
+// ── Auto-save ────────────────────────────────────────────
+let saveTimer;
+function autoSave(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>{
+    const data={};
+    FIELDS.forEach(id=>{const el=document.getElementById(id);if(el)data[id]=el.value;});
+    try{localStorage.setItem("rc_scenario_v2",JSON.stringify(data));}catch(e){}
+    updateStatuses();
+  },600);
+}
+
+function saveData(){
+  const data={};
+  FIELDS.forEach(id=>{const el=document.getElementById(id);if(el)data[id]=el.value;});
+  try{localStorage.setItem("rc_scenario_v2",JSON.stringify(data));}catch(e){}
+  updateStatuses();
+  const bar=document.getElementById("save-bar");
+  bar.classList.add("show");
+  setTimeout(()=>bar.classList.remove("show"),2400);
+}
+
+function loadData(){
+  try{
+    const raw=localStorage.getItem("rc_scenario_v2");
+    if(!raw)return;
+    const data=JSON.parse(raw);
+    FIELDS.forEach(id=>{
+      const el=document.getElementById(id);
+      if(el&&data[id]!==undefined){
+        el.value=data[id];
+        // restore char counters
+        if(el.id.match(/f_title/)) countChars(el,80);
+        if(el.id.match(/f_context/)) countChars(el,500);
+        if(el.id.match(/f_objective/)) countChars(el,300);
+        if(el.id.match(/f_personality|f_opening/)) countChars(el,el.id==="f_opening"?300:400);
+        if(el.id.match(/f_p[1-5]|f_rf[1-3]/)) countChars(el,400);
+      }
+    });
+    updateStatuses();
+  }catch(e){}
+}
+
+function clearForm(){
+  if(!confirm("Clear all your inputs? This cannot be undone."))return;
+  FIELDS.forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
+  document.querySelectorAll(".char-counter").forEach(cc=>{cc.textContent=cc.textContent.replace(/^\d+/,"0");cc.className="char-counter";});
+  try{localStorage.removeItem("rc_scenario_v2");}catch(e){}
+  document.getElementById("submit-success").style.display="none";
+  document.getElementById("submit-error").style.display="none";
+  updateStatuses();
+}
+
+function updateStatuses(){
+  const filled=id=>{const el=document.getElementById(id);return el&&el.value.trim().length>0;};
+  const checks=[
+    {sid:"status-1",sdot:"sp-1",fields:["f_title","f_context"]},
+    {sid:"status-2",sdot:"sp-2",fields:["f_name","f_obj1"]},
+    {sid:"status-3",sdot:"sp-3",fields:["f_p1","f_p2","f_p3"]},
+    {sid:"status-4",sdot:"sp-4",fields:["f_rf1","f_rf2","f_rf3"]},
+  ];
+  checks.forEach(c=>{
+    const el=document.getElementById(c.sid);
+    const dot=document.getElementById(c.sdot);
+    if(!el)return;
+    const done=c.fields.every(filled);
+    const partial=c.fields.some(filled);
+    if(done){
+      el.textContent="Complete";el.className="sec-status done";
+      if(dot){dot.className="sp-dot done";}
+    } else if(partial){
+      el.textContent="In Progress";el.className="sec-status partial";
+      if(dot){dot.className="sp-dot partial";}
+    } else {
+      el.textContent="Not Started";el.className="sec-status todo";
+      if(dot){dot.className="sp-dot";}
+    }
+  });
+}
+
+// ── Export JSON ────────────────────────────────────────────
+function exportJSON(){
+  const val=id=>{const el=document.getElementById(id);return el?el.value.trim():"";};
+  const payload={
+    exported_at:new Date().toISOString(),
+    submitter_name:val("f_submitter_name")||val("f_submitter"),
+    submitter_email:val("f_submitter_email"),
+    submitter_role:val("f_submitter_role"),
+    scenario_title:val("f_title"),
+    product_category:val("f_product"),
+    target_learner:val("f_learner"),
+    difficulty:val("f_difficulty"),
+    context:val("f_context"),
+    learning_objective:val("f_objective"),
+    persona:{
+      name:val("f_name"),
+      owner_persona:val("f_ctype"),
+      life_stage:val("f_life_stage"),
+      echo_driver:val("f_driver"),
+      personality:val("f_personality"),
+      opening_line:val("f_opening"),
+      objections:[val("f_obj1"),val("f_obj2"),val("f_obj3"),val("f_obj4")].filter(Boolean)
+    },
+    act_rubric:{
+      acknowledge:val("f_p1"),
+      clarify:val("f_p2"),
+      transform:val("f_p3"),
+      empathy:val("f_p4"),
+      rapport:val("f_p5"),
+      win_condition:val("f_win")
+    },
+    fail_conditions:{
+      red_flag_words:val("f_rf1"),
+      tone_failures:val("f_rf2"),
+      process_failures:val("f_rf3"),
+      lose_condition:val("f_lose")
+    },
+    notes:val("f_notes")
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const title=payload.scenario_title||"scenario";
+  a.href=url;
+  a.download=title.replace(/[^a-z0-9]/gi,"_").toLowerCase()+"_"+new Date().toISOString().slice(0,10)+".json";
+  a.click();
+  URL.revokeObjectURL(url);
+  const bar=document.getElementById("save-bar");
+  bar.textContent="✓ JSON exported";
+  bar.classList.add("show");
+  setTimeout(()=>{bar.classList.remove("show");setTimeout(()=>{bar.textContent="✓ Progress saved";},400);},2400);
+}
+
+// ── Submit to database ────────────────────────────────────
+async function submitScenario(){
+  const nameEl=document.getElementById("f_submitter_name");
+  const emailEl=document.getElementById("f_submitter_email");
+  const errEl=document.getElementById("submit-error");
+  const successEl=document.getElementById("submit-success");
+  const refEl=document.getElementById("submit-ref");
+  const btn=document.getElementById("submit-btn");
+
+  errEl.style.display="none";
+  successEl.style.display="none";
+
+  if(!nameEl.value.trim()){
+    errEl.textContent="Please enter your name before submitting.";
+    errEl.style.display="block";nameEl.focus();return;
+  }
+  if(!emailEl.value.trim()||!emailEl.value.includes("@")){
+    errEl.textContent="Please enter a valid email address before submitting.";
+    errEl.style.display="block";emailEl.focus();return;
+  }
+
+  btn.disabled=true;btn.textContent="Submitting…";
+
+  const val=id=>{const el=document.getElementById(id);return el?el.value.trim():"";};
+  const payload={
+    submitter_name:val("f_submitter_name")||val("f_submitter"),
+    submitter_email:val("f_submitter_email"),
+    submitter_role:val("f_submitter_role"),
+    scenario_title:val("f_title"),
+    product_category:val("f_product"),
+    channel:val("f_ctype"),
+    rep_role:val("f_learner"),
+    context:val("f_context")+(val("f_objective")?"\n\nObjective: "+val("f_objective"):""),
+    persona_name:val("f_name"),
+    persona_role:val("f_ctype"),
+    persona_company:"",
+    persona_experience:val("f_personality")+(val("f_opening")?"\n\nOpening line: "+val("f_opening"):""),
+    owner_persona:val("f_ctype"),
+    life_stage:val("f_life_stage"),
+    echo_driver:val("f_driver"),
+    primary_objection:val("f_obj1"),
+    secondary_objections:[val("f_obj2"),val("f_obj3"),val("f_obj4")].filter(Boolean).join("\n"),
+    emotional_state:"",knowledge_level:"",hidden_concern:"",
+    acknowledge:val("f_p1"),
+    clarify:val("f_p2"),
+    transform:val("f_p3"),
+    empathy:val("f_p4"),
+    rapport:val("f_p5"),
+    win_outcome:val("f_win"),
+    target_turns_min:null,target_turns_max:null,
+    fail_factual:val("f_rf1"),
+    fail_relational:val("f_rf2"),
+    fail_procedural:val("f_rf3"),
+    lose_outcome:val("f_lose"),
+    extra_notes:val("f_notes"),
+    difficulty:val("f_difficulty"),
+    tags:""
+  };
+
+  try{
+    const res=await fetch("/api/submit-scenario",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    const json=await res.json();
+    if(json.success){
+      successEl.style.display="block";
+      const d=new Date(json.submitted_at);
+      refEl.textContent="Reference ID: #"+json.id+" · Submitted "+d.toLocaleString();
+      btn.textContent="✓ Submitted";
+      btn.style.background="var(--green)";
+      successEl.scrollIntoView({behavior:"smooth",block:"center"});
+    } else {
+      errEl.textContent="Submission failed: "+(json.error||"Unknown error. Please try again or email dapo@rethinkreality.ai.");
+      errEl.style.display="block";
+      btn.disabled=false;
+      btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Submit Scenario';
+    }
+  } catch(e){
+    errEl.textContent="Network error — please check your connection and try again.";
+    errEl.style.display="block";
+    btn.disabled=false;
+    btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Submit Scenario';
+  }
+}
+
+window.addEventListener("load",loadData);
+
+// ── Mobile sidebar ────────────────────────────────────────
+function openSidebar(){
+  document.getElementById("sidebar").classList.add("open");
+  document.getElementById("sb-overlay").classList.add("show");
+  document.body.style.overflow="hidden";
+}
+function closeSidebar(){
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("sb-overlay").classList.remove("show");
+  document.body.style.overflow="";
+}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSidebar();});
+</script>
+</body>
+</html>
