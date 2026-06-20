@@ -7,7 +7,7 @@ import {
   MODEL_TEXT,
 } from '../../services/geminiService';
 import type { ChatMessage, ScoreReport, SessionRecord } from '../../services/types';
-import { useScenarioOverride } from '../../app/providers/FlagProvider';
+import { useScenarioOverride, useSimulationConfig } from '../../app/providers/FlagProvider';
 import { seedScenarioId } from '../../data/scenarioOverrides';
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
 import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
@@ -30,28 +30,21 @@ const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
 const MAX_SESSIONS = 50;
 
 const SCORE_UNAVAILABLE: ScoreReport = {
-  empathyTone: 0,
-  activeListening: 0,
-  productKnowledge: 0,
-  objectionHandling: 0,
-  confidence: 0,
-  closingEffectiveness: 0,
-  pacing: 0,
+  acknowledge: 0,
+  clarify: 0,
+  transform: 0,
+  empathy: 0,
+  rapport: 0,
   overall: 0,
   band: 'poor',
-  acknowledgeScore: 0,
-  clarifyScore: 0,
-  takeActionScore: 0,
   critique: 'Scoring unavailable.',
   betterAlternative: '—',
   perDimensionNotes: {
-    empathyTone: '',
-    activeListening: '',
-    productKnowledge: '',
-    objectionHandling: '',
-    confidence: '',
-    closingEffectiveness: '',
-    pacing: '',
+    acknowledge: '',
+    clarify: '',
+    transform: '',
+    empathy: '',
+    rapport: '',
   },
   keyMoments: [],
   turnSentiment: [],
@@ -105,6 +98,9 @@ export interface UseTextChat {
   messages: ChatMessage[];
   status: ChatStatus;
   scoreReport: ScoreReport | null;
+  /** Current session id (training_sessions.id) — null before open().
+   *  Surfaced so the post-session feedback tool can attribute responses. */
+  sessionId: string | null;
   transientError: string | null;
   open: () => Promise<void>;
   send: (text: string) => Promise<void>;
@@ -213,6 +209,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Note: ChatProvider mounts this hook with a null scenario placeholder
   // before the user picks one, so we must guard the property access.
   const overrideRow = useScenarioOverride(scenario?._overrideId ?? '');
+  // Global admin simulation config (scoring weights/prompt, driver + pushback
+  // edits). Null = code defaults. Threaded into every generate/evaluate call.
+  const simulationConfig = useSimulationConfig();
   const promptOverrides = useMemo<PromptOverrides>(
     () => ({
       promptPrefix: overrideRow?.prompt_prefix ?? null,
@@ -288,6 +287,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       const first = await generateRoleplayMessage(scenario, [], undefined, {
         sessionId: recordIdRef.current,
         promptOverrides,
+        config: simulationConfig ?? undefined,
       });
       appendTurn(first);
       setStatus('awaitingUser');
@@ -300,7 +300,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       setTransientError(friendly);
       setStatus('error');
     }
-  }, [scenario, status, promptOverrides]);
+  }, [scenario, status, promptOverrides, simulationConfig]);
 
   const send = useCallback(
     async (text: string) => {
@@ -320,7 +320,11 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           scenario,
           historyForModel,
           undefined,
-          { sessionId: recordIdRef.current, promptOverrides },
+          {
+            sessionId: recordIdRef.current,
+            promptOverrides,
+            config: simulationConfig ?? undefined,
+          },
         );
 
         // Detect end-of-simulation token. Strip every match (defensive —
@@ -379,7 +383,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         setStatus('awaitingUser');
       }
     },
-    [scenario, appendTurn, promptOverrides],
+    [scenario, appendTurn, promptOverrides, simulationConfig],
   );
 
   const end = useCallback(async () => {
@@ -392,6 +396,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     try {
       report = await evaluateConversation(scenario, msgs, {
         sessionId: recordIdRef.current,
+        config: simulationConfig ?? undefined,
       });
     } catch (err) {
       console.error('[useTextChat] scoring failed', err);
@@ -437,7 +442,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       modelId: MODEL_TEXT,
       completed: true,
     });
-  }, [scenario]);
+  }, [scenario, simulationConfig]);
 
   const abandon = useCallback(
     async (reason: 'user_exit' | 'timeout' | 'error' = 'user_exit') => {
@@ -525,6 +530,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       // so the session shows up in telemetry but doesn't poison
       // downstream scoring or fine-tuning.
       const recordId = recordIdRef.current ?? uuid();
+      // Voice sessions never call open(), so the ref may be unset. Pin it so
+      // sessionId is exposed (post-session feedback attributes to it).
+      recordIdRef.current = recordId;
       if (msgs.length === 0) {
         setStatus('idle');
         persistedRef.current = true;
@@ -590,6 +598,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     messages,
     status,
     scoreReport,
+    sessionId: recordIdRef.current,
     transientError,
     open,
     send,

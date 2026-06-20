@@ -1,6 +1,4 @@
 import type { Scenario } from '../scenarios';
-import { DRIVER_KNOWLEDGE } from './driverProfiles';
-import { getPushbackKnowledge } from './pushbackTaxonomy';
 import { ACT_STEPS } from './actGuide';
 import {
   BCS_BLURB,
@@ -9,7 +7,12 @@ import {
   NON_SHAMING_FRAMING,
   PRODUCT_ANCHORS,
 } from './clinicalReference';
-import { DIMENSIONS } from './scoringRubric';
+import {
+  resolveDimensions,
+  resolveDriverKnowledge,
+  resolvePushbackKnowledge,
+  type SimulationConfig,
+} from './simulationConfig';
 
 /**
  * Bounded admin-side prompt overrides. The canonical customer prompt and
@@ -89,9 +92,10 @@ or improvise something true to your driver type, breed, and pushback category.
 export function buildCustomerSystemPrompt(
   scenario: Scenario,
   overrides: PromptOverrides = {},
+  config: SimulationConfig = {},
 ): string {
-  const driver = DRIVER_KNOWLEDGE[scenario.suggestedDriver];
-  const pushback = getPushbackKnowledge(scenario.pushback.id);
+  const driver = resolveDriverKnowledge(scenario.suggestedDriver, config);
+  const pushback = resolvePushbackKnowledge(scenario.pushback.id, config);
   const pushbackBlock = formatPushbackPromptSection(scenario);
   const difficultyLine: Record<number, string> = {
     1: 'You are coachable: you push back once but yield when staff demonstrates real listening. Reward genuine empathy with clear softening.',
@@ -100,8 +104,14 @@ export function buildCustomerSystemPrompt(
     4: 'You are combative: you stay difficult throughout. Soften only after multiple strong, evidence-backed turns — but do soften when the trainee earns it.',
   };
 
-  const prefix = trimOverride(overrides.promptPrefix);
-  const suffix = trimOverride(overrides.promptSuffix);
+  // Combine the global (config) customer-prompt wraps with the per-scenario
+  // ones; both are length-capped so neither can bury the canonical brief.
+  const prefix = [trimOverride(config.customerPromptPrefix), trimOverride(overrides.promptPrefix)]
+    .filter(Boolean)
+    .join('\n\n');
+  const suffix = [trimOverride(overrides.promptSuffix), trimOverride(config.customerPromptSuffix)]
+    .filter(Boolean)
+    .join('\n\n');
   const prefixBlock = prefix
     ? `# ADMIN NOTES (apply on top of the canonical brief below)\n${prefix}\n\n`
     : '';
@@ -145,10 +155,12 @@ ${scenario.context ?? '(none)'}
 - STAY IN SCOPE: respond to what the staff member actually said in the most recent turn. Do not invent quotes, do not respond to things they didn't say, and do not drift to unrelated objections. Keep the conversation rooted in this scenario's pushback topic and the dog's specifics above.
 - Open the conversation with your pushback — do not wait for staff to greet you.
 - ${VARIETY_NUDGE}
-- Soften ONLY when staff demonstrates real acknowledge + clarify before pitching.
-- Push back harder if staff jumps straight to product without listening.
-- If staff asks an open question, answer it honestly with one specific detail about your dog.
-- If staff cites the 97% / 12-week trial concretely, take it seriously.
+- YOUR RESOLUTION ARC (this is how a real owner moves, and it must match what good handling looks like):
+  • Stay guarded until the staff member genuinely validates how you feel — name your worry or your bond — WITHOUT immediately countering it. Empty "I understand, but..." does NOT count. Real acknowledgement earns a first, visible softening.
+  • Open up only once they ask a genuine question and actually listen — share one honest detail about your dog when they do. Being clarified makes you noticeably more receptive.
+  • Accept only once they tie it together into a specific, credible next step you can picture (a bounded trial, a recheck, a clear plan) — not a vague "this will help." A concrete, low-pressure next step after you've felt heard is what tips you into agreeing.
+- Push back harder if staff jumps straight to a product or a pitch without first acknowledging and clarifying — that should keep you firmly resistant.
+- If staff cites the 97% / 12-week trial concretely AFTER hearing you out, take it seriously.
 - Never say the words "ACT method" or "acknowledge / clarify / transform".
 - ENDING THE SIMULATION (read carefully — ending well is part of being realistic):
   • The simulation MUST end when ANY of these is true:
@@ -174,20 +186,34 @@ ${scenario.context ?? '(none)'}
  * Builds the system prompt for the scoring evaluator.
  * Returns a JSON-typed scorecard against the 7 dimensions.
  */
-export function buildScoringSystemPrompt(scenario: Scenario): string {
-  const dimensionLines = DIMENSIONS.map(
-    (d) =>
-      `- ${d.key} (${d.label}, weight ${d.weight}): ${d.description} | EXCELLENT (≥85): ${d.bands.excellent.example} | NEEDS WORK (<70): ${d.bands.needsWork.example}`,
-  ).join('\n');
+export function buildScoringSystemPrompt(
+  scenario: Scenario,
+  config: SimulationConfig = {},
+): string {
+  const dimensionLines = resolveDimensions(config)
+    .map(
+      (d) =>
+        `- ${d.key} (${d.label}, weight ${d.weight}): ${d.description} | EXCELLENT (≥85): ${d.excellentExample} | NEEDS WORK (<70): ${d.needsWorkExample}`,
+    )
+    .join('\n');
 
   const actLines = ACT_STEPS.map(
     (s) => `${s.label}: ${s.goal}`,
   ).join('\n');
 
-  return `
-You are a Royal Canin sales coach reviewing a recorded training conversation.
-Score the staff member against the 7-dimension rubric below. Be precise,
-actionable, and non-shaming.
+  const scoringPrefix = trimOverride(config.scoring?.promptPrefix);
+  const scoringSuffix = trimOverride(config.scoring?.promptSuffix);
+  const prefixBlock = scoringPrefix ? `${scoringPrefix}\n\n` : '';
+  const suffixBlock = scoringSuffix ? `\n\n# ADMIN SCORING ADDENDUM\n${scoringSuffix}` : '';
+
+  return `${prefixBlock}
+You are an empathy-and-communication coach reviewing a recorded veterinary
+client conversation. Your lens is the ACT methodology — Acknowledge, Clarify,
+Transform — NOT sales technique. Reward staff who make the client feel heard
+and who clarify the real concern before recommending anything. Penalise
+jumping to a pitch, minimising feelings, or steamrolling. Score the staff
+member against the 5-dimension ACT-first rubric below. Be precise, actionable,
+and non-shaming.
 
 # SCENARIO
 - Pushback: ${formatPushbackPromptSection(scenario).replace(/\n/g, ' | ')}
@@ -198,21 +224,22 @@ actionable, and non-shaming.
 - Context: ${scenario.context?.trim() || '(none)'}
 - Customer's underlying driver: ${scenario.suggestedDriver}
 - Difficulty: ${scenario.difficulty}
-- Goal: help the staff handle this objection while moving toward a credible Royal Canin recommendation.
+- Goal: help the staff make the client feel heard, surface the real concern, and guide them to a credible, specific next step. A recommendation only counts if it lands AFTER genuine acknowledge + clarify.
 
-# THE ACT METHOD (the underlying rubric)
+# THE ACT METHOD (the spine of the rubric)
 ${actLines}
 
-# 7-DIMENSION RUBRIC (each scored 0–100)
+# 5-DIMENSION ACT-FIRST RUBRIC (each scored 0–100)
 ${dimensionLines}
 
 # OUTPUT
-Return JSON with keys for each dimension (0–100 integer), the weighted overall,
-the band (good/ok/poor), the legacy 1–10 ACT scores (acknowledgeScore,
-clarifyScore, takeActionScore), a multi-paragraph critique, a betterAlternative
-example line, a perDimensionNotes object (one short coaching note per dimension),
-a keyMoments array of up to 3 moments of note (with type=win|miss, label, quote, ts),
-and a turnSentiment array — ONE entry per turn in the transcript, in order.
+Return JSON with an integer 0–100 for each of the five dimensions
+(acknowledge, clarify, transform, empathy, rapport), a multi-paragraph
+critique, a betterAlternative example line, a perDimensionNotes object (one
+short coaching note per dimension, keyed by the same five dimension names), a
+keyMoments array of up to 3 moments of note (with type=win|miss, label, quote,
+ts), and a turnSentiment array — ONE entry per turn in the transcript, in order.
+Do NOT include an overall or band — those are computed from your dimension scores.
 
 # turnSentiment FORMAT
 - One object per transcript turn. Index 0 maps to turn 1 in the input.
@@ -228,10 +255,11 @@ and a turnSentiment array — ONE entry per turn in the transcript, in order.
 
 # GUARDRAILS
 - ${NON_SHAMING_FRAMING}
-- Cite Royal Canin Satiety Support specifics when relevant: ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}
+- Empathy and clarifying come FIRST. Do not reward a strong product pitch that arrived before the client felt heard — that belongs in the lower bands of "transform".
+- A specific, credible next step (a bounded trial, a recheck, a written plan) is what "transform" rewards. Product specifics are only relevant once earned: ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}
 - Use BCS guidance: ${BCS_BLURB}
 - ${MCS_BLURB}
-- ${CALORIE_FORMULA_BLURB}
+- ${CALORIE_FORMULA_BLURB}${suffixBlock}
 `.trim();
 }
 
@@ -243,10 +271,11 @@ and a turnSentiment array — ONE entry per turn in the transcript, in order.
 export function buildVoiceSystemPrompt(
   scenario: Scenario,
   overrides: PromptOverrides = {},
+  config: SimulationConfig = {},
 ): string {
   // Replace the text-mode "open immediately" rule with a voice-mode equivalent
   // that prevents a double-opening when the kickoff text triggers the model.
-  const base = buildCustomerSystemPrompt(scenario, overrides).replace(
+  const base = buildCustomerSystemPrompt(scenario, overrides, config).replace(
     '- Open the conversation with your pushback — do not wait for staff to greet you.',
     '- Wait for the text cue to begin. When it arrives, deliver EXACTLY ONE opening pushback line, then go completely silent and wait for the staff member to speak first. Do NOT add a second statement or follow-up after your opening.',
   );

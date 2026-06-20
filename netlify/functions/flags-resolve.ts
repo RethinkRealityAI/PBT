@@ -75,6 +75,7 @@ interface OverrideRow {
 interface ResolvedSnapshot {
   flags: Record<string, unknown>;
   scenarioOverrides: OverrideRow[];
+  simulationConfig: Record<string, unknown> | null;
   fetchedAt: number;
 }
 
@@ -84,9 +85,10 @@ async function loadSnapshot(): Promise<{
   flags: FlagRow[];
   rules: RuleRow[];
   overrides: OverrideRow[];
+  simulationConfig: Record<string, unknown> | null;
 }> {
   const sb = getServiceClient();
-  const [flagsRes, rulesRes, overridesRes] = await Promise.all([
+  const [flagsRes, rulesRes, overridesRes, simCfgRes] = await Promise.all([
     sb.from('flags').select('key, default_value, value_type'),
     sb
       .from('flag_rules')
@@ -99,14 +101,18 @@ async function loadSnapshot(): Promise<{
         'scenario_id, visible, sort_order, title_override, context_override, opening_line_override, difficulty_override, persona_override, prompt_prefix, prompt_suffix, card_title_override, card_subtitle_override, info_modal_title, info_modal_body, start_button_label, card_driver_override, breed, life_stage, pushback_id, pushback_notes, suggested_driver, weight_kg',
       )
       .is('deleted_at', null),
+    sb.from('simulation_config').select('config').eq('id', 'global').maybeSingle(),
   ]);
   if (flagsRes.error) throw flagsRes.error;
   if (rulesRes.error) throw rulesRes.error;
   if (overridesRes.error) throw overridesRes.error;
+  // simCfgRes is best-effort — log but don't fail if the table doesn't exist yet.
+  if (simCfgRes.error) console.warn('[flags-resolve] simulation_config fetch failed', simCfgRes.error);
   return {
     flags: (flagsRes.data ?? []) as FlagRow[],
     rules: (rulesRes.data ?? []) as RuleRow[],
     overrides: (overridesRes.data ?? []) as OverrideRow[],
+    simulationConfig: (simCfgRes.data?.config ?? null) as Record<string, unknown> | null,
   };
 }
 
@@ -206,6 +212,7 @@ export default async (req: Request): Promise<Response> => {
           // but the underlying rows are reused for CACHE_TTL_MS.
           flags: {},
           scenarioOverrides: raw.overrides,
+          simulationConfig: raw.simulationConfig,
           fetchedAt: now,
         },
         expiresAt: now + CACHE_TTL_MS,
@@ -230,6 +237,7 @@ export default async (req: Request): Promise<Response> => {
       {
         flags: resolved,
         scenarioOverrides: snap.scenarioOverrides,
+        simulationConfig: snap.simulationConfig,
         fetchedAt: snapshotCache.value.fetchedAt,
       },
       {

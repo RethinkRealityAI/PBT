@@ -35,6 +35,7 @@ import {
   type FlagSnapshot,
   type ScenarioOverride,
 } from '../../services/flagsClient';
+import type { SimulationConfig } from '../../data/knowledge/simulationConfig';
 
 interface FlagContextValue {
   snapshot: FlagSnapshot | null;
@@ -45,6 +46,8 @@ interface FlagContextValue {
   refresh: () => Promise<void>;
   getFlag: <T>(key: FlagKey, fallback: T) => T;
   getOverride: (scenarioId: string) => ScenarioOverride | null;
+  /** Resolved admin simulation config (or null = use code defaults). */
+  getSimulationConfig: () => SimulationConfig | null;
 }
 
 const FlagContext = createContext<FlagContextValue | null>(null);
@@ -60,6 +63,7 @@ interface PreviewMessage {
   type: 'pbt:preview-flags';
   flags?: Record<string, unknown>;
   scenarioOverrides?: ScenarioOverride[];
+  simulationConfig?: SimulationConfig | null;
 }
 
 export function FlagProvider({ children }: { children: ReactNode }) {
@@ -68,6 +72,7 @@ export function FlagProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<FlagSnapshot | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
   const [previewOverrides, setPreviewOverrides] = useState<ScenarioOverride[] | null>(null);
+  const [previewConfig, setPreviewConfig] = useState<SimulationConfig | null>(null);
   const [ready, setReady] = useState(false);
   const inFlightRef = useRef<Promise<void> | null>(null);
 
@@ -119,6 +124,7 @@ export function FlagProvider({ children }: { children: ReactNode }) {
       if (!data || data.type !== 'pbt:preview-flags') return;
       if (data.flags) setPreview(data.flags);
       if (data.scenarioOverrides) setPreviewOverrides(data.scenarioOverrides);
+      if (data.simulationConfig !== undefined) setPreviewConfig(data.simulationConfig);
     };
     window.addEventListener('message', handler);
     // Tell the admin we're ready to receive flag overrides.
@@ -145,6 +151,12 @@ export function FlagProvider({ children }: { children: ReactNode }) {
     [snapshot, previewOverrides],
   );
 
+  const getSimulationConfig = useCallback(
+    (): SimulationConfig | null =>
+      previewConfig ?? snapshot?.simulationConfig ?? null,
+    [snapshot, previewConfig],
+  );
+
   const value = useMemo<FlagContextValue>(
     () => ({
       snapshot,
@@ -153,8 +165,9 @@ export function FlagProvider({ children }: { children: ReactNode }) {
       refresh,
       getFlag,
       getOverride,
+      getSimulationConfig,
     }),
-    [snapshot, preview, ready, refresh, getFlag, getOverride],
+    [snapshot, preview, ready, refresh, getFlag, getOverride, getSimulationConfig],
   );
 
   return <FlagContext.Provider value={value}>{children}</FlagContext.Provider>;
@@ -172,9 +185,16 @@ export function useFlags(): FlagContextValue {
       getFlag: <T,>(key: FlagKey, fallback: T): T =>
         (FLAG_DEFAULTS[key] as T) ?? fallback,
       getOverride: () => null,
+      getSimulationConfig: () => null,
     };
   }
   return ctx;
+}
+
+/** Resolved admin simulation config (scoring/drivers/pushbacks/prompt wraps),
+ *  or null to use the code defaults. */
+export function useSimulationConfig(): SimulationConfig | null {
+  return useFlags().getSimulationConfig();
 }
 
 /** Boolean flag — most common case. */

@@ -5,10 +5,28 @@ import { uuid } from '../../lib/id';
 import { calorieFor } from '../../data/calorieTable';
 import { getSupabase } from '../auth/supabaseClient';
 import { logEvent } from '../../lib/analytics';
+import type {
+  PetVisionDermatitis,
+  VisionLifeStage,
+} from '../../services/petVisionService';
+
+/**
+ * Optional Pet Vision provenance attached at save time. Present only when the
+ * pet's fields were seeded from a photo analysis (and possibly hand-corrected).
+ * The raw image is never stored — only these structured fields.
+ */
+export interface VisionSaveMeta {
+  ageEstimate?: string;
+  breedConfidence?: number;
+  lifeStage?: VisionLifeStage;
+  dermatitis?: PetVisionDermatitis;
+}
 
 export interface SavedPet extends PetState {
   id: string;
   savedAt: string;
+  source?: 'manual' | 'vision';
+  vision?: VisionSaveMeta;
 }
 
 const SAVED_PETS_KEY = {
@@ -26,13 +44,17 @@ function adminVerdict(state: PetState): 'on_track' | 'watch' | 'adjust' | 'conce
   return 'adjust';
 }
 
-async function persistAnalyzerEvent(state: PetState, petId: string | null): Promise<void> {
+async function persistAnalyzerEvent(
+  state: PetState,
+  vision?: VisionSaveMeta,
+): Promise<void> {
   const verdict = adminVerdict(state);
+  const source = vision ? 'vision' : 'manual';
   logEvent({
     type: 'custom',
     screen: 'analyzer',
     target: 'analyzer_save',
-    meta: { breed: state.breed, bcs: state.bcs, mcs: state.mcs, verdict },
+    meta: { breed: state.breed, bcs: state.bcs, mcs: state.mcs, verdict, source },
   });
 
   const sb = getSupabase();
@@ -44,7 +66,12 @@ async function persistAnalyzerEvent(state: PetState, petId: string | null): Prom
     const mcsMap: Record<string, number> = { normal: 1, mild: 2, moderate: 3, severe: 4 };
     await sb.from('analyzer_events').insert({
       user_id: user?.id ?? null,
-      pet_id: petId,
+      // pet_records is only populated by the sign-up backfill, never on a live
+      // save — so we cannot reference a pet_records(id) here without violating
+      // the FK (which would silently reject the whole event). The local
+      // SavedPet id lives in localStorage only; admin telemetry reads
+      // analyzer_events directly and doesn't need the linkage.
+      pet_id: null,
       breed: state.breed,
       weight_kg: state.weightKg,
       bcs: state.bcs,
@@ -52,6 +79,10 @@ async function persistAnalyzerEvent(state: PetState, petId: string | null): Prom
       activity: state.activity,
       kcal_target: calorieFor(state.weightKg, state.activity),
       verdict,
+      source,
+      age_estimate: vision?.ageEstimate ?? null,
+      breed_confidence: vision?.breedConfidence ?? null,
+      dermatitis: vision?.dermatitis ?? null,
     });
   } catch (err) {
     console.warn('[saved-pets] persistAnalyzerEvent failed', err);
@@ -63,14 +94,20 @@ export function useSavedPets() {
     readStorage(SAVED_PETS_KEY),
   );
 
-  const savePet = useCallback((state: PetState) => {
-    const pet: SavedPet = { ...state, id: uuid(), savedAt: new Date().toISOString() };
+  const savePet = useCallback((state: PetState, vision?: VisionSaveMeta) => {
+    const pet: SavedPet = {
+      ...state,
+      id: uuid(),
+      savedAt: new Date().toISOString(),
+      source: vision ? 'vision' : 'manual',
+      vision,
+    };
     setSavedPets((prev) => {
       const next = [pet, ...prev.filter((p) => p.name !== state.name || p.breed !== state.breed)];
       writeStorage(SAVED_PETS_KEY, next);
       return next;
     });
-    void persistAnalyzerEvent(state, pet.id);
+    void persistAnalyzerEvent(state, vision);
     return pet;
   }, []);
 

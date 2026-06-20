@@ -11,10 +11,13 @@ import { SessionsScreen } from './screens/SessionsScreen';
 import { ScenariosScreen } from './screens/ScenariosScreen';
 import { AnalyzerScreen } from './screens/AnalyzerScreen';
 import { QualityScreen } from './screens/QualityScreen';
+import { FeedbackScreen } from './screens/FeedbackScreen';
+import { ReportsScreen } from './screens/ReportsScreen';
 import { FlagsScreen } from './screens/FlagsScreen';
 import { ScenarioBuilderScreen } from './screens/ScenarioBuilderScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
+import { SimulationScreen } from './screens/SimulationScreen';
 import { SignInGate } from './screens/SignInGate';
 
 type AdminState =
@@ -159,8 +162,11 @@ export function App() {
         {view === 'scenarios' && <ScenariosScreen query={query} onQuery={setQuery} />}
         {view === 'analyzer' && <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
         {view === 'quality' && <QualityScreen range={range} onRange={setRange} />}
+        {view === 'feedback' && <FeedbackScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
+        {view === 'reports' && <ReportsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
         {view === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
         {view === 'overrides' && <ScenarioBuilderScreen query={query} onQuery={setQuery} />}
+        {view === 'simulation' && <SimulationScreen />}
         {view === 'preview' && <PreviewScreen />}
         {view === 'audit' && <AuditLogScreen />}
       </div>

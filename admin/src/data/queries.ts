@@ -19,7 +19,9 @@ import type {
   FlagDef,
   FlagRule,
   NavEvent,
+  PlatformReportRow,
   ScenarioOverrideRow,
+  SessionFeedbackRow,
   UserScenario,
 } from './types';
 
@@ -106,6 +108,30 @@ export function useAnalyzerEvents(range = '28d', limit = 500) {
   return useQuery<AnalyzerEvent[]>(
     () =>
       apiFetch<AnalyzerEvent[]>('admin-analyzer', {
+        since: rangeToSince(range),
+        limit,
+      }),
+    [range, limit],
+    [],
+  );
+}
+
+export function useSessionFeedback(range = '28d', limit = 1000) {
+  return useQuery<SessionFeedbackRow[]>(
+    () =>
+      apiFetch<SessionFeedbackRow[]>('admin-feedback', {
+        since: rangeToSince(range),
+        limit,
+      }),
+    [range, limit],
+    [],
+  );
+}
+
+export function usePlatformReports(range = '28d', limit = 1000) {
+  return useQuery<PlatformReportRow[]>(
+    () =>
+      apiFetch<PlatformReportRow[]>('admin-reports', {
         since: rangeToSince(range),
         limit,
       }),
@@ -232,6 +258,27 @@ export async function duplicateScenario(
     throw new Error(body.error ?? `Duplicate failed (${res.status})`);
   }
   return (await res.json()) as ScenarioOverrideRow;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Simulation config
+// ─────────────────────────────────────────────────────────────
+
+export function useAdminSimulationConfig(refreshKey: number = 0) {
+  return useQuery<Record<string, unknown>>(
+    () =>
+      apiFetch<{ config: Record<string, unknown> }>('admin-simulation-config').then(
+        (res) => res.config ?? {},
+      ),
+    [refreshKey],
+    {},
+  );
+}
+
+export function saveSimulationConfig(
+  config: Record<string, unknown>,
+): Promise<{ config: Record<string, unknown> }> {
+  return postJson<{ config: Record<string, unknown> }>('admin-simulation-config', { config });
 }
 
 // ─────────────────────────────────────────────────────────────

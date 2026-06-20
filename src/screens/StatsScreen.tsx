@@ -6,13 +6,17 @@ import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useChat } from '../app/providers/ChatProvider';
+import { useScenario } from '../app/providers/ScenarioProvider';
 import { DIMENSIONS, bandFor } from '../data/knowledge/scoringRubric';
+import { normalizeScoreReport } from '../services/types';
+import { SessionFeedbackCard } from '../features/feedback/SessionFeedbackCard';
 import { COLORS } from '../design-system/tokens';
 
 export function StatsScreen() {
   const { go } = useNavigation();
   const chat = useChat();
-  const report = chat.scoreReport;
+  const { scenario } = useScenario();
+  const report = chat.scoreReport ? normalizeScoreReport(chat.scoreReport) : null;
 
   if (!report) {
     const hasMessages = chat.messages.length > 0;
@@ -299,6 +303,15 @@ export function StatsScreen() {
             "{report.betterAlternative}"
           </p>
         </Glass>
+
+        <div style={{ height: 14 }} />
+        <SessionFeedbackCard
+          sessionId={chat.sessionId}
+          scenarioSummary={
+            scenario ? `${scenario.pushback.title} · ${scenario.breed}` : undefined
+          }
+          pushbackId={scenario?.pushback.id}
+        />
 
         <div style={{ height: 90 }} className="lg:hidden" />
         </div>{/* end right column */}

@@ -63,26 +63,19 @@ describe('generateRoleplayMessage', () => {
 
 describe('evaluateConversation', () => {
   const validScores = {
-    empathyTone: 92,
-    activeListening: 80,
-    productKnowledge: 85,
-    objectionHandling: 78,
-    confidence: 75,
-    closingEffectiveness: 90,
-    pacing: 70,
-    acknowledgeScore: 8,
-    clarifyScore: 7,
-    takeActionScore: 9,
+    acknowledge: 92,
+    clarify: 80,
+    transform: 78,
+    empathy: 88,
+    rapport: 70,
     critique: 'Solid handling.',
     betterAlternative: 'You could have...',
     perDimensionNotes: {
-      empathyTone: 'Warm.',
-      activeListening: 'Could ask more.',
-      productKnowledge: 'Good citing.',
-      objectionHandling: 'Bit defensive.',
-      confidence: 'Hedged once.',
-      closingEffectiveness: 'Strong close.',
-      pacing: 'A little fast.',
+      acknowledge: 'Warm.',
+      clarify: 'Could ask more.',
+      transform: 'Bit defensive.',
+      empathy: 'Genuinely kind.',
+      rapport: 'A little fast.',
     },
     keyMoments: [{ ts: '0:30', type: 'win', label: 'Acknowledge', quote: '...' }],
   };
@@ -95,7 +88,7 @@ describe('evaluateConversation', () => {
     ]);
     expect(result.overall).toBeGreaterThan(0);
     expect(['good', 'ok', 'poor']).toContain(result.band);
-    expect(result.empathyTone).toBe(92);
+    expect(result.acknowledge).toBe(92);
     expect(result.critique).toBe('Solid handling.');
   });
 
@@ -104,5 +97,43 @@ describe('evaluateConversation', () => {
     const result = await evaluateConversation(SEED_SCENARIOS[0], []);
     expect(result.overall).toBe(0);
     expect(result.band).toBe('poor');
+  });
+
+  it('applies admin-tuned scoring weights to the overall', async () => {
+    // Weight acknowledge at 1.0 and everything else at 0 → overall == acknowledge.
+    generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScores) });
+    const result = await evaluateConversation(
+      SEED_SCENARIOS[0],
+      [{ role: 'user', text: 'hi', timestamp: 1 }],
+      {
+        config: {
+          scoring: {
+            dimensions: [
+              { key: 'acknowledge', weight: 1 },
+              { key: 'clarify', weight: 0 },
+              { key: 'transform', weight: 0 },
+              { key: 'empathy', weight: 0 },
+              { key: 'rapport', weight: 0 },
+            ],
+          },
+        },
+      },
+    );
+    expect(result.overall).toBe(validScores.acknowledge); // 92
+  });
+
+  it('coerces a missing/invalid dimension to 0 instead of NaN/undefined', async () => {
+    // Model drifts and omits `transform`, returns a non-number for `rapport`.
+    const partial = { ...validScores } as Record<string, unknown>;
+    delete partial.transform;
+    partial.rapport = 'n/a';
+    generateContent.mockResolvedValueOnce({ text: JSON.stringify(partial) });
+    const result = await evaluateConversation(SEED_SCENARIOS[0], [
+      { role: 'user', text: 'hi', timestamp: 1 },
+    ]);
+    expect(result.transform).toBe(0);
+    expect(result.rapport).toBe(0);
+    expect(Number.isNaN(result.overall)).toBe(false);
+    expect(result.acknowledge).toBe(92);
   });
 });

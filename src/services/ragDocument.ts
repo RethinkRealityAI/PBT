@@ -87,13 +87,11 @@ export async function persistRagDocument(args: PersistArgs): Promise<void> {
       score_band: args.scoreReport?.band ?? null,
       dimension_scores: args.scoreReport
         ? {
-            empathyTone: args.scoreReport.empathyTone,
-            activeListening: args.scoreReport.activeListening,
-            productKnowledge: args.scoreReport.productKnowledge,
-            objectionHandling: args.scoreReport.objectionHandling,
-            confidence: args.scoreReport.confidence,
-            closingEffectiveness: args.scoreReport.closingEffectiveness,
-            pacing: args.scoreReport.pacing,
+            acknowledge: args.scoreReport.acknowledge,
+            clarify: args.scoreReport.clarify,
+            transform: args.scoreReport.transform,
+            empathy: args.scoreReport.empathy,
+            rapport: args.scoreReport.rapport,
           }
         : null,
       key_moments: args.scoreReport?.keyMoments ?? null,

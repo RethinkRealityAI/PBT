@@ -27,6 +27,7 @@ import {
   type StorageKeyDef,
 } from '../../lib/storage';
 import type { DriverKey } from '../../design-system/tokens';
+import { normalizeDimensions } from '../../data/knowledge/scoringRubric';
 
 interface SavedPetLike {
   id: string;
@@ -115,17 +116,9 @@ function ragMetadataFromRecord(record: SessionRecord): Record<string, unknown> {
     completed: !!r,
     score_overall: r?.overall ?? null,
     score_band: r?.band ?? null,
-    dimension_scores: r
-      ? {
-          empathyTone: r.empathyTone,
-          activeListening: r.activeListening,
-          productKnowledge: r.productKnowledge,
-          objectionHandling: r.objectionHandling,
-          confidence: r.confidence,
-          closingEffectiveness: r.closingEffectiveness,
-          pacing: r.pacing,
-        }
-      : null,
+    // Records on disk may predate the ACT-first restructure — normalise so
+    // both old (7-dim) and new (5-dim) shapes land on the current keys.
+    dimension_scores: r ? normalizeDimensions(r) : null,
     key_moments: r?.keyMoments ?? null,
     turn_sentiment: r?.turnSentiment ?? null,
     backfilled: true,

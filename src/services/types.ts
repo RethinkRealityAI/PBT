@@ -1,4 +1,10 @@
-import type { DimensionKey } from '../data/knowledge/scoringRubric';
+import {
+  bandFor,
+  normalizeDimensions,
+  weightedOverall,
+  type DimensionKey,
+  type LegacyScoreFields,
+} from '../data/knowledge/scoringRubric';
 
 /**
  * AI emotion / resolution state — same vocabulary the voice session uses
@@ -21,25 +27,23 @@ export interface ChatMessage {
 }
 
 /**
- * Full 7-dimension scorecard returned by the evaluator.
- * Replaces the 3-score ACTFeedback in the legacy app while keeping the
- * legacy fields available as `acknowledgeScore`/`clarifyScore`/`takeActionScore`.
+ * ACT-first scorecard returned by the evaluator (Phase 2).
+ *
+ * The five dimensions are the ACT pillars (acknowledge / clarify / transform)
+ * plus empathy + rapport — see `scoringRubric.ts`. Legacy sales dimensions
+ * from pre-Phase-2 records are preserved as optional fields (via
+ * `LegacyScoreFields`) so historic sessions still deserialise; the
+ * `normalizeScoreReport` helper backfills the new dimensions from them.
  */
-export interface ScoreReport {
-  empathyTone: number;
-  activeListening: number;
-  productKnowledge: number;
-  objectionHandling: number;
-  confidence: number;
-  closingEffectiveness: number;
-  pacing: number;
+export interface ScoreReport extends LegacyScoreFields {
+  acknowledge: number;
+  clarify: number;
+  transform: number;
+  empathy: number;
+  rapport: number;
 
   overall: number;
   band: 'good' | 'ok' | 'poor';
-
-  acknowledgeScore: number;
-  clarifyScore: number;
-  takeActionScore: number;
 
   critique: string;
   betterAlternative: string;
@@ -71,6 +75,60 @@ export interface TurnSentiment {
   speaker: 'staff' | 'customer';
   /** -1 (hostile) → +1 (warm), 0 = neutral. */
   sentiment: number;
+}
+
+/**
+ * Coerce any saved/returned score report onto the current ACT-first shape.
+ *
+ * - New records pass through unchanged.
+ * - Pre-Phase-2 records get their five dimensions backfilled from the legacy
+ *   sales dimensions + 1–10 ACT subscores, and per-dimension notes mapped
+ *   from the closest legacy note so the breakdown still reads sensibly.
+ *
+ * UI surfaces (Stats, History detail) call this before rendering so a mix of
+ * old and new history never produces blank bars or `NaN` widths.
+ */
+export function normalizeScoreReport(report: ScoreReport): ScoreReport {
+  const dims = normalizeDimensions(report);
+  const notes = report.perDimensionNotes ?? ({} as Record<DimensionKey, string>);
+  const legacyNote = (k: DimensionKey): string => {
+    const n = notes as Record<string, string | undefined>;
+    switch (k) {
+      case 'acknowledge':
+        return n.acknowledge ?? n.empathyTone ?? '';
+      case 'clarify':
+        return n.clarify ?? n.activeListening ?? '';
+      case 'transform':
+        return n.transform ?? n.objectionHandling ?? '';
+      case 'empathy':
+        return n.empathy ?? n.empathyTone ?? '';
+      case 'rapport':
+        return n.rapport ?? n.pacing ?? '';
+    }
+  };
+  // Current (ACT-first) records natively carry all five dimensions; their
+  // stored overall/band are authoritative — and may have been computed with
+  // admin-tuned scoring weights we can't see here, so we must NOT recompute
+  // them with the static defaults. Only LEGACY records (missing the native
+  // dimensions) get a recomputed overall/band from the backfilled values, so
+  // the ScoreRing + band headline don't contradict the per-dimension bars.
+  const isNewShape = (
+    ['acknowledge', 'clarify', 'transform', 'empathy', 'rapport'] as DimensionKey[]
+  ).every((k) => typeof (report as unknown as Record<string, unknown>)[k] === 'number');
+  const overall = isNewShape ? report.overall : weightedOverall(dims);
+  return {
+    ...report,
+    ...dims,
+    overall,
+    band: isNewShape ? report.band : bandFor(overall),
+    perDimensionNotes: {
+      acknowledge: legacyNote('acknowledge'),
+      clarify: legacyNote('clarify'),
+      transform: legacyNote('transform'),
+      empathy: legacyNote('empathy'),
+      rapport: legacyNote('rapport'),
+    },
+  };
 }
 
 export interface SessionRecord {

@@ -97,6 +97,32 @@ export interface NavEvent {
 
 export type Verdict = AnalyzerEvent['verdict'];
 
+export interface SessionFeedbackRow {
+  id: string;
+  session_id: string | null;
+  user_id: string | null;
+  anon_session_id: string | null;
+  realism: number | null;
+  ai_quality: number | null;
+  comfort: number | null;
+  comment: string | null;
+  scenario_summary: string | null;
+  pushback_id: string | null;
+  created_at: string;
+}
+
+export interface PlatformReportRow {
+  id: string;
+  user_id: string | null;
+  anon_session_id: string | null;
+  kind: 'bug' | 'suggestion';
+  message: string;
+  screen: string | null;
+  user_agent: string | null;
+  status: 'open' | 'triaged' | 'resolved' | 'dismissed';
+  created_at: string;
+}
+
 export type FlagSurface = 'screen' | 'nav' | 'scenario' | 'component' | 'field' | 'ai';
 export type FlagValueType = 'boolean' | 'string' | 'number' | 'json';
 

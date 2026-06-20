@@ -11,7 +11,7 @@
  */
 import { getSupabase } from '../features/auth/supabaseClient';
 
-export type CallType = 'roleplay' | 'evaluate' | 'voice' | 'hint';
+export type CallType = 'roleplay' | 'evaluate' | 'voice' | 'hint' | 'vision';
 
 export interface AiCallRecord {
   sessionId?: string | null;
