@@ -343,6 +343,20 @@ select{cursor:pointer;appearance:auto}
 }
 .pillar-body textarea:focus{border-color:var(--teal)}
 
+/* ── SCORING BAND GRID ── */
+.band-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px}
+.band{border-radius:7px;padding:7px 9px;display:flex;flex-direction:column;gap:3px}
+.band-tag{font-family:"Space Grotesk",sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.band-desc{font-size:11px;line-height:1.4;color:var(--muted)}
+.band.excellent{background:rgba(5,150,105,.07);border:1px solid rgba(5,150,105,.2)}
+.band.excellent .band-tag{color:#065f46}
+.band.solid{background:rgba(13,148,136,.06);border:1px solid rgba(13,148,136,.18)}
+.band.solid .band-tag{color:#0f766e}
+.band.developing{background:rgba(217,119,6,.07);border:1px solid rgba(217,119,6,.2)}
+.band.developing .band-tag{color:#92400e}
+.band.needs-work{background:rgba(220,38,38,.06);border:1px solid rgba(220,38,38,.15)}
+.band.needs-work .band-tag{color:#991b1b}
+
 /* ── REDFLAG CARDS ── */
 .redflag-grid{display:grid;grid-template-columns:1fr;gap:11px}
 .redflag{border-radius:var(--radius-sm);overflow:hidden;border:1px solid rgba(220,38,38,.15);box-shadow:var(--shadow)}
@@ -504,6 +518,8 @@ select{cursor:pointer;appearance:auto}
   .fgrp.s2,.fgrp.s3{grid-column:span 1!important}
   .guide-grid{grid-template-columns:1fr!important}
   .pillar-grid{grid-template-columns:1fr!important}
+  .band-grid{grid-template-columns:1fr 1fr!important}
+  .band-grid[style*="repeat(4"]{grid-template-columns:1fr 1fr!important}
   .rubric-summary{grid-template-columns:1fr 1fr!important}
   .act-flow{flex-direction:column}
   .act-step:not(:last-child)::after{content:"↓";right:auto;top:auto;bottom:-12px;left:50%;transform:translateX(-50%)}
@@ -970,21 +986,21 @@ select{cursor:pointer;appearance:auto}
         <label>Owner Persona Type</label>
         <select id="f_ctype" onchange="autoSave()">
           <option value="">Select persona...</option>
-          <option value="skeptical">Skeptical — questions recommendations, needs evidence</option>
-          <option value="anxious">Anxious — worried about change, needs reassurance</option>
-          <option value="busy">Busy — time-pressured, wants quick, clear answers</option>
-          <option value="bargain-hunter">Bargain-hunter — price-led, needs clear value justification</option>
-          <option value="devoted">Devoted — emotionally attached, equates food with love</option>
+          <option value="Skeptical">Skeptical — questions recommendations, needs evidence</option>
+          <option value="Anxious">Anxious — worried about change, needs reassurance</option>
+          <option value="Busy">Busy — time-pressured, wants quick, clear answers</option>
+          <option value="Bargain-hunter">Bargain-hunter — price-led, needs clear value justification</option>
+          <option value="Devoted">Devoted — emotionally attached, equates food with love</option>
         </select>
       </div>
       <div class="fgrp">
         <label>Pet Life Stage</label>
         <select id="f_life_stage" onchange="autoSave()">
           <option value="">Select life stage...</option>
-          <option value="puppy">Puppy (&lt;1 yr)</option>
-          <option value="junior">Junior (1–3 yrs)</option>
-          <option value="adult">Adult (3–7 yrs)</option>
-          <option value="senior">Senior (7+ yrs)</option>
+          <option value="Puppy (&lt;1)">Puppy (&lt;1 yr)</option>
+          <option value="Junior (1-3)">Junior (1–3 yrs)</option>
+          <option value="Adult (3-7)">Adult (3–7 yrs)</option>
+          <option value="Senior (7+)">Senior (7+ yrs)</option>
         </select>
       </div>
       <div class="fgrp">
@@ -1037,7 +1053,7 @@ select{cursor:pointer;appearance:auto}
       <div class="callout-icon">&#10003;</div>
       <div class="callout-body">
         <div class="callout-title">Five ACT-first dimensions &mdash; define what &ldquo;good&rdquo; looks like for this scenario</div>
-        <div class="callout-text">The platform scores on five weighted dimensions. For each, describe the specific behaviours this scenario should reward &mdash; what the learner says, what the customer feels, and how you can tell it was done well vs. poorly. Scoring bands: <strong>&ge;85 Good · 70&ndash;84 OK · &lt;70 Needs work</strong>.</div>
+        <div class="callout-text">The platform scores on five weighted dimensions. For each, describe the specific behaviours this scenario should reward &mdash; what the learner says, what the customer feels, and how you can tell it was done well vs. poorly. Scoring bands: <strong>&ge;85 Excellent · 70&ndash;84 Solid · 50&ndash;69 Developing · &lt;50 Needs Work</strong>.</div>
       </div>
     </div>
     <div class="pillar-grid">
@@ -1045,6 +1061,12 @@ select{cursor:pointer;appearance:auto}
         <div class="pillar-hdr ack"><div class="pillar-num">1</div><div class="pillar-lbl">Acknowledge</div><span class="pillar-weight">24%</span></div>
         <div class="pillar-body">
           <div class="hint">Did the staff member validate the client&rsquo;s feeling <em>first</em> — before clarifying or recommending — without minimising or arguing? Use the pet&rsquo;s name. No &ldquo;I understand, but…&rdquo;</div>
+          <div class="band-grid">
+            <div class="band excellent"><span class="band-tag">Excellent ≥85</span><span class="band-desc">Names the feeling, honours the bond, holds space before moving on</span></div>
+            <div class="band solid"><span class="band-tag">Solid 70–84</span><span class="band-desc">Validates the emotion but moves on a touch quickly</span></div>
+            <div class="band developing"><span class="band-tag">Developing 50–69</span><span class="band-desc">A brief nod, then pushes ahead to the pitch</span></div>
+            <div class="band needs-work"><span class="band-tag">Needs Work &lt;50</span><span class="band-desc">Skips acknowledge entirely, negates it ("I understand, but…"), or contradicts the client</span></div>
+          </div>
           <textarea id="f_p1" placeholder="e.g., Must acknowledge the owner's emotional bond before any product mention. 'I can see how much [pet name] means to you — changing that routine after years together is genuinely hard.'" oninput="autoSave();countChars(this,400)"></textarea>
           <div class="char-counter" id="cc-f_p1">0 / 400</div>
         </div>
@@ -1052,7 +1074,13 @@ select{cursor:pointer;appearance:auto}
       <div class="pillar">
         <div class="pillar-hdr clar"><div class="pillar-num">2</div><div class="pillar-lbl">Clarify</div><span class="pillar-weight">24%</span></div>
         <div class="pillar-body">
-          <div class="hint">Did the staff ask open questions (&ldquo;What…&rdquo;, &ldquo;How…&rdquo;, &ldquo;Walk me through…&rdquo;) to surface the real concern before pivoting?</div>
+          <div class="hint">Did the staff ask open questions (&ldquo;What…&rdquo;, &ldquo;How…&rdquo;, &ldquo;Walk me through…&rdquo;) and reflect back what they heard to surface the real concern before pivoting?</div>
+          <div class="band-grid">
+            <div class="band excellent"><span class="band-tag">Excellent ≥85</span><span class="band-desc">Multiple open questions, paraphrases the answers, uncovers the root concern</span></div>
+            <div class="band solid"><span class="band-tag">Solid 70–84</span><span class="band-desc">Asks one or two open questions and listens</span></div>
+            <div class="band developing"><span class="band-tag">Developing 50–69</span><span class="band-desc">Mostly closed yes/no questions; little reflecting back</span></div>
+            <div class="band needs-work"><span class="band-tag">Needs Work &lt;50</span><span class="band-desc">Talks over the client; no clarifying questions; jumps straight to a pitch</span></div>
+          </div>
           <textarea id="f_p2" placeholder="e.g., Must ask at least one open question about the pet's routine or the owner's specific concern before introducing the product. Must reflect back what they heard before pivoting." oninput="autoSave();countChars(this,400)"></textarea>
           <div class="char-counter" id="cc-f_p2">0 / 400</div>
         </div>
@@ -1060,7 +1088,13 @@ select{cursor:pointer;appearance:auto}
       <div class="pillar">
         <div class="pillar-hdr trans"><div class="pillar-num">3</div><div class="pillar-lbl">Transform</div><span class="pillar-weight">22%</span></div>
         <div class="pillar-body">
-          <div class="hint">Did the staff reframe the objection and guide the client toward a specific, credible Royal Canin next step with a bounded trial + follow-up checkpoint? No retreating or steamrolling.</div>
+          <div class="hint">Did the staff reframe the objection and guide the client toward a specific, credible Royal Canin next step (a bounded trial, a recheck, a written plan) rather than retreating or steamrolling?</div>
+          <div class="band-grid">
+            <div class="band excellent"><span class="band-tag">Excellent ≥85</span><span class="band-desc">Reframes with new info, offers a concrete path AND a checkpoint (e.g., 4-week trial + mid-point weigh-in)</span></div>
+            <div class="band solid"><span class="band-tag">Solid 70–84</span><span class="band-desc">Addresses the objection and proposes a step, but no clear checkpoint</span></div>
+            <div class="band developing"><span class="band-tag">Developing 50–69</span><span class="band-desc">Sidesteps the objection or suggests something vague with no commitment</span></div>
+            <div class="band needs-work"><span class="band-tag">Needs Work &lt;50</span><span class="band-desc">Caves to the objection or argues; no next step at all</span></div>
+          </div>
           <textarea id="f_p3" placeholder="e.g., Must propose a specific 4-week trial with a mid-point weigh-in. Must connect the product to the concern raised in Clarify — not a generic pitch. Must not cave if the owner pushes back once." oninput="autoSave();countChars(this,400)"></textarea>
           <div class="char-counter" id="cc-f_p3">0 / 400</div>
         </div>
@@ -1068,7 +1102,13 @@ select{cursor:pointer;appearance:auto}
       <div class="pillar">
         <div class="pillar-hdr emph"><div class="pillar-num">4</div><div class="pillar-lbl">Empathy &amp; Warmth</div><span class="pillar-weight">18%</span></div>
         <div class="pillar-body">
-          <div class="hint">Across the whole conversation, was the tone warm, non-judgmental, and attuned to the client — not clinical, defensive, or shaming?</div>
+          <div class="hint">Across the whole conversation, was the staff member&rsquo;s tone warm, non-judgmental, and attuned to the client — not clinical, defensive, or shaming?</div>
+          <div class="band-grid">
+            <div class="band excellent"><span class="band-tag">Excellent ≥85</span><span class="band-desc">Consistently warm and human; uses the pet's name; softens delivery; client clearly feels heard</span></div>
+            <div class="band solid"><span class="band-tag">Solid 70–84</span><span class="band-desc">Warm overall with the odd clinical or flat moment</span></div>
+            <div class="band developing"><span class="band-tag">Developing 50–69</span><span class="band-desc">Mostly transactional; warmth comes and goes; polite but detached</span></div>
+            <div class="band needs-work"><span class="band-tag">Needs Work &lt;50</span><span class="band-desc">Cold, defensive, or subtly shaming (e.g., "Well, this is what happens when a dog is overfed")</span></div>
+          </div>
           <textarea id="f_p4" placeholder="e.g., Must use the pet's name at least twice. Must never imply the owner is at fault. Should soften delivery when the owner becomes emotional. Avoid clinical language without context." oninput="autoSave();countChars(this,400)"></textarea>
           <div class="char-counter" id="cc-f_p4">0 / 400</div>
         </div>
@@ -1078,7 +1118,13 @@ select{cursor:pointer;appearance:auto}
       <div class="pillar" style="grid-column:1/-1">
         <div class="pillar-hdr rapp"><div class="pillar-num">5</div><div class="pillar-lbl">Rapport &amp; Pacing</div><span class="pillar-weight">12%</span></div>
         <div class="pillar-body">
-          <div class="hint">Did the staff match the client&rsquo;s energy and build trust — neither rushing nor stalling? Consider the owner persona and ECHO driver profile.</div>
+          <div class="hint">Did the staff match the client&rsquo;s energy and build trust — neither rushing them nor stalling — so the conversation felt collaborative? Consider the owner persona and ECHO driver profile.</div>
+          <div class="band-grid" style="grid-template-columns:repeat(4,1fr)">
+            <div class="band excellent"><span class="band-tag">Excellent ≥85</span><span class="band-desc">Adapts speed to the client; pauses where needed; mirrors Harmonizer pace or cuts to the point for Activator</span></div>
+            <div class="band solid"><span class="band-tag">Solid 70–84</span><span class="band-desc">Reasonable pace and connection; occasional mismatch</span></div>
+            <div class="band developing"><span class="band-tag">Developing 50–69</span><span class="band-desc">Either rushes through or labours the points; connection is thin</span></div>
+            <div class="band needs-work"><span class="band-tag">Needs Work &lt;50</span><span class="band-desc">Talks past the client or freezes when they push back</span></div>
+          </div>
           <textarea id="f_p5" placeholder="e.g., If the owner is anxious/Harmonizer type, must slow down and not jump to a close. If Activator, should get to the point efficiently. Must not talk past the client or freeze when pushed back on." oninput="autoSave();countChars(this,400)"></textarea>
           <div class="char-counter" id="cc-f_p5">0 / 400</div>
         </div>
