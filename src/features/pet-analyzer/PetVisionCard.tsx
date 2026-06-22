@@ -2,8 +2,24 @@ import { useRef } from 'react';
 import { Glass } from '../../design-system/Glass';
 import { Icon } from '../../design-system/Icon';
 import { COLORS } from '../../design-system/tokens';
+import { useTheme } from '../../app/providers/ThemeProvider';
 import type { PetVisionResult } from '../../services/petVisionService';
 import type { UsePetVision } from './usePetVision';
+
+/**
+ * Colour-tinted info chip surface. In light mode the accent is blended into
+ * white (pale pastel under dark ink). In dark mode it's blended into a near-
+ * transparent dark base so the chip stays dark enough for near-white
+ * `--pbt-text` to read — otherwise the pastel + light text blend together.
+ */
+function tintedChip(color: string, dark: boolean): React.CSSProperties {
+  return {
+    background: dark
+      ? `color-mix(in oklab, ${color} 20%, rgba(255,255,255,0.04))`
+      : `color-mix(in oklab, ${color} 12%, rgba(255,255,255,0.4))`,
+    border: `1px solid color-mix(in oklab, ${color} ${dark ? 38 : 30}%, transparent)`,
+  };
+}
 
 /** Eyebrow label — mirrors PetAnalyzerScreen's local Eyebrow. */
 function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -47,6 +63,8 @@ export function PetVisionCard({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { status, result, previewUrl, error } = vision;
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
 
   return (
     <Glass radius={22} padding={18} style={{ marginBottom: 14 }} glow={null}>
@@ -91,7 +109,7 @@ export function PetVisionCard({
           padding: previewUrl ? 0 : 16,
           borderRadius: 16,
           border: `1.5px dashed color-mix(in oklab, var(--pbt-driver-primary) 45%, rgba(255,255,255,0.4))`,
-          background: 'rgba(255,255,255,0.18)',
+          background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.18)',
           cursor: status === 'analyzing' ? 'wait' : 'pointer',
           display: 'flex',
           flexDirection: 'column',
@@ -161,8 +179,7 @@ export function PetVisionCard({
             borderRadius: 12,
             fontSize: 13,
             color: 'var(--pbt-text)',
-            background: `color-mix(in oklab, ${COLORS.score.poor} 12%, rgba(255,255,255,0.4))`,
-            border: `1px solid color-mix(in oklab, ${COLORS.score.poor} 30%, transparent)`,
+            ...tintedChip(COLORS.score.poor, dark),
           }}
         >
           {error}{' '}
@@ -190,6 +207,8 @@ export function PetVisionCard({
 }
 
 function VisionFindings({ result }: { result: PetVisionResult }) {
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
   if (!result.isDog) {
     return (
       <div
@@ -199,8 +218,7 @@ function VisionFindings({ result }: { result: PetVisionResult }) {
           borderRadius: 12,
           fontSize: 13,
           color: 'var(--pbt-text)',
-          background: `color-mix(in oklab, ${COLORS.score.ok} 12%, rgba(255,255,255,0.4))`,
-          border: `1px solid color-mix(in oklab, ${COLORS.score.ok} 30%, transparent)`,
+          ...tintedChip(COLORS.score.ok, dark),
         }}
       >
         That doesn't look like a dog — try a clear, well-lit photo of the dog
@@ -254,8 +272,7 @@ function VisionFindings({ result }: { result: PetVisionResult }) {
         style={{
           padding: '10px 12px',
           borderRadius: 12,
-          border: `1px solid color-mix(in oklab, ${dermColor} 32%, rgba(255,255,255,0.3))`,
-          background: `color-mix(in oklab, ${dermColor} 12%, rgba(255,255,255,0.35))`,
+          ...tintedChip(dermColor, dark),
         }}
       >
         <div

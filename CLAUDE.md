@@ -202,6 +202,14 @@ Active keys:
 
 - All glass surfaces use `<Glass>` — never raw `backdrop-filter` styles inline.
 - All design tokens come from `src/design-system/tokens.ts` or the CSS vars in `tokens.css`. Never hardcode brand colors.
+- **Modals & overlays — dark mode:** never hardcode a light surface fill (e.g. a
+  `linear-gradient(... rgba(255,255,255,…))` or `rgba(255,255,255,…)` background)
+  on a surface that carries `--pbt-text`. In dark mode `--pbt-text` is near-white,
+  so a forced-light pane makes text blend out (this caused the Report modal
+  contrast bug). Branch on theme like the design-system primitives do
+  (`const dark = useTheme().resolvedTheme === 'dark'; background: dark ? … : …`),
+  or let `<Glass>` provide the themed fill. Route `<input>`/`<textarea>` through
+  the theme-aware `.pbt-glass-input` class instead of inline light styles.
 - Mono labels (eyebrows, scores, timestamps): `Geist Mono`, all-caps, letter-spacing 0.18em.
 - Display headlines: weight 400, tight letter-spacing −0.025em, lowercase sentences with `\n` line breaks where the prototype has them.
 - Test files colocate as `__tests__/Subject.test.ts(x)`. Vitest globals are on (no need to import `describe`/`it`/`expect`).

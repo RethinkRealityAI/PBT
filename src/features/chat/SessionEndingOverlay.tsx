@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Orb } from '../../design-system/Orb';
+import { useTheme } from '../../app/providers/ThemeProvider';
 import type { DriverKey } from '../../design-system/tokens';
 
 /**
@@ -68,6 +69,8 @@ export function SessionEndingOverlay({
   scenarioTitle,
 }: SessionEndingOverlayProps) {
   const reduceMotion = useReducedMotion();
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
   const copy = copyFor(phase, scenarioTitle);
 
   return (
@@ -143,17 +146,25 @@ export function SessionEndingOverlay({
               padding: '32px 28px 28px',
               borderRadius: 28,
               textAlign: 'center',
-              background:
-                'linear-gradient(165deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.46) 100%)',
+              background: dark
+                ? 'linear-gradient(165deg, rgba(20,18,26,0.82) 0%, rgba(12,11,17,0.62) 100%)'
+                : 'linear-gradient(165deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.46) 100%)',
               backdropFilter: 'blur(36px) saturate(220%) brightness(1.02)',
               WebkitBackdropFilter: 'blur(36px) saturate(220%) brightness(1.02)',
               border: '1px solid var(--pbt-glass-border)',
-              boxShadow: [
-                '0 1px 0 rgba(255,255,255,0.95) inset',
-                '0 -1px 0 rgba(255,255,255,0.45) inset',
-                '0 28px 60px -22px color-mix(in oklab, var(--pbt-driver-primary) 28%, rgba(20,5,8,0.45))',
-                '0 60px 110px -40px rgba(20,5,8,0.45)',
-              ].join(', '),
+              boxShadow: dark
+                ? [
+                    '0 1px 0 rgba(255,255,255,0.12) inset',
+                    '0 -1px 0 rgba(255,255,255,0.05) inset',
+                    '0 28px 60px -22px color-mix(in oklab, var(--pbt-driver-primary) 24%, rgba(0,0,0,0.62))',
+                    '0 60px 110px -40px rgba(0,0,0,0.55)',
+                  ].join(', ')
+                : [
+                    '0 1px 0 rgba(255,255,255,0.95) inset',
+                    '0 -1px 0 rgba(255,255,255,0.45) inset',
+                    '0 28px 60px -22px color-mix(in oklab, var(--pbt-driver-primary) 28%, rgba(20,5,8,0.45))',
+                    '0 60px 110px -40px rgba(20,5,8,0.45)',
+                  ].join(', '),
             }}
           >
             <div

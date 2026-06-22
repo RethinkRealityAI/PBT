@@ -3,7 +3,19 @@ import { Glass } from '../../design-system/Glass';
 import { PillButton } from '../../design-system/PillButton';
 import { Icon } from '../../design-system/Icon';
 import { Segmented } from '../../design-system/Segmented';
+import { useTheme } from '../../app/providers/ThemeProvider';
 import { usePlatformReport, type ReportKind } from './usePlatformReport';
+
+/**
+ * Themed modal surface fill. Light = bright top-left catchlight gradient (the
+ * frosted look). Dark = a deep gradient so near-white `--pbt-text` reads with
+ * full contrast instead of blending into a forced-light pane. See the dark-mode
+ * contrast note in CLAUDE.md ("Modals & overlays").
+ */
+const MODAL_FILL_DARK =
+  'linear-gradient(165deg, rgba(20,18,26,0.80) 0%, rgba(12,11,17,0.60) 100%)';
+const MODAL_FILL_LIGHT =
+  'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.30) 100%)';
 
 const BUG_SUBJECTS = [
   'Feature not working',
@@ -36,6 +48,8 @@ export function ReportModal({
   onClose: () => void;
 }) {
   const { status, submitReport, reset } = usePlatformReport();
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
   const [kind, setKind] = useState<ReportKind>(initialKind);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
@@ -101,8 +115,7 @@ export function ReportModal({
         style={{
           maxWidth: 520,
           width: '100%',
-          background:
-            'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.30) 100%)',
+          background: dark ? MODAL_FILL_DARK : MODAL_FILL_LIGHT,
         }}
       >
         <div style={{ padding: 26 }} onClick={(e) => e.stopPropagation()}>
@@ -143,7 +156,7 @@ export function ReportModal({
                 height: 32,
                 borderRadius: '50%',
                 border: 'none',
-                background: 'rgba(60,20,15,0.06)',
+                background: dark ? 'rgba(255,255,255,0.10)' : 'rgba(60,20,15,0.06)',
                 cursor: 'pointer',
                 color: 'var(--pbt-text)',
                 display: 'inline-flex',
@@ -206,11 +219,15 @@ export function ReportModal({
                           ...pillBase,
                           background: selected
                             ? 'var(--pbt-driver-primary)'
-                            : 'rgba(255,255,255,0.45)',
+                            : dark
+                              ? 'rgba(255,255,255,0.08)'
+                              : 'rgba(255,255,255,0.45)',
                           color: selected ? '#fff' : 'var(--pbt-text)',
                           border: selected
                             ? '1px solid transparent'
-                            : '1px solid rgba(0,0,0,0.1)',
+                            : dark
+                              ? '1px solid rgba(255,255,255,0.18)'
+                              : '1px solid rgba(0,0,0,0.1)',
                           boxShadow: selected
                             ? '0 2px 8px -2px color-mix(in oklab, var(--pbt-driver-primary) 40%, transparent)'
                             : 'none',
@@ -247,18 +264,11 @@ export function ReportModal({
                   }
                   rows={6}
                   autoFocus
+                  className="pbt-glass-input"
                   style={{
-                    width: '100%',
-                    padding: '13px 15px',
-                    borderRadius: 16,
-                    border: '1px solid rgba(255,255,255,0.5)',
-                    background: 'rgba(255,255,255,0.4)',
-                    fontFamily: 'inherit',
                     fontSize: 15,
                     lineHeight: 1.55,
-                    color: 'var(--pbt-text)',
                     resize: 'vertical',
-                    outline: 'none',
                     minHeight: 130,
                   }}
                 />

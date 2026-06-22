@@ -3,6 +3,7 @@ import { Glass } from '../../design-system/Glass';
 import { PillButton } from '../../design-system/PillButton';
 import { Icon } from '../../design-system/Icon';
 import { COLORS } from '../../design-system/tokens';
+import { useTheme } from '../../app/providers/ThemeProvider';
 import { useSessionFeedback } from './useSessionFeedback';
 
 const MONO_LABEL: React.CSSProperties = {
@@ -22,6 +23,8 @@ function StarRow({
   value: number;
   onChange: (v: number) => void;
 }) {
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ ...MONO_LABEL, marginBottom: 6 }}>{label}</div>
@@ -43,10 +46,14 @@ function StarRow({
                 cursor: 'pointer',
                 border: active
                   ? `1px solid color-mix(in oklab, var(--pbt-driver-primary) 55%, transparent)`
-                  : '1px solid rgba(255,255,255,0.45)',
+                  : dark
+                    ? '1px solid rgba(255,255,255,0.18)'
+                    : '1px solid rgba(255,255,255,0.45)',
                 background: active
                   ? 'color-mix(in oklab, var(--pbt-driver-primary) 18%, rgba(255,255,255,0.06))'
-                  : 'rgba(255,255,255,0.22)',
+                  : dark
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(255,255,255,0.22)',
                 color: active ? 'var(--pbt-driver-primary)' : 'var(--pbt-text-muted)',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -112,20 +119,12 @@ export function SessionFeedbackCard({
         onChange={(e) => setComment(e.target.value)}
         placeholder="Anything else? (optional)"
         rows={2}
+        className="pbt-glass-input"
         style={{
-          width: '100%',
           marginTop: 4,
           marginBottom: 12,
-          padding: '10px 12px',
-          borderRadius: 14,
-          border: '1px solid rgba(255,255,255,0.45)',
-          background: 'rgba(255,255,255,0.22)',
-          fontFamily: 'inherit',
-          fontSize: 14,
           lineHeight: 1.45,
-          color: 'var(--pbt-text)',
           resize: 'none',
-          outline: 'none',
         }}
       />
 
