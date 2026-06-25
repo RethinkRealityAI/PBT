@@ -3,6 +3,7 @@ import { Glass } from '../../design-system/Glass';
 import { PillButton } from '../../design-system/PillButton';
 import { Icon } from '../../design-system/Icon';
 import { Segmented } from '../../design-system/Segmented';
+import { useTheme } from '../../app/providers/ThemeProvider';
 import { getSupabase } from './supabaseClient';
 import { checkPassword } from './passwordStrength';
 import { FLAGS } from '../../app/flags';
@@ -38,6 +39,8 @@ export function AccountUpgradeModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { profile, setProfile } = useProfile();
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
 
   const pwCheck = useMemo(() => checkPassword(password), [password]);
 
@@ -183,7 +186,9 @@ export function AccountUpgradeModal({
         style={{
           maxWidth: 380,
           width: '100%',
-          background: 'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.30) 100%)',
+          background: dark
+            ? 'linear-gradient(165deg, rgba(20,18,26,0.80) 0%, rgba(12,11,17,0.60) 100%)'
+            : 'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.30) 100%)',
         }}
       >
         <div style={{ padding: 22 }}>
@@ -223,7 +228,7 @@ export function AccountUpgradeModal({
                 height: 32,
                 borderRadius: '50%',
                 border: 'none',
-                background: 'rgba(60,20,15,0.06)',
+                background: dark ? 'rgba(255,255,255,0.10)' : 'rgba(60,20,15,0.06)',
                 cursor: 'pointer',
                 color: 'var(--pbt-text)',
                 display: 'inline-flex',

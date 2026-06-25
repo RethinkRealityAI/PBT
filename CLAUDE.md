@@ -202,6 +202,14 @@ Active keys:
 
 - All glass surfaces use `<Glass>` — never raw `backdrop-filter` styles inline.
 - All design tokens come from `src/design-system/tokens.ts` or the CSS vars in `tokens.css`. Never hardcode brand colors.
+- **Modals & overlays — dark mode:** never hardcode a light surface fill (e.g. a
+  `linear-gradient(... rgba(255,255,255,…))` or `rgba(255,255,255,…)` background)
+  on a surface that carries `--pbt-text`. In dark mode `--pbt-text` is near-white,
+  so a forced-light pane makes text blend out (this caused the Report modal
+  contrast bug). Branch on theme like the design-system primitives do
+  (`const dark = useTheme().resolvedTheme === 'dark'; background: dark ? … : …`),
+  or let `<Glass>` provide the themed fill. Route `<input>`/`<textarea>` through
+  the theme-aware `.pbt-glass-input` class instead of inline light styles.
 - Mono labels (eyebrows, scores, timestamps): `Geist Mono`, all-caps, letter-spacing 0.18em.
 - Display headlines: weight 400, tight letter-spacing −0.025em, lowercase sentences with `\n` line breaks where the prototype has them.
 - Test files colocate as `__tests__/Subject.test.ts(x)`. Vitest globals are on (no need to import `describe`/`it`/`expect`).
@@ -237,6 +245,36 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
 - Bundle is split into `vendor-react`, `vendor-genai`, `vendor-supabase`, `vendor-motion`, plus the main app.
 - Netlify build command: `npm run build`.
 
+## Database migrations & deploy alignment (REQUIRED)
+
+Migrations in `supabase/migrations/` are **hand-run SQL** — adding a file does
+NOT apply it. A feature can pass every test and still break in production if
+its migration was never run against the live Supabase project. (This is exactly
+what broke the Platform Reporting + Feedback tools: the
+`20260601000000_phase2_june.sql` tables were missing from prod.)
+
+**Whenever a change adds or alters a Supabase relation** (any new `sb.from(...)`
+target, column, or RLS policy):
+
+1. **Author the migration** in `supabase/migrations/` (idempotent: `create … if
+   not exists`, `add column if not exists`, `drop policy if exists` before
+   `create policy`). Migrations may run out of order against a partially-synced
+   project, so guard cross-table `alter`s with `to_regclass(...) is not null`.
+2. **Apply it** to the target project (Supabase MCP `apply_migration`, the SQL
+   editor, or `supabase db push`) and confirm with `list_tables` / a probe.
+3. **Update the schema-parity test** is automatic — `src/tests/schema-parity.test.ts`
+   scans every `.from('<rel>')` in `src/` + `netlify/` and asserts each relation
+   is declared by some migration. It runs in `npm test` (no DB needed) and fails
+   the build if code references a relation no migration creates.
+4. **Verify the live DB before deploy**: `npm run verify:db` (needs
+   `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`) probes the target project and
+   fails if any code-referenced relation is missing — i.e. a migration wasn't
+   applied. Run it (or wire it into CI / the Netlify build) before shipping
+   schema-dependent features.
+
+The static test catches "migration file missing"; `verify:db` catches
+"migration not applied". Both must pass before a schema-dependent feature ships.
+
 ## Outstanding work (v1.x polish)
 
 1. **Coach drawer**: in-chat hints — designed; needs LLM call wired up.
@@ -250,7 +288,10 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
 - Don't bypass the `<Glass>` primitive — its shadow + tint logic is centralized.
 - Don't write to `localStorage` directly — use `readStorage`/`writeStorage`.
 - Don't add a router library — the state machine is intentional.
+- Don't ship a feature that adds/alters a Supabase relation without applying its
+  migration to the target project — run `npm run verify:db` first (see
+  "Database migrations & deploy alignment").
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. `**npm test` — 139 tests.** Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. `**npm test` — 161 tests** (incl. schema-parity guard; pre-deploy `npm run verify:db`). Production build: `npm run build`.
