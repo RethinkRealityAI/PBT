@@ -22,6 +22,7 @@ import type {
   PlatformReportRow,
   ScenarioOverrideRow,
   SessionFeedbackRow,
+  UserAction,
   UserScenario,
 } from './types';
 
@@ -64,12 +65,17 @@ function useQuery<T>(
 
 export { rangeToSince };
 
-export function useAdminUsers() {
+export function useAdminUsers(refreshKey: number = 0) {
   return useQuery<AdminUser[]>(
     () => apiFetch<AdminUser[]>('admin-users'),
-    [],
+    [refreshKey],
     [],
   );
+}
+
+/** Run a user/admin management action (promote, disable, create, delete). */
+export function runUserAction(action: UserAction): Promise<{ ok: true; user_id?: string }> {
+  return postJson<{ ok: true; user_id?: string }>('admin-user-actions', action);
 }
 
 export function useAdminSessions(range = '28d', limit = 500) {

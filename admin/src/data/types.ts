@@ -6,8 +6,17 @@ export interface AdminUser {
   echo_primary: DriverKey | null;
   echo_secondary: DriverKey | null;
   is_admin: boolean;
+  disabled: boolean;
+  email: string | null;
   created_at: string;
 }
+
+/** Payloads for the admin-user-actions write endpoint. */
+export type UserAction =
+  | { op: 'set_admin'; userId: string; value: boolean }
+  | { op: 'set_disabled'; userId: string; value: boolean }
+  | { op: 'create'; email: string; password: string; displayName?: string; isAdmin?: boolean }
+  | { op: 'delete'; userId: string };
 
 export interface AdminSession {
   id: string;

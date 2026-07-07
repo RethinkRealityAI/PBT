@@ -10,6 +10,7 @@ import {
 } from '../primitives';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import {
+  runUserAction,
   useAdminSessions,
   useAdminUsers,
   useAnalyzerEvents,
@@ -18,19 +19,26 @@ import {
 import { COLOR, DRIVERS } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
 import { UserModal } from './UserModal';
+import { Field, inputStyle, btnPrimary, btnSecondary } from './FlagsScreen';
+import { Modal, ModalCloseButton } from '../primitives';
 
 export function UsersScreen({
   query,
   onQuery,
+  meUserId,
 }: {
   query: string;
   onQuery: (q: string) => void;
+  meUserId?: string;
 }) {
-  const users = useAdminUsers();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const users = useAdminUsers(refreshKey);
   const sessions = useAdminSessions('90d', 2000);
   const scenarios = useUserScenarios(500);
   const analyzerEvents = useAnalyzerEvents('90d', 2000);
   const [openUserId, setOpenUserId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const refresh = () => setRefreshKey((k) => k + 1);
 
   const openUser = openUserId
     ? users.data.find((u) => u.user_id === openUserId) ?? null
@@ -90,6 +98,11 @@ export function UsersScreen({
         onQuery={onQuery}
       />
       <ScreenShell>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button style={btnPrimary} onClick={() => setCreating(true)}>
+            + New user
+          </button>
+        </div>
         {users.loading || sessions.loading ? (
           <LoadingShimmer height={400} />
         ) : (
@@ -149,6 +162,7 @@ export function UsersScreen({
                   borderBottom: '0.5px solid rgba(60,20,15,0.04)',
                   cursor: 'pointer',
                   transition: 'background 0.12s ease',
+                  opacity: u.disabled ? 0.55 : 1,
                 }}
               >
                 <Avatar
@@ -183,9 +197,24 @@ export function UsersScreen({
                         ADMIN
                       </span>
                     )}
+                    {u.disabled && (
+                      <span
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 10,
+                          fontWeight: 800,
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          background: COLOR.dangerSoft,
+                          color: COLOR.danger,
+                        }}
+                      >
+                        DISABLED
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: 11, color: COLOR.inkMute }}>
-                    {u.user_id.slice(0, 8)}
+                    {u.email ?? u.user_id.slice(0, 8)}
                   </div>
                 </div>
                 <DriverChip driver={u.echo_primary} />
@@ -251,7 +280,94 @@ export function UsersScreen({
             : []
         }
         onClose={() => setOpenUserId(null)}
+        meUserId={meUserId}
+        onChanged={refresh}
+      />
+
+      <CreateUserModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={() => {
+          setCreating(false);
+          refresh();
+        }}
       />
     </>
+  );
+}
+
+function CreateUserModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSubmit =
+    /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) && password.length >= 8 && !busy;
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      await runUserAction({
+        op: 'create',
+        email: email.trim(),
+        password,
+        displayName: displayName.trim() || undefined,
+        isAdmin,
+      });
+      setEmail('');
+      setPassword('');
+      setDisplayName('');
+      setIsAdmin(false);
+      onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create user');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} width={460} ariaLabel="Create user">
+      <div style={{ padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: COLOR.ink }}>New user</h2>
+          <ModalCloseButton onClose={onClose} />
+        </div>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <Field label="Email">
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} placeholder="name@clinic.com" />
+          </Field>
+          <Field label="Temporary password" help="At least 8 characters. The user can change it later.">
+            <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} style={inputStyle} />
+          </Field>
+          <Field label="Display name (optional)">
+            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputStyle} />
+          </Field>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: COLOR.ink, cursor: 'pointer' }}>
+            <input type="checkbox" checked={isAdmin} onChange={(e) => setIsAdmin(e.target.checked)} />
+            Grant admin access
+          </label>
+          {error && <div style={{ fontSize: 12.5, color: COLOR.danger, fontWeight: 600 }}>{error}</div>}
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <button style={{ ...btnPrimary, opacity: canSubmit ? 1 : 0.5 }} disabled={!canSubmit} onClick={submit}>
+              {busy ? 'Creating…' : 'Create user'}
+            </button>
+            <button style={btnSecondary} onClick={onClose}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }

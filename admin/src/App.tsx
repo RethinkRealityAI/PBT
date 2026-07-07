@@ -157,7 +157,7 @@ export function App() {
       <FloatingNav active={view} onNav={setView} />
       <div style={{ position: 'relative', zIndex: 1 }}>
         {view === 'overview' && <OverviewScreen range={range} onRange={setRange} onNav={setView} />}
-        {view === 'users' && <UsersScreen query={query} onQuery={setQuery} />}
+        {view === 'users' && <UsersScreen query={query} onQuery={setQuery} meUserId={auth.userId} />}
         {view === 'sessions' && <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
         {view === 'scenarios' && <ScenariosScreen query={query} onQuery={setQuery} />}
         {view === 'analyzer' && <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
