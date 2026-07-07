@@ -4,6 +4,7 @@ import { COLOR, RADIUS } from '../lib/tokens';
 export type AdminScreen =
   | 'overview'
   | 'insights'
+  | 'analytics'
   | 'users'
   | 'sessions'
   | 'scenarios'
@@ -26,6 +27,7 @@ export interface NavItem {
 export const ADMIN_NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', icon: '✦' },
   { key: 'insights', label: 'Insights', icon: '⌁' },
+  { key: 'analytics', label: 'Analytics', icon: '▦' },
   { key: 'users', label: 'Users', icon: '◔' },
   { key: 'sessions', label: 'Sessions', icon: '◇' },
   { key: 'scenarios', label: 'Scenarios', icon: '▤' },
