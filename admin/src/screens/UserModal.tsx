@@ -626,7 +626,7 @@ function ManageTab({
       {/* Delete */}
       <ManageRow
         title="Delete account"
-        desc="Permanently remove this user and their profile. Their sessions are retained for analytics."
+        desc="Permanently removes this user, their profile, training sessions, pet records, and built scenarios. Anonymized telemetry, analytics events, and RAG documents are retained."
         danger
         action={
           !confirmDelete ? (
