@@ -25,7 +25,7 @@ import type { DriverKey } from '../../../src/design-system/tokens';
 import { DRIVER_KEYS } from '../../../src/design-system/tokens';
 import { useAdminSimulationConfig, saveSimulationConfig } from '../data/queries';
 import { Glass } from '../primitives/Glass';
-import { LoadingShimmer, SectionTitle } from '../primitives';
+import { Collapsible, LoadingShimmer, PillButton, SectionTitle } from '../primitives';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { COLOR } from '../lib/tokens';
 import { Field, inputStyle, textareaStyle, btnPrimary, btnSecondary } from './FlagsScreen';
@@ -281,66 +281,7 @@ function buildMinimalConfig(draft: Draft): SimulationConfig {
   return out;
 }
 
-// ─── Reusable collapsible card ─────────────────────────────────────────────────
-
-function Collapsible({
-  title,
-  badge,
-  accent,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  badge?: React.ReactNode;
-  accent?: React.ReactNode;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <Glass padding={0} radius={16}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '14px 18px',
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          textAlign: 'left',
-          fontFamily: 'var(--pbt-font)',
-        }}
-      >
-        <span
-          aria-hidden
-          style={{
-            display: 'inline-block',
-            transition: 'transform 0.18s ease',
-            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
-            color: COLOR.inkMute,
-            fontSize: 12,
-          }}
-        >
-          ▶
-        </span>
-        <span style={{ fontWeight: 800, fontSize: 14, color: COLOR.ink }}>{title}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          {accent}
-          {badge}
-        </div>
-      </button>
-      {open && (
-        <div style={{ padding: '0 18px 18px', borderTop: '1px solid rgba(60,20,15,0.06)' }}>
-          <div style={{ paddingTop: 14 }}>{children}</div>
-        </div>
-      )}
-    </Glass>
-  );
-}
+// ─── Weight bar ─────────────────────────────────────────────────────────────────
 
 function WeightBar({ pct }: { pct: number }) {
   return (
@@ -375,41 +316,6 @@ function WeightBar({ pct }: { pct: number }) {
         {pct.toFixed(1)}%
       </span>
     </div>
-  );
-}
-
-// ─── Tab button ────────────────────────────────────────────────────────────────
-
-function PillButton({
-  active,
-  onClick,
-  children,
-  size = 'md',
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  size?: 'sm' | 'md';
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: size === 'sm' ? '6px 12px' : '8px 16px',
-        borderRadius: 12,
-        border: 'none',
-        cursor: 'pointer',
-        background: active
-          ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.55 0.24 18))'
-          : 'rgba(255,255,255,0.7)',
-        color: active ? '#fff' : COLOR.inkSoft,
-        fontWeight: 700,
-        fontSize: size === 'sm' ? 12 : 13,
-        fontFamily: 'var(--pbt-font)',
-      }}
-    >
-      {children}
-    </button>
   );
 }
 

@@ -29,6 +29,7 @@ import {
 } from '../primitives';
 import { COLOR, DRIVERS } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
+import { Glass } from '../primitives/Glass';
 import type { AdminSession, AdminUser, AnalyzerEvent, UserScenario } from '../data/types';
 import { runUserAction } from '../data/queries';
 import { SessionModal } from './SessionModal';
@@ -320,13 +321,13 @@ function OverviewTab({
           }
         />
       </div>
-      <Glass>
+      <Glass padding={18} radius={16} shine={false}>
         <Eyebrow>28-day session activity</Eyebrow>
         <div style={{ marginTop: 8 }}>
           <Sparkline data={buckets} width={1000} height={56} color={driverColor} />
         </div>
       </Glass>
-      <Glass>
+      <Glass padding={18} radius={16} shine={false}>
         <Eyebrow>Behaviour signals</Eyebrow>
         <RailRow
           label="Voice mode sessions"
@@ -533,7 +534,7 @@ function AISignalsTab({ sessions }: { sessions: AdminSession[] }) {
         <MiniStat label="Refusals" value={refusals.length} />
         <MiniStat label="Off-topic" value={offTopic.length} />
       </div>
-      <Glass>
+      <Glass padding={18} radius={16} shine={false}>
         <Eyebrow>Per-call telemetry</Eyebrow>
         <div style={{ marginTop: 6, fontSize: 12, color: COLOR.inkMute, lineHeight: 1.55 }}>
           Per-call latency, tokens, and cost live in the AI Quality screen
@@ -764,22 +765,6 @@ function MiniStat({ label, value }: { label: string; value: string | number }) {
       >
         {value}
       </div>
-    </div>
-  );
-}
-
-function Glass({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        padding: 18,
-        borderRadius: 16,
-        background: 'rgba(255,255,255,0.55)',
-        border: '0.5px solid rgba(255,255,255,0.9)',
-        boxShadow: '0 1px 0 rgba(255,255,255,0.95) inset',
-      }}
-    >
-      {children}
     </div>
   );
 }
