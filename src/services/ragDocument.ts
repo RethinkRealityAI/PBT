@@ -15,6 +15,7 @@ import type { Scenario } from '../data/scenarios';
 import type { ChatMessage, ScoreReport } from './types';
 import { getSupabase } from '../features/auth/supabaseClient';
 import { estimateTokens } from './aiTelemetry';
+import type { RetrievedChunk } from './ragShared';
 
 /**
  * One embedding-ready slice of a session (RAG foundation, SOW §3.2).
@@ -109,6 +110,9 @@ interface PersistArgs {
   mode: 'text' | 'voice';
   modelId: string;
   completed: boolean;
+  /** Knowledge chunks injected into this session's prompts (RAG), recorded
+   *  for later effectiveness evaluation. */
+  retrieved?: RetrievedChunk[];
 }
 
 function assembleContent(
@@ -180,6 +184,9 @@ export async function persistRagDocument(args: PersistArgs): Promise<void> {
           }
         : null,
       key_moments: args.scoreReport?.keyMoments ?? null,
+      retrieved: args.retrieved?.length
+        ? args.retrieved.map((r) => ({ citation: r.citation, similarity: r.similarity }))
+        : null,
       turn_sentiment: args.scoreReport?.turnSentiment ?? null,
     };
 

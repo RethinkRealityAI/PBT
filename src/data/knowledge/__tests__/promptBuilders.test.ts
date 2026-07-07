@@ -93,6 +93,24 @@ describe('promptBuilders', () => {
       expect(p).toContain('SCORING_PREAMBLE_ABC');
     });
 
+    it('injects retrieved reference/evidence blocks only when provided', () => {
+      const retrieved = [
+        { content: 'Owners often resist weight advice.', citation: 'Davies et al., 2024', tags: null, similarity: 0.9 },
+      ];
+      const customer = buildCustomerSystemPrompt(scenario, {}, {}, retrieved);
+      expect(customer).toContain('WHAT RESEARCH SAYS ABOUT OWNERS LIKE YOU');
+      expect(customer).toContain('[Davies et al., 2024]');
+      expect(customer).toContain('never cite authors or years in dialogue');
+
+      const scoring = buildScoringSystemPrompt(scenario, {}, retrieved);
+      expect(scoring).toContain('# EVIDENCE BASE');
+      expect(scoring).toContain('[Davies et al., 2024]');
+
+      // Absent retrieval → prompts identical to today (no empty block).
+      expect(buildCustomerSystemPrompt(scenario)).not.toContain('WHAT RESEARCH SAYS');
+      expect(buildScoringSystemPrompt(scenario)).not.toContain('EVIDENCE BASE');
+    });
+
     it('falls back to code defaults when config is empty', () => {
       const withEmpty = buildScoringSystemPrompt(scenario, {});
       const withNone = buildScoringSystemPrompt(scenario);

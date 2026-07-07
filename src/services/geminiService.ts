@@ -15,6 +15,7 @@ import {
   resolveWeights,
   type SimulationConfig,
 } from '../data/knowledge/simulationConfig';
+import type { RetrievedChunk } from './ragShared';
 import {
   estimateCostUsd,
   estimateTokens,
@@ -58,6 +59,8 @@ interface CallOptions {
   promptOverrides?: PromptOverrides;
   /** Global admin simulation config (scoring weights/prompt, driver + pushback edits). */
   config?: SimulationConfig;
+  /** Retrieved knowledge chunks (RAG) — grounds customer + scorer prompts. */
+  retrieved?: RetrievedChunk[];
 }
 
 interface UsageMetadata {
@@ -86,6 +89,7 @@ export async function generateRoleplayMessage(
     scenario,
     options.promptOverrides,
     options.config,
+    options.retrieved,
   );
 
   // Strip any transient error messages from history before sending to the model
@@ -209,7 +213,7 @@ export async function evaluateConversation(
   options: CallOptions = {},
 ): Promise<ScoreReport> {
   const ai = getClient();
-  const systemInstruction = buildScoringSystemPrompt(scenario, options.config);
+  const systemInstruction = buildScoringSystemPrompt(scenario, options.config, options.retrieved);
   const evalT0 = performance.now();
 
   const formatted = transcript

@@ -18,6 +18,7 @@ import type {
   AuditLogRow,
   FlagDef,
   FlagRule,
+  KnowledgeDocument,
   NavEvent,
   PlatformReportRow,
   ScenarioOverrideRow,
@@ -285,6 +286,59 @@ export function saveSimulationConfig(
   config: Record<string, unknown>,
 ): Promise<{ config: Record<string, unknown> }> {
   return postJson<{ config: Record<string, unknown> }>('admin-simulation-config', { config });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Knowledge base (RAG)
+// ─────────────────────────────────────────────────────────────
+
+export function useKnowledgeDocuments(refreshKey: number = 0) {
+  return useQuery<KnowledgeDocument[]>(
+    () =>
+      apiFetch<{ documents: KnowledgeDocument[] }>('admin-knowledge').then(
+        (res) => res.documents ?? [],
+      ),
+    [refreshKey],
+    [],
+  );
+}
+
+export interface IngestKnowledgeBody {
+  pdfBase64?: string;
+  text?: string;
+  title?: string;
+  category: 'clinical' | 'custom';
+  tags?: Record<string, unknown>;
+}
+
+export function ingestKnowledge(
+  body: IngestKnowledgeBody,
+): Promise<{ ok: true; slug: string; chunks: number }> {
+  return postJson<{ ok: true; slug: string; chunks: number }>(
+    'admin-knowledge-ingest',
+    { op: 'ingest', ...body },
+  );
+}
+
+export function reembedKnowledge(slug: string): Promise<{ ok: true; chunks: number }> {
+  return postJson<{ ok: true; chunks: number }>('admin-knowledge-ingest', {
+    op: 're-embed',
+    slug,
+  });
+}
+
+export function ingestBundledStudies(): Promise<{ ok: true; ingested: number }> {
+  return postJson<{ ok: true; ingested: number }>('admin-knowledge-ingest', {
+    op: 'ingest-bundled',
+  });
+}
+
+export function seedKnowledge(): Promise<{ ok: true; seeded: number }> {
+  return postJson<{ ok: true; seeded: number }>('admin-knowledge', { op: 'seed' });
+}
+
+export function deleteKnowledge(slug: string): Promise<{ ok: true }> {
+  return postJson<{ ok: true }>('admin-knowledge', { op: 'delete', slug });
 }
 
 // ─────────────────────────────────────────────────────────────

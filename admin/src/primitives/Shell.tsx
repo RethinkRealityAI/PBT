@@ -15,6 +15,7 @@ export type AdminScreen =
   | 'flags'
   | 'overrides'
   | 'simulation'
+  | 'knowledge'
   | 'audit'
   | 'preview';
 
@@ -38,6 +39,7 @@ export const ADMIN_NAV: NavItem[] = [
   { key: 'flags', label: 'Flags', icon: '⚑' },
   { key: 'overrides', label: 'Builder', icon: '⛯' },
   { key: 'simulation', label: 'Simulation', icon: '◎' },
+  { key: 'knowledge', label: 'Knowledge', icon: '⌆' },
   { key: 'preview', label: 'Preview', icon: '◐' },
   { key: 'audit', label: 'Audit', icon: '☷' },
 ];

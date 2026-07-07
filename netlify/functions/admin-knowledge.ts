@@ -13,6 +13,9 @@
  * per document with structured metadata, ready to feed an embedder in Phase 3.
  */
 import { errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
+import { embedTexts } from './_shared/gemini';
+import { chunkMarkdown } from '../../src/services/ragShared';
+import { estimateTokens } from '../../src/services/aiTelemetry';
 import { DRIVER_KNOWLEDGE } from '../../src/data/knowledge/driverProfiles';
 import { PUSHBACK_KNOWLEDGE } from '../../src/data/knowledge/pushbackTaxonomy';
 import { ACT_STEPS } from '../../src/data/knowledge/actGuide';
@@ -122,7 +125,38 @@ async function seed(ctx: AdminCtx): Promise<Response> {
     { onConflict: 'slug' },
   );
   if (error) return errorResponse(500, error.message);
-  return jsonResponse({ ok: true, seeded: docs.length });
+
+  // Chunk + embed each seeded doc (best-effort per doc so one embedding
+  // failure doesn't fail the whole seed — docs without chunks simply don't
+  // participate in retrieval until re-embedded).
+  const failures: string[] = [];
+  for (const d of docs) {
+    try {
+      const { data: row } = await ctx.sb
+        .from('knowledge_documents')
+        .select('id')
+        .eq('slug', d.slug)
+        .maybeSingle();
+      if (!row) continue;
+      const chunks = chunkMarkdown(d.content);
+      const embeddings = await embedTexts(chunks, 'RETRIEVAL_DOCUMENT');
+      await ctx.sb.from('knowledge_chunks').delete().eq('doc_id', row.id);
+      await ctx.sb.from('knowledge_chunks').insert(
+        chunks.map((content, i) => ({
+          doc_id: row.id,
+          chunk_idx: i,
+          content,
+          token_estimate: estimateTokens(content),
+          tags: { category: d.category, ...d.metadata },
+          citation: null,
+          embedding: `[${embeddings[i].join(',')}]`,
+        })),
+      );
+    } catch (err) {
+      failures.push(`${d.slug}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return jsonResponse({ ok: true, seeded: docs.length, failures });
 }
 
 export default async (req: Request): Promise<Response> => {
@@ -136,7 +170,17 @@ export default async (req: Request): Promise<Response> => {
       .order('category')
       .order('slug');
     if (error) return errorResponse(500, error.message);
-    return jsonResponse({ documents: data ?? [] });
+    // Chunk counts per doc (corpus size at a glance in the Knowledge screen).
+    const counts = new Map<string, number>();
+    const { data: chunkRows } = await ctx.sb.from('knowledge_chunks').select('doc_id');
+    for (const r of chunkRows ?? []) {
+      counts.set(r.doc_id, (counts.get(r.doc_id) ?? 0) + 1);
+    }
+    const documents = (data ?? []).map((d) => ({
+      ...d,
+      chunk_count: counts.get(d.id) ?? 0,
+    }));
+    return jsonResponse({ documents });
   }
 
   if (req.method !== 'POST') return errorResponse(405, 'Method not allowed');

@@ -45,6 +45,16 @@ export interface SimulationConfig {
   /** Global customer-prompt wraps (applied to every scenario, on top of per-scenario ones). */
   customerPromptPrefix?: string;
   customerPromptSuffix?: string;
+  /** Retrieval (RAG) knobs — admin-tunable without a deploy. */
+  rag?: { enabled?: boolean; k?: number };
+}
+
+/** Resolved retrieval knobs. Defaults: enabled, top-4 chunks. */
+export function resolveRag(config: SimulationConfig = {}): { enabled: boolean; k: number } {
+  return {
+    enabled: config.rag?.enabled !== false,
+    k: Math.max(1, Math.min(8, Math.round(config.rag?.k ?? 4))),
+  };
 }
 
 export interface ResolvedDimension {

@@ -194,6 +194,19 @@ export interface ScenarioOverrideRow {
   updated_at: string;
 }
 
+export interface KnowledgeDocument {
+  id: string;
+  slug: string;
+  title: string;
+  category: string;
+  source: string;
+  metadata: Record<string, unknown> | null;
+  content: string;
+  updated_at: string;
+  created_at: string;
+  chunk_count: number;
+}
+
 export interface AuditLogRow {
   id: string;
   actor_id: string | null;

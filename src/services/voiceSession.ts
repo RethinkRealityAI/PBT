@@ -5,6 +5,9 @@ import type { ChatMessage, ScoreReport } from './types';
 import { buildVoiceSystemPrompt } from '../data/knowledge/promptBuilders';
 import { evaluateConversation, MODEL_LIVE } from './geminiService';
 import { useSimulationConfig } from '../app/providers/FlagProvider';
+import { retrieveContext } from './ragClient';
+import { resolveRag } from '../data/knowledge/simulationConfig';
+import type { RetrievedChunk } from './ragShared';
 
 export type EmotionColor = 'red' | 'yellow' | 'green';
 export type VoiceStatus =
@@ -75,6 +78,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const simulationConfig = useSimulationConfig();
   const configRef = useRef(simulationConfig);
   configRef.current = simulationConfig;
+  // Knowledge retrieved for this voice session (RAG) — set in start().
+  const retrievedRef = useRef<RetrievedChunk[]>([]);
 
   // Session stored as a Promise (reference pattern) — all sends via .then()
   const sessionPromiseRef = useRef<Promise<unknown> | null>(null);
@@ -324,6 +329,18 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   }, []);
 
   const start = useCallback(async (scenario: Scenario) => {
+    // RAG: fail-open retrieval before the prompt is built (mirrors text mode).
+    try {
+      const ragCfg = resolveRag(configRef.current ?? undefined);
+      retrievedRef.current = ragCfg.enabled
+        ? await retrieveContext(
+            `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
+            { k: ragCfg.k, cacheKey: scenario._overrideId ?? scenario.pushback.id + scenario.breed },
+          )
+        : [];
+    } catch {
+      retrievedRef.current = [];
+    }
     if (statusRef.current === 'connecting') return;
     try {
       finalizePromiseRef.current = null;
@@ -369,7 +386,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       const sessionPromise = (ai.live.connect as (opts: unknown) => Promise<unknown>)({
         model: MODEL_LIVE,
         config: {
-          systemInstruction: buildVoiceSystemPrompt(scenario, {}, configRef.current ?? undefined),
+          systemInstruction: buildVoiceSystemPrompt(scenario, {}, configRef.current ?? undefined, retrievedRef.current),
           tools: [
             {
               functionDeclarations: [

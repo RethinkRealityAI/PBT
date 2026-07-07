@@ -86,6 +86,35 @@ function describeDraft(draft: ScenarioDraftForAi): string {
   return lines.length ? lines.join('\n') : '(no fields filled in yet)';
 }
 
+/** Fail-open fetch of study-grounded context from the public RAG endpoint. */
+async function fetchGrounding(draft: ScenarioDraftForAi): Promise<string> {
+  try {
+    const query = [draft.pushback_id, draft.breed, draft.life_stage, 'owner pushback']
+      .filter(Boolean)
+      .join(' ');
+    const res = await fetch('/.netlify/functions/rag-retrieve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query, k: 3 }),
+      signal: AbortSignal.timeout(2500),
+    });
+    if (!res.ok) return '';
+    const data = (await res.json()) as {
+      results?: Array<{ content: string; citation: string | null }>;
+    };
+    const results = data.results ?? [];
+    if (results.length === 0) return '';
+    return (
+      '\n\nResearch grounding (reflect these findings in your suggestions):\n' +
+      results
+        .map((r) => `- ${r.content.replace(/\s+/g, ' ').slice(0, 400)}${r.citation ? ` [${r.citation}]` : ''}`)
+        .join('\n')
+    );
+  } catch {
+    return '';
+  }
+}
+
 export async function suggestField(
   field: WizardField,
   draft: ScenarioDraftForAi,
@@ -93,6 +122,7 @@ export async function suggestField(
   const ai = getClient();
   const desc = FIELD_DESCRIPTIONS[field];
   const filled = describeDraft(draft);
+  const grounding = await fetchGrounding(draft);
 
   const systemInstruction = `
 You are helping a Royal Canin training admin design a vet-clinic pushback
@@ -104,7 +134,7 @@ Field to suggest: ${field}
 Field guidance: ${desc}
 
 Already filled (treat as constraints — don't contradict):
-${filled}
+${filled}${grounding}
 
 Output JSON: { suggestions: string[] } with exactly 3 distinct options.
 `.trim();
