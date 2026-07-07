@@ -155,10 +155,12 @@ export function App() {
   return (
     <div style={{ position: 'relative', minHeight: '100vh' }}>
       <BackgroundHalos />
-      <FloatingNav active={view} onNav={setView} />
+      {/* Clear the shared search query on screen change — otherwise a filter
+          typed on one screen silently constrains every other screen too. */}
+      <FloatingNav active={view} onNav={(s) => { setQuery(''); setView(s); }} />
       <div style={{ position: 'relative', zIndex: 1 }}>
         {view === 'overview' && <OverviewScreen range={range} onRange={setRange} onNav={setView} />}
-        {view === 'insights' && <InsightsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
+        {view === 'insights' && <InsightsScreen range={range} onRange={setRange} />}
         {view === 'users' && <UsersScreen query={query} onQuery={setQuery} meUserId={auth.userId} />}
         {view === 'sessions' && <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
         {view === 'scenarios' && <ScenariosScreen query={query} onQuery={setQuery} />}

@@ -139,9 +139,15 @@ function buildScoreTrend(
 
   for (const s of completed) {
     if (s.score_overall == null) continue;
-    const ageDays = Math.floor((now - new Date(s.created_at).getTime()) / DAY_MS);
+    // Clamp to 0 so a session with a slightly-future created_at (server/client
+    // clock skew) lands in the newest bucket instead of silently vanishing
+    // from the trend while still counting in the KPI row.
+    const ageDays = Math.max(
+      0,
+      Math.floor((now - new Date(s.created_at).getTime()) / DAY_MS),
+    );
     const ageBuckets = Math.floor(ageDays / bucketSizeDays);
-    if (ageBuckets < 0 || ageBuckets >= bucketCount) continue;
+    if (ageBuckets >= bucketCount) continue;
     const idx = bucketCount - 1 - ageBuckets;
     sums[idx].sum += s.score_overall;
     sums[idx].count++;

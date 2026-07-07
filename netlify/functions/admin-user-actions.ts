@@ -117,6 +117,11 @@ export default async (req: Request): Promise<Response> => {
     // ── Promote / demote admin ─────────────────────────────────
     if (op === 'set_admin') {
       const value = body.value === true;
+      if (value && target.disabled) {
+        // A disabled admin can't sign in and doesn't count toward the active-
+        // admin pool — granting the badge would be phantom coverage.
+        return errorResponse(400, 'Enable the account before granting admin access.');
+      }
       if (!value) {
         if (userId === actingId) return errorResponse(400, "You can't remove your own admin access.");
         if (wouldOrphanAdmins(target, await countActiveAdmins(ctx))) {
@@ -125,6 +130,13 @@ export default async (req: Request): Promise<Response> => {
       }
       const { error } = await ctx.sb.from('profiles').update({ is_admin: value }).eq('user_id', userId);
       if (error) return errorResponse(500, error.message);
+      if (!value && (await countActiveAdmins(ctx)) === 0) {
+        // Compensate the check-then-act race: two admins demoting each other
+        // concurrently can both pass the pre-check. Whoever lands second (or
+        // both) reverts, failing safe toward "still an admin".
+        await ctx.sb.from('profiles').update({ is_admin: true }).eq('user_id', userId);
+        return errorResponse(409, 'Concurrent change would have removed the last active admin — reverted.');
+      }
       await writeAuditLog(ctx, {
         entity_type: 'user',
         entity_id: userId,
@@ -150,6 +162,13 @@ export default async (req: Request): Promise<Response> => {
       if (banErr) return errorResponse(500, banErr.message);
       const { error } = await ctx.sb.from('profiles').update({ disabled: value }).eq('user_id', userId);
       if (error) return errorResponse(500, error.message);
+      if (value && target.is_admin && (await countActiveAdmins(ctx)) === 0) {
+        // Same compensating post-check as set_admin: concurrent mutual
+        // disables both pass the pre-check; revert (profile + ban) and 409.
+        await ctx.sb.from('profiles').update({ disabled: false }).eq('user_id', userId);
+        await ctx.sb.auth.admin.updateUserById(userId, { ban_duration: 'none' }).catch(() => {});
+        return errorResponse(409, 'Concurrent change would have disabled the last active admin — reverted.');
+      }
       await writeAuditLog(ctx, {
         entity_type: 'user',
         entity_id: userId,
@@ -166,8 +185,28 @@ export default async (req: Request): Promise<Response> => {
       if (wouldOrphanAdmins(target, await countActiveAdmins(ctx))) {
         return errorResponse(400, "Can't delete the last active admin.");
       }
+      if (target.is_admin && !target.disabled) {
+        // Deleting an active admin can't be reverted, so route it through the
+        // race-compensated demote first: strip is_admin, re-count, and abort
+        // (restoring the flag) if that would leave zero active admins.
+        await ctx.sb.from('profiles').update({ is_admin: false }).eq('user_id', userId);
+        if ((await countActiveAdmins(ctx)) === 0) {
+          await ctx.sb.from('profiles').update({ is_admin: true }).eq('user_id', userId);
+          return errorResponse(409, 'Concurrent change would have deleted the last active admin — aborted.');
+        }
+      }
       const { error } = await ctx.sb.auth.admin.deleteUser(userId);
-      if (error) return errorResponse(500, error.message);
+      if (error) {
+        // Deletion failed after the demote step — restore the admin flag so a
+        // transient auth error doesn't silently strip access.
+        if (target.is_admin && !target.disabled) {
+          await ctx.sb.from('profiles').update({ is_admin: true }).eq('user_id', userId).then(
+            () => {},
+            () => {},
+          );
+        }
+        return errorResponse(500, error.message);
+      }
       await writeAuditLog(ctx, {
         entity_type: 'user',
         entity_id: userId,

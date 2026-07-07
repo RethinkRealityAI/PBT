@@ -66,6 +66,11 @@ export function FloatingNav({
           pointerEvents: 'auto',
           display: 'inline-flex',
           alignItems: 'center',
+          // 14 nav items exceed ~1450px in a single row; wrap into a second
+          // centered row on laptop widths instead of clipping off both edges.
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          maxWidth: '100%',
           gap: 4,
           padding: 6,
           borderRadius: RADIUS.xl,

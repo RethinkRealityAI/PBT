@@ -83,10 +83,13 @@ export function UsersScreen({
     });
   }, [users.data, sessions.data]);
 
+  // Match everything the row visibly shows — name, email, and user id.
   const filtered = enriched.filter((u) =>
     !query
       ? true
-      : (u.display_name ?? '').toLowerCase().includes(query.toLowerCase()),
+      : `${u.display_name ?? ''} ${u.email ?? ''} ${u.user_id}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
   );
 
   return (
@@ -213,7 +216,15 @@ export function UsersScreen({
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11, color: COLOR.inkMute }}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: COLOR.inkMute,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
                     {u.email ?? u.user_id.slice(0, 8)}
                   </div>
                 </div>
