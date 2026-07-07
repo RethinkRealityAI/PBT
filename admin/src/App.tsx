@@ -6,6 +6,7 @@ import { COLOR } from './lib/tokens';
 import { Glass } from './primitives/Glass';
 import { FloatingNav, type AdminScreen, type Range } from './primitives/Shell';
 import { OverviewScreen } from './screens/OverviewScreen';
+import { InsightsScreen } from './screens/InsightsScreen';
 import { UsersScreen } from './screens/UsersScreen';
 import { SessionsScreen } from './screens/SessionsScreen';
 import { ScenariosScreen } from './screens/ScenariosScreen';
@@ -157,6 +158,7 @@ export function App() {
       <FloatingNav active={view} onNav={setView} />
       <div style={{ position: 'relative', zIndex: 1 }}>
         {view === 'overview' && <OverviewScreen range={range} onRange={setRange} onNav={setView} />}
+        {view === 'insights' && <InsightsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
         {view === 'users' && <UsersScreen query={query} onQuery={setQuery} meUserId={auth.userId} />}
         {view === 'sessions' && <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
         {view === 'scenarios' && <ScenariosScreen query={query} onQuery={setQuery} />}
