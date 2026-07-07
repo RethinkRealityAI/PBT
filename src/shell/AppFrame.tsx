@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { GradientBg } from '../design-system/GradientBg';
 import { Sidebar } from './Sidebar';
 import { useProfile } from '../app/providers/ProfileProvider';
+import { useNavigation } from '../app/providers/NavigationProvider';
+import { PRE_ONBOARDING_SCREENS } from '../app/routes';
 import { DRIVER_COLORS } from '../design-system/tokens';
 
 const BRAND_RED = 'oklch(0.62 0.22 25)';
@@ -17,7 +19,14 @@ const BRAND_RED = 'oklch(0.62 0.22 25)';
  */
 export function AppFrame({ children }: { children: ReactNode }) {
   const { profile } = useProfile();
+  const { current } = useNavigation();
   const colors = profile ? DRIVER_COLORS[profile.primary] : null;
+
+  // "Chromeless" = onboarding flow (no locked profile yet, or on a
+  // pre-onboarding screen). In that state the desktop sidebar is hidden, so we
+  // keep the content in a centered focused column on ALL breakpoints instead of
+  // stretching it full-width across a large desktop viewport.
+  const chromeless = !profile || PRE_ONBOARDING_SCREENS.includes(current);
 
   return (
     <div className="relative min-h-[100dvh] w-full" style={{ isolation: 'isolate' }}>
@@ -48,15 +57,17 @@ export function AppFrame({ children }: { children: ReactNode }) {
         className={[
           'relative flex h-[100dvh] min-h-0 w-full overflow-x-hidden overflow-y-hidden flex-col',
           'mx-auto max-w-[var(--pbt-layout-max)]',
-          'lg:mx-0 lg:max-w-none lg:flex-row lg:overflow-x-visible',
+          // Only expand to the full-width desktop sidebar layout once the user
+          // has onboarded; during onboarding stay a centered focused column.
+          chromeless ? '' : 'lg:mx-0 lg:max-w-none lg:flex-row lg:overflow-x-visible',
         ].join(' ')}
         style={{
           fontFamily: 'var(--pbt-font-body)',
           color: 'var(--pbt-text)',
         }}
       >
-        {/* Sidebar — hidden on mobile/tablet, 240px on desktop */}
-        <Sidebar />
+        {/* Sidebar — hidden on mobile/tablet, and until onboarding is complete */}
+        {!chromeless && <Sidebar />}
 
         {/* Content area — overflow-y auto so screens scroll; overflow-x clipped by rail */}
         <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden">
