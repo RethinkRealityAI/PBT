@@ -18,10 +18,12 @@ import type {
   AuditLogRow,
   FlagDef,
   FlagRule,
+  KnowledgeDocument,
   NavEvent,
   PlatformReportRow,
   ScenarioOverrideRow,
   SessionFeedbackRow,
+  UserAction,
   UserScenario,
 } from './types';
 
@@ -64,12 +66,17 @@ function useQuery<T>(
 
 export { rangeToSince };
 
-export function useAdminUsers() {
+export function useAdminUsers(refreshKey: number = 0) {
   return useQuery<AdminUser[]>(
     () => apiFetch<AdminUser[]>('admin-users'),
-    [],
+    [refreshKey],
     [],
   );
+}
+
+/** Run a user/admin management action (promote, disable, create, delete). */
+export function runUserAction(action: UserAction): Promise<{ ok: true; user_id?: string }> {
+  return postJson<{ ok: true; user_id?: string }>('admin-user-actions', action);
 }
 
 export function useAdminSessions(range = '28d', limit = 500) {
@@ -279,6 +286,59 @@ export function saveSimulationConfig(
   config: Record<string, unknown>,
 ): Promise<{ config: Record<string, unknown> }> {
   return postJson<{ config: Record<string, unknown> }>('admin-simulation-config', { config });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Knowledge base (RAG)
+// ─────────────────────────────────────────────────────────────
+
+export function useKnowledgeDocuments(refreshKey: number = 0) {
+  return useQuery<KnowledgeDocument[]>(
+    () =>
+      apiFetch<{ documents: KnowledgeDocument[] }>('admin-knowledge').then(
+        (res) => res.documents ?? [],
+      ),
+    [refreshKey],
+    [],
+  );
+}
+
+export interface IngestKnowledgeBody {
+  pdfBase64?: string;
+  text?: string;
+  title?: string;
+  category: 'clinical' | 'custom';
+  tags?: Record<string, unknown>;
+}
+
+export function ingestKnowledge(
+  body: IngestKnowledgeBody,
+): Promise<{ ok: true; slug: string; chunks: number }> {
+  return postJson<{ ok: true; slug: string; chunks: number }>(
+    'admin-knowledge-ingest',
+    { op: 'ingest', ...body },
+  );
+}
+
+export function reembedKnowledge(slug: string): Promise<{ ok: true; chunks: number }> {
+  return postJson<{ ok: true; chunks: number }>('admin-knowledge-ingest', {
+    op: 're-embed',
+    slug,
+  });
+}
+
+export function ingestBundledStudies(): Promise<{ ok: true; ingested: number }> {
+  return postJson<{ ok: true; ingested: number }>('admin-knowledge-ingest', {
+    op: 'ingest-bundled',
+  });
+}
+
+export function seedKnowledge(): Promise<{ ok: true; seeded: number }> {
+  return postJson<{ ok: true; seeded: number }>('admin-knowledge', { op: 'seed' });
+}
+
+export function deleteKnowledge(slug: string): Promise<{ ok: true }> {
+  return postJson<{ ok: true }>('admin-knowledge', { op: 'delete', slug });
 }
 
 // ─────────────────────────────────────────────────────────────

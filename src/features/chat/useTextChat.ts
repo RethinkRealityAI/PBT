@@ -20,6 +20,9 @@ import { uuid } from '../../lib/id';
 import { getSupabase } from '../auth/supabaseClient';
 import { recordTurns } from '../../services/aiTelemetry';
 import { persistRagDocument } from '../../services/ragDocument';
+import { retrieveContext } from '../../services/ragClient';
+import { resolveRag } from '../../data/knowledge/simulationConfig';
+import type { RetrievedChunk } from '../../services/ragShared';
 import { logEvent } from '../../lib/analytics';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
@@ -222,6 +225,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Allocated at open() so AI telemetry rows can attribute to the session
   // even before it's saved to history.
   const recordIdRef = useRef<string | null>(null);
+  // Knowledge retrieved for this session (RAG) — fetched once at open(),
+  // injected into every customer turn + the scorer. [] = ungrounded.
+  const retrievedRef = useRef<RetrievedChunk[]>([]);
   const persistedRef = useRef<boolean>(false);
 
   /**
@@ -284,10 +290,20 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     }
 
     try {
+      // RAG: one fail-open retrieval per session, cached per scenario.
+      const ragCfg = resolveRag(simulationConfig ?? undefined);
+      retrievedRef.current = ragCfg.enabled
+        ? await retrieveContext(
+            `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
+            { k: ragCfg.k, cacheKey: scenario._overrideId ?? scenarioSummaryLine(scenario) },
+          )
+        : [];
+
       const first = await generateRoleplayMessage(scenario, [], undefined, {
         sessionId: recordIdRef.current,
         promptOverrides,
         config: simulationConfig ?? undefined,
+        retrieved: retrievedRef.current,
       });
       appendTurn(first);
       setStatus('awaitingUser');
@@ -324,6 +340,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
             sessionId: recordIdRef.current,
             promptOverrides,
             config: simulationConfig ?? undefined,
+            retrieved: retrievedRef.current,
           },
         );
 
@@ -397,6 +414,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       report = await evaluateConversation(scenario, msgs, {
         sessionId: recordIdRef.current,
         config: simulationConfig ?? undefined,
+        retrieved: retrievedRef.current,
       });
     } catch (err) {
       console.error('[useTextChat] scoring failed', err);
@@ -441,6 +459,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       mode: 'text',
       modelId: MODEL_TEXT,
       completed: true,
+      retrieved: retrievedRef.current,
     });
   }, [scenario, simulationConfig]);
 

@@ -29,10 +29,12 @@ import {
 } from '../primitives';
 import { COLOR, DRIVERS } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
+import { Glass } from '../primitives/Glass';
 import type { AdminSession, AdminUser, AnalyzerEvent, UserScenario } from '../data/types';
+import { runUserAction } from '../data/queries';
 import { SessionModal } from './SessionModal';
 
-type TabKey = 'overview' | 'sessions' | 'scenarios' | 'analyzer' | 'ai';
+type TabKey = 'overview' | 'sessions' | 'scenarios' | 'analyzer' | 'ai' | 'manage';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
@@ -40,6 +42,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'scenarios', label: 'Scenarios' },
   { key: 'analyzer', label: 'Analyzer' },
   { key: 'ai', label: 'AI signals' },
+  { key: 'manage', label: 'Manage' },
 ];
 
 export function UserModal({
@@ -48,6 +51,8 @@ export function UserModal({
   scenarios,
   analyzerEvents,
   onClose,
+  meUserId,
+  onChanged,
 }: {
   user: AdminUser | null;
   /** Sessions belonging to THIS user. Filter at the call site. */
@@ -57,6 +62,10 @@ export function UserModal({
   /** Analyzer events authored by THIS user. */
   analyzerEvents: AnalyzerEvent[];
   onClose: () => void;
+  /** The acting admin's id — self-destructive actions are hidden for it. */
+  meUserId?: string;
+  /** Fired after a successful management action so the list can refetch. */
+  onChanged?: () => void;
 }) {
   const [tab, setTab] = useState<TabKey>('overview');
   // Drilldown: clicking a session inside the user modal opens a session
@@ -94,6 +103,17 @@ export function UserModal({
             {tab === 'scenarios' && <ScenariosTab scenarios={scenarios} />}
             {tab === 'analyzer' && <AnalyzerTab events={analyzerEvents} />}
             {tab === 'ai' && <AISignalsTab sessions={sessions} />}
+            {tab === 'manage' && (
+              <ManageTab
+                user={user}
+                isSelf={!!meUserId && meUserId === user.user_id}
+                onChanged={onChanged}
+                onDeleted={() => {
+                  onChanged?.();
+                  onClose();
+                }}
+              />
+            )}
           </div>
         </div>
       </Modal>
@@ -186,6 +206,11 @@ function UserHeader({
           {user.is_admin && (
             <StatusPill tone="warn" dot={false}>
               Admin
+            </StatusPill>
+          )}
+          {user.disabled && (
+            <StatusPill tone="danger" dot={false}>
+              Disabled
             </StatusPill>
           )}
           <StatusPill tone="neutral" dot={false}>
@@ -296,13 +321,13 @@ function OverviewTab({
           }
         />
       </div>
-      <Glass>
+      <Glass padding={18} radius={16} shine={false}>
         <Eyebrow>28-day session activity</Eyebrow>
         <div style={{ marginTop: 8 }}>
           <Sparkline data={buckets} width={1000} height={56} color={driverColor} />
         </div>
       </Glass>
-      <Glass>
+      <Glass padding={18} radius={16} shine={false}>
         <Eyebrow>Behaviour signals</Eyebrow>
         <RailRow
           label="Voice mode sessions"
@@ -509,7 +534,7 @@ function AISignalsTab({ sessions }: { sessions: AdminSession[] }) {
         <MiniStat label="Refusals" value={refusals.length} />
         <MiniStat label="Off-topic" value={offTopic.length} />
       </div>
-      <Glass>
+      <Glass padding={18} radius={16} shine={false}>
         <Eyebrow>Per-call telemetry</Eyebrow>
         <div style={{ marginTop: 6, fontSize: 12, color: COLOR.inkMute, lineHeight: 1.55 }}>
           Per-call latency, tokens, and cost live in the AI Quality screen
@@ -518,6 +543,200 @@ function AISignalsTab({ sessions }: { sessions: AdminSession[] }) {
         </div>
       </Glass>
     </div>
+  );
+}
+
+// ─── Manage tab (account write-ops) ─────────────────────────
+function ManageTab({
+  user,
+  isSelf,
+  onChanged,
+  onDeleted,
+}: {
+  user: AdminUser;
+  isSelf: boolean;
+  onChanged?: () => void;
+  onDeleted: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function run(op: string, action: () => Promise<unknown>) {
+    setBusy(op);
+    setError(null);
+    try {
+      await action();
+      onChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560 }}>
+      {isSelf && (
+        <div style={{ fontSize: 12.5, color: COLOR.inkMute, lineHeight: 1.5 }}>
+          This is your own account — self-destructive actions (removing your admin
+          access, disabling, or deleting) are unavailable here to prevent lockout.
+        </div>
+      )}
+
+      {/* Admin access */}
+      <ManageRow
+        title="Admin access"
+        desc={user.is_admin ? 'This user can access the admin dashboard.' : 'Grant admin dashboard access.'}
+        action={
+          <ActionButton
+            tone={user.is_admin ? 'neutral' : 'primary'}
+            disabled={busy !== null || (user.is_admin && isSelf)}
+            loading={busy === 'admin'}
+            onClick={() =>
+              run('admin', () =>
+                runUserAction({ op: 'set_admin', userId: user.user_id, value: !user.is_admin }),
+              )
+            }
+          >
+            {user.is_admin ? 'Revoke admin' : 'Make admin'}
+          </ActionButton>
+        }
+      />
+
+      {/* Enable / disable */}
+      <ManageRow
+        title="Account status"
+        desc={user.disabled ? 'Disabled — this user cannot sign in.' : 'Active — the user can sign in and train.'}
+        action={
+          <ActionButton
+            tone={user.disabled ? 'primary' : 'warn'}
+            disabled={busy !== null || (!user.disabled && isSelf)}
+            loading={busy === 'disabled'}
+            onClick={() =>
+              run('disabled', () =>
+                runUserAction({ op: 'set_disabled', userId: user.user_id, value: !user.disabled }),
+              )
+            }
+          >
+            {user.disabled ? 'Enable account' : 'Disable account'}
+          </ActionButton>
+        }
+      />
+
+      {/* Delete */}
+      <ManageRow
+        title="Delete account"
+        desc="Permanently removes this user, their profile, training sessions, pet records, and built scenarios. Anonymized telemetry, analytics events, and RAG documents are retained."
+        danger
+        action={
+          !confirmDelete ? (
+            <ActionButton tone="danger" disabled={busy !== null || isSelf} onClick={() => setConfirmDelete(true)}>
+              Delete…
+            </ActionButton>
+          ) : (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <ActionButton
+                tone="danger"
+                loading={busy === 'delete'}
+                disabled={busy !== null}
+                onClick={() =>
+                  run('delete', async () => {
+                    await runUserAction({ op: 'delete', userId: user.user_id });
+                    onDeleted();
+                  })
+                }
+              >
+                Confirm delete
+              </ActionButton>
+              <ActionButton tone="neutral" disabled={busy !== null} onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </ActionButton>
+            </div>
+          )
+        }
+      />
+
+      {error && (
+        <div style={{ fontSize: 12.5, color: COLOR.danger, fontWeight: 600 }}>{error}</div>
+      )}
+    </div>
+  );
+}
+
+function ManageRow({
+  title,
+  desc,
+  action,
+  danger,
+}: {
+  title: string;
+  desc: string;
+  action: React.ReactNode;
+  danger?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        padding: 16,
+        borderRadius: 14,
+        background: 'rgba(255,255,255,0.6)',
+        border: danger ? `0.5px solid ${COLOR.dangerSoft}` : '0.5px solid rgba(255,255,255,0.9)',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: COLOR.ink }}>{title}</div>
+        <div style={{ fontSize: 12, color: COLOR.inkSoft, marginTop: 2 }}>{desc}</div>
+      </div>
+      <div style={{ flexShrink: 0 }}>{action}</div>
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  tone,
+  onClick,
+  disabled,
+  loading,
+}: {
+  children: React.ReactNode;
+  tone: 'primary' | 'warn' | 'danger' | 'neutral';
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  const bg: Record<string, string> = {
+    primary: COLOR.brand,
+    warn: COLOR.warn,
+    danger: COLOR.danger,
+    neutral: 'rgba(255,255,255,0.7)',
+  };
+  const fg = tone === 'neutral' ? COLOR.ink : '#fff';
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: '8px 14px',
+        borderRadius: 10,
+        border: tone === 'neutral' ? '1px solid rgba(60,20,15,0.12)' : 'none',
+        background: bg[tone],
+        color: fg,
+        fontWeight: 700,
+        fontSize: 13,
+        fontFamily: 'var(--pbt-font)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {loading ? '…' : children}
+    </button>
   );
 }
 
@@ -546,22 +765,6 @@ function MiniStat({ label, value }: { label: string; value: string | number }) {
       >
         {value}
       </div>
-    </div>
-  );
-}
-
-function Glass({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        padding: 18,
-        borderRadius: 16,
-        background: 'rgba(255,255,255,0.55)',
-        border: '0.5px solid rgba(255,255,255,0.9)',
-        boxShadow: '0 1px 0 rgba(255,255,255,0.95) inset',
-      }}
-    >
-      {children}
     </div>
   );
 }

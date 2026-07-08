@@ -21,6 +21,22 @@ export const SCREENS_WITH_TAB_BAR: Screen[] = [
   'settings',
 ];
 
+/**
+ * Pre-onboarding flow — the app chrome (desktop sidebar) is hidden on these
+ * screens so a first-time user can't jump into gated areas before finishing
+ * terms + the ECHO quiz. The sidebar also requires a locked profile to show.
+ *
+ * 'result' is deliberately NOT here: by the time it renders the profile is
+ * locked (quiz completion sets it before navigating), and onboarded users
+ * revisit it from Home to view their ECHO profile — hiding the chrome there
+ * would snap the desktop layout back to onboarding width mid-session.
+ */
+export const PRE_ONBOARDING_SCREENS: Screen[] = [
+  'onboarding',
+  'terms',
+  'quiz',
+];
+
 export interface TabDef {
   screen: Screen;
   label: string;

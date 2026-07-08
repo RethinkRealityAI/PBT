@@ -6,6 +6,8 @@ import { COLOR } from './lib/tokens';
 import { Glass } from './primitives/Glass';
 import { FloatingNav, type AdminScreen, type Range } from './primitives/Shell';
 import { OverviewScreen } from './screens/OverviewScreen';
+import { InsightsScreen } from './screens/InsightsScreen';
+import { AnalyticsScreen } from './screens/AnalyticsScreen';
 import { UsersScreen } from './screens/UsersScreen';
 import { SessionsScreen } from './screens/SessionsScreen';
 import { ScenariosScreen } from './screens/ScenariosScreen';
@@ -18,6 +20,7 @@ import { ScenarioBuilderScreen } from './screens/ScenarioBuilderScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
 import { SimulationScreen } from './screens/SimulationScreen';
+import { KnowledgeScreen } from './screens/KnowledgeScreen';
 import { SignInGate } from './screens/SignInGate';
 
 type AdminState =
@@ -154,10 +157,14 @@ export function App() {
   return (
     <div style={{ position: 'relative', minHeight: '100vh' }}>
       <BackgroundHalos />
-      <FloatingNav active={view} onNav={setView} />
+      {/* Clear the shared search query on screen change — otherwise a filter
+          typed on one screen silently constrains every other screen too. */}
+      <FloatingNav active={view} onNav={(s) => { setQuery(''); setView(s); }} />
       <div style={{ position: 'relative', zIndex: 1 }}>
         {view === 'overview' && <OverviewScreen range={range} onRange={setRange} onNav={setView} />}
-        {view === 'users' && <UsersScreen query={query} onQuery={setQuery} />}
+        {view === 'insights' && <InsightsScreen range={range} onRange={setRange} />}
+        {view === 'analytics' && <AnalyticsScreen range={range} onRange={setRange} />}
+        {view === 'users' && <UsersScreen query={query} onQuery={setQuery} meUserId={auth.userId} />}
         {view === 'sessions' && <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
         {view === 'scenarios' && <ScenariosScreen query={query} onQuery={setQuery} />}
         {view === 'analyzer' && <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
@@ -167,6 +174,7 @@ export function App() {
         {view === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
         {view === 'overrides' && <ScenarioBuilderScreen query={query} onQuery={setQuery} />}
         {view === 'simulation' && <SimulationScreen />}
+        {view === 'knowledge' && <KnowledgeScreen query={query} onQuery={setQuery} />}
         {view === 'preview' && <PreviewScreen />}
         {view === 'audit' && <AuditLogScreen />}
       </div>

@@ -3,11 +3,12 @@
  * Adapted from the design-handoff JSX prototypes — typed, themed against
  * the main app's tokens, and trimmed of unused variants.
  */
-import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { COLOR, DRIVERS, RADIUS, type DriverKey } from '../lib/tokens';
 import { initialsOf } from '../lib/format';
+import { Glass } from './Glass';
 
-export { Glass } from './Glass';
+export { Glass };
 
 // ── Sparkline ─────────────────────────────────────────────────
 interface SparklineProps {
@@ -527,6 +528,100 @@ export function Modal({
         {children}
       </div>
     </div>
+  );
+}
+
+// ── Pill button (tab / toggle) ────────────────────────────────
+export function PillButton({
+  active,
+  onClick,
+  children,
+  size = 'md',
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  size?: 'sm' | 'md';
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: size === 'sm' ? '6px 12px' : '8px 16px',
+        borderRadius: 12,
+        border: 'none',
+        cursor: 'pointer',
+        background: active
+          ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.55 0.24 18))'
+          : 'rgba(255,255,255,0.7)',
+        color: active ? '#fff' : COLOR.inkSoft,
+        fontWeight: 700,
+        fontSize: size === 'sm' ? 12 : 13,
+        fontFamily: 'var(--pbt-font)',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── Collapsible (Glass accordion card) ────────────────────────
+export function Collapsible({
+  title,
+  badge,
+  accent,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  badge?: ReactNode;
+  accent?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Glass padding={0} radius={16}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '14px 18px',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+          fontFamily: 'var(--pbt-font)',
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            display: 'inline-block',
+            transition: 'transform 0.18s ease',
+            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+            color: COLOR.inkMute,
+            fontSize: 12,
+          }}
+        >
+          ▶
+        </span>
+        <span style={{ fontWeight: 800, fontSize: 14, color: COLOR.ink }}>{title}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          {accent}
+          {badge}
+        </div>
+      </button>
+      {open && (
+        <div style={{ padding: '0 18px 18px', borderTop: '1px solid rgba(60,20,15,0.06)' }}>
+          <div style={{ paddingTop: 14 }}>{children}</div>
+        </div>
+      )}
+    </Glass>
   );
 }
 

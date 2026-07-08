@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  resolveRag,
   resolveDimensions,
   resolveWeights,
   resolveDriverKnowledge,
@@ -135,6 +136,18 @@ describe('resolvePushbackKnowledge', () => {
 
   it('returns undefined for an unknown id with no config', () => {
     expect(resolvePushbackKnowledge('does-not-exist')).toBeUndefined();
+  });
+});
+
+describe('resolveRag', () => {
+  it('defaults to enabled with k=4', () => {
+    expect(resolveRag()).toEqual({ enabled: true, k: 4 });
+    expect(resolveRag({})).toEqual({ enabled: true, k: 4 });
+  });
+  it('respects admin overrides and clamps k to 1..8', () => {
+    expect(resolveRag({ rag: { enabled: false } }).enabled).toBe(false);
+    expect(resolveRag({ rag: { k: 99 } }).k).toBe(8);
+    expect(resolveRag({ rag: { k: 0 } }).k).toBe(1);
   });
 });
 

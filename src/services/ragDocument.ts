@@ -14,6 +14,92 @@
 import type { Scenario } from '../data/scenarios';
 import type { ChatMessage, ScoreReport } from './types';
 import { getSupabase } from '../features/auth/supabaseClient';
+import { estimateTokens } from './aiTelemetry';
+import type { RetrievedChunk } from './ragShared';
+
+/**
+ * One embedding-ready slice of a session (RAG foundation, SOW §3.2).
+ * 'exchange' = a customer→staff turn pair; 'coaching' = the scorer's
+ * critique + better-alternative for the whole session.
+ */
+export interface SessionChunk {
+  chunkIdx: number;
+  chunkType: 'exchange' | 'coaching';
+  content: string;
+  tokenEstimate: number;
+  tags: Record<string, unknown>;
+}
+
+/**
+ * Segment a session into tagged, embedding-ready chunks.
+ *
+ * Exchange chunks pair each customer turn with the staff reply that answered
+ * it — the natural retrieval unit for "how was this objection handled".
+ * A final coaching chunk carries the scorer's critique so retrieval can also
+ * surface "what the coach said about sessions like this".
+ */
+export function buildSessionChunks(
+  scenario: Scenario,
+  transcript: ChatMessage[],
+  scoreReport: ScoreReport | null,
+): SessionChunk[] {
+  const baseTags: Record<string, unknown> = {
+    pushback_id: scenario.pushback.id,
+    driver: scenario.suggestedDriver,
+    breed: scenario.breed,
+    life_stage: scenario.age,
+    difficulty: scenario.difficulty,
+    score_band: scoreReport?.band ?? null,
+    score_overall: scoreReport?.overall ?? null,
+  };
+
+  const chunks: SessionChunk[] = [];
+  let idx = 0;
+  let i = 0;
+  while (i < transcript.length) {
+    const msg = transcript[i];
+    if (msg.role !== 'ai') {
+      i++;
+      continue;
+    }
+    const reply = transcript[i + 1]?.role === 'user' ? transcript[i + 1] : null;
+    const content = reply
+      ? `CUSTOMER: ${msg.text}\nSTAFF: ${reply.text}`
+      : `CUSTOMER: ${msg.text}`;
+    chunks.push({
+      chunkIdx: idx++,
+      chunkType: 'exchange',
+      content,
+      tokenEstimate: estimateTokens(content),
+      tags: {
+        ...baseTags,
+        turn_range: [i, reply ? i + 1 : i],
+        has_staff_reply: reply != null,
+      },
+    });
+    i += reply ? 2 : 1;
+  }
+
+  if (scoreReport?.critique?.trim()) {
+    const content = [
+      `COACH CRITIQUE: ${scoreReport.critique.trim()}`,
+      scoreReport.betterAlternative?.trim() && scoreReport.betterAlternative !== '—'
+        ? `BETTER ALTERNATIVE: ${scoreReport.betterAlternative.trim()}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    chunks.push({
+      chunkIdx: idx++,
+      chunkType: 'coaching',
+      content,
+      tokenEstimate: estimateTokens(content),
+      tags: baseTags,
+    });
+  }
+
+  return chunks;
+}
 
 interface PersistArgs {
   sessionId: string;
@@ -24,6 +110,9 @@ interface PersistArgs {
   mode: 'text' | 'voice';
   modelId: string;
   completed: boolean;
+  /** Knowledge chunks injected into this session's prompts (RAG), recorded
+   *  for later effectiveness evaluation. */
+  retrieved?: RetrievedChunk[];
 }
 
 function assembleContent(
@@ -95,6 +184,9 @@ export async function persistRagDocument(args: PersistArgs): Promise<void> {
           }
         : null,
       key_moments: args.scoreReport?.keyMoments ?? null,
+      retrieved: args.retrieved?.length
+        ? args.retrieved.map((r) => ({ citation: r.citation, similarity: r.similarity }))
+        : null,
       turn_sentiment: args.scoreReport?.turnSentiment ?? null,
     };
 
@@ -109,6 +201,24 @@ export async function persistRagDocument(args: PersistArgs): Promise<void> {
         },
         { onConflict: 'session_id' },
       );
+
+    // Embedding-ready chunks (RAG foundation): one row per customer→staff
+    // exchange + a coaching chunk. Same best-effort posture as the document.
+    const chunks = buildSessionChunks(args.scenario, args.transcript, args.scoreReport);
+    if (chunks.length > 0) {
+      await sb.from('rag_chunks').upsert(
+        chunks.map((c) => ({
+          session_id: args.sessionId,
+          user_id: user.id,
+          chunk_idx: c.chunkIdx,
+          chunk_type: c.chunkType,
+          content: c.content,
+          token_estimate: c.tokenEstimate,
+          tags: c.tags,
+        })),
+        { onConflict: 'session_id,chunk_idx' },
+      );
+    }
   } catch (err) {
     console.warn('[rag-document] persist failed', err);
   }

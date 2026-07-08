@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { Glass } from '../primitives/Glass';
 import {
+  Collapsible,
   EmptyState,
   Eyebrow,
   LoadingShimmer,
@@ -339,6 +340,7 @@ function Builder({
   const [draft, setDraft] = useState<Partial<ScenarioOverrideRow>>(() =>
     initial ?? { scenario_id: scenarioId, visible: false },
   );
+  const baselineRef = useRef<string>(JSON.stringify(draft));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testOpen, setTestOpen] = useState(false);
@@ -349,6 +351,26 @@ function Builder({
       setDraft((d) => ({ ...d, scenario_id: scenarioId }));
     }
   }, [scenarioId, draft.scenario_id]);
+
+  const dirty = useMemo(
+    () => JSON.stringify(draft) !== baselineRef.current,
+    [draft],
+  );
+
+  // Warn on tab/window close while there are unsaved changes.
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  function confirmDiscardIfDirty(): boolean {
+    return !dirty || confirm('Discard unsaved changes?');
+  }
 
   function patch(p: Partial<ScenarioOverrideRow>) {
     setDraft((d) => ({ ...d, ...p }));
@@ -389,6 +411,7 @@ function Builder({
         }
       }
       await upsertScenarioOverride({ ...trimmed, scenario_id: scenarioId });
+      baselineRef.current = JSON.stringify(draft);
       onSaved();
       onClose();
     } catch (err) {
@@ -400,6 +423,7 @@ function Builder({
 
   async function clearAndClose() {
     if (!initial) {
+      if (!confirmDiscardIfDirty()) return;
       onClose();
       return;
     }
@@ -425,8 +449,13 @@ function Builder({
         subtitle={`${scenarioId}${baseDescriptor ? ` · base: ${baseDescriptor.breed} ${baseDescriptor.driver}` : ' · admin-authored'}`}
       />
       <ScreenShell>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-          <button onClick={onClose} style={btnSecondary}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center' }}>
+          <button
+            onClick={() => {
+              if (confirmDiscardIfDirty()) onClose();
+            }}
+            style={btnSecondary}
+          >
             ← Back to list
           </button>
           <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
@@ -450,13 +479,36 @@ function Builder({
               </button>
             ))}
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
             <button onClick={() => setTestOpen((v) => !v)} style={btnSecondary}>
               {testOpen ? 'Hide test' : 'Test in app'}
             </button>
             <button onClick={clearAndClose} style={{ ...btnSecondary, color: COLOR.danger }}>
               {initial ? 'Remove overrides' : 'Discard'}
             </button>
+            {dirty && (
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: COLOR.warn,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    background: COLOR.warn,
+                    display: 'inline-block',
+                  }}
+                />
+                Unsaved changes
+              </span>
+            )}
             <button onClick={save} disabled={saving} style={btnPrimary}>
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -632,6 +684,7 @@ function VisualEditor({
             ? 'These define the scenario. All required for admin-authored scenarios.'
             : 'These overlay the base scenario from code. Empty = use base value.'
         }
+        defaultOpen
       >
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <Field label="Breed">
@@ -725,6 +778,7 @@ function VisualEditor({
       <Section
         label="AI prompt overrides"
         help="Wraps the canonical customer prompt. The 7-dim scoring rubric is preserved regardless."
+        defaultOpen
       >
         <Field label={`Prompt prefix (${(draft.prompt_prefix ?? '').length}/${PROMPT_MAX})`}>
           <textarea
@@ -752,34 +806,23 @@ function VisualEditor({
 function Section({
   label,
   help,
+  defaultOpen = false,
   children,
 }: {
   label: string;
   help?: string;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          letterSpacing: '0.10em',
-          textTransform: 'uppercase',
-          color: COLOR.ink,
-          fontFamily: 'var(--pbt-mono)',
-          marginBottom: 6,
-        }}
-      >
-        {label}
-      </div>
+    <Collapsible title={label} defaultOpen={defaultOpen}>
       {help && (
         <div style={{ fontSize: 12, color: COLOR.inkMute, marginBottom: 10 }}>
           {help}
         </div>
       )}
       <div style={{ display: 'grid', gap: 14 }}>{children}</div>
-    </div>
+    </Collapsible>
   );
 }
 
@@ -1201,7 +1244,7 @@ function TestIframe({
         title="Scenario test"
         style={{
           width: '100%',
-          height: 720,
+          height: 'min(720px, 70vh)',
           border: 'none',
           display: 'block',
           background: '#fff',

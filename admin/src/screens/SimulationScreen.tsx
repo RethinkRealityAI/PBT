@@ -25,7 +25,7 @@ import type { DriverKey } from '../../../src/design-system/tokens';
 import { DRIVER_KEYS } from '../../../src/design-system/tokens';
 import { useAdminSimulationConfig, saveSimulationConfig } from '../data/queries';
 import { Glass } from '../primitives/Glass';
-import { LoadingShimmer, SectionTitle } from '../primitives';
+import { Collapsible, LoadingShimmer, PillButton, SectionTitle } from '../primitives';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { COLOR } from '../lib/tokens';
 import { Field, inputStyle, textareaStyle, btnPrimary, btnSecondary } from './FlagsScreen';
@@ -59,6 +59,10 @@ interface DraftPushback {
   takeActionPatterns: string;
   watchOuts: string;
 }
+interface DraftRag {
+  enabled: boolean;
+  k: number;
+}
 interface Draft {
   dims: DraftDimension[];
   scoringPrefix: string;
@@ -67,7 +71,12 @@ interface Draft {
   pushbacks: Record<string, DraftPushback>;
   customerPrefix: string;
   customerSuffix: string;
+  rag: DraftRag;
 }
+
+/** Defaults for the retrieval (RAG) section — not part of defaultSimulationConfig()
+ *  since `rag` isn't a code-default-backed knowledge layer, just a toggle + k. */
+const DEFAULT_RAG: DraftRag = { enabled: true, k: 4 };
 
 // ─── Text<->array helpers ──────────────────────────────────────────────────────
 
@@ -148,6 +157,12 @@ function buildDraft(saved: Record<string, unknown>): Draft {
     };
   }
 
+  const savedRag = (saved.rag ?? {}) as { enabled?: unknown; k?: unknown };
+  const rag: DraftRag = {
+    enabled: typeof savedRag.enabled === 'boolean' ? savedRag.enabled : DEFAULT_RAG.enabled,
+    k: typeof savedRag.k === 'number' ? savedRag.k : DEFAULT_RAG.k,
+  };
+
   return {
     dims,
     scoringPrefix: typeof savedScoring.promptPrefix === 'string' ? savedScoring.promptPrefix : '',
@@ -156,6 +171,7 @@ function buildDraft(saved: Record<string, unknown>): Draft {
     pushbacks,
     customerPrefix: typeof saved.customerPromptPrefix === 'string' ? saved.customerPromptPrefix : '',
     customerSuffix: typeof saved.customerPromptSuffix === 'string' ? saved.customerPromptSuffix : '',
+    rag,
   };
 }
 
@@ -194,9 +210,18 @@ function emptyDraftPushback(id: string): DraftPushback {
 
 // ─── Diff the draft down to a MINIMAL config (only what differs from defaults) ──
 
-function buildMinimalConfig(draft: Draft): SimulationConfig {
+/**
+ * `rag` is being added to `SimulationConfig` by another engineer in parallel;
+ * intersect it locally rather than editing that shared type so this compiles
+ * whether or not the upstream field has landed yet. The cast at the save
+ * boundary (`as unknown as Record<string, unknown>`) already erases this to
+ * a plain object, so the intersection is purely a local typing convenience.
+ */
+type MinimalConfig = SimulationConfig & { rag?: { enabled: boolean; k: number } };
+
+function buildMinimalConfig(draft: Draft): MinimalConfig {
   const def = defaultSimulationConfig();
-  const out: SimulationConfig = {};
+  const out: MinimalConfig = {};
 
   // Scoring dimensions — per-field diff.
   const dimDefs = new Map(def.scoring.dimensions.map((d) => [d.key, d]));
@@ -278,69 +303,15 @@ function buildMinimalConfig(draft: Draft): SimulationConfig {
   if (draft.customerPrefix.trim()) out.customerPromptPrefix = draft.customerPrefix;
   if (draft.customerSuffix.trim()) out.customerPromptSuffix = draft.customerSuffix;
 
+  // Retrieval (RAG) — only emitted when it differs from the built-in default.
+  if (draft.rag.enabled !== DEFAULT_RAG.enabled || draft.rag.k !== DEFAULT_RAG.k) {
+    out.rag = { enabled: draft.rag.enabled, k: draft.rag.k };
+  }
+
   return out;
 }
 
-// ─── Reusable collapsible card ─────────────────────────────────────────────────
-
-function Collapsible({
-  title,
-  badge,
-  accent,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  badge?: React.ReactNode;
-  accent?: React.ReactNode;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <Glass padding={0} radius={16}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '14px 18px',
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          textAlign: 'left',
-          fontFamily: 'var(--pbt-font)',
-        }}
-      >
-        <span
-          aria-hidden
-          style={{
-            display: 'inline-block',
-            transition: 'transform 0.18s ease',
-            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
-            color: COLOR.inkMute,
-            fontSize: 12,
-          }}
-        >
-          ▶
-        </span>
-        <span style={{ fontWeight: 800, fontSize: 14, color: COLOR.ink }}>{title}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          {accent}
-          {badge}
-        </div>
-      </button>
-      {open && (
-        <div style={{ padding: '0 18px 18px', borderTop: '1px solid rgba(60,20,15,0.06)' }}>
-          <div style={{ paddingTop: 14 }}>{children}</div>
-        </div>
-      )}
-    </Glass>
-  );
-}
+// ─── Weight bar ─────────────────────────────────────────────────────────────────
 
 function WeightBar({ pct }: { pct: number }) {
   return (
@@ -375,41 +346,6 @@ function WeightBar({ pct }: { pct: number }) {
         {pct.toFixed(1)}%
       </span>
     </div>
-  );
-}
-
-// ─── Tab button ────────────────────────────────────────────────────────────────
-
-function PillButton({
-  active,
-  onClick,
-  children,
-  size = 'md',
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  size?: 'sm' | 'md';
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: size === 'sm' ? '6px 12px' : '8px 16px',
-        borderRadius: 12,
-        border: 'none',
-        cursor: 'pointer',
-        background: active
-          ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.55 0.24 18))'
-          : 'rgba(255,255,255,0.7)',
-        color: active ? '#fff' : COLOR.inkSoft,
-        fontWeight: 700,
-        fontSize: size === 'sm' ? 12 : 13,
-        fontFamily: 'var(--pbt-font)',
-      }}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -872,17 +808,51 @@ function PushbacksTab({
 // ─── Global prompt tab ──────────────────────────────────────────────────────────
 
 function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draft>) => void }) {
+  function setRag(p: Partial<DraftRag>) {
+    onPatch({ rag: { ...draft.rag, ...p } });
+  }
   return (
-    <Glass padding={18} radius={16}>
-      <SectionTitle title="Global customer prompt" subtitle="Applied to every simulation, on top of any per-scenario prompt wraps." />
-      <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
-        <Field label="Customer prompt prefix" help="Injected at the top of the customer system prompt.">
-          <textarea value={draft.customerPrefix} rows={5} onChange={(e) => onPatch({ customerPrefix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-        </Field>
-        <Field label="Customer prompt suffix" help="Appended to the customer system prompt.">
-          <textarea value={draft.customerSuffix} rows={5} onChange={(e) => onPatch({ customerSuffix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-        </Field>
-      </div>
-    </Glass>
+    <div style={{ display: 'grid', gap: 12 }}>
+      <Glass padding={18} radius={16}>
+        <SectionTitle title="Global customer prompt" subtitle="Applied to every simulation, on top of any per-scenario prompt wraps." />
+        <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
+          <Field label="Customer prompt prefix" help="Injected at the top of the customer system prompt.">
+            <textarea value={draft.customerPrefix} rows={5} onChange={(e) => onPatch({ customerPrefix: e.target.value })} style={textareaStyle} placeholder="(none)" />
+          </Field>
+          <Field label="Customer prompt suffix" help="Appended to the customer system prompt.">
+            <textarea value={draft.customerSuffix} rows={5} onChange={(e) => onPatch({ customerSuffix: e.target.value })} style={textareaStyle} placeholder="(none)" />
+          </Field>
+        </div>
+      </Glass>
+
+      <Glass padding={18} radius={16}>
+        <SectionTitle title="Retrieval (RAG)" subtitle="Pull relevant knowledge-base chunks into the customer + scoring prompts." />
+        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
+          <Field label="Enabled">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={draft.rag.enabled}
+                onChange={(e) => setRag({ enabled: e.target.checked })}
+              />
+              {draft.rag.enabled ? 'On' : 'Off'}
+            </label>
+          </Field>
+          <Field label="k" help="Chunks retrieved per turn (1–8).">
+            <input
+              type="number"
+              min={1}
+              max={8}
+              value={draft.rag.k}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                setRag({ k: Number.isFinite(n) ? Math.max(1, Math.min(8, n)) : DEFAULT_RAG.k });
+              }}
+              style={{ ...inputStyle, maxWidth: 100 }}
+            />
+          </Field>
+        </div>
+      </Glass>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   EmptyState,
   Eyebrow,
@@ -53,6 +53,18 @@ export function FlagsScreen({
     flag: FlagDef;
     rule: FlagRule | null;
   } | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  function flashSaved() {
+    setSaveStatus('saved');
+    setSaveError(null);
+    setTimeout(() => setSaveStatus('idle'), 3000);
+  }
+  function flashError(err: unknown) {
+    setSaveStatus('error');
+    setSaveError(err instanceof Error ? err.message : 'Save failed');
+  }
 
   const grouped = useMemo(() => {
     const out = new Map<FlagSurface, FlagDef[]>();
@@ -90,6 +102,14 @@ export function FlagsScreen({
         onQuery={onQuery}
       />
       <ScreenShell>
+        {saveStatus === 'saved' && (
+          <span style={{ fontSize: 13, color: COLOR.success, fontWeight: 700 }}>✓ Saved</span>
+        )}
+        {saveStatus === 'error' && (
+          <span style={{ fontSize: 13, color: COLOR.danger, fontWeight: 700 }}>
+            {saveError ?? 'Save failed'}
+          </span>
+        )}
         {snapshot.loading ? (
           <LoadingShimmer height={280} />
         ) : snapshot.data.flags.length === 0 ? (
@@ -112,8 +132,13 @@ export function FlagsScreen({
                       onEditRule={(rule) => setEditing({ flag, rule })}
                       onAddRule={() => setEditing({ flag, rule: null })}
                       onDeleteRule={async (id) => {
-                        await deleteFlagRule(id);
-                        setRefreshKey((k) => k + 1);
+                        try {
+                          await deleteFlagRule(id);
+                          setRefreshKey((k) => k + 1);
+                          flashSaved();
+                        } catch (err) {
+                          flashError(err);
+                        }
                       }}
                     />
                   );
@@ -131,6 +156,7 @@ export function FlagsScreen({
           onSaved={() => {
             setEditing(null);
             setRefreshKey((k) => k + 1);
+            flashSaved();
           }}
         />
       )}
@@ -503,6 +529,19 @@ export function ModalShell({
   children: React.ReactNode;
   width?: number;
 }) {
+  // Esc-to-close + body scroll lock, matching the shared Modal primitive.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
   return (
     <div
       onClick={onClose}

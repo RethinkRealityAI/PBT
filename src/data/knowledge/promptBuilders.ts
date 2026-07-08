@@ -13,6 +13,20 @@ import {
   resolvePushbackKnowledge,
   type SimulationConfig,
 } from './simulationConfig';
+import type { RetrievedChunk } from '../../services/ragShared';
+
+/** Render retrieved knowledge chunks as a named prompt section (RAG). */
+function formatRetrievedBlock(
+  retrieved: RetrievedChunk[] | undefined,
+  heading: string,
+  instruction: string,
+): string {
+  if (!retrieved || retrieved.length === 0) return '';
+  const lines = retrieved.map(
+    (c) => `- ${c.content.replace(/\s+/g, ' ').trim()}${c.citation ? ` [${c.citation}]` : ''}`,
+  );
+  return `# ${heading}\n${instruction}\n${lines.join('\n')}\n\n`;
+}
 
 /**
  * Bounded admin-side prompt overrides. The canonical customer prompt and
@@ -93,7 +107,13 @@ export function buildCustomerSystemPrompt(
   scenario: Scenario,
   overrides: PromptOverrides = {},
   config: SimulationConfig = {},
+  retrieved?: RetrievedChunk[],
 ): string {
+  const referenceBlock = formatRetrievedBlock(
+    retrieved,
+    'REFERENCE — WHAT RESEARCH SAYS ABOUT OWNERS LIKE YOU',
+    'Ground your behaviour in these findings. EMBODY them — never quote the studies, never cite authors or years in dialogue, never mention research exists.',
+  );
   const driver = resolveDriverKnowledge(scenario.suggestedDriver, config);
   const pushback = resolvePushbackKnowledge(scenario.pushback.id, config);
   const pushbackBlock = formatPushbackPromptSection(scenario);
@@ -149,7 +169,7 @@ ${pushback.rootConcerns.map((c) => `- ${c}`).join('\n')}` : ''}
 # CONTEXT FROM THE OWNER (optional)
 ${scenario.context ?? '(none)'}
 
-# RULES
+${referenceBlock}# RULES
 - Speak conversational AMERICAN ENGLISH. Use words like "friend", "buddy", "guys" — NOT "mate"/"mates"/"reckon"/"crikey"/"bloke". American spelling (color, behavior, recognize). No Australian or British slang.
 - ADDRESS THE STAFF MEMBER DIRECTLY using SECOND PERSON ("you"). They are speaking to you face-to-face. NEVER use third-person pronouns ("they", "them", "the staff", "the vet") to refer to the person you're talking with — that breaks the simulation. Only use third person when referring to other people who are NOT in the room (e.g., "my husband", "my last vet"). Examples: ✓ "What you just said about the price worries me." ✗ "What they just said about the price worries me."
 - STAY IN SCOPE: respond to what the staff member actually said in the most recent turn. Do not invent quotes, do not respond to things they didn't say, and do not drift to unrelated objections. Keep the conversation rooted in this scenario's pushback topic and the dog's specifics above.
@@ -189,7 +209,13 @@ ${scenario.context ?? '(none)'}
 export function buildScoringSystemPrompt(
   scenario: Scenario,
   config: SimulationConfig = {},
+  retrieved?: RetrievedChunk[],
 ): string {
+  const evidenceBlock = formatRetrievedBlock(
+    retrieved,
+    'EVIDENCE BASE',
+    'Peer-reviewed findings relevant to this conversation. Ground your coaching in them and cite as (Author, Year) in the critique when relevant.',
+  );
   const dimensionLines = resolveDimensions(config)
     .map(
       (d) =>
@@ -253,7 +279,7 @@ Do NOT include an overall or band — those are computed from your dimension sco
 - Sentiment for STAFF turns reflects how warm/empathetic vs flat/clinical the
   trainee sounds. Useful for spotting tone problems even when the score is OK.
 
-# GUARDRAILS
+${evidenceBlock}# GUARDRAILS
 - ${NON_SHAMING_FRAMING}
 - Empathy and clarifying come FIRST. Do not reward a strong product pitch that arrived before the client felt heard — that belongs in the lower bands of "transform".
 - A specific, credible next step (a bounded trial, a recheck, a written plan) is what "transform" rewards. Product specifics are only relevant once earned: ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}
@@ -272,10 +298,11 @@ export function buildVoiceSystemPrompt(
   scenario: Scenario,
   overrides: PromptOverrides = {},
   config: SimulationConfig = {},
+  retrieved?: RetrievedChunk[],
 ): string {
   // Replace the text-mode "open immediately" rule with a voice-mode equivalent
   // that prevents a double-opening when the kickoff text triggers the model.
-  const base = buildCustomerSystemPrompt(scenario, overrides, config).replace(
+  const base = buildCustomerSystemPrompt(scenario, overrides, config, retrieved).replace(
     '- Open the conversation with your pushback — do not wait for staff to greet you.',
     '- Wait for the text cue to begin. When it arrives, deliver EXACTLY ONE opening pushback line, then go completely silent and wait for the staff member to speak first. Do NOT add a second statement or follow-up after your opening.',
   );

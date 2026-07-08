@@ -3,6 +3,8 @@ import { COLOR, RADIUS } from '../lib/tokens';
 
 export type AdminScreen =
   | 'overview'
+  | 'insights'
+  | 'analytics'
   | 'users'
   | 'sessions'
   | 'scenarios'
@@ -13,6 +15,7 @@ export type AdminScreen =
   | 'flags'
   | 'overrides'
   | 'simulation'
+  | 'knowledge'
   | 'audit'
   | 'preview';
 
@@ -24,6 +27,8 @@ export interface NavItem {
 
 export const ADMIN_NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', icon: '✦' },
+  { key: 'insights', label: 'Insights', icon: '⌁' },
+  { key: 'analytics', label: 'Analytics', icon: '▦' },
   { key: 'users', label: 'Users', icon: '◔' },
   { key: 'sessions', label: 'Sessions', icon: '◇' },
   { key: 'scenarios', label: 'Scenarios', icon: '▤' },
@@ -34,6 +39,7 @@ export const ADMIN_NAV: NavItem[] = [
   { key: 'flags', label: 'Flags', icon: '⚑' },
   { key: 'overrides', label: 'Builder', icon: '⛯' },
   { key: 'simulation', label: 'Simulation', icon: '◎' },
+  { key: 'knowledge', label: 'Knowledge', icon: '⌆' },
   { key: 'preview', label: 'Preview', icon: '◐' },
   { key: 'audit', label: 'Audit', icon: '☷' },
 ];
@@ -64,6 +70,11 @@ export function FloatingNav({
           pointerEvents: 'auto',
           display: 'inline-flex',
           alignItems: 'center',
+          // 14 nav items exceed ~1450px in a single row; wrap into a second
+          // centered row on laptop widths instead of clipping off both edges.
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          maxWidth: '100%',
           gap: 4,
           padding: 6,
           borderRadius: RADIUS.xl,

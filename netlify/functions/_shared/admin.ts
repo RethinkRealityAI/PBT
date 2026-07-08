@@ -87,10 +87,13 @@ export async function requireAdmin(req: Request): Promise<AdminCtx | Response> {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Check admin flag.
+  // Check admin flag + disabled state. The Auth ban set by admin-user-actions
+  // blocks NEW sign-ins/refreshes, but an already-issued access token stays
+  // valid until expiry — so a freshly disabled admin must also be rejected
+  // here, not just at the auth layer.
   const { data: profile, error: profileErr } = await sb
     .from('profiles')
-    .select('is_admin')
+    .select('is_admin, disabled')
     .eq('user_id', userData.user.id)
     .maybeSingle();
   if (profileErr) {
@@ -99,6 +102,9 @@ export async function requireAdmin(req: Request): Promise<AdminCtx | Response> {
   }
   if (!profile?.is_admin) {
     return errorResponse(403, 'Not an admin');
+  }
+  if (profile.disabled) {
+    return errorResponse(403, 'Account disabled');
   }
 
   return { user: userData.user, sb };
@@ -122,7 +128,7 @@ export function readRange(req: Request): { since: string; limit: number } {
 export async function writeAuditLog(
   ctx: AdminCtx,
   entry: {
-    entity_type: 'flag' | 'flag_rule' | 'scenario_override' | 'simulation_config';
+    entity_type: 'flag' | 'flag_rule' | 'scenario_override' | 'simulation_config' | 'user';
     entity_id: string;
     action: 'create' | 'update' | 'delete' | 'revert';
     before?: unknown;

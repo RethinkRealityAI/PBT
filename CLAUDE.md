@@ -126,11 +126,29 @@ Migrations:
   `vision` AI call type
 - `20260602000000_simulation_config.sql` — singleton `simulation_config`
   (id='global', jsonb), admin-only RLS; audit-log entity type extended
+- `20260701000000_user_management.sql` — `profiles.disabled` (mirrored to a
+  Supabase Auth ban); audit-log entity type extended to include `user`
+- `20260702000000_rag_foundation.sql` — `knowledge_documents` (ingested
+  knowledge base; seeded from the code knowledge modules via
+  `admin-knowledge` op=seed) + `rag_chunks` (embedding-ready session
+  exchange/coaching chunks with tag filters, written by `ragDocument.ts`)
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
 (`admin-simulation-config` → `simulation_config`). Pet Vision data surfaces in
 the existing **Pet Analyzer** screen via `analyzer_events`.
+
+July admin screens (§3.2): **User & admin management** — the Users screen +
+User modal "Manage" tab do account write-ops via `admin-user-actions`
+(promote/demote admin, disable/enable, create, delete) with self-lockout +
+last-admin guards; `admin-users` now returns `disabled` + `email`. **Insights**
+dashboard surfaces scoring trends, ACT-dimension averages, sentiment, and
+feedback summaries. **Analytics** — nav_events traffic/engagement + dwell-time
+"where users spend time" heatmap. **AI Quality** doubles as the observability
+layer: alert-threshold banner (`ALERT_THRESHOLDS`), failure-rate/latency/cost
+trends, per-model breakdown. **RAG foundation** — `admin-knowledge` function
+(list/upsert/delete + `seed` from code knowledge modules) and per-session
+`rag_chunks` written alongside `rag_documents`.
 
 ## Simulation config (admin-tunable prompts + scoring)
 

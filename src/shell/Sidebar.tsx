@@ -6,7 +6,7 @@ import { useProfile } from '../app/providers/ProfileProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useFlags } from '../app/providers/FlagProvider';
 import type { FlagKey } from '../services/flagsClient';
-import type { Screen } from '../app/routes';
+import { PRE_ONBOARDING_SCREENS, type Screen } from '../app/routes';
 
 interface NavItem {
   screen: Screen;
@@ -36,6 +36,13 @@ export function Sidebar() {
   const { resolvedTheme, toggle } = useTheme();
   const { getFlag } = useFlags();
   const visibleNav = NAV_ITEMS.filter((n) => !n.flag || getFlag<boolean>(n.flag, true));
+
+  // Hide the desktop sidebar until the user has completed onboarding: a locked
+  // ECHO profile must exist AND we must be past the pre-onboarding flow
+  // (onboarding / terms / quiz / result). Otherwise a first-time desktop user
+  // sees nav to gated areas they haven't unlocked yet. Returning null lets the
+  // content area take the full width during onboarding.
+  if (!profile || PRE_ONBOARDING_SCREENS.includes(current)) return null;
 
   return (
     <aside
