@@ -3,6 +3,7 @@ import { Glass } from '../design-system/Glass';
 import { Chip } from '../design-system/Chip';
 import { ScoreChip } from '../design-system/ScoreChip';
 import { Icon } from '../design-system/Icon';
+import { PillButton } from '../design-system/PillButton';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { PUSHBACK_CATEGORIES } from '../data/scenarios';
@@ -93,15 +94,21 @@ export function HistoryScreen() {
           <Glass radius={22} padding={22}>
             <p
               style={{
-                margin: 0,
+                margin: '0 0 16px',
                 color: 'var(--pbt-text-muted)',
                 fontSize: 14,
                 lineHeight: 1.5,
               }}
             >
-              No sessions yet. Run a scenario from Home and they'll show up
-              here, tagged by pushback type.
+              {sessions.length === 0
+                ? 'No sessions yet. Run a scenario and it\'ll show up here, tagged by pushback type.'
+                : 'No sessions match this filter yet — try a different pushback type.'}
             </p>
+            {sessions.length === 0 && (
+              <PillButton fullWidth icon={<Icon.flame />} onClick={() => go('home')}>
+                Start your first session
+              </PillButton>
+            )}
           </Glass>
         ) : (
           filtered.map((s) => (

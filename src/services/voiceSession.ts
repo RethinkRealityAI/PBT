@@ -93,6 +93,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const nextPlayTimeRef = useRef(0);
 
   const transcriptRef = useRef<ChatMessage[]>([]);
+  // Mirrors the emotion state for use inside socket callbacks — AI turns are
+  // stamped with the customer's resolution state at commit time so the
+  // scorecard's resolution arc works for voice sessions, not just text.
+  const emotionRef = useRef<EmotionColor>('red');
   // Single source of truth for the AI's current turn text — accumulated from
   // outputAudioTranscription chunks. modelTurn.parts.text fallback also feeds in
   // for the rare case it appears, but with AUDIO-only modality it usually does not.
@@ -158,7 +162,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const addAiMessage = useCallback(() => {
     const text = sanitizeAiText(aiTextBufferRef.current);
     if (!text) return;
-    const msg: ChatMessage = { role: 'ai', text, timestamp: Date.now() };
+    const msg: ChatMessage = {
+      role: 'ai',
+      text,
+      timestamp: Date.now(),
+      emotion: emotionRef.current,
+    };
     transcriptRef.current = [...transcriptRef.current, msg];
     setMessages([...transcriptRef.current]);
     aiTextBufferRef.current = '';
@@ -412,6 +421,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       }
       micUnmuteAtRef.current = 0;
       setError(null);
+      emotionRef.current = 'red';
       setEmotion('red');
       setMessages([]);
       setLiveAiText('');
@@ -545,6 +555,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
                 if (fc.name === 'updateEmotion') {
                   const next = ((args.emotion as string)?.toLowerCase().trim() as EmotionColor) ?? 'red';
+                  emotionRef.current = next;
                   setEmotion(next);
                   // Convinced → next AI turn IS the closing line; prime the
                   // end so we trigger the natural-end after this same turn's
@@ -759,6 +770,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     finalizePromiseRef.current = null;
     cleanup();
     setError(null);
+    emotionRef.current = 'red';
     setEmotion('red');
     setMessages([]);
     setLiveAiText('');
