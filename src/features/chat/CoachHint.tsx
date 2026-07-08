@@ -104,6 +104,11 @@ export function CoachHintPanel({ coach }: { coach: UseCoachHint }) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 6, scale: 0.98 }}
           transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+          // Clearance for the floating Coach / Scenario-info triggers, which
+          // are absolutely anchored 16px above the session controls — without
+          // this the panel flows into that zone and the triggers bleed
+          // through the card.
+          style={{ marginBottom: 46 }}
         >
           <Glass
             radius={20}

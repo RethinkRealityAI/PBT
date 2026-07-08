@@ -117,6 +117,15 @@ export function useVoiceSession(): UseVoiceSessionReturn {
    */
   const endPrimedRef = useRef(false);
   const naturalEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Watchdog for the aiSpeaking → listening transition. The primary signal
+   * is the last buffer source's `onended`, but that callback can be missed
+   * (suspended AudioContext, tab backgrounded, timing skew) — and a stuck
+   * 'aiSpeaking' permanently mutes the mic, which reads to the user as
+   * "it stopped hearing me". Rescheduled on every chunk; fires ~350ms after
+   * the scheduled end of the playback queue as a belt-and-braces fallback.
+   */
+  const playbackEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Gates mic audio until the AI delivers its first complete turn (prevents double opening)
   const openingDeliveredRef = useRef(false);
   // Timestamp until which mic audio should be suppressed (post-AI-speech grace period).
@@ -167,6 +176,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const playAudioChunk = useCallback((base64Audio: string) => {
     const ctx = playbackCtxRef.current;
     if (!ctx || ctx.state === 'closed') return;
+    // Autoplay policy can re-suspend the context after creation (notably
+    // iOS Safari). A suspended context freezes currentTime, silently piles
+    // up scheduled sources, and never fires onended — resume defensively.
+    if (ctx.state === 'suspended') {
+      void ctx.resume().catch(() => { /* non-fatal */ });
+    }
 
     if (statusRef.current !== 'aiSpeaking') {
       setStatusSync('aiSpeaking');
@@ -220,14 +235,32 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       queueMicrotask(() => scheduleNaturalEndAfterPlayback());
     }
 
+    const finishSpeaking = () => {
+      if (statusRef.current === 'aiSpeaking') setStatusSync('listening');
+      // 250ms grace before mic re-opens — lets AI audio tail decay so it doesn't
+      // get captured and sent back as a phantom user turn.
+      micUnmuteAtRef.current = performance.now() + 250;
+    };
+
     source.onended = () => {
       if (ctx.state !== 'closed' && ctx.currentTime >= nextPlayTimeRef.current - 0.1) {
-        if (statusRef.current === 'aiSpeaking') setStatusSync('listening');
-        // 250ms grace before mic re-opens — lets AI audio tail decay so it doesn't
-        // get captured and sent back as a phantom user turn.
-        micUnmuteAtRef.current = performance.now() + 250;
+        finishSpeaking();
       }
     };
+
+    // Watchdog: rescheduled on every chunk, so it only fires after the LAST
+    // chunk's scheduled end. If onended was missed the state machine still
+    // exits aiSpeaking and the mic un-mutes — a stuck aiSpeaking otherwise
+    // silently discards everything the user says for the rest of the session.
+    if (playbackEndTimerRef.current) clearTimeout(playbackEndTimerRef.current);
+    const msUntilQueueEnd = Math.max(
+      0,
+      Math.ceil((nextPlayTimeRef.current - ctx.currentTime) * 1000),
+    );
+    playbackEndTimerRef.current = setTimeout(() => {
+      playbackEndTimerRef.current = null;
+      finishSpeaking();
+    }, msUntilQueueEnd + 350);
   }, [scheduleNaturalEndAfterPlayback, setStatusSync]);
 
   const stopRecording = useCallback(() => {
@@ -241,19 +274,41 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     recordingCtxRef.current = null;
   }, []);
 
-  // Mic setup happens INSIDE onopen — the critical fix from the reference.
-  // Starting mic before the WebSocket opens causes a race that closes the socket.
-  const startRecording = useCallback(async (sessionPromise: Promise<unknown>) => {
+  /**
+   * Phase 1 of mic setup — permission + stream acquisition. Called at the
+   * very start of start(), inside the user's Begin tap, BEFORE the WebSocket
+   * connects or any audio plays. This is the fix for the permission race:
+   * previously getUserMedia ran inside onopen, so the socket connected, the
+   * kickoff was sent, and the AI began SPEAKING while the browser's
+   * permission dialog was still on screen — the user missed the opening
+   * line and (on deny/slow grant) the capture side never came up cleanly.
+   * Nothing else happens until this resolves. Throws on denial.
+   */
+  const acquireMic = useCallback(async (): Promise<MediaStream> => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: SAMPLE_RATE_IN,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
+    });
+    mediaStreamRef.current = stream;
+    return stream;
+  }, []);
+
+  /**
+   * Phase 2 — wire the (already-granted) stream into a capture pipeline.
+   * Runs inside onopen: attaching the processor before the socket is open
+   * would race sends against a null session.
+   */
+  const startRecording = useCallback((sessionPromise: Promise<unknown>) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: SAMPLE_RATE_IN,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
-      mediaStreamRef.current = stream;
+      const stream = mediaStreamRef.current;
+      if (!stream || stream.getTracks().every((t) => t.readyState === 'ended')) {
+        // stop() ran while the socket was connecting — nothing to wire.
+        return;
+      }
 
       const recordingCtx = new AudioContext({ sampleRate: SAMPLE_RATE_IN });
       recordingCtxRef.current = recordingCtx;
@@ -297,8 +352,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       source.connect(processor);
       processor.connect(recordingCtx.destination);
     } catch (err) {
-      console.error('[voiceSession] mic error', err);
-      setError('Microphone access denied or unavailable. Please allow microphone access and try again.');
+      console.error('[voiceSession] mic wiring error', err);
+      setError('Microphone could not be started. Please check your microphone and try again.');
       setStatusSync('error');
     }
   }, [setError, setStatusSync]);
@@ -307,6 +362,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     if (naturalEndTimerRef.current) {
       clearTimeout(naturalEndTimerRef.current);
       naturalEndTimerRef.current = null;
+    }
+    if (playbackEndTimerRef.current) {
+      clearTimeout(playbackEndTimerRef.current);
+      playbackEndTimerRef.current = null;
     }
     pendingNaturalEndRef.current = false;
     endPrimedRef.current = false;
@@ -329,19 +388,19 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   }, []);
 
   const start = useCallback(async (scenario: Scenario) => {
-    // RAG: fail-open retrieval before the prompt is built (mirrors text mode).
-    try {
-      const ragCfg = resolveRag(configRef.current ?? undefined);
-      retrievedRef.current = ragCfg.enabled
-        ? await retrieveContext(
-            `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
-            { k: ragCfg.k, cacheKey: scenario._overrideId ?? scenario.pushback.id + scenario.breed },
-          )
-        : [];
-    } catch {
-      retrievedRef.current = [];
+    // Re-entrancy guard BEFORE any await. The previous guard sat after an
+    // async RAG fetch, so a double-tap on Begin (or a fast mode toggle)
+    // could pass the check twice and open two live sockets. statusRef is
+    // set synchronously here, so the second caller bails immediately.
+    if (
+      statusRef.current === 'connecting' ||
+      statusRef.current === 'listening' ||
+      statusRef.current === 'thinking' ||
+      statusRef.current === 'aiSpeaking'
+    ) {
+      return;
     }
-    if (statusRef.current === 'connecting') return;
+    setStatusSync('connecting');
     try {
       finalizePromiseRef.current = null;
       openingDeliveredRef.current = false;
@@ -352,7 +411,6 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         naturalEndTimerRef.current = null;
       }
       micUnmuteAtRef.current = 0;
-      setStatusSync('connecting');
       setError(null);
       setEmotion('red');
       setMessages([]);
@@ -375,6 +433,43 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       playbackCtxRef.current = playbackCtx;
       if (playbackCtx.state === 'suspended') {
         try { await playbackCtx.resume(); } catch { /* non-fatal */ }
+      }
+
+      // MIC PERMISSION FIRST. Nothing connects and nothing plays until the
+      // user has granted the microphone — the permission dialog is the very
+      // first thing they see after tapping Begin. A denial lands in the
+      // catch below and the session never starts half-broken.
+      try {
+        await acquireMic();
+      } catch (micErr) {
+        console.error('[voiceSession] mic permission error', micErr);
+        setError('Microphone access denied or unavailable. Please allow microphone access and try again.');
+        setStatusSync('error');
+        cleanup();
+        return;
+      }
+      // stop() may have run while the permission dialog was up (user backed
+      // out of the screen) — don't connect a socket nobody is listening to.
+      // (Cast: TS narrows from the top guard and can't see the ref mutate
+      // across the awaits above.)
+      if ((statusRef.current as VoiceStatus) !== 'connecting') {
+        stopRecording();
+        return;
+      }
+
+      // RAG: fail-open retrieval before the prompt is built (mirrors text
+      // mode). After the permission grant so the dialog isn't delayed by a
+      // network round-trip.
+      try {
+        const ragCfg = resolveRag(configRef.current ?? undefined);
+        retrievedRef.current = ragCfg.enabled
+          ? await retrieveContext(
+              `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
+              { k: ragCfg.k, cacheKey: scenario._overrideId ?? scenario.pushback.id + scenario.breed },
+            )
+          : [];
+      } catch {
+        retrievedRef.current = [];
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -430,9 +525,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         callbacks: {
           onopen: () => {
             setStatusSync('listening');
-            // Mic is wired AFTER the WebSocket opens — prevents the socket from
-            // closing while waiting for getUserMedia permissions.
-            void startRecording(sessionPromise);
+            // Permission was granted BEFORE connect; here we only wire the
+            // already-live stream into the capture pipeline. Wiring after
+            // onopen keeps processor sends from racing a null session.
+            startRecording(sessionPromise);
           },
           onmessage: (msg: Record<string, unknown>) => {
             // Tool calls
@@ -600,7 +696,19 @@ export function useVoiceSession(): UseVoiceSessionReturn {
           onclose: (e: unknown) => {
             const evt = e as { code?: number; reason?: string };
             console.warn('[voiceSession] socket closed', { code: evt?.code, reason: evt?.reason });
-            if (statusRef.current !== 'ended' && statusRef.current !== 'error') {
+            // A close during an ACTIVE conversation is a failure the user
+            // must see — silently flipping to 'idle' left the orb frozen
+            // with no explanation of why the customer stopped responding.
+            const active =
+              statusRef.current === 'listening' ||
+              statusRef.current === 'thinking' ||
+              statusRef.current === 'aiSpeaking' ||
+              statusRef.current === 'connecting';
+            if (active) {
+              setError('Voice connection lost. Check your network and tap Begin simulation to restart.');
+              setStatusSync('error');
+              cleanup();
+            } else if (statusRef.current !== 'ended' && statusRef.current !== 'error') {
               setStatusSync('idle');
             }
           },
@@ -636,6 +744,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       cleanup();
     }
   }, [
+    acquireMic,
     addAiMessage,
     addUserMessage,
     cleanup,
@@ -643,6 +752,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     scheduleNaturalEndAfterPlayback,
     setStatusSync,
     startRecording,
+    stopRecording,
   ]);
 
   const stop = useCallback(() => {
