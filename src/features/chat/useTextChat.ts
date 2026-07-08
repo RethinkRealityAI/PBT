@@ -6,7 +6,12 @@ import {
   MODEL_LIVE,
   MODEL_TEXT,
 } from '../../services/geminiService';
-import type { ChatMessage, ScoreReport, SessionRecord } from '../../services/types';
+import {
+  isScoreUnavailable,
+  type ChatMessage,
+  type ScoreReport,
+  type SessionRecord,
+} from '../../services/types';
 import { useScenarioOverride, useSimulationConfig } from '../../app/providers/FlagProvider';
 import { seedScenarioId } from '../../data/scenarioOverrides';
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
@@ -51,6 +56,7 @@ const SCORE_UNAVAILABLE: ScoreReport = {
   },
   keyMoments: [],
   turnSentiment: [],
+  scoreUnavailable: true,
 };
 
 function scenarioSummaryLine(scenario: Scenario): string {
@@ -124,6 +130,13 @@ export interface UseTextChat {
     report: ScoreReport | null,
     transcript: ChatMessage[],
   ) => Promise<void>;
+  /**
+   * Re-run the scorer on the already-captured transcript after a scoring
+   * failure — the conversation is done, only the evaluation is missing.
+   * Updates the in-memory report AND rewrites the saved history record.
+   * Resolves true when a real (non-placeholder) score was obtained.
+   */
+  rescore: () => Promise<boolean>;
   reset: () => void;
   startedAt: number | null;
 }
@@ -463,6 +476,70 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     });
   }, [scenario, simulationConfig]);
 
+  const rescore = useCallback(async (): Promise<boolean> => {
+    const msgs = transcriptRef.current.filter((m) => !m._transientError);
+    const recordId = recordIdRef.current;
+    if (msgs.length === 0 || !recordId) return false;
+
+    let report: ScoreReport | null = null;
+    try {
+      report = await evaluateConversation(scenario, msgs, {
+        sessionId: recordId,
+        config: simulationConfig ?? undefined,
+        retrieved: retrievedRef.current,
+      });
+    } catch (err) {
+      console.error('[useTextChat] rescore failed', err);
+    }
+    if (!report || isScoreUnavailable(report)) return false;
+    const scored = report;
+
+    setScoreReport(scored);
+
+    // Rewrite the saved history record in place. Mode + duration come from
+    // the stored copy so a voice-session rescore stays accurate.
+    const existing = readStorage(SESSIONS_KEY);
+    const saved = existing.find((s) => s.id === recordId) ?? null;
+    const mode = saved?.mode ?? 'text';
+    const durationSeconds =
+      saved?.durationSeconds ??
+      Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000);
+    if (saved) {
+      writeStorage(
+        SESSIONS_KEY,
+        existing.map((s) => (s.id === recordId ? { ...s, scoreReport: scored } : s)),
+      );
+    }
+    void persistToSupabase({
+      scenario,
+      recordId,
+      transcript: msgs,
+      durationSeconds,
+      mode,
+      scoreReport: scored,
+      completed: true,
+      endedReason: 'completed',
+    });
+    void persistRagDocument({
+      sessionId: recordId,
+      scenario,
+      transcript: msgs,
+      scoreReport: scored,
+      durationSeconds,
+      mode,
+      modelId: mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
+      completed: true,
+      retrieved: retrievedRef.current,
+    });
+    logEvent({
+      type: 'custom',
+      screen: 'stats',
+      target: 'session_rescore',
+      meta: { sessionId: recordId, overall: scored.overall },
+    });
+    return true;
+  }, [scenario, simulationConfig]);
+
   const abandon = useCallback(
     async (reason: 'user_exit' | 'timeout' | 'error' = 'user_exit') => {
       // Already finalised? Don't double-write.
@@ -625,6 +702,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     abandon,
     restart,
     applyVoiceSessionComplete,
+    rescore,
     reset,
     startedAt: startedAtRef.current,
   };

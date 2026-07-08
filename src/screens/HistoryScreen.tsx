@@ -7,7 +7,7 @@ import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { PUSHBACK_CATEGORIES } from '../data/scenarios';
 import { readStorage, type StorageKeyDef } from '../lib/storage';
-import type { SessionRecord } from '../services/types';
+import { isScoreUnavailable, type SessionRecord } from '../services/types';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { setSelectedSessionId } from '../lib/selectedSession';
 
@@ -59,18 +59,16 @@ export function HistoryScreen() {
           }}
         >
           {sessions.length} session{sessions.length === 1 ? '' : 's'}
-          {sessions.length > 0 && (
-            <>
-              {' · '}
-              {Math.round(
-                sessions.reduce(
-                  (s, x) => s + (x.scoreReport?.overall ?? 0),
-                  0,
-                ) / Math.max(1, sessions.length),
-              )}
-              % avg score
-            </>
-          )}
+          {(() => {
+            // Average only over genuinely scored sessions — a scoring
+            // outage must not read as a string of zeros.
+            const scored = sessions.filter((x) => !isScoreUnavailable(x.scoreReport));
+            if (scored.length === 0) return null;
+            const avg = Math.round(
+              scored.reduce((s, x) => s + x.scoreReport.overall, 0) / scored.length,
+            );
+            return <>{' · '}{avg}% avg score</>;
+          })()}
         </div>
 
         <div className="pbt-scroll flex gap-2 overflow-x-auto pb-1 mb-4">
@@ -139,7 +137,28 @@ export function HistoryScreen() {
                       {s.transcript?.length ? ` · ${s.transcript.length} turns` : ''}
                     </div>
                   </div>
-                  <ScoreChip score={s.scoreReport?.overall ?? 0} />
+                  {isScoreUnavailable(s.scoreReport) ? (
+                    <span
+                      aria-label="Not scored"
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: '50%',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1px dashed color-mix(in oklab, var(--pbt-text-muted) 55%, transparent)',
+                        color: 'var(--pbt-text-muted)',
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 14,
+                        flexShrink: 0,
+                      }}
+                    >
+                      —
+                    </span>
+                  ) : (
+                    <ScoreChip score={s.scoreReport.overall} />
+                  )}
                   <span style={{ color: 'var(--pbt-text-muted)', fontSize: 18 }}>›</span>
                 </div>
               </Glass>

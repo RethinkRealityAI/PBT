@@ -48,7 +48,9 @@ export function CreateScreen() {
   const { savedPets } = useSavedPets();
 
   const [tab, setTab] = useState<Tab>('build');
-  const [breed, setBreed] = useState('Labrador Retriever');
+  // Default matches the first quick-pick chip so it renders as selected
+  // on load instead of an orphan value no chip highlights.
+  const [breed, setBreed] = useState(BREEDS[0]);
   const [weight, setWeight] = useState('');
   const [age, setAge] = useState<LifeStage>(LIFE_STAGES[2]);
   const [pushback, setPushback] = useState<PushbackCategory>(PUSHBACK_CATEGORIES[0]);

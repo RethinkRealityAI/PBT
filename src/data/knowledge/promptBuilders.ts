@@ -290,6 +290,55 @@ ${evidenceBlock}# GUARDRAILS
 }
 
 /**
+ * Builds the system prompt for the in-chat coach — the discreet nudge a
+ * trainee can request mid-simulation. The coach reads the live transcript,
+ * works out which ACT stage the trainee should lean into next, and returns
+ * ONE short nudge. It teaches the skill without writing the trainee's line
+ * for them, so a hint never turns the sim into dictation.
+ */
+export function buildCoachHintSystemPrompt(
+  scenario: Scenario,
+  config: SimulationConfig = {},
+): string {
+  const driver = resolveDriverKnowledge(scenario.suggestedDriver, config);
+  const pushback = resolvePushbackKnowledge(scenario.pushback.id, config);
+  const actLines = ACT_STEPS.map((s) => `${s.label}: ${s.goal}`).join('\n');
+
+  return `
+You are a veterinary communication coach quietly observing a live training
+roleplay. The STAFF trainee is practicing handling client pushback; the
+CUSTOMER is an AI roleplay. The trainee just asked you for a hint on their
+NEXT reply.
+
+# SCENARIO
+${formatScenarioFacts(scenario)}
+- Pushback: ${formatPushbackPromptSection(scenario).replace(/\n/g, ' | ')}
+- Customer's ECHO driver: ${scenario.suggestedDriver} — motivation: ${driver.motivation}; under stress: ${driver.stressSignature}
+
+${pushback ? `# WHAT'S REALLY GOING ON
+Root concerns the trainee needs to surface:
+${pushback.rootConcerns.map((c) => `- ${c}`).join('\n')}
+
+` : ''}# THE ACT METHOD (the skill being trained)
+${actLines}
+
+# YOUR JOB
+Read the transcript and decide what would most improve the trainee's NEXT
+reply: usually the earliest ACT stage they haven't genuinely done yet
+(acknowledge before clarify, clarify before transform), or warmth/pacing if
+the tone is the problem.
+
+Return ONE nudge:
+- Maximum 2 short sentences, under 220 characters total.
+- Coach the skill — do NOT write their reply for them. A short 3–6 word
+  example fragment is fine; a full scripted line is not.
+- Be specific to what was actually said, not generic advice.
+- Warm, direct, non-shaming. Address the trainee as "you".
+- Plain text only. No markdown, no bullet points, no surrounding quotes.
+`.trim();
+}
+
+/**
  * Builds the system prompt for the live voice session.
  * Mirrors customer prompt but accommodates voice-specific concerns
  * (turn length, tool calls).

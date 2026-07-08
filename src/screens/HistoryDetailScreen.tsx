@@ -9,8 +9,15 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { DIMENSIONS, bandFor } from '../data/knowledge/scoringRubric';
 import { COLORS } from '../design-system/tokens';
 import { readStorage, type StorageKeyDef } from '../lib/storage';
-import { normalizeScoreReport, type SessionRecord, type ChatMessage } from '../services/types';
+import {
+  isScoreUnavailable,
+  normalizeScoreReport,
+  type SessionRecord,
+  type ChatMessage,
+} from '../services/types';
 import { getSelectedSessionId } from '../lib/selectedSession';
+import { emotionJourney } from '../features/scorecard/scorecardInsights';
+import { ResolutionJourney } from '../features/scorecard/ResolutionJourney';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
   key: 'sessions',
@@ -108,7 +115,23 @@ export function HistoryDetailScreen() {
 }
 
 function ScorecardView({ session }: { session: SessionRecord }) {
+  // A scoring-outage placeholder is not a real evaluation — don't render
+  // it as a wall of zeros. The transcript tab still works.
+  if (isScoreUnavailable(session.scoreReport)) {
+    return (
+      <Glass radius={22} padding={20}>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>Not scored</div>
+        <div style={{ color: 'var(--pbt-text-muted)', fontSize: 14, lineHeight: 1.5 }}>
+          The AI scorer couldn't be reached when this session ended, so there's
+          no evaluation on record. The full transcript is saved in the
+          Transcript tab.
+        </div>
+      </Glass>
+    );
+  }
+
   const report = normalizeScoreReport(session.scoreReport);
+  const journey = emotionJourney(session.transcript);
   const headline =
     report.band === 'good'
       ? 'Strong session.'
@@ -119,7 +142,7 @@ function ScorecardView({ session }: { session: SessionRecord }) {
   return (
     <div className="lg:grid lg:grid-cols-[38fr_62fr] lg:gap-8 lg:items-start">
       <div>
-        <Glass radius={28} padding={22} glow="oklch(0.62 0.22 22)">
+        <Glass radius={28} padding={22} glow={COLORS.score[report.band]}>
           <div className="flex items-start gap-4">
             <ScoreRing score={report.overall} label="Overall" size={120} />
             <div className="flex-1">
@@ -149,6 +172,11 @@ function ScorecardView({ session }: { session: SessionRecord }) {
             </div>
           </div>
         </Glass>
+        {journey.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <ResolutionJourney journey={journey} />
+          </div>
+        )}
       </div>
 
       <div>

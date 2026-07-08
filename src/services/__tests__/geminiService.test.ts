@@ -20,7 +20,12 @@ vi.mock('@google/genai', () => {
   };
 });
 
-import { generateRoleplayMessage, evaluateConversation, MODEL_TEXT } from '../geminiService';
+import {
+  generateRoleplayMessage,
+  evaluateConversation,
+  generateCoachHint,
+  MODEL_TEXT,
+} from '../geminiService';
 
 beforeEach(() => {
   generateContent.mockReset();
@@ -92,11 +97,21 @@ describe('evaluateConversation', () => {
     expect(result.critique).toBe('Solid handling.');
   });
 
-  it('returns a zero-band fallback on parse error', async () => {
+  it('returns a zero-band fallback on parse error, flagged unavailable', async () => {
     generateContent.mockResolvedValueOnce({ text: 'not json' });
     const result = await evaluateConversation(SEED_SCENARIOS[0], []);
     expect(result.overall).toBe(0);
     expect(result.band).toBe('poor');
+    expect(result.scoreUnavailable).toBe(true);
+  });
+
+  it('retries the scorer once before falling back', async () => {
+    generateContent.mockRejectedValue(new Error('network'));
+    const result = await evaluateConversation(SEED_SCENARIOS[0], [
+      { role: 'user', text: 'hi', timestamp: 1 },
+    ]);
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(result.scoreUnavailable).toBe(true);
   });
 
   it('applies admin-tuned scoring weights to the overall', async () => {
@@ -135,5 +150,32 @@ describe('evaluateConversation', () => {
     expect(result.rapport).toBe(0);
     expect(Number.isNaN(result.overall)).toBe(false);
     expect(result.acknowledge).toBe(92);
+  });
+});
+
+describe('generateCoachHint', () => {
+  it('returns the coach nudge text', async () => {
+    generateContent.mockResolvedValueOnce({
+      text: 'Name her worry before you explain — try reflecting the cost concern back first.',
+    });
+    const hint = await generateCoachHint(SEED_SCENARIOS[0], [
+      { role: 'ai', text: 'Why is it so expensive?', timestamp: 1 },
+    ]);
+    expect(hint).toContain('cost concern');
+    const callArg = generateContent.mock.calls[0][0];
+    expect(callArg.model).toBe(MODEL_TEXT);
+    expect(callArg.contents).toContain('CUSTOMER: Why is it so expensive?');
+  });
+
+  it('hard-caps runaway hint length', async () => {
+    generateContent.mockResolvedValueOnce({ text: 'x'.repeat(500) });
+    const hint = await generateCoachHint(SEED_SCENARIOS[0], []);
+    expect(hint.length).toBeLessThanOrEqual(320);
+  });
+
+  it('propagates failures after retries so the UI can show a soft error', async () => {
+    generateContent.mockRejectedValue(new Error('offline'));
+    await expect(generateCoachHint(SEED_SCENARIOS[0], [])).rejects.toThrow('offline');
+    expect(generateContent).toHaveBeenCalledTimes(2);
   });
 });

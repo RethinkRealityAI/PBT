@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { scoreBandColor } from './tokens';
 
 export interface ScoreRingProps {
@@ -5,6 +6,24 @@ export interface ScoreRingProps {
   size?: number;
   strokeWidth?: number;
   label?: string;
+  /**
+   * Count the number and sweep the arc up from 0 on mount — the score
+   * "reveal" moment on the live scorecard. Off by default so history and
+   * list surfaces render instantly. Automatically disabled when the user
+   * prefers reduced motion.
+   */
+  animate?: boolean;
+}
+
+const REVEAL_MS = 1100;
+const revealEase = (t: number) => 1 - Math.pow(1 - t, 3);
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 }
 
 /**
@@ -15,11 +34,35 @@ export function ScoreRing({
   size = 120,
   strokeWidth = 10,
   label,
+  animate = false,
 }: ScoreRingProps) {
   const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  const revealing = animate && !prefersReducedMotion();
+  const [shown, setShown] = useState(revealing ? 0 : clamped);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!revealing) {
+      setShown(clamped);
+      return;
+    }
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - t0) / REVEAL_MS);
+      setShown(Math.round(revealEase(t) * clamped));
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [clamped, revealing]);
+
   const r = (size - strokeWidth) / 2;
   const c = 2 * Math.PI * r;
-  const offset = c - (clamped / 100) * c;
+  const offset = c - (shown / 100) * c;
+  // Band color follows the FINAL score so the ring doesn't flash
+  // red→amber→green while counting up.
   const color = scoreBandColor(clamped);
 
   return (
@@ -51,7 +94,7 @@ export function ScoreRing({
           style={{
             transform: 'rotate(-90deg)',
             transformOrigin: '50% 50%',
-            transition: 'stroke-dashoffset 1s ease',
+            transition: revealing ? undefined : 'stroke-dashoffset 1s ease',
           }}
         />
       </svg>
@@ -68,7 +111,7 @@ export function ScoreRing({
           fontWeight: 700,
         }}
       >
-        <span style={{ fontSize: size * 0.32, lineHeight: 1 }}>{clamped}</span>
+        <span style={{ fontSize: size * 0.32, lineHeight: 1 }}>{shown}</span>
         {label && (
           <span
             style={{

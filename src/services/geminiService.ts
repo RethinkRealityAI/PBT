@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import type { Scenario } from '../data/scenarios';
 import type { ChatMessage, ScoreReport } from './types';
 import {
+  buildCoachHintSystemPrompt,
   buildCustomerSystemPrompt,
   buildScoringSystemPrompt,
   type PromptOverrides,
@@ -196,6 +197,66 @@ export async function generateRoleplayMessage(
   }
 }
 
+/**
+ * One coaching nudge for the trainee's next reply, from the live transcript.
+ * Plain text, ≤2 sentences (the prompt enforces it; we also hard-trim).
+ * Throws on failure — the caller shows a soft "coach unavailable" state.
+ */
+export async function generateCoachHint(
+  scenario: Scenario,
+  history: ChatMessage[],
+  options: CallOptions = {},
+): Promise<string> {
+  const ai = getClient();
+  const systemInstruction = buildCoachHintSystemPrompt(scenario, options.config);
+  const formatted = history
+    .filter((m) => !m._transientError)
+    .map((m) => `${m.role === 'user' ? 'STAFF' : 'CUSTOMER'}: ${m.text}`)
+    .join('\n');
+  const contents = `Live transcript so far:\n\n${formatted}\n\nGive the trainee one nudge for their next reply.`;
+
+  const t0 = performance.now();
+  try {
+    const { value, retries } = await withRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: MODEL_TEXT,
+        contents,
+        config: { systemInstruction },
+      });
+      const text = (response.text ?? '').trim();
+      if (!text) throw new Error('Empty coach response');
+      return { response, text };
+    });
+
+    const latency = Math.round(performance.now() - t0);
+    const usage = readUsage(value.response);
+    const tokensIn = usage.promptTokenCount ?? estimateTokens(systemInstruction + contents);
+    const tokensOut = usage.candidatesTokenCount ?? estimateTokens(value.text);
+    void recordCall({
+      sessionId: options.sessionId ?? null,
+      callType: 'hint',
+      modelId: MODEL_TEXT,
+      latencyMs: latency,
+      tokensIn,
+      tokensOut,
+      costUsd: estimateCostUsd(MODEL_TEXT, tokensIn, tokensOut),
+      retries,
+    });
+
+    // Belt-and-braces length cap so a drifting model can't flood the drawer.
+    return value.text.length > 320 ? `${value.text.slice(0, 317).trimEnd()}…` : value.text;
+  } catch (err) {
+    void recordCall({
+      sessionId: options.sessionId ?? null,
+      callType: 'hint',
+      modelId: MODEL_TEXT,
+      latencyMs: Math.round(performance.now() - t0),
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
 const ZERO_DIMENSIONS: Record<DimensionKey, number> = {
   acknowledge: 0,
   clarify: 0,
@@ -224,7 +285,9 @@ export async function evaluateConversation(
     .join('\n');
 
   try {
-    const response = await ai.models.generateContent({
+    // Same retry budget as the roleplay call — a single transient network
+    // blip must not turn a finished session into an unscorable one.
+    const { value: response } = await withRetry(() => ai.models.generateContent({
       model: MODEL_TEXT,
       contents: `Here is the full conversation transcript. Score the staff turns.\n\n${formatted}`,
       config: {
@@ -299,7 +362,7 @@ export async function evaluateConversation(
           ],
         },
       },
-    });
+    }));
 
     const raw = response.text ?? '';
     if (!raw) throw new Error('Empty score response');
@@ -360,6 +423,8 @@ export async function evaluateConversation(
         rapport: '',
       },
       keyMoments: [],
+      turnSentiment: [],
+      scoreUnavailable: true,
     };
   }
 }

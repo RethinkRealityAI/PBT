@@ -22,7 +22,7 @@ const SLIDES: { eyebrow: string; title: string; body: string }[] = [
   {
     eyebrow: 'Score with rigour',
     title: "See what landed.\nFix what didn't.",
-    body: "After every practice you'll receive feedback on how you used empathy, listening, knowledge, objection handling, confidence, closing, and pacing. You'll get concrete next-line suggestions too.",
+    body: "After every practice you'll receive feedback on how you Acknowledged the client's feelings, Clarified their real concern, and Transformed the pushback — plus your empathy and rapport. You'll get concrete next-line suggestions too.",
   },
 ];
 

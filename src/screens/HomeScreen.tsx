@@ -21,6 +21,7 @@ import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
 import { ReportModal } from '../features/reporting/ReportModal';
+import { dailyPickIndex } from '../lib/dailyPick';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -178,6 +179,7 @@ export function HomeScreen() {
   const { profile } = useProfile();
   const { user } = useSession();
   const { setScenario } = useScenario();
+  // Manual pager offset applied on top of the date+driver daily base.
   const [pickIndex, setPickIndex] = useState(0);
   const [scoringInfoOpen, setScoringInfoOpen] = useState(false);
   const [scenarioInfoOpen, setScenarioInfoOpen] = useState(false);
@@ -216,7 +218,10 @@ export function HomeScreen() {
   const driver = ECHO_DRIVERS[profile.primary];
   const driverColors = DRIVER_COLORS[profile.primary];
   const total = resolvedLibrary.length;
-  const safeIndex = total === 0 ? 0 : pickIndex % total;
+  // Today's pick rotates by calendar day + the user's driver; the manual
+  // prev/next pager offsets from that daily base.
+  const dailyBase = dailyPickIndex(total, profile.primary);
+  const safeIndex = total === 0 ? 0 : (((dailyBase + pickIndex) % total) + total) % total;
   // If an admin hides every scenario, fall back to the canonical first entry
   // so the hero card stays renderable. The Start button still routes correctly.
   const resolvedSlot = resolvedLibrary[safeIndex];
@@ -636,7 +641,7 @@ export function HomeScreen() {
                 <div aria-hidden style={{ flex: 1, minWidth: 8 }} />
                 <div className="flex shrink-0 items-center gap-1">
                   <button
-                    onClick={() => setPickIndex((i) => (i - 1 + total) % total)}
+                    onClick={() => setPickIndex((i) => i - 1)}
                     aria-label="Previous scenario"
                     style={{
                       width: 28,
@@ -662,10 +667,10 @@ export function HomeScreen() {
                       textAlign: 'center',
                     }}
                   >
-                    {pickIndex + 1}/{total}
+                    {safeIndex + 1}/{total}
                   </span>
                   <button
-                    onClick={() => setPickIndex((i) => (i + 1) % total)}
+                    onClick={() => setPickIndex((i) => i + 1)}
                     aria-label="Next scenario"
                     style={{
                       width: 28,

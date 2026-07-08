@@ -21,6 +21,12 @@ import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import { SessionEndingOverlay } from '../features/chat/SessionEndingOverlay';
 import { ScenarioHints } from '../features/scenarios/ScenarioHints';
+import {
+  CoachHintButton,
+  CoachHintPanel,
+  useCoachHint,
+} from '../features/chat/CoachHint';
+import { useSimulationConfig } from '../app/providers/FlagProvider';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -688,6 +694,15 @@ export function ChatScreen() {
   const scenarioIndex = scenario ? seedScenarioIndex(scenario) : -1;
   const scenarioCounterIndex = scenarioIndex >= 0 ? scenarioIndex : undefined;
 
+  // In-chat coach (text mode): capped ACT nudges from the live transcript.
+  const simulationConfig = useSimulationConfig();
+  const coach = useCoachHint({
+    scenario: scenario ?? null,
+    messages: chat.messages,
+    sessionId: chat.sessionId,
+    config: simulationConfig ?? undefined,
+  });
+
   // Count of user turns committed to the session — gates the back-button
   // confirm modal (only shown once the user has actually engaged).
   const userTurns = chat.messages.filter((m) => m.role === 'user' && !m._transientError).length;
@@ -1146,7 +1161,20 @@ useThinkingSound(
           scenarioIndex={scenarioIndex}
           scenarioTotal={LIBRARY_SCENARIOS.length}
         />
+        {mode === 'text' && <CoachHintPanel coach={coach} />}
         <div style={{ position: 'relative' }}>
+          {/* Coach nudge trigger — mirrors the Scenario-info affordance on the left */}
+          {mode === 'text' && (
+            <div
+              className="absolute z-[2]"
+              style={{ left: 0, bottom: '100%', marginBottom: 16 }}
+            >
+              <CoachHintButton
+                coach={coach}
+                disabled={chat.status !== 'awaitingUser'}
+              />
+            </div>
+          )}
           {/* Same Icon.info + round glass as Home scenario card; label leads for readability */}
           <div
             role="button"
