@@ -4,6 +4,7 @@ import { Icon } from '../design-system/Icon';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
+import { LocaleToggle } from './LocaleToggle';
 import { useFlags } from '../app/providers/FlagProvider';
 import type { FlagKey } from '../services/flagsClient';
 import { PRE_ONBOARDING_SCREENS, type Screen } from '../app/routes';
@@ -196,6 +197,7 @@ export function Sidebar() {
         >
           {resolvedTheme === 'dark' ? 'Dark mode' : 'Light mode'}
         </span>
+        <LocaleToggle />
         <button
           type="button"
           onClick={toggle}

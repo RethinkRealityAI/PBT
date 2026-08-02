@@ -90,6 +90,15 @@ export const STORAGE_KEYS = {
     fallback: null as string | null,
     validate: (v): v is string | null => v === null || typeof v === 'string',
   } as StorageKeyDef<string | null>,
+
+  // App display language. Note: values must stay in sync with the Locale
+  // union in src/i18n/locales.ts (kept inline here to avoid a lib → i18n
+  // import cycle; the i18n catalog test asserts the two stay aligned).
+  locale: {
+    key: 'locale',
+    fallback: 'en' as 'en' | 'fr',
+    validate: (v): v is 'en' | 'fr' => v === 'en' || v === 'fr',
+  } as StorageKeyDef<'en' | 'fr'>,
 };
 
 /**

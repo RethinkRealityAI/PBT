@@ -3,6 +3,7 @@ import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
+import { LocaleToggle } from './LocaleToggle';
 
 export interface TopBarProps {
   title?: string;
@@ -68,6 +69,7 @@ export function TopBar({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {trailing}
+        <LocaleToggle />
         <Glass
           radius={9999}
           padding={0}

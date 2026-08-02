@@ -229,6 +229,35 @@ Active keys:
 | New screen               | Add a `Screen` value in `src/app/routes.ts` and a case in `ScreenSwitch` in `App.tsx`              |
 
 
+## Translations (MANDATORY)
+
+The platform ships in multiple languages (currently **en** + **fr** — Canadian
+French). This is a hard invariant, not a feature:
+
+- **Any change to user-facing text — new, edited, or removed — must update the
+  catalogs for EVERY locale** in `src/i18n/<locale>/`. English (`src/i18n/en/`)
+  is the source of truth; its keys define the typed `CatalogKey` union, so a
+  missing key in another locale fails `tsc`, and
+  `src/i18n/__tests__/catalog.test.ts` rejects English stubs, key drift, and
+  `{token}` mismatches.
+- **Use the translator subagent** (`.claude/agents/translator.md`) for the
+  non-English text — it carries the fr-CA register rules and the
+  do-not-translate glossary (ECHO driver names, breeds, Royal Canin products,
+  BCS/MCS, `[END_SIMULATION]`, enum keys). Don't freehand translations.
+- Components read text via `useT()` / `useLanguage()`
+  (`src/app/providers/LanguageProvider.tsx`); non-React code calls
+  `translate(locale, key)` from `src/i18n/translate.ts`. Never hardcode
+  user-visible strings in components.
+- AI output language is threaded through the prompt builders'
+  `locale` option (`promptBuilders.ts`), NOT the catalogs. Voice speech
+  config follows `LOCALE_BCP47`.
+- Dates/percentages go through `src/i18n/format.ts` (French uses U+202F
+  before `%`), never bare `toLocaleString()`.
+- Adding a locale: extend `src/i18n/locales.ts`, create the catalog dir (the
+  types force completeness), add the dynamic-import arm in `translate.ts`,
+  run the translator agent, done — no migration needed (`profiles.locale`
+  uses a pattern CHECK, not an enum).
+
 ## Conventions
 
 - All glass surfaces use `<Glass>` — never raw `backdrop-filter` styles inline.

@@ -9,6 +9,8 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { useSession } from '../app/providers/SessionProvider';
 import { useTheme, type ThemeMode } from '../app/providers/ThemeProvider';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { LOCALES, LOCALE_LABELS, type Locale } from '../i18n/locales';
 import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS } from '../design-system/tokens';
 import { clearAllStorage } from '../lib/storage';
@@ -21,6 +23,7 @@ export function SettingsScreen() {
   const { go, replace } = useNavigation();
   const { profile, setProfile } = useProfile();
   const { theme, setTheme } = useTheme();
+  const { locale, setLocale, t } = useLanguage();
   const { user } = useSession();
   const [authMode, setAuthMode] = useState<'signup' | 'signin' | null>(null);
   const [reportKind, setReportKind] = useState<ReportKind | null>(null);
@@ -131,6 +134,14 @@ export function SettingsScreen() {
                 { value: 'dark', label: 'Dark' },
                 { value: 'system', label: 'System' },
               ]}
+            />
+          </Row>
+          <Row label={t('settings.language.label')}>
+            <Segmented
+              value={locale}
+              onChange={(v) => setLocale(v as Locale)}
+              ariaLabel={t('settings.language.label')}
+              options={LOCALES.map((l) => ({ value: l, label: LOCALE_LABELS[l] }))}
             />
           </Row>
           <Row label="Retake ECHO Quiz" onClick={() => { setProfile(null); replace('quiz'); }}>

@@ -18,8 +18,10 @@ dist-ssr
 !.env.template
 *.local
 
-# Local tool / IDE state (project notes live in repo-root CLAUDE.md)
-.claude/
+# Local tool / IDE state (project notes live in repo-root CLAUDE.md).
+# Checked-in agent definitions (e.g. the translator) are the exception.
+.claude/*
+!.claude/agents/
 .netlify
 
 # Test & coverage

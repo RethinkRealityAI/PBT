@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { ThemeProvider } from './providers/ThemeProvider';
+import { LanguageProvider } from './providers/LanguageProvider';
 import { ProfileProvider, useProfile } from './providers/ProfileProvider';
 import {
   NavigationProvider,
@@ -59,6 +60,7 @@ export function App() {
 
   return (
     <ThemeProvider>
+      <LanguageProvider>
       <SessionProvider>
         <ProfileProvider>
           <FlagProvider>
@@ -80,6 +82,7 @@ export function App() {
           </FlagProvider>
         </ProfileProvider>
       </SessionProvider>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }
