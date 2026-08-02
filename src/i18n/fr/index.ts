@@ -6,6 +6,8 @@ import { drivers as driversData } from './data/drivers';
 import { quiz as quizData } from './data/quiz';
 import { home } from './home';
 import { settings } from './settings';
+import { actGuide } from './data/actGuide';
+import { clinical } from './data/clinical';
 
 /**
  * Canadian-French catalog. Typed as `Catalog` so any key missing relative to
@@ -28,4 +30,6 @@ export const fr: Catalog = {
 export const frData: Record<string, unknown> = {
   quiz: quizData,
   drivers: driversData,
+  clinical,
+  actGuide,
 };
