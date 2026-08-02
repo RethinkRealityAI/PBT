@@ -13,6 +13,8 @@ import { settings } from './settings';
 import { terms } from './terms';
 import { actGuide } from './data/actGuide';
 import { clinical } from './data/clinical';
+import { pushbacks } from './data/pushbacks';
+import { scenarios } from './data/scenarios';
 
 /**
  * Canadian-French catalog. Typed as `Catalog` so any key missing relative to
@@ -42,4 +44,6 @@ export const frData: Record<string, unknown> = {
   drivers: driversData,
   clinical,
   actGuide,
+  scenarios,
+  pushbacks,
 };
