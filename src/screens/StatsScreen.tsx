@@ -22,6 +22,7 @@ import { COLORS } from '../design-system/tokens';
 import { readStorage } from '../lib/storage';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
 import { setSelectedSessionId } from '../lib/selectedSession';
+import { useT } from '../i18n/useT';
 
 const easeOut = [0.22, 1, 0.36, 1] as const;
 
@@ -61,6 +62,7 @@ function MonoLabel({
 
 export function StatsScreen() {
   const { go } = useNavigation();
+  const t = useT();
   const chat = useChat();
   const { scenario } = useScenario();
   const reduceMotion = useReducedMotion();
@@ -98,16 +100,14 @@ export function StatsScreen() {
     const hasMessages = chat.messages.length > 0;
     return (
       <>
-        <TopBar showBack title="Session scorecard" />
+        <TopBar showBack title={t('stats.topbar.unavailable')} />
         <Page>
           <Glass radius={22} padding={20}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>
-              {hasMessages ? 'Scoring unavailable' : 'No session yet'}
+              {hasMessages ? t('stats.unavailable.title') : t('stats.none.title')}
             </div>
             <div style={{ color: 'var(--pbt-text-muted)', fontSize: 14, lineHeight: 1.5 }}>
-              {hasMessages
-                ? 'The AI scorer couldn\'t be reached. Your conversation is saved — you can retry scoring without redoing the session.'
-                : 'Run a session first.'}
+              {hasMessages ? t('stats.unavailable.body') : t('stats.none.body')}
             </div>
             {rescoreFailed && (
               <div
@@ -117,13 +117,15 @@ export function StatsScreen() {
                   color: COLORS.score.poor,
                 }}
               >
-                Still couldn't reach the scorer — check your connection and try again.
+                {t('stats.unavailable.retryFailed')}
               </div>
             )}
             {hasMessages && (
               <div style={{ marginTop: 16 }}>
                 <PillButton fullWidth onClick={() => void retryScoring()} disabled={rescoring}>
-                  {rescoring ? 'Scoring your conversation…' : 'Retry scoring'}
+                  {rescoring
+                    ? t('stats.unavailable.retrying')
+                    : t('stats.unavailable.retry')}
                 </PillButton>
               </div>
             )}
@@ -133,10 +135,12 @@ export function StatsScreen() {
           className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 gap-2 px-5 lg:static lg:translate-x-0 lg:mt-4 lg:max-w-md lg:mx-0 lg:px-0"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
         >
-          <PillButton variant="glass" onClick={() => go('home')} fullWidth>Home</PillButton>
+          <PillButton variant="glass" onClick={() => go('home')} fullWidth>
+            {t('stats.cta.home')}
+          </PillButton>
           {hasMessages && (
             <PillButton fullWidth onClick={() => { chat.reset(); go('chat'); }}>
-              Run it again
+              {t('stats.cta.runAgain')}
             </PillButton>
           )}
         </div>
@@ -146,33 +150,41 @@ export function StatsScreen() {
 
   const focus = weakestDimension(report);
   const bandColor = COLORS.score[report.band];
+  // `focus.label` comes from the (admin-configurable) scoring rubric and is
+  // interpolated as data — the surrounding sentence is what gets localized.
   const headline =
     report.band === 'good'
-      ? 'Strong session.\nKeep that line of attack.'
+      ? t('stats.headline.good')
       : report.band === 'ok'
-        ? `Solid foundation.\nSharpen ${focus.label.toLowerCase()} next.`
-        : 'A lot to learn here —\nwhich is the point.';
+        ? t('stats.headline.ok', { focus: focus.label.toLowerCase() })
+        : t('stats.headline.poor');
 
   const deltaChip = (() => {
     if (!delta) return null;
     if (delta.personalBest) {
-      return { text: 'Personal best', color: COLORS.score.good };
+      return { text: t('stats.delta.personalBest'), color: COLORS.score.good };
     }
     switch (delta.kind) {
       case 'first':
-        return { text: 'First scored session', color: 'var(--pbt-text-muted)' };
+        return { text: t('stats.delta.first'), color: 'var(--pbt-text-muted)' };
       case 'improved':
-        return { text: `+${delta.delta} vs last session`, color: COLORS.score.good };
+        return {
+          text: t('stats.delta.improved', { delta: delta.delta }),
+          color: COLORS.score.good,
+        };
       case 'dropped':
-        return { text: `${delta.delta} vs last session`, color: COLORS.score.poor };
+        return {
+          text: t('stats.delta.dropped', { delta: delta.delta }),
+          color: COLORS.score.poor,
+        };
       case 'even':
-        return { text: 'Even with last session', color: 'var(--pbt-text-muted)' };
+        return { text: t('stats.delta.even'), color: 'var(--pbt-text-muted)' };
     }
   })();
 
   return (
     <>
-      <TopBar showBack title="Scorecard" />
+      <TopBar showBack title={t('stats.topbar.title')} />
       <Page>
         <motion.div
           initial={reduceMotion ? false : 'hidden'}
@@ -193,7 +205,7 @@ export function StatsScreen() {
         <motion.div variants={itemVariants}>
         <Glass radius={28} padding={22} glow={bandColor}>
           <div className="flex items-start gap-4">
-            <ScoreRing score={report.overall} label="Overall" size={120} animate />
+            <ScoreRing score={report.overall} label={t('stats.overall')} size={120} animate />
             <div className="flex-1">
               <h2
                 style={{
@@ -217,7 +229,9 @@ export function StatsScreen() {
                   color: 'var(--pbt-text-muted)',
                 }}
               >
-                {chat.messages.length} turns
+                {chat.messages.length === 1
+                  ? t('stats.turnsOne')
+                  : t('stats.turns', { count: chat.messages.length })}
               </div>
               {deltaChip && (
                 <div
@@ -252,7 +266,7 @@ export function StatsScreen() {
                 go('chat');
               }}
             >
-              Run it again
+              {t('stats.cta.runAgain')}
             </PillButton>
           </div>
         </Glass>
@@ -270,7 +284,7 @@ export function StatsScreen() {
         <motion.div variants={itemVariants} style={{ marginTop: 14 }}>
           <Glass radius={22} padding={18} glow={bandFor(report[focus.key]) === 'good' ? null : bandColor}>
             <MonoLabel style={{ paddingLeft: 0, color: 'var(--pbt-driver-primary)', fontWeight: 700 }}>
-              Focus next · {focus.label}
+              {t('stats.focus.label', { dimension: focus.label })}
             </MonoLabel>
             <p style={{ margin: '0 0 10px', fontSize: 13.5, lineHeight: 1.5, color: 'var(--pbt-text)' }}>
               {focus.description}
@@ -278,7 +292,7 @@ export function StatsScreen() {
             {focus.bands.excellent.example && (
               <>
                 <MonoLabel style={{ paddingLeft: 0, marginBottom: 4 }}>
-                  What excellent sounds like
+                  {t('stats.focus.excellent')}
                 </MonoLabel>
                 <p
                   style={{
@@ -303,7 +317,7 @@ export function StatsScreen() {
         <div style={{ height: 14 }} className="lg:hidden" />
 
         <motion.div variants={itemVariants}>
-        <MonoLabel>Breakdown</MonoLabel>
+        <MonoLabel>{t('stats.breakdown')}</MonoLabel>
         {/* Two-up on desktop so the dimensions don't form a tall narrow stack. */}
         <div className="lg:grid lg:grid-cols-2 lg:gap-3">
           {DIMENSIONS.map((dim, idx) => {
@@ -375,7 +389,7 @@ export function StatsScreen() {
 
         {report.keyMoments.length > 0 && (
           <motion.div variants={itemVariants}>
-            <MonoLabel style={{ margin: '14px 0 8px' }}>Key moments</MonoLabel>
+            <MonoLabel style={{ margin: '14px 0 8px' }}>{t('stats.keyMoments')}</MonoLabel>
             {report.keyMoments.map((m, i) => (
               <div key={i} style={{ marginBottom: 10 }}>
                 <Glass
@@ -397,7 +411,9 @@ export function StatsScreen() {
                       marginBottom: 4,
                     }}
                   >
-                    {m.type === 'win' ? 'Win' : 'Miss'} · {m.label}
+                    {m.type === 'win'
+                      ? t('stats.moment.win', { label: m.label })
+                      : t('stats.moment.miss', { label: m.label })}
                   </div>
                   <div
                     style={{
@@ -417,7 +433,7 @@ export function StatsScreen() {
         <motion.div variants={itemVariants}>
         <div style={{ height: 14 }} />
         <Glass radius={22} padding={18}>
-          <MonoLabel style={{ paddingLeft: 0, marginBottom: 6 }}>Coach notes</MonoLabel>
+          <MonoLabel style={{ paddingLeft: 0, marginBottom: 6 }}>{t('stats.coachNotes')}</MonoLabel>
           <p
             style={{
               margin: '0 0 12px',
@@ -428,7 +444,7 @@ export function StatsScreen() {
           >
             {report.critique}
           </p>
-          <MonoLabel style={{ paddingLeft: 0, marginBottom: 6 }}>Better alternative</MonoLabel>
+          <MonoLabel style={{ paddingLeft: 0, marginBottom: 6 }}>{t('stats.betterAlternative')}</MonoLabel>
           <p
             style={{
               margin: 0,
@@ -442,7 +458,7 @@ export function StatsScreen() {
           {chat.sessionId && (
             <div style={{ marginTop: 14 }}>
               <PillButton variant="glass" fullWidth onClick={openTranscript}>
-                Review the transcript
+                {t('stats.reviewTranscript')}
               </PillButton>
             </div>
           )}
@@ -472,7 +488,7 @@ export function StatsScreen() {
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
       >
         <PillButton variant="glass" onClick={() => go('home')} fullWidth>
-          Home
+          {t('stats.cta.home')}
         </PillButton>
         <PillButton
           fullWidth
@@ -481,7 +497,7 @@ export function StatsScreen() {
             go('chat');
           }}
         >
-          Run it again
+          {t('stats.cta.runAgain')}
         </PillButton>
       </div>
     </>

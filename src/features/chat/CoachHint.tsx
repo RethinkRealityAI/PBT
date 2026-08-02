@@ -7,6 +7,7 @@ import type { ChatMessage } from '../../services/types';
 import type { Scenario } from '../../data/scenarios';
 import type { SimulationConfig } from '../../data/knowledge/simulationConfig';
 import { logEvent } from '../../lib/analytics';
+import { useT } from '../../i18n/useT';
 
 /**
  * In-chat coach: a discreet, capped "give me a nudge" affordance for text
@@ -95,6 +96,7 @@ export function useCoachHint(args: {
 /** The nudge card — rendered in flow above the session controls. */
 export function CoachHintPanel({ coach }: { coach: UseCoachHint }) {
   const reduceMotion = useReducedMotion();
+  const t = useT();
   return (
     <AnimatePresence>
       {coach.open && (
@@ -152,10 +154,13 @@ export function CoachHintPanel({ coach }: { coach: UseCoachHint }) {
                   }}
                 >
                   {coach.status === 'loading'
-                    ? 'Coach is thinking…'
+                    ? t('chat.coach.thinking')
                     : coach.status === 'error'
-                      ? 'Coach unavailable'
-                      : `Coach · hint ${coach.used}/${MAX_COACH_HINTS}`}
+                      ? t('chat.coach.unavailable')
+                      : t('chat.coach.hintCount', {
+                          used: coach.used,
+                          max: MAX_COACH_HINTS,
+                        })}
                 </div>
                 {coach.status === 'loading' ? (
                   <div aria-hidden style={{ display: 'inline-flex', gap: 5, padding: '4px 0' }}>
@@ -175,8 +180,7 @@ export function CoachHintPanel({ coach }: { coach: UseCoachHint }) {
                   </div>
                 ) : coach.status === 'error' ? (
                   <div style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--pbt-text-muted)' }}>
-                    Couldn't reach the coach — check your connection and tap the coach button to
-                    try again (it won't cost a hint).
+                    {t('chat.coach.errorBody')}
                   </div>
                 ) : (
                   <div
@@ -190,7 +194,7 @@ export function CoachHintPanel({ coach }: { coach: UseCoachHint }) {
               </div>
               <button
                 type="button"
-                aria-label="Dismiss hint"
+                aria-label={t('chat.coach.dismiss')}
                 onClick={coach.dismiss}
                 style={{
                   flexShrink: 0,
@@ -224,6 +228,7 @@ export function CoachHintButton({
   coach: UseCoachHint;
   disabled: boolean;
 }) {
+  const t = useT();
   const exhausted = coach.remaining === 0;
   const inert = disabled || exhausted || coach.status === 'loading';
   return (
@@ -232,8 +237,8 @@ export function CoachHintButton({
       tabIndex={inert ? -1 : 0}
       aria-label={
         exhausted
-          ? 'No coach hints left this session'
-          : `Get a coach hint (${coach.remaining} left)`
+          ? t('chat.coach.exhaustedAria')
+          : t('chat.coach.requestAria', { count: coach.remaining })
       }
       aria-disabled={inert}
       className="flex items-center gap-2"
@@ -285,7 +290,9 @@ export function CoachHintButton({
           userSelect: 'none',
         }}
       >
-        {exhausted ? 'No hints left' : `Coach · ${coach.remaining}`}
+        {exhausted
+          ? t('chat.coach.exhausted')
+          : t('chat.coach.label', { count: coach.remaining })}
       </span>
     </div>
   );

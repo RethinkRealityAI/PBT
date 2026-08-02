@@ -11,6 +11,9 @@ import { onboarding as enOnboarding } from '../en/onboarding';
 import { terms as enTerms } from '../en/terms';
 import { quiz as enQuiz } from '../en/quiz';
 import { result as enResult } from '../en/result';
+import { stats as enStats } from '../en/stats';
+import { scorecard as enScorecard } from '../en/scorecard';
+import { feedback as enFeedback } from '../en/feedback';
 import { LOCALES, isLocale } from '../locales';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { translate, registerCatalog } from '../translate';
@@ -32,6 +35,7 @@ const IDENTICAL_ALLOWED = new Set<string>([
   'terms.eyebrow', // same product wordmark as the onboarding eyebrow
   'home.actions.analyzer.sub', // 'BCS · MCS · kcal' — clinical initialisms + SI unit only
   'create.weight.unit', // 'kg' — SI unit symbol
+  'chat.coach.label', // 'Coach · {count}' — "Coach" is used verbatim in fr-CA; 9px pill has no room for longer
 ]);
 
 const CATALOGS = { en, fr } as const;
@@ -97,6 +101,9 @@ describe('locale catalogs', () => {
       enTerms,
       enQuiz,
       enResult,
+      enStats,
+      enScorecard,
+      enFeedback,
     ];
     const total = namespaces.reduce((n, ns) => n + Object.keys(ns).length, 0);
     expect(Object.keys(en).length).toBe(total);

@@ -28,6 +28,7 @@ import {
 } from '../features/chat/CoachHint';
 import { useSimulationConfig } from '../app/providers/FlagProvider';
 import { useT } from '../i18n/useT';
+import type { CatalogKey } from '../i18n/catalog';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -87,10 +88,11 @@ const AI_STATE_COLOR: Record<EmotionColor, string> = {
   yellow: COLORS.score.ok,
   green: COLORS.score.good,
 };
-const AI_STATE_LABEL: Record<EmotionColor, string> = {
-  red: 'Defensive',
-  yellow: 'Receptive',
-  green: 'Convinced',
+/** Emotion enum values stay machine keys; only their labels are localized. */
+const AI_STATE_LABEL_KEY: Record<EmotionColor, CatalogKey> = {
+  red: 'chat.emotion.defensive',
+  yellow: 'chat.emotion.receptive',
+  green: 'chat.emotion.convinced',
 };
 
 /** Prev / next chevrons — matches Home scenario card (counter between arrows + Scenario label) */
@@ -106,6 +108,7 @@ function ScenarioArrowNav({
   indexDisplay: string | null;
   disabled?: boolean;
 }) {
+  const t = useT();
   const btn = {
     width: 34,
     height: 34,
@@ -132,10 +135,10 @@ function ScenarioArrowNav({
           color: 'var(--pbt-text-muted)',
         }}
       >
-        Scenario
+        {t('chat.scenarioNav.eyebrow')}
       </span>
       <div className="flex items-center gap-1">
-        <button type="button" aria-label="Previous scenario" onClick={onPrev} disabled={disabled} style={btn}>
+        <button type="button" aria-label={t('chat.scenarioNav.prev')} onClick={onPrev} disabled={disabled} style={btn}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         {indexDisplay != null && (
@@ -152,7 +155,7 @@ function ScenarioArrowNav({
             {indexDisplay}
           </span>
         )}
-        <button type="button" aria-label="Next scenario" onClick={onNext} disabled={disabled} style={btn}>
+        <button type="button" aria-label={t('chat.scenarioNav.next')} onClick={onNext} disabled={disabled} style={btn}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
@@ -178,6 +181,7 @@ function ScenarioDetailsPanel({
   scenarioIndex: number;
   scenarioTotal: number;
 }) {
+  const t = useT();
   return (
     <AnimatePresence>
       {open && (
@@ -185,7 +189,7 @@ function ScenarioDetailsPanel({
           {/* Tap-outside scrim — subtle so it doesn't feel heavy on auto-open */}
           <motion.button
             type="button"
-            aria-label="Close scenario details"
+            aria-label={t('chat.details.closeScrimAria')}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -260,8 +264,11 @@ function ScenarioDetailsPanel({
                     }}
                   >
                     {scenarioIndex >= 0
-                      ? `Scenario ${scenarioIndex + 1} of ${scenarioTotal}`
-                      : 'Custom scenario'}
+                      ? t('chat.details.counter', {
+                          index: scenarioIndex + 1,
+                          total: scenarioTotal,
+                        })
+                      : t('chat.details.custom')}
                   </div>
                   <h2 id="scenario-details-title" style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
                     {scenario.pushback.title}
@@ -269,7 +276,7 @@ function ScenarioDetailsPanel({
                 </div>
                 <button
                   type="button"
-                  aria-label="Close"
+                  aria-label={t('chat.modal.close')}
                   onClick={onClose}
                   style={{
                     flexShrink: 0,
@@ -324,13 +331,13 @@ function ScenarioDetailsPanel({
                   color: 'var(--pbt-text)',
                 }}
               >
-                <strong style={{ fontWeight: 800 }}>Objective:</strong>{' '}
-                Guide this client from pushback to resolution with ACT.
+                <strong style={{ fontWeight: 800 }}>{t('chat.details.objectiveLabel')}</strong>{' '}
+                {t('chat.details.objectiveText')}
               </p>
 
               {(scenario.context ?? scenario.pushbackNotes) && (
                 <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 600, color: 'var(--pbt-text)' }}>
-                  <strong style={{ fontWeight: 800 }}>Context:</strong>{' '}
+                  <strong style={{ fontWeight: 800 }}>{t('chat.details.contextLabel')}</strong>{' '}
                   {scenario.context ?? scenario.pushbackNotes}
                 </p>
               )}
@@ -343,7 +350,7 @@ function ScenarioDetailsPanel({
                   color: 'var(--pbt-text)',
                 }}
               >
-                <strong style={{ fontWeight: 800 }}>Opening pushback:</strong>{' '}
+                <strong style={{ fontWeight: 800 }}>{t('chat.details.openingLabel')}</strong>{' '}
                 <em style={{ fontWeight: 600, color: 'var(--pbt-text)', fontStyle: 'italic' }}>
                   {scenario.openingLine ?? scenario.pushbackNotes ?? scenario.pushback.example}
                 </em>
@@ -400,7 +407,7 @@ function ScenarioDetailsPanel({
                         '0 18px 36px -18px color-mix(in oklab, var(--pbt-driver-primary) 75%, transparent)',
                     }}
                   >
-                    Begin simulation
+                    {t('chat.details.begin')}
                   </button>
                 </div>
               )}
@@ -425,6 +432,7 @@ function ScenarioSessionControls({
   // identity, not the customer's persona (the customer's driver is implicit in the
   // scenario via scenario.suggestedDriver and surfaces in the AI's behavior).
   const { profile } = useProfile();
+  const t = useT();
   const driverKey = profile?.primary ?? 'Activator';
   return (
     <Glass radius={22} padding="10px 12px" blur={18} tint={0.04}>
@@ -441,7 +449,7 @@ function ScenarioSessionControls({
               marginBottom: 2,
             }}
           >
-            Echo driver · {driverKey}
+            {t('chat.controls.driverEyebrow', { driver: driverKey })}
           </div>
           <div style={{ height: 28, marginLeft: -4, marginRight: 4 }}>
             <DriverWave
@@ -457,7 +465,7 @@ function ScenarioSessionControls({
         <Segmented
           value={mode}
           onChange={onModeChange}
-          ariaLabel="Mode"
+          ariaLabel={t('chat.controls.modeAria')}
           options={[
             { value: 'text', label: <Icon.chat /> },
             { value: 'voice', label: <Icon.voice /> },
@@ -481,7 +489,7 @@ function ScenarioSessionControls({
             flexShrink: 0,
           }}
         >
-          End
+          {t('chat.controls.end')}
         </button>
       </div>
     </Glass>
@@ -550,6 +558,7 @@ function ChatComposer({
   canSend,
   onResize,
 }: ChatComposerProps) {
+  const t = useT();
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize: reset to auto, then snap to scrollHeight (capped). Re-runs
@@ -587,7 +596,7 @@ function ChatComposer({
           ref={taRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Acknowledge, ask, recommend…"
+          placeholder={t('chat.composer.placeholder')}
           rows={1}
           disabled={disabled}
           onKeyDown={(e) => {
@@ -617,7 +626,7 @@ function ChatComposer({
           }}
         />
         <button
-          aria-label="Send"
+          aria-label={t('chat.composer.send')}
           type="button"
           disabled={!sendable}
           onClick={trySend}
@@ -654,6 +663,7 @@ function ChatComposer({
 
 export function ChatScreen() {
   const { go } = useNavigation();
+  const t = useT();
   const { profile } = useProfile();
   const { resolvedTheme } = useTheme();
   const darkChrome = resolvedTheme === 'dark';
@@ -755,11 +765,11 @@ export function ChatScreen() {
       }, 700);
     } catch (err) {
       console.error('[ChatScreen] finalizeVoice error', err);
-      setVoiceAnalysisError('Failed to analyze session — check your network and try again.');
+      setVoiceAnalysisError(t('chat.voice.analyzeFailed'));
       voiceFinalizeBusyRef.current = false;
       setVoiceAnalyzing(false);
     }
-  }, [go]);
+  }, [go, t]);
 
   const beginVoice = useCallback(() => {
     if (!scenario) return;
@@ -908,10 +918,10 @@ useThinkingSound(
   if (!scenario) {
     return (
       <>
-        <TopBar showBack title="Live scenario" />
+        <TopBar showBack title={t('chat.empty.title')} />
         <div className="flex flex-1 items-center justify-center px-6">
           <p style={{ color: 'var(--pbt-text-muted)' }}>
-            No active scenario. Pick one from Home.
+            {t('chat.empty.body')}
           </p>
         </div>
       </>
@@ -935,7 +945,7 @@ useThinkingSound(
         {/* Row 1: back button + eyebrow */}
         <div className="flex items-center gap-3">
           <button
-            aria-label="Back to dashboard"
+            aria-label={t('chat.header.backAria')}
             onClick={handleBackPress}
             style={{
               width: 32,
@@ -964,7 +974,9 @@ useThinkingSound(
               color: 'var(--pbt-text-muted)',
             }}
           >
-            PBT · {mode === 'voice' ? 'Voice practice' : 'Text practice'}
+            {mode === 'voice'
+              ? t('chat.header.eyebrowVoice')
+              : t('chat.header.eyebrowText')}
           </div>
         </div>
 
@@ -1007,7 +1019,7 @@ useThinkingSound(
             {chat.status === 'error' && (
               <div style={{ padding: '12px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: 13, color: 'var(--pbt-text-muted)', marginBottom: 10 }}>
-                  {chat.transientError ?? 'Could not connect — check your network.'}
+                  {chat.transientError ?? t('chat.error.connect')}
                 </div>
                 <button
                   onClick={() => { chat.reset(); }}
@@ -1018,7 +1030,7 @@ useThinkingSound(
                     fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase',
                   }}
                 >
-                  Try again
+                  {t('chat.error.retry')}
                 </button>
               </div>
             )}
@@ -1063,14 +1075,14 @@ useThinkingSound(
                           marginTop: 4,
                         }}
                       >
-                        You
+                        {t('chat.bubble.you')}
                       </div>
                     </div>
                   );
                 }
                 const emotion = m.emotion ?? 'red';
                 const stateColor = AI_STATE_COLOR[emotion];
-                const stateLabel = AI_STATE_LABEL[emotion];
+                const stateLabel = t(AI_STATE_LABEL_KEY[emotion]);
                 return (
                   <div
                     key={i}
@@ -1147,7 +1159,7 @@ useThinkingSound(
                     textTransform: 'uppercase',
                   }}
                 >
-                  Scoring conversation…
+                  {t('chat.status.scoring')}
                 </div>
               )}
             </div>
@@ -1210,7 +1222,7 @@ useThinkingSound(
                 setScenarioDetailsOpen(true);
               }
             }}
-            aria-label="Scenario info"
+            aria-label={t('chat.scenarioInfo')}
           >
             <span
               style={{
@@ -1222,7 +1234,7 @@ useThinkingSound(
                 userSelect: 'none',
               }}
             >
-              Scenario info
+              {t('chat.scenarioInfo')}
             </span>
             <span style={scenarioLibraryInfoButtonStyle(driverColors, darkChrome)}>
               <Icon.info style={{ width: 18, height: 18 }} aria-hidden />
@@ -1329,6 +1341,7 @@ useThinkingSound(
 }
 
 function TypingIndicator() {
+  const t = useT();
   return (
     <div style={{ alignSelf: 'flex-start' }}>
       <div
@@ -1343,7 +1356,7 @@ function TypingIndicator() {
           display: 'inline-flex',
           gap: 4,
         }}
-        aria-label="Customer is typing"
+        aria-label={t('chat.typing.aria')}
       >
         {[0, 1, 2].map((i) => (
           <span
@@ -1363,14 +1376,14 @@ function TypingIndicator() {
   );
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  idle: 'Initializing…',
-  connecting: 'Connecting…',
-  listening: 'Go ahead — I\'m listening',
-  thinking: 'Processing…',
-  aiSpeaking: 'Speaking…',
-  ended: 'Session complete',
-  error: 'Connection error',
+const STATUS_LABEL_KEYS: Record<string, CatalogKey> = {
+  idle: 'chat.voice.status.idle',
+  connecting: 'chat.voice.status.connecting',
+  listening: 'chat.voice.status.listening',
+  thinking: 'chat.voice.status.thinking',
+  aiSpeaking: 'chat.voice.status.aiSpeaking',
+  ended: 'chat.voice.status.ended',
+  error: 'chat.voice.status.error',
 };
 
 function VoiceMode({
@@ -1462,7 +1475,9 @@ function VoiceMode({
               : 'pbtFadeUp 0.32s ease-out',
           }}
         >
-          {isReadyProp ? 'Your scorecard is ready' : 'Analyzing session…'}
+          {isReadyProp
+            ? t('chat.voice.scorecardReady')
+            : t('chat.voice.analyzing')}
         </div>
       ) : (
         <div
@@ -1481,10 +1496,12 @@ function VoiceMode({
           }}
         >
           {isConnecting
-            ? 'Connecting…'
+            ? t('chat.voice.status.connecting')
             : isReady
-            ? 'Voice ready'
-            : STATUS_LABELS[voice.status] ?? ''}
+            ? t('chat.voice.ready')
+            : STATUS_LABEL_KEYS[voice.status]
+            ? t(STATUS_LABEL_KEYS[voice.status])
+            : ''}
         </div>
       )}
 
@@ -1655,7 +1672,9 @@ function VoiceMode({
             marginLeft: 3,
           }}
         >
-          {isThinking ? 'Processing' : AI_STATE_LABEL[voice.emotion]}
+          {isThinking
+            ? t('chat.voice.processing')
+            : t(AI_STATE_LABEL_KEY[voice.emotion])}
         </span>
       </div>
 
@@ -1686,7 +1705,7 @@ function VoiceMode({
                     '0 4px 12px -4px color-mix(in oklab, var(--pbt-driver-primary) 45%, transparent)',
                 }}
               >
-                {hasStartError ? 'Try voice again' : 'Try again'}
+                {hasStartError ? t('chat.voice.retryVoice') : t('chat.error.retry')}
               </button>
             )}
           </Glass>
@@ -1765,26 +1784,32 @@ function EndSessionModal({
   onRestart: () => void;
   onEnd: () => void;
 }) {
+  const t = useT();
   // Voice mode hides Restart — re-establishing the Live API socket is too
   // heavy for the "retry the same opener" intent; teardown + reconnect
   // would take longer than the user's patience for a soft reset.
   const subtitle =
     mode === 'voice'
-      ? 'Save it to your history with a full scorecard, or end without saving.'
-      : 'Save it to your history with a full scorecard, restart with the same opener, or end without saving.';
+      ? t('chat.endModal.subtitleVoice')
+      : t('chat.endModal.subtitleText');
   return (
-    <ModalShell open={open} onClose={onClose} title="End this session?" subtitle={subtitle}>
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      title={t('chat.endModal.title')}
+      subtitle={subtitle}
+    >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <ModalActionButton tone="primary" onClick={onSave}>
-          Save & score
+          {t('chat.endModal.save')}
         </ModalActionButton>
         {mode === 'text' && (
           <ModalActionButton tone="secondary" onClick={onRestart}>
-            Restart with same opener
+            {t('chat.endModal.restart')}
           </ModalActionButton>
         )}
         <ModalActionButton tone="quiet" onClick={onEnd}>
-          End without saving
+          {t('chat.endModal.end')}
         </ModalActionButton>
       </div>
     </ModalShell>
@@ -1802,19 +1827,20 @@ function ExitChatModal({
   onSave: () => void;
   onDiscard: () => void;
 }) {
+  const t = useT();
   return (
     <ModalShell
       open={open}
       onClose={onClose}
-      title="Save your progress?"
-      subtitle="You're leaving mid-session. Save it to your history with a full scorecard, or discard and head back."
+      title={t('chat.exitModal.title')}
+      subtitle={t('chat.exitModal.subtitle')}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <ModalActionButton tone="primary" onClick={onSave}>
-          Save & score
+          {t('chat.endModal.save')}
         </ModalActionButton>
         <ModalActionButton tone="quiet" onClick={onDiscard}>
-          Discard & leave
+          {t('chat.exitModal.discard')}
         </ModalActionButton>
       </div>
     </ModalShell>
@@ -1834,13 +1860,14 @@ function ModalShell({
   subtitle?: string;
   children: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <AnimatePresence>
       {open && (
         <>
           <motion.button
             type="button"
-            aria-label="Close"
+            aria-label={t('chat.modal.close')}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

@@ -5,6 +5,7 @@ import { Icon } from '../../design-system/Icon';
 import { COLORS } from '../../design-system/tokens';
 import { useTheme } from '../../app/providers/ThemeProvider';
 import { isSessionRated, useSessionFeedback } from './useSessionFeedback';
+import { useT } from '../../i18n/useT';
 
 const MONO_LABEL: React.CSSProperties = {
   fontFamily: 'var(--pbt-font-mono)',
@@ -24,6 +25,7 @@ function StarRow({
   onChange: (v: number) => void;
 }) {
   const { resolvedTheme } = useTheme();
+  const t = useT();
   const dark = resolvedTheme === 'dark';
   return (
     <div style={{ marginBottom: 12 }}>
@@ -37,7 +39,7 @@ function StarRow({
               type="button"
               role="radio"
               aria-checked={value === n}
-              aria-label={`${n} of 5`}
+              aria-label={t('feedback.starAria', { n })}
               onClick={() => onChange(n)}
               style={{
                 width: 34,
@@ -87,6 +89,7 @@ export function SessionFeedbackCard({
   pushbackId?: string;
 }) {
   const { status, submitFeedback } = useSessionFeedback();
+  const t = useT();
   const [realism, setRealism] = useState(0);
   const [aiQuality, setAiQuality] = useState(0);
   const [comfort, setComfort] = useState(0);
@@ -103,7 +106,7 @@ export function SessionFeedbackCard({
         <div className="flex items-center gap-2">
           <Icon.check />
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--pbt-text)' }}>
-            Thanks — your feedback helps us tune the simulations.
+            {t('feedback.thanks')}
           </div>
         </div>
       </Glass>
@@ -116,7 +119,7 @@ export function SessionFeedbackCard({
         <div className="flex items-center gap-2">
           <Icon.check />
           <div style={{ fontSize: 13, color: 'var(--pbt-text-muted)' }}>
-            Thanks — you already rated this session.
+            {t('feedback.alreadyRated')}
           </div>
         </div>
       </Glass>
@@ -125,15 +128,15 @@ export function SessionFeedbackCard({
 
   return (
     <Glass radius={22} padding={18}>
-      <div style={{ ...MONO_LABEL, marginBottom: 12 }}>Rate this simulation</div>
-      <StarRow label="Scenario realism" value={realism} onChange={setRealism} />
-      <StarRow label="AI response quality" value={aiQuality} onChange={setAiQuality} />
-      <StarRow label="How comfortable did you feel" value={comfort} onChange={setComfort} />
+      <div style={{ ...MONO_LABEL, marginBottom: 12 }}>{t('feedback.title')}</div>
+      <StarRow label={t('feedback.realism')} value={realism} onChange={setRealism} />
+      <StarRow label={t('feedback.aiQuality')} value={aiQuality} onChange={setAiQuality} />
+      <StarRow label={t('feedback.comfort')} value={comfort} onChange={setComfort} />
 
       <textarea
         value={comment}
         onChange={(e) => setComment(e.target.value)}
-        placeholder="Anything else? (optional)"
+        placeholder={t('feedback.commentPlaceholder')}
         rows={2}
         className="pbt-glass-input"
         style={{
@@ -152,7 +155,7 @@ export function SessionFeedbackCard({
             color: COLORS.score.poor,
           }}
         >
-          Couldn't save that — tap submit to try again.
+          {t('feedback.error')}
         </div>
       )}
 
@@ -171,7 +174,7 @@ export function SessionFeedbackCard({
           })
         }
       >
-        {status === 'submitting' ? 'Submitting…' : 'Submit feedback'}
+        {status === 'submitting' ? t('feedback.submitting') : t('feedback.submit')}
       </PillButton>
     </Glass>
   );

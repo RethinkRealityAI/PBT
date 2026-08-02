@@ -4,12 +4,15 @@ import { chat } from './chat';
 import { chrome } from './chrome';
 import { create } from './create';
 import { drivers as driversData } from './data/drivers';
-import { quiz as quizData } from './data/quiz';
+import { feedback } from './feedback';
 import { home } from './home';
 import { onboarding } from './onboarding';
 import { quiz } from './quiz';
+import { quiz as quizData } from './data/quiz';
 import { result } from './result';
+import { scorecard } from './scorecard';
 import { settings } from './settings';
+import { stats } from './stats';
 import { terms } from './terms';
 import { actGuide } from './data/actGuide';
 import { clinical } from './data/clinical';
@@ -32,6 +35,9 @@ export const fr: Catalog = {
   ...terms,
   ...quiz,
   ...result,
+  ...stats,
+  ...scorecard,
+  ...feedback,
 };
 
 /**

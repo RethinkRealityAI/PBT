@@ -2,11 +2,14 @@ import { analyzer } from './analyzer';
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { create } from './create';
+import { feedback } from './feedback';
 import { home } from './home';
 import { onboarding } from './onboarding';
 import { quiz } from './quiz';
 import { result } from './result';
+import { scorecard } from './scorecard';
 import { settings } from './settings';
+import { stats } from './stats';
 import { terms } from './terms';
 
 /**
@@ -26,4 +29,7 @@ export const en = {
   ...terms,
   ...quiz,
   ...result,
+  ...stats,
+  ...scorecard,
+  ...feedback,
 } as const;

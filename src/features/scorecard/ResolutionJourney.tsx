@@ -2,6 +2,8 @@ import { motion, useReducedMotion } from 'motion/react';
 import { Glass } from '../../design-system/Glass';
 import { COLORS } from '../../design-system/tokens';
 import type { AiEmotion } from '../../services/types';
+import { useT, type TFunction } from '../../i18n/useT';
+import type { CatalogKey } from '../../i18n/catalog';
 
 /**
  * The customer's resolution arc across the session — the same red/yellow/
@@ -17,35 +19,44 @@ const EMOTION_COLOR: Record<AiEmotion, string> = {
   green: COLORS.score.good,
 };
 
-const EMOTION_LABEL: Record<AiEmotion, string> = {
-  red: 'Defensive',
-  yellow: 'Receptive',
-  green: 'Convinced',
+/** Enum values stay machine keys; the labels are shared with the chat bubbles. */
+const EMOTION_LABEL_KEY: Record<AiEmotion, CatalogKey> = {
+  red: 'chat.emotion.defensive',
+  yellow: 'chat.emotion.receptive',
+  green: 'chat.emotion.convinced',
 };
 
-function captionFor(journey: AiEmotion[]): string {
+function captionFor(journey: AiEmotion[], t: TFunction): string {
   const first = journey[0];
   const last = journey[journey.length - 1];
   if (last === 'green') {
-    return first === 'green'
-      ? 'The client was on board from the start — you kept them there.'
-      : `You moved the client from ${EMOTION_LABEL[first].toLowerCase()} to convinced over ${journey.length} replies.`;
+    if (first === 'green') return t('scorecard.arc.caption.heldGreen');
+    const from = t(EMOTION_LABEL_KEY[first]).toLowerCase();
+    return journey.length === 1
+      ? t('scorecard.arc.caption.movedToGreenOne', { from })
+      : t('scorecard.arc.caption.movedToGreen', { from, count: journey.length });
   }
   if (last === 'yellow') {
     return first === 'red'
-      ? 'You opened the door — the client left receptive, but not yet convinced.'
-      : 'The client stayed receptive without fully committing.';
+      ? t('scorecard.arc.caption.openedDoor')
+      : t('scorecard.arc.caption.stayedReceptive');
   }
   return first === 'red'
-    ? 'The client stayed defensive throughout — look at the Focus Next card below.'
-    : 'The client closed back down — revisit where the tone turned.';
+    ? t('scorecard.arc.caption.stayedDefensive')
+    : t('scorecard.arc.caption.closedDown');
 }
 
 export function ResolutionJourney({ journey }: { journey: AiEmotion[] }) {
   const reduceMotion = useReducedMotion();
+  const t = useT();
   if (journey.length === 0) return null;
 
   const last = journey[journey.length - 1];
+  const ariaParams = {
+    from: t(EMOTION_LABEL_KEY[journey[0]]),
+    to: t(EMOTION_LABEL_KEY[last]),
+    count: journey.length,
+  };
 
   return (
     <Glass radius={22} padding={18}>
@@ -59,11 +70,15 @@ export function ResolutionJourney({ journey }: { journey: AiEmotion[] }) {
           marginBottom: 10,
         }}
       >
-        Client resolution arc
+        {t('scorecard.arc.title')}
       </div>
       <div
         role="img"
-        aria-label={`Client went from ${EMOTION_LABEL[journey[0]]} to ${EMOTION_LABEL[last]} across ${journey.length} replies`}
+        aria-label={
+          journey.length === 1
+            ? t('scorecard.arc.ariaOne', ariaParams)
+            : t('scorecard.arc.aria', ariaParams)
+        }
         style={{ display: 'flex', gap: 4, alignItems: 'center' }}
       >
         {journey.map((e, i) => (
@@ -101,7 +116,7 @@ export function ResolutionJourney({ journey }: { journey: AiEmotion[] }) {
             color: EMOTION_COLOR[journey[0]],
           }}
         >
-          {EMOTION_LABEL[journey[0]]}
+          {t(EMOTION_LABEL_KEY[journey[0]])}
         </span>
         <span
           style={{
@@ -112,7 +127,7 @@ export function ResolutionJourney({ journey }: { journey: AiEmotion[] }) {
             color: EMOTION_COLOR[last],
           }}
         >
-          {EMOTION_LABEL[last]}
+          {t(EMOTION_LABEL_KEY[last])}
         </span>
       </div>
       <p
@@ -123,7 +138,7 @@ export function ResolutionJourney({ journey }: { journey: AiEmotion[] }) {
           color: 'var(--pbt-text)',
         }}
       >
-        {captionFor(journey)}
+        {captionFor(journey, t)}
       </p>
     </Glass>
   );
