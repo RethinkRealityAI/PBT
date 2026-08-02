@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Glass } from '../../design-system/Glass';
 import { PillButton } from '../../design-system/PillButton';
 import { Icon } from '../../design-system/Icon';
 import { COLORS } from '../../design-system/tokens';
 import { useTheme } from '../../app/providers/ThemeProvider';
-import { useSessionFeedback } from './useSessionFeedback';
+import { isSessionRated, useSessionFeedback } from './useSessionFeedback';
 
 const MONO_LABEL: React.CSSProperties = {
   fontFamily: 'var(--pbt-font-mono)',
@@ -91,6 +91,9 @@ export function SessionFeedbackCard({
   const [aiQuality, setAiQuality] = useState(0);
   const [comfort, setComfort] = useState(0);
   const [comment, setComment] = useState('');
+  // Read once per session id: submitting flips `status`, not this — so the
+  // freshly-submitted card keeps rendering the richer "done" state below.
+  const alreadyRated = useMemo(() => isSessionRated(sessionId), [sessionId]);
 
   const canSubmit = realism > 0 && aiQuality > 0 && comfort > 0 && status !== 'submitting';
 
@@ -101,6 +104,19 @@ export function SessionFeedbackCard({
           <Icon.check />
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--pbt-text)' }}>
             Thanks — your feedback helps us tune the simulations.
+          </div>
+        </div>
+      </Glass>
+    );
+  }
+
+  if (alreadyRated) {
+    return (
+      <Glass radius={22} padding={14}>
+        <div className="flex items-center gap-2">
+          <Icon.check />
+          <div style={{ fontSize: 13, color: 'var(--pbt-text-muted)' }}>
+            Thanks — you already rated this session.
           </div>
         </div>
       </Glass>

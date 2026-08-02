@@ -99,6 +99,18 @@ export const STORAGE_KEYS = {
     fallback: 'en' as 'en' | 'fr',
     validate: (v): v is 'en' | 'fr' => v === 'en' || v === 'fr',
   } as StorageKeyDef<'en' | 'fr'>,
+
+  /**
+   * Session ids the user has already rated (Simulation Feedback Tool).
+   * Ordered oldest → newest and capped; lets past-session scorecards show a
+   * "already rated" state instead of re-offering the form.
+   */
+  ratedSessionIds: {
+    key: 'rated_session_ids',
+    fallback: [] as string[],
+    validate: (v): v is string[] =>
+      Array.isArray(v) && v.every((item) => typeof item === 'string'),
+  } as StorageKeyDef<string[]>,
 };
 
 /**

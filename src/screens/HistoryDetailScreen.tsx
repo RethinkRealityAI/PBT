@@ -18,6 +18,8 @@ import {
 import { getSelectedSessionId } from '../lib/selectedSession';
 import { emotionJourney } from '../features/scorecard/scorecardInsights';
 import { ResolutionJourney } from '../features/scorecard/ResolutionJourney';
+import { SessionFeedbackCard } from '../features/feedback/SessionFeedbackCard';
+import { isSessionRated } from '../features/feedback/useSessionFeedback';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
   key: 'sessions',
@@ -115,6 +117,12 @@ export function HistoryDetailScreen() {
 }
 
 function ScorecardView({ session }: { session: SessionRecord }) {
+  // Rate-a-past-session: offer the form only for sessions the user hasn't
+  // rated yet. Read once per session id so submitting (which only re-renders
+  // the card) can't yank the card's "thanks" state. Evaluated before the
+  // not-scored early return purely because hooks must run unconditionally.
+  const offerFeedback = useMemo(() => !isSessionRated(session.id), [session.id]);
+
   // A scoring-outage placeholder is not a real evaluation — don't render
   // it as a wall of zeros. The transcript tab still works.
   if (isScoreUnavailable(session.scoreReport)) {
@@ -278,6 +286,17 @@ function ScorecardView({ session }: { session: SessionRecord }) {
             "{report.betterAlternative}"
           </p>
         </Glass>
+
+        {offerFeedback && (
+          <>
+            <div style={{ height: 14 }} />
+            <SessionFeedbackCard
+              sessionId={session.id}
+              scenarioSummary={session.scenarioSummary}
+              pushbackId={session.pushbackId}
+            />
+          </>
+        )}
 
         <div style={{ height: 90 }} className="lg:hidden" />
       </div>
