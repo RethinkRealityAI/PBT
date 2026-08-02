@@ -23,6 +23,8 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useT, type TFunction } from '../i18n/useT';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { localizedBcsLevel, localizedMcsLevel } from '../i18n/dataL10n/clinical';
 import { PUSHBACK_CATEGORIES, type Scenario } from '../data/scenarios';
 import {
   visionLifeStageToLabel,
@@ -75,6 +77,7 @@ export function PetAnalyzerScreen() {
   const { go } = useNavigation();
   const { setScenario } = useScenario();
   const t = useT();
+  const { locale } = useLanguage();
   const [saved, setSaved] = useState(false);
   // Inline delete confirmation, one row at a time. No browser confirm().
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -133,7 +136,8 @@ export function PetAnalyzerScreen() {
         ? COLORS.score.poor
         : COLORS.score.ok;
 
-  const bcsLevel = BCS_LEVELS.find((l) => l.score === state.bcs);
+  const bcsLevelRaw = BCS_LEVELS.find((l) => l.score === state.bcs);
+  const bcsLevel = bcsLevelRaw ? localizedBcsLevel(bcsLevelRaw, locale) : bcsLevelRaw;
   // Weight outside the breed's typical range → soft hint (not a hard error).
   const weightPlausible = isWeightPlausibleFor(state.breed, state.weightKg);
   const breedEntry = resolveBreed(state.breed);
@@ -418,7 +422,8 @@ export function PetAnalyzerScreen() {
             className="grid"
             style={{ gridTemplateColumns: 'repeat(9, 1fr)', gap: 4, marginBottom: 10 }}
           >
-            {BCS_LEVELS.map((l) => {
+            {BCS_LEVELS.map((rawLevel) => {
+              const l = localizedBcsLevel(rawLevel, locale);
               const active = l.score === state.bcs;
               return (
                 <button
@@ -482,7 +487,8 @@ export function PetAnalyzerScreen() {
         <Glass radius={22} padding={18} style={{ marginBottom: 14 }}>
           <Eyebrow>{t('analyzer.mcs.label')}</Eyebrow>
           <div className="grid grid-cols-2 gap-2">
-            {MCS_LEVELS.map((m) => {
+            {MCS_LEVELS.map((rawLevel) => {
+              const m = localizedMcsLevel(rawLevel, locale);
               const active = m.key === state.mcs;
               return (
                 <button

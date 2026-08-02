@@ -30,6 +30,8 @@ import { useSimulationConfig } from '../app/providers/FlagProvider';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
 import { useLanguage } from '../app/providers/LanguageProvider';
+import { getLocalizedOpeningLine, localizedScenario, localizedLifeStage, localizedPersona } from '../i18n/dataL10n/scenarios';
+import { localizedPushbackCategory } from '../i18n/dataL10n/pushbacks';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -183,6 +185,9 @@ function ScenarioDetailsPanel({
   scenarioTotal: number;
 }) {
   const t = useT();
+  const { locale } = useLanguage();
+  // Display-only view — canonical `scenario` keeps feeding prompts/paging.
+  const view = localizedScenario(scenario, locale);
   return (
     <AnimatePresence>
       {open && (
@@ -272,7 +277,7 @@ function ScenarioDetailsPanel({
                       : t('chat.details.custom')}
                   </div>
                   <h2 id="scenario-details-title" style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
-                    {scenario.pushback.title}
+                    {view.pushback.title}
                   </h2>
                 </div>
                 <button
@@ -301,7 +306,7 @@ function ScenarioDetailsPanel({
 
               {/* Meta chips row */}
               <div className="flex flex-wrap gap-2" style={{ marginBottom: 10 }}>
-                {[scenario.breed, scenario.age, scenario.persona].map((tag) => (
+                {[scenario.breed, localizedLifeStage(scenario.age, locale), localizedPersona(scenario.persona, locale)].map((tag) => (
                   <span
                     key={tag}
                     style={{
@@ -339,7 +344,7 @@ function ScenarioDetailsPanel({
               {(scenario.context ?? scenario.pushbackNotes) && (
                 <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 600, color: 'var(--pbt-text)' }}>
                   <strong style={{ fontWeight: 800 }}>{t('chat.details.contextLabel')}</strong>{' '}
-                  {scenario.context ?? scenario.pushbackNotes}
+                  {view.context ?? scenario.pushbackNotes}
                 </p>
               )}
               <p
@@ -353,7 +358,9 @@ function ScenarioDetailsPanel({
               >
                 <strong style={{ fontWeight: 800 }}>{t('chat.details.openingLabel')}</strong>{' '}
                 <em style={{ fontWeight: 600, color: 'var(--pbt-text)', fontStyle: 'italic' }}>
-                  {scenario.openingLine ?? scenario.pushbackNotes ?? scenario.pushback.example}
+                  {getLocalizedOpeningLine(scenario, locale) ||
+                    scenario.pushbackNotes ||
+                    localizedPushbackCategory(scenario.pushback, locale).example}
                 </em>
               </p>
 
@@ -784,7 +791,10 @@ export function ChatScreen() {
     setVoiceAnalyzing(false);
     setVoiceAnalysisError(null);
     setScenarioDetailsOpen(false);
-    void voiceStartRef.current(scenario, { locale: localeRef.current });
+    void voiceStartRef.current(scenario, {
+      locale: localeRef.current,
+      openingLine: getLocalizedOpeningLine(scenario, localeRef.current) || null,
+    });
   }, [scenario]);
 
   const cycleScenario = useCallback(
@@ -841,7 +851,10 @@ export function ChatScreen() {
       voiceFinalizeBusyRef.current = false;
       setVoiceAnalyzing(false);
       setVoiceAnalysisError(null);
-      void voiceStartRef.current(scenario, { locale: localeRef.current });
+      void voiceStartRef.current(scenario, {
+      locale: localeRef.current,
+      openingLine: getLocalizedOpeningLine(scenario, localeRef.current) || null,
+    });
     }
   }, [scenario]);
 
@@ -942,7 +955,7 @@ useThinkingSound(
         open={showEndingOverlay}
         phase={endingPhase}
         driver={driverKey}
-        scenarioTitle={scenario.pushback.title}
+        scenarioTitle={localizedScenario(scenario, locale).pushback.title}
       />
       {/* ── Header ── */}
       <div
@@ -999,7 +1012,7 @@ useThinkingSound(
             wordBreak: 'break-word',
           }}
         >
-          {scenario.pushback.title}
+          {localizedScenario(scenario, locale).pushback.title}
         </h1>
 
         {/* Row 3: scenario nav arrows */}
@@ -1148,7 +1161,7 @@ useThinkingSound(
                         marginLeft: 6,
                       }}
                     >
-                      {scenario.persona}
+                      {localizedPersona(scenario.persona, locale)}
                     </div>
                   </div>
                 );

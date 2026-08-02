@@ -35,6 +35,16 @@ export const auth = {
   'auth.noVerificationNote':
     "No email verification — you'll be signed in immediately.",
 
+  // ── Password strength feedback (codes from passwordStrength.ts) ──
+  'auth.pw.empty': 'Enter a password.',
+  'auth.pw.short': 'At least 10 characters, please.',
+  'auth.pw.score0': 'Too weak — try a longer phrase or mix in symbols.',
+  'auth.pw.score1': 'Weak — try a longer phrase or mix in symbols.',
+  'auth.pw.score2': 'Okay, but easy to crack. Add length or words.',
+  'auth.pw.score3': 'Strong enough.',
+  'auth.pw.score4': 'Excellent.',
+  'auth.pw.checkFailed': "Couldn't check password strength — check your connection and try again.",
+
   // ── Errors ────────────────────────────────────────────────
   'auth.error.notConfigured':
     'Supabase is not configured for this build. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.',

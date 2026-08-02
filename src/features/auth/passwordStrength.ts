@@ -28,9 +28,21 @@ export function preloadPasswordStrength(): void {
   });
 }
 
+/** Stable feedback identifier — UIs map this to a localized string. */
+export type PasswordFeedbackCode =
+  | 'empty'
+  | 'short'
+  | 'score0'
+  | 'score1'
+  | 'score2'
+  | 'score3'
+  | 'score4';
+
 export interface PasswordCheck {
   score: 0 | 1 | 2 | 3 | 4;
+  /** English fallback text; localized UIs should render `code` via t(). */
   feedback: string;
+  code: PasswordFeedbackCode;
   ok: boolean;
 }
 
@@ -43,11 +55,12 @@ const MESSAGES: Record<number, string> = {
 };
 
 export async function checkPassword(password: string): Promise<PasswordCheck> {
-  if (!password) return { score: 0, feedback: 'Enter a password.', ok: false };
+  if (!password) return { score: 0, feedback: 'Enter a password.', code: 'empty', ok: false };
   if (password.length < 10) {
     return {
       score: 0,
       feedback: 'At least 10 characters, please.',
+      code: 'short',
       ok: false,
     };
   }
@@ -57,6 +70,7 @@ export async function checkPassword(password: string): Promise<PasswordCheck> {
   return {
     score,
     feedback: MESSAGES[score],
+    code: `score${score}` as PasswordFeedbackCode,
     ok: score >= 3,
   };
 }

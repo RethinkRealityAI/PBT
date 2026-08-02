@@ -10,6 +10,8 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { RADII } from '../design-system/tokens';
 import { ACT_STEPS } from '../data/knowledge/actGuide';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { localizedActStep } from '../i18n/dataL10n/actGuide';
 import { useT, type TFunction } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
 import type { DriverKey } from '../design-system/tokens';
@@ -179,7 +181,8 @@ interface StepCardProps {
 
 function StepCard({ stepKey, index }: StepCardProps) {
   const t = useT();
-  const step = ACT_STEPS.find((s) => s.key === stepKey)!;
+  const { locale } = useLanguage();
+  const step = localizedActStep(ACT_STEPS.find((s) => s.key === stepKey)!, locale);
   const colors = ACT_COLORS[stepKey];
   const label = t(STEP_LABEL_KEY[stepKey]);
   const description = t(STEP_DESCRIPTION_KEY[stepKey]);

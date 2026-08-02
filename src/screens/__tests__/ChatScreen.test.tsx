@@ -119,7 +119,11 @@ describe('ChatScreen voice-first flow', () => {
 
     await user.click(screen.getByRole('button', { name: /begin simulation/i }));
 
-    expect(voiceStart).toHaveBeenCalledWith(SEED_SCENARIOS[0], { locale: 'en' });
+    expect(voiceStart).toHaveBeenCalledWith(SEED_SCENARIOS[0], {
+      locale: 'en',
+      // en passes the canonical opening line through unchanged
+      openingLine: SEED_SCENARIOS[0].openingLine ?? null,
+    });
   });
 
   it('uses a retry button to start voice again after a connection or microphone error', async () => {
@@ -131,7 +135,11 @@ describe('ChatScreen voice-first flow', () => {
 
     await user.click(screen.getByRole('button', { name: /try voice again/i }));
 
-    expect(voiceStart).toHaveBeenCalledWith(SEED_SCENARIOS[0], { locale: 'en' });
+    expect(voiceStart).toHaveBeenCalledWith(SEED_SCENARIOS[0], {
+      locale: 'en',
+      // en passes the canonical opening line through unchanged
+      openingLine: SEED_SCENARIOS[0].openingLine ?? null,
+    });
   });
 
   it('rotates to the next seeded scenario in place and closes any active voice session first', async () => {

@@ -9,7 +9,9 @@ import {
   checkPassword,
   preloadPasswordStrength,
   type PasswordCheck,
+  type PasswordFeedbackCode,
 } from './passwordStrength';
+import type { CatalogKey } from '../../i18n/catalog';
 import { FLAGS } from '../../app/flags';
 import { useProfile, type Profile } from '../../app/providers/ProfileProvider';
 import { readStorage, writeStorage, STORAGE_KEYS } from '../../lib/storage';
@@ -19,6 +21,17 @@ import { useT } from '../../i18n/useT';
 
 const isDriverKey = (v: unknown): v is DriverKey =>
   typeof v === 'string' && (DRIVER_KEYS as readonly string[]).includes(v);
+
+/** Localized password-strength feedback, keyed by the check's stable code. */
+const PW_FEEDBACK_KEY: Record<PasswordFeedbackCode, CatalogKey> = {
+  empty: 'auth.pw.empty',
+  short: 'auth.pw.short',
+  score0: 'auth.pw.score0',
+  score1: 'auth.pw.score1',
+  score2: 'auth.pw.score2',
+  score3: 'auth.pw.score3',
+  score4: 'auth.pw.score4',
+};
 
 /** Seconds the "Resend email" button stays disabled after a send. */
 const RESEND_COOLDOWN_S = 60;
@@ -87,6 +100,7 @@ export function AccountUpgradeModal({
   const [pwCheck, setPwCheck] = useState<PasswordCheck>({
     score: 0,
     feedback: 'Enter a password.',
+    code: 'empty',
     ok: false,
   });
   useEffect(() => {
@@ -94,9 +108,13 @@ export function AccountUpgradeModal({
   }, [open]);
   useEffect(() => {
     let stale = false;
-    void checkPassword(password).then((r) => {
-      if (!stale) setPwCheck(r);
-    });
+    checkPassword(password)
+      .then((r) => {
+        if (!stale) setPwCheck(r);
+      })
+      // Offline / chunk-load failure: keep the previous hint; submit() will
+      // surface a real error if the user proceeds.
+      .catch(() => {});
     return () => {
       stale = true;
     };
@@ -134,9 +152,15 @@ export function AccountUpgradeModal({
   const submit = async () => {
     setError(null);
     if (mode === 'signup') {
-      const check = await checkPassword(password);
+      let check: PasswordCheck;
+      try {
+        check = await checkPassword(password);
+      } catch {
+        setError(t('auth.pw.checkFailed'));
+        return;
+      }
       if (!check.ok) {
-        setError(check.feedback);
+        setError(t(PW_FEEDBACK_KEY[check.code]));
         return;
       }
     }
@@ -445,7 +469,7 @@ export function AccountUpgradeModal({
                   paddingLeft: 4,
                 }}
               >
-                {pwCheck.feedback}
+                {t(PW_FEEDBACK_KEY[pwCheck.code])}
               </div>
             )}
             {error && (

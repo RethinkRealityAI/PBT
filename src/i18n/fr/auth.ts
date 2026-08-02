@@ -37,6 +37,16 @@ export const auth: Record<keyof typeof en, string> = {
   'auth.noVerificationNote':
     'Aucune vérification par courriel — vous serez connecté immédiatement.',
 
+  // ── Rétroaction sur la robustesse du mot de passe ─────────
+  'auth.pw.empty': 'Entrez un mot de passe.',
+  'auth.pw.short': 'Au moins 10 caractères, s\u2019il vous plaît.',
+  'auth.pw.score0': 'Trop faible — essayez une phrase plus longue ou ajoutez des symboles.',
+  'auth.pw.score1': 'Faible — essayez une phrase plus longue ou ajoutez des symboles.',
+  'auth.pw.score2': 'Correct, mais facile à percer. Ajoutez de la longueur ou des mots.',
+  'auth.pw.score3': 'Assez robuste.',
+  'auth.pw.score4': 'Excellente robustesse.',
+  'auth.pw.checkFailed': 'Impossible de vérifier la robustesse du mot de passe — vérifiez votre connexion et réessayez.',
+
   // ── Erreurs ───────────────────────────────────────────────
   'auth.error.notConfigured':
     "Supabase n'est pas configuré pour cette version. Définissez VITE_SUPABASE_URL et VITE_SUPABASE_PUBLISHABLE_KEY.",
