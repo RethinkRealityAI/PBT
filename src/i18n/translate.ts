@@ -1,6 +1,7 @@
 import { en } from './en';
 import type { Catalog, CatalogKey } from './catalog';
 import { DEFAULT_LOCALE, type Locale } from './locales';
+import { registerDataCatalog } from './dataRegistry';
 
 /**
  * Framework-free translation core. React components go through `useT()`;
@@ -30,6 +31,9 @@ export async function loadCatalog(locale: Locale): Promise<void> {
     case 'fr': {
       const mod = await import('./fr');
       registerCatalog('fr', mod.fr);
+      // Authored-data overlays (quiz/driver/scenario/clinical text) ship in
+      // the same lazy module — see dataRegistry.ts.
+      if (mod.frData) registerDataCatalog('fr', mod.frData);
       return;
     }
     default:

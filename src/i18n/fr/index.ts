@@ -17,3 +17,10 @@ export const fr: Catalog = {
   ...settings,
   ...analyzer,
 };
+
+/**
+ * Structured authored-data overlays (quiz/driver/scenario/clinical text),
+ * registered by loadCatalog into src/i18n/dataRegistry.ts. Domains are added
+ * by the data-l10n batches as `./data/<domain>.ts` files and spread here.
+ */
+export const frData: Record<string, unknown> = {};
