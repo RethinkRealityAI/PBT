@@ -12,9 +12,12 @@ import { SESSIONS_KEY } from '../lib/sessionsKey';
 import { isScoreUnavailable } from '../services/types';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { setSelectedSessionId } from '../lib/selectedSession';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { formatDateTime, formatPercent } from '../i18n/format';
 
 export function HistoryScreen() {
   const { go } = useNavigation();
+  const { t, locale } = useLanguage();
   const [filter, setFilter] = useState<string>('all');
   const sessions = readStorage(SESSIONS_KEY);
 
@@ -29,7 +32,7 @@ export function HistoryScreen() {
 
   return (
     <>
-      <TopBar showBack title="History" />
+      <TopBar showBack title={t('history.title')} />
       <Page withTabBar>
         <h1
           style={{
@@ -42,7 +45,7 @@ export function HistoryScreen() {
             whiteSpace: 'pre-line',
           }}
         >
-          {`Every conversation,\ntracked and tagged.`}
+          {t('history.headline')}
         </h1>
         <div
           style={{
@@ -54,7 +57,9 @@ export function HistoryScreen() {
             marginBottom: 18,
           }}
         >
-          {sessions.length} session{sessions.length === 1 ? '' : 's'}
+          {sessions.length === 1
+            ? t('history.sessionCountOne')
+            : t('history.sessionCount', { count: sessions.length })}
           {(() => {
             // Average only over genuinely scored sessions — a scoring
             // outage must not read as a string of zeros.
@@ -63,7 +68,12 @@ export function HistoryScreen() {
             const avg = Math.round(
               scored.reduce((s, x) => s + x.scoreReport.overall, 0) / scored.length,
             );
-            return <>{' · '}{avg}% avg score</>;
+            return (
+              <>
+                {' · '}
+                {t('history.avgScore', { pct: formatPercent(avg, locale) })}
+              </>
+            );
           })()}
         </div>
 
@@ -72,7 +82,7 @@ export function HistoryScreen() {
             active={filter === 'all'}
             onClick={() => setFilter('all')}
           >
-            All
+            {t('history.filter.all')}
           </Chip>
           {PUSHBACK_CATEGORIES.map((c) => (
             <Chip
@@ -96,12 +106,12 @@ export function HistoryScreen() {
               }}
             >
               {sessions.length === 0
-                ? 'No sessions yet. Run a scenario and it\'ll show up here, tagged by pushback type.'
-                : 'No sessions match this filter yet — try a different pushback type.'}
+                ? t('history.empty.none')
+                : t('history.empty.filtered')}
             </p>
             {sessions.length === 0 && (
               <PillButton fullWidth icon={<Icon.flame />} onClick={() => go('home')}>
-                Start your first session
+                {t('history.empty.cta')}
               </PillButton>
             )}
           </Glass>
@@ -135,13 +145,18 @@ export function HistoryScreen() {
                         fontFamily: 'var(--pbt-font-mono)',
                       }}
                     >
-                      {new Date(s.createdAt).toLocaleString()} · {s.mode}
-                      {s.transcript?.length ? ` · ${s.transcript.length} turns` : ''}
+                      {formatDateTime(s.createdAt, locale)} ·{' '}
+                      {s.mode === 'voice'
+                        ? t('history.mode.voice')
+                        : t('history.mode.text')}
+                      {s.transcript?.length
+                        ? ` · ${t('history.row.turns', { count: s.transcript.length })}`
+                        : ''}
                     </div>
                   </div>
                   {isScoreUnavailable(s.scoreReport) ? (
                     <span
-                      aria-label="Not scored"
+                      aria-label={t('history.row.notScoredAria')}
                       style={{
                         width: 44,
                         height: 44,

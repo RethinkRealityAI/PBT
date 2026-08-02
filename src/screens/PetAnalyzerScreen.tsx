@@ -141,7 +141,7 @@ export function PetAnalyzerScreen() {
 
   return (
     <>
-      <TopBar showBack title="Pet Analyzer" />
+      <TopBar showBack title={t('analyzer.title')} />
       <Page>
         {/*
          * Two-column grid on desktop.
@@ -259,8 +259,8 @@ export function PetAnalyzerScreen() {
                   <input
                     value={state.name}
                     onChange={(e) => update('name', e.target.value)}
-                    placeholder="Pet name"
-                    aria-label="Pet name"
+                    placeholder={t('analyzer.petName')}
+                    aria-label={t('analyzer.petName')}
                     style={{
                       width: '100%',
                       border: 'none',
@@ -276,7 +276,7 @@ export function PetAnalyzerScreen() {
               </div>
 
               {/* Breed section */}
-              <Eyebrow>Breed</Eyebrow>
+              <Eyebrow>{t('analyzer.breed.label')}</Eyebrow>
               <BreedSearch
                 value={state.breed}
                 onChange={(v) => update('breed', v)}
@@ -301,8 +301,11 @@ export function PetAnalyzerScreen() {
                     letterSpacing: '0.06em',
                   }}
                 >
-                  {breedEntry.group} group · typical adult{' '}
-                  {breedEntry.sizeKg[0]}–{breedEntry.sizeKg[1]} kg
+                  {t('analyzer.breed.typical', {
+                    group: breedEntry.group,
+                    min: breedEntry.sizeKg[0],
+                    max: breedEntry.sizeKg[1],
+                  })}
                 </div>
               )}
             </div>
@@ -311,13 +314,13 @@ export function PetAnalyzerScreen() {
 
         {/* ── Card 2: Weight & activity ── */}
         <Glass radius={22} padding={18} style={{ marginBottom: 14 }}>
-          <Eyebrow>Weight &amp; activity</Eyebrow>
+          <Eyebrow>{t('analyzer.weight.label')}</Eyebrow>
           <div className="flex items-baseline gap-2 mb-4">
             <span style={{ fontSize: 40, fontWeight: 700, letterSpacing: '-0.03em' }}>
               {state.weightKg}
             </span>
             <span style={{ fontSize: 15, color: 'var(--pbt-text-muted)' }}>
-              kg
+              {t('analyzer.weight.unit')}
             </span>
           </div>
           <input
@@ -342,9 +345,12 @@ export function PetAnalyzerScreen() {
                 border: `1px solid color-mix(in oklab, ${COLORS.score.poor} 30%, transparent)`,
               }}
             >
-              {state.weightKg} kg is unusual for a {breedEntry.name}
-              {' '}— typical adults are {breedEntry.sizeKg[0]}–{breedEntry.sizeKg[1]} kg.
-              Double-check before recommending a calorie target.
+              {t('analyzer.weight.implausible', {
+                weight: state.weightKg,
+                breed: breedEntry.name,
+                min: breedEntry.sizeKg[0],
+                max: breedEntry.sizeKg[1],
+              })}
             </div>
           )}
 
@@ -385,7 +391,9 @@ export function PetAnalyzerScreen() {
                       marginBottom: 3,
                     }}
                   >
-                    {act === 'active' ? 'Active' : 'Inactive'}
+                    {act === 'active'
+                      ? t('analyzer.activity.active')
+                      : t('analyzer.activity.inactive')}
                   </div>
                   <div
                     style={{
@@ -405,7 +413,7 @@ export function PetAnalyzerScreen() {
 
         {/* ── Card 3: Body condition (BCS) ── */}
         <Glass radius={22} padding={18} style={{ marginBottom: 14 }}>
-          <Eyebrow>Body condition (BCS)</Eyebrow>
+          <Eyebrow>{t('analyzer.bcs.label')}</Eyebrow>
           <div
             className="grid"
             style={{ gridTemplateColumns: 'repeat(9, 1fr)', gap: 4, marginBottom: 10 }}
@@ -435,7 +443,10 @@ export function PetAnalyzerScreen() {
                     fontWeight: 700,
                     transition: 'all 0.2s',
                   }}
-                  aria-label={`BCS ${l.score}: ${l.label}`}
+                  aria-label={t('analyzer.bcs.buttonAria', {
+                    score: l.score,
+                    label: l.label,
+                  })}
                   aria-pressed={active}
                 >
                   {l.score}
@@ -469,7 +480,7 @@ export function PetAnalyzerScreen() {
 
         {/* ── Card 4: Muscle condition (MCS) ── */}
         <Glass radius={22} padding={18} style={{ marginBottom: 14 }}>
-          <Eyebrow>Muscle condition (MCS)</Eyebrow>
+          <Eyebrow>{t('analyzer.mcs.label')}</Eyebrow>
           <div className="grid grid-cols-2 gap-2">
             {MCS_LEVELS.map((m) => {
               const active = m.key === state.mcs;
@@ -515,13 +526,13 @@ export function PetAnalyzerScreen() {
           glow={verdictColor}
           style={{ marginBottom: 14 }}
         >
-          <Eyebrow>Calorie target &amp; verdict</Eyebrow>
+          <Eyebrow>{t('analyzer.calorie.label')}</Eyebrow>
           <div className="flex items-baseline gap-3 mb-3">
             <span style={{ fontSize: 42, fontWeight: 700, letterSpacing: '-0.03em' }}>
               {calorieTarget}
             </span>
             <span style={{ fontSize: 14, color: 'var(--pbt-text-muted)' }}>
-              kcal/day
+              {t('analyzer.calorie.unit')}
             </span>
             {bcsLevel && (
               <span
@@ -542,7 +553,7 @@ export function PetAnalyzerScreen() {
                   textShadow: '0 1px 2px rgba(0,0,0,0.35)',
                 }}
               >
-                BCS {bcsLevel.score}/9
+                {t('analyzer.calorie.bcsChip', { score: bcsLevel.score })}
               </span>
             )}
           </div>
@@ -560,7 +571,13 @@ export function PetAnalyzerScreen() {
               color: 'var(--pbt-text)',
             }}
           >
-            <Eyebrow>{verdictResult.verdict.toUpperCase()}</Eyebrow>
+            <Eyebrow>
+              {verdictResult.verdict === 'good'
+                ? t('analyzer.verdict.good')
+                : verdictResult.verdict === 'warn'
+                  ? t('analyzer.verdict.warn')
+                  : t('analyzer.verdict.ok')}
+            </Eyebrow>
             {verdictResult.message}
           </div>
         </Glass>
@@ -577,11 +594,18 @@ export function PetAnalyzerScreen() {
         >
           <div className="flex items-center gap-2 mb-2">
             <Icon.book />
-            <Eyebrow>Reference (WSAVA · 2006 NRC DMER)</Eyebrow>
+            <Eyebrow>{t('analyzer.reference.label')}</Eyebrow>
           </div>
           <div style={{ fontSize: 13, color: 'var(--pbt-text-muted)' }}>
-            Closest row: <strong>{reference.weightKg} kg</strong> →{' '}
-            {reference.activeKcal} kcal active · {reference.inactiveKcal} kcal inactive
+            {t('analyzer.reference.closestRow')}{' '}
+            <strong>
+              {reference.weightKg} {t('analyzer.weight.unit')}
+            </strong>{' '}
+            →{' '}
+            {t('analyzer.reference.kcalSplit', {
+              active: reference.activeKcal,
+              inactive: reference.inactiveKcal,
+            })}
           </div>
         </Glass>
 
@@ -620,7 +644,7 @@ export function PetAnalyzerScreen() {
               go('chat');
             }}
           >
-            Train with this pet
+            {t('analyzer.action.train')}
           </PillButton>
         )}
         <PillButton
@@ -637,10 +661,10 @@ export function PetAnalyzerScreen() {
           style={saved ? { opacity: 0.7 } : undefined}
         >
           {saved
-            ? 'Saved to profiles'
+            ? t('analyzer.action.saved')
             : canSave
-              ? 'Save as profile'
-              : 'Pick a breed first'}
+              ? t('analyzer.action.save')
+              : t('analyzer.action.needBreed')}
         </PillButton>
       </div>
     </>

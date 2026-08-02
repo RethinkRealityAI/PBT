@@ -12,4 +12,19 @@ export const chrome = {
   'tab.history': 'History',
   'tab.library': 'Library',
   'tab.you': 'You',
+
+  // ── TopBar ────────────────────────────────────────────────
+  'chrome.back': 'Back',
+  'chrome.themeToggle.toLight': 'Switch to light mode',
+  'chrome.themeToggle.toDark': 'Switch to dark mode',
+
+  // ── Desktop sidebar ───────────────────────────────────────
+  /** Wordmark is "PBT" (untranslated); this is the line under it. */
+  'chrome.brand.tagline': 'Pushback Training',
+  // Train / History / Library reuse the tab.* keys above.
+  'chrome.nav.create': 'Build scenario',
+  'chrome.nav.analyzer': 'Pet Analyzer',
+  'chrome.nav.profile': 'Profile',
+  'chrome.theme.dark': 'Dark mode',
+  'chrome.theme.light': 'Light mode',
 } as const;

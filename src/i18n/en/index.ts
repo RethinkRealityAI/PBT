@@ -1,11 +1,16 @@
+import { actGuide } from './actGuide';
 import { analyzer } from './analyzer';
+import { auth } from './auth';
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { create } from './create';
 import { feedback } from './feedback';
+import { history } from './history';
 import { home } from './home';
 import { onboarding } from './onboarding';
 import { quiz } from './quiz';
+import { report } from './report';
+import { resources } from './resources';
 import { result } from './result';
 import { scorecard } from './scorecard';
 import { settings } from './settings';
@@ -32,4 +37,9 @@ export const en = {
   ...stats,
   ...scorecard,
   ...feedback,
+  ...history,
+  ...resources,
+  ...actGuide,
+  ...auth,
+  ...report,
 } as const;

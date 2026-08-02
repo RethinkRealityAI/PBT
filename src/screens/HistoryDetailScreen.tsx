@@ -21,11 +21,15 @@ import { emotionJourney } from '../features/scorecard/scorecardInsights';
 import { ResolutionJourney } from '../features/scorecard/ResolutionJourney';
 import { SessionFeedbackCard } from '../features/feedback/SessionFeedbackCard';
 import { isSessionRated } from '../features/feedback/useSessionFeedback';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { useT, type TFunction } from '../i18n/useT';
+import { formatDateTime, formatTime } from '../i18n/format';
 
 type Tab = 'scorecard' | 'transcript';
 
 export function HistoryDetailScreen() {
   const { go, back } = useNavigation();
+  const { t, locale } = useLanguage();
   const [tab, setTab] = useState<Tab>('scorecard');
 
   // Resolve the session record from the id stashed by HistoryScreen.
@@ -41,12 +45,14 @@ export function HistoryDetailScreen() {
   if (!session) {
     return (
       <>
-        <TopBar showBack title="Session" />
+        <TopBar showBack title={t('history.detail.title')} />
         <Page withTabBar>
           <Glass radius={22} padding={20}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Session not found</div>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>
+              {t('history.detail.notFound.title')}
+            </div>
             <div style={{ color: 'var(--pbt-text-muted)', fontSize: 14 }}>
-              This session may have been deleted or the link is stale.
+              {t('history.detail.notFound.body')}
             </div>
           </Glass>
         </Page>
@@ -57,7 +63,7 @@ export function HistoryDetailScreen() {
 
   return (
     <>
-      <TopBar showBack title="Session" />
+      <TopBar showBack title={t('history.detail.title')} />
       <Page withTabBar>
         {/* Header: scenario summary + meta */}
         <div style={{ marginBottom: 12 }}>
@@ -71,7 +77,14 @@ export function HistoryDetailScreen() {
               marginBottom: 6,
             }}
           >
-            {new Date(session.createdAt).toLocaleString()} · {session.mode} · {session.durationSeconds}s
+            {formatDateTime(session.createdAt, locale)} ·{' '}
+            {session.mode === 'voice'
+              ? t('history.mode.voice')
+              : t('history.mode.text')}{' '}
+            ·{' '}
+            {t('history.detail.durationSeconds', {
+              seconds: session.durationSeconds,
+            })}
           </div>
           <h1
             style={{
@@ -92,10 +105,10 @@ export function HistoryDetailScreen() {
           <Segmented
             value={tab}
             onChange={(v) => setTab(v as Tab)}
-            ariaLabel="View"
+            ariaLabel={t('history.detail.viewAria')}
             options={[
-              { value: 'scorecard', label: 'Scorecard' },
-              { value: 'transcript', label: 'Transcript' },
+              { value: 'scorecard', label: t('history.detail.tab.scorecard') },
+              { value: 'transcript', label: t('history.detail.tab.transcript') },
             ]}
           />
         </div>
@@ -112,6 +125,7 @@ export function HistoryDetailScreen() {
 }
 
 function ScorecardView({ session }: { session: SessionRecord }) {
+  const t = useT();
   // Rate-a-past-session: offer the form only for sessions the user hasn't
   // rated yet. Read once per session id so submitting (which only re-renders
   // the card) can't yank the card's "thanks" state. Evaluated before the
@@ -123,11 +137,11 @@ function ScorecardView({ session }: { session: SessionRecord }) {
   if (isScoreUnavailable(session.scoreReport)) {
     return (
       <Glass radius={22} padding={20}>
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>Not scored</div>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>
+          {t('history.detail.notScored.title')}
+        </div>
         <div style={{ color: 'var(--pbt-text-muted)', fontSize: 14, lineHeight: 1.5 }}>
-          The AI scorer couldn't be reached when this session ended, so there's
-          no evaluation on record. The full transcript is saved in the
-          Transcript tab.
+          {t('history.detail.notScored.body')}
         </div>
       </Glass>
     );
@@ -137,17 +151,21 @@ function ScorecardView({ session }: { session: SessionRecord }) {
   const journey = emotionJourney(session.transcript);
   const headline =
     report.band === 'good'
-      ? 'Strong session.'
+      ? t('history.detail.headline.good')
       : report.band === 'ok'
-        ? 'Solid foundation.'
-        : 'Room to grow.';
+        ? t('history.detail.headline.ok')
+        : t('history.detail.headline.poor');
 
   return (
     <div className="lg:grid lg:grid-cols-[38fr_62fr] lg:gap-8 lg:items-start">
       <div>
         <Glass radius={28} padding={22} glow={COLORS.score[report.band]}>
           <div className="flex items-start gap-4">
-            <ScoreRing score={report.overall} label="Overall" size={120} />
+            <ScoreRing
+              score={report.overall}
+              label={t('history.detail.overall')}
+              size={120}
+            />
             <div className="flex-1">
               <h2
                 style={{
@@ -170,7 +188,7 @@ function ScorecardView({ session }: { session: SessionRecord }) {
                   color: 'var(--pbt-text-muted)',
                 }}
               >
-                {session.transcript.length} turns
+                {t('history.detail.turns', { count: session.transcript.length })}
               </div>
             </div>
           </div>
@@ -184,7 +202,7 @@ function ScorecardView({ session }: { session: SessionRecord }) {
 
       <div>
         <div style={{ height: 14 }} className="lg:hidden" />
-        <SectionLabel>Breakdown</SectionLabel>
+        <SectionLabel>{t('history.detail.breakdown')}</SectionLabel>
         {DIMENSIONS.map((dim) => {
           const score = report[dim.key];
           const band = bandFor(score);
@@ -239,7 +257,9 @@ function ScorecardView({ session }: { session: SessionRecord }) {
 
         {report.keyMoments.length > 0 && (
           <>
-            <SectionLabel style={{ margin: '14px 0 8px' }}>Key moments</SectionLabel>
+            <SectionLabel style={{ margin: '14px 0 8px' }}>
+              {t('history.detail.keyMoments')}
+            </SectionLabel>
             {report.keyMoments.map((m, i) => (
               <div key={i} style={{ marginBottom: 10 }}>
                 <Glass
@@ -272,11 +292,11 @@ function ScorecardView({ session }: { session: SessionRecord }) {
 
         <div style={{ height: 14 }} />
         <Glass radius={22} padding={18}>
-          <SectionLabel>Coach notes</SectionLabel>
+          <SectionLabel>{t('history.detail.coachNotes')}</SectionLabel>
           <p style={{ margin: '0 0 12px', fontSize: 14, lineHeight: 1.5, color: 'var(--pbt-text)' }}>
             {report.critique}
           </p>
-          <SectionLabel>Better alternative</SectionLabel>
+          <SectionLabel>{t('history.detail.betterAlternative')}</SectionLabel>
           <p style={{ margin: 0, fontSize: 14, fontStyle: 'italic', color: 'var(--pbt-text)' }}>
             "{report.betterAlternative}"
           </p>
@@ -300,11 +320,13 @@ function ScorecardView({ session }: { session: SessionRecord }) {
 }
 
 function TranscriptView({ messages }: { messages: ChatMessage[] }) {
+  const { t, locale } = useLanguage();
+
   if (messages.length === 0) {
     return (
       <Glass radius={22} padding={20}>
         <div style={{ color: 'var(--pbt-text-muted)', fontSize: 14 }}>
-          No transcript saved for this session.
+          {t('history.detail.emptyTranscript')}
         </div>
       </Glass>
     );
@@ -337,7 +359,10 @@ function TranscriptView({ messages }: { messages: ChatMessage[] }) {
                   paddingRight: isAi ? 0 : 4,
                 }}
               >
-                {isAi ? 'Customer' : 'You'} · {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {isAi
+                  ? t('history.detail.speaker.customer')
+                  : t('history.detail.speaker.you')}{' '}
+                · {formatTime(m.timestamp, locale)}
               </div>
               <Glass
                 radius={16}
@@ -383,17 +408,18 @@ function SectionLabel({ children, style }: { children: React.ReactNode; style?: 
 }
 
 function BottomBar({ onHome, onBack }: { onHome: () => void; onBack?: () => void }) {
+  const t: TFunction = useT();
   return (
     <div
       className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 gap-2 px-5 lg:left-[240px] lg:right-0 lg:translate-x-0 lg:max-w-none"
       style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
     >
       <PillButton variant="glass" onClick={onHome} fullWidth>
-        Home
+        {t('history.detail.bottom.home')}
       </PillButton>
       {onBack && (
         <PillButton fullWidth onClick={onBack}>
-          Back to history
+          {t('history.detail.bottom.back')}
         </PillButton>
       )}
     </div>

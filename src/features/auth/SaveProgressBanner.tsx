@@ -12,6 +12,7 @@ import {
   type StorageKeyDef,
 } from '../../lib/storage';
 import { AccountUpgradeModal } from './AccountUpgradeModal';
+import { useT } from '../../i18n/useT';
 
 const BANNER_KEY: StorageKeyDef<string | null> = {
   key: 'banner_dismissed_until',
@@ -25,6 +26,7 @@ export function SaveProgressBanner() {
   const { user } = useSession();
   const { profile } = useProfile();
   const { resolvedTheme } = useTheme();
+  const tr = useT();
   const dark = resolvedTheme === 'dark';
   const driverColors = profile
     ? DRIVER_COLORS[profile.primary]
@@ -84,7 +86,7 @@ export function SaveProgressBanner() {
                   marginBottom: 12,
                 }}
               >
-                Account created
+                {tr('auth.banner.accountCreated')}
               </div>
               <div
                 style={{
@@ -95,7 +97,7 @@ export function SaveProgressBanner() {
                   color: '#fff',
                 }}
               >
-                {`Welcome,\n${welcomeName}.`}
+                {tr('auth.banner.welcome', { name: welcomeName })}
               </div>
             </motion.div>
           </motion.div>
@@ -126,7 +128,7 @@ export function SaveProgressBanner() {
                 color: 'var(--pbt-text)',
               }}
             >
-              Save your progress
+              {tr('auth.banner.title')}
             </div>
             <button
               type="button"
@@ -144,7 +146,7 @@ export function SaveProgressBanner() {
                 boxShadow: `0 1px 0 rgba(255,255,255,0.34) inset, 0 6px 14px -8px color-mix(in oklab, ${driverColors.primary} 42%, transparent)`,
               }}
             >
-              Sign up
+              {tr('auth.mode.signup')}
             </button>
             <button
               type="button"
@@ -153,7 +155,7 @@ export function SaveProgressBanner() {
                 writeStorage(BANNER_KEY, until);
                 setDismissed(true);
               }}
-              aria-label="Maybe later"
+              aria-label={tr('auth.banner.dismiss')}
               style={{
                 width: 28,
                 height: 28,

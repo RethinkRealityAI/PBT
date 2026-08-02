@@ -1,22 +1,27 @@
 import type { Catalog } from '../catalog';
+import { actGuide } from './actGuide';
 import { analyzer } from './analyzer';
+import { auth } from './auth';
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { create } from './create';
-import { drivers as driversData } from './data/drivers';
 import { feedback } from './feedback';
+import { history } from './history';
 import { home } from './home';
 import { onboarding } from './onboarding';
 import { quiz } from './quiz';
-import { quiz as quizData } from './data/quiz';
+import { report } from './report';
+import { resources } from './resources';
 import { result } from './result';
 import { scorecard } from './scorecard';
 import { settings } from './settings';
 import { stats } from './stats';
 import { terms } from './terms';
-import { actGuide } from './data/actGuide';
+import { actGuide as actGuideData } from './data/actGuide';
 import { clinical } from './data/clinical';
+import { drivers as driversData } from './data/drivers';
 import { pushbacks } from './data/pushbacks';
+import { quiz as quizData } from './data/quiz';
 import { scenarios } from './data/scenarios';
 
 /**
@@ -38,6 +43,11 @@ export const fr: Catalog = {
   ...stats,
   ...scorecard,
   ...feedback,
+  ...history,
+  ...resources,
+  ...actGuide,
+  ...auth,
+  ...report,
 };
 
 /**
@@ -49,7 +59,7 @@ export const frData: Record<string, unknown> = {
   quiz: quizData,
   drivers: driversData,
   clinical,
-  actGuide,
+  actGuide: actGuideData,
   scenarios,
   pushbacks,
 };

@@ -14,6 +14,11 @@ import { result as enResult } from '../en/result';
 import { stats as enStats } from '../en/stats';
 import { scorecard as enScorecard } from '../en/scorecard';
 import { feedback as enFeedback } from '../en/feedback';
+import { history as enHistory } from '../en/history';
+import { resources as enResources } from '../en/resources';
+import { actGuide as enActGuide } from '../en/actGuide';
+import { auth as enAuth } from '../en/auth';
+import { report as enReport } from '../en/report';
 import { LOCALES, isLocale } from '../locales';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { translate, registerCatalog } from '../translate';
@@ -36,6 +41,11 @@ const IDENTICAL_ALLOWED = new Set<string>([
   'home.actions.analyzer.sub', // 'BCS · MCS · kcal' — clinical initialisms + SI unit only
   'create.weight.unit', // 'kg' — SI unit symbol
   'chat.coach.label', // 'Coach · {count}' — "Coach" is used verbatim in fr-CA; 9px pill has no room for longer
+  'analyzer.weight.unit', // 'kg' — SI symbol
+  'analyzer.calorie.bcsChip', // 'BCS {score}/9' — clinical initialism + token
+  'auth.field.emailPlaceholder', // 'you@clinic.com' — sample address
+  'report.kind.suggestion', // 'Suggestion' — same word in fr-CA
+  'resources.sources.label', // 'Sources' — same word in fr-CA
 ]);
 
 const CATALOGS = { en, fr } as const;
@@ -104,6 +114,11 @@ describe('locale catalogs', () => {
       enStats,
       enScorecard,
       enFeedback,
+      enHistory,
+      enResources,
+      enActGuide,
+      enAuth,
+      enReport,
     ];
     const total = namespaces.reduce((n, ns) => n + Object.keys(ns).length, 0);
     expect(Object.keys(en).length).toBe(total);

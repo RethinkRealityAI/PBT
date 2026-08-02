@@ -8,21 +8,24 @@ import { LocaleToggle } from './LocaleToggle';
 import { useFlags } from '../app/providers/FlagProvider';
 import type { FlagKey } from '../services/flagsClient';
 import { PRE_ONBOARDING_SCREENS, type Screen } from '../app/routes';
+import { useT } from '../i18n/useT';
+import type { CatalogKey } from '../i18n/catalog';
 
 interface NavItem {
   screen: Screen;
-  label: string;
+  labelKey: CatalogKey;
   icon: (props: SVGAttributes<SVGSVGElement>) => ReactElement;
   flag?: FlagKey;
 }
 
+/** Train / History / Library share the tab-bar labels; the rest are sidebar-only. */
 const NAV_ITEMS: NavItem[] = [
-  { screen: 'home', label: 'Train', icon: Icon.flame },
-  { screen: 'create', label: 'Build scenario', icon: Icon.plus, flag: 'nav.sidebar.create.enabled' },
-  { screen: 'history', label: 'History', icon: Icon.history, flag: 'nav.sidebar.history.enabled' },
-  { screen: 'analyzer', label: 'Pet Analyzer', icon: Icon.paw, flag: 'nav.sidebar.analyzer.enabled' },
-  { screen: 'resources', label: 'Library', icon: Icon.book, flag: 'nav.sidebar.resources.enabled' },
-  { screen: 'settings', label: 'Profile', icon: Icon.user },
+  { screen: 'home', labelKey: 'tab.train', icon: Icon.flame },
+  { screen: 'create', labelKey: 'chrome.nav.create', icon: Icon.plus, flag: 'nav.sidebar.create.enabled' },
+  { screen: 'history', labelKey: 'tab.history', icon: Icon.history, flag: 'nav.sidebar.history.enabled' },
+  { screen: 'analyzer', labelKey: 'chrome.nav.analyzer', icon: Icon.paw, flag: 'nav.sidebar.analyzer.enabled' },
+  { screen: 'resources', labelKey: 'tab.library', icon: Icon.book, flag: 'nav.sidebar.resources.enabled' },
+  { screen: 'settings', labelKey: 'chrome.nav.profile', icon: Icon.user },
 ];
 
 /**
@@ -36,6 +39,7 @@ export function Sidebar() {
   const { profile } = useProfile();
   const { resolvedTheme, toggle } = useTheme();
   const { getFlag } = useFlags();
+  const t = useT();
   const visibleNav = NAV_ITEMS.filter((n) => !n.flag || getFlag<boolean>(n.flag, true));
 
   // Hide the desktop sidebar until the user has completed onboarding: a locked
@@ -88,7 +92,7 @@ export function Sidebar() {
             marginTop: 5,
           }}
         >
-          Pushback Training
+          {t('chrome.brand.tagline')}
         </div>
       </div>
 
@@ -111,8 +115,9 @@ export function Sidebar() {
           gap: 2,
         }}
       >
-        {visibleNav.map(({ screen, label, icon: IconCmp }) => {
+        {visibleNav.map(({ screen, labelKey, icon: IconCmp }) => {
           const active = current === screen;
+          const label = t(labelKey);
           return (
             <button
               key={screen}
@@ -195,13 +200,19 @@ export function Sidebar() {
             color: 'var(--pbt-text-muted)',
           }}
         >
-          {resolvedTheme === 'dark' ? 'Dark mode' : 'Light mode'}
+          {resolvedTheme === 'dark'
+            ? t('chrome.theme.dark')
+            : t('chrome.theme.light')}
         </span>
         <LocaleToggle />
         <button
           type="button"
           onClick={toggle}
-          aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+          aria-label={
+            resolvedTheme === 'dark'
+              ? t('chrome.themeToggle.toLight')
+              : t('chrome.themeToggle.toDark')
+          }
           style={{
             width: 34,
             height: 34,

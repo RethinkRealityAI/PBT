@@ -3,6 +3,40 @@
  * deletion, email-verification flow).
  */
 export const settings = {
+  // ── Screen chrome ─────────────────────────────────────────
+  'settings.title': 'You',
+  'settings.noProfile': 'Take the quiz to set up your profile.',
+  'settings.anonymousSession': 'Anonymous session',
+  'settings.notSignedIn': 'Not signed in',
+
+  // ── Practice section ──────────────────────────────────────
+  'settings.section.practice': 'Practice',
+  'settings.theme.label': 'Theme',
+  'settings.theme.light': 'Light',
+  'settings.theme.dark': 'Dark',
+  'settings.theme.system': 'System',
+  'settings.retakeQuiz': 'Retake ECHO Quiz',
+
+  // ── Account section ───────────────────────────────────────
+  'settings.section.account': 'Account',
+  'settings.signedInAs': 'Signed in as',
+  'settings.signOut': 'Sign out',
+  'settings.saveProgress': 'Save your progress',
+  'settings.signUp': 'Sign up',
+  'settings.signIn': 'Sign in',
+
+  // ── Feedback section ──────────────────────────────────────
+  'settings.section.feedback': 'Feedback',
+  'settings.report.bug': 'Report a problem',
+  'settings.report.suggestion': 'Suggest an improvement',
+
+  // ── About section ─────────────────────────────────────────
+  'settings.section.about': 'About',
+  'settings.version': 'Version',
+  'settings.reset.row': 'Reset all local data',
+  'settings.reset.confirm':
+    'This clears your profile, sessions, and settings. Continue?',
+
   // ── Privacy & data (spec §8.3) ────────────────────────────
   'settings.privacy.label': 'Allow training data use',
   'settings.privacy.help':
@@ -26,6 +60,8 @@ export const settings = {
   'settings.delete.confirmWord': 'DELETE',
   'settings.delete.error': "We couldn't delete your account. Please try again.",
   'settings.delete.close': 'Close',
+  'settings.delete.notSignedIn': 'Not signed in',
+  'settings.delete.requestFailed': 'Request failed ({status})',
 
   // ── Email verification (flag-gated) ───────────────────────
   'auth.verify.eyebrow': 'One more step',

@@ -121,7 +121,7 @@ export function AccountUpgradeModal({
       if (error) throw error;
       setResendNote(t('auth.verify.resent'));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not resend');
+      setError(e instanceof Error ? e.message : t('auth.error.resend'));
     }
   };
 
@@ -142,9 +142,7 @@ export function AccountUpgradeModal({
     }
     const sb = getSupabase();
     if (!sb) {
-      setError(
-        'Supabase is not configured for this build. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.',
-      );
+      setError(t('auth.error.notConfigured'));
       return;
     }
     setBusy(true);
@@ -258,7 +256,7 @@ export function AccountUpgradeModal({
         setError(t('auth.verify.unconfirmed'));
         return;
       }
-      const message = e instanceof Error ? e.message : 'Auth failed';
+      const message = e instanceof Error ? e.message : t('auth.error.generic');
       setError(message);
     } finally {
       setBusy(false);
@@ -316,8 +314,8 @@ export function AccountUpgradeModal({
                 {verifyEmail
                   ? t('auth.verify.eyebrow')
                   : mode === 'signup'
-                    ? 'Save your progress'
-                    : 'Welcome back'}
+                    ? t('auth.signup.eyebrow')
+                    : t('auth.signin.eyebrow')}
               </div>
               <h2
                 id="pbt-auth-title"
@@ -333,13 +331,13 @@ export function AccountUpgradeModal({
                 {verifyEmail
                   ? t('auth.verify.title')
                   : mode === 'signup'
-                    ? 'Create your account'
-                    : 'Sign in'}
+                    ? t('auth.signup.title')
+                    : t('auth.signin.title')}
               </h2>
             </div>
             <button
               onClick={onClose}
-              aria-label="Close"
+              aria-label={t('auth.close')}
               style={{
                 width: 32,
                 height: 32,
@@ -404,10 +402,10 @@ export function AccountUpgradeModal({
             <Segmented
               value={mode}
               onChange={(v) => setMode(v)}
-              ariaLabel="Mode"
+              ariaLabel={t('auth.mode.aria')}
               options={[
-                { value: 'signup', label: 'Sign up' },
-                { value: 'signin', label: 'Sign in' },
+                { value: 'signup', label: t('auth.mode.signup') },
+                { value: 'signin', label: t('auth.mode.signin') },
               ]}
             />
           </div>
@@ -415,24 +413,28 @@ export function AccountUpgradeModal({
           <div className="flex flex-col gap-2">
             {mode === 'signup' && (
               <Field
-                label="Display name (optional)"
+                label={t('auth.field.displayName')}
                 value={displayName}
                 onChange={setDisplayName}
-                placeholder="What should we call you?"
+                placeholder={t('auth.field.displayNamePlaceholder')}
               />
             )}
             <Field
-              label="Email"
+              label={t('auth.field.email')}
               value={email}
               onChange={setEmail}
-              placeholder="you@clinic.com"
+              placeholder={t('auth.field.emailPlaceholder')}
               type="email"
             />
             <Field
-              label="Password"
+              label={t('auth.field.password')}
               value={password}
               onChange={setPassword}
-              placeholder={mode === 'signup' ? 'At least 10 characters' : 'Your password'}
+              placeholder={
+                mode === 'signup'
+                  ? t('auth.field.passwordPlaceholderSignup')
+                  : t('auth.field.passwordPlaceholderSignin')
+              }
               type="password"
             />
             {mode === 'signup' && password.length > 0 && (
@@ -471,10 +473,10 @@ export function AccountUpgradeModal({
               disabled={busy || !email || !password}
             >
               {busy
-                ? 'Working…'
+                ? t('auth.submit.working')
                 : mode === 'signup'
-                  ? 'Create account'
-                  : 'Sign in'}
+                  ? t('auth.submit.signup')
+                  : t('auth.submit.signin')}
             </PillButton>
           </div>
           {mode === 'signup' && !emailVerification && (
@@ -486,7 +488,7 @@ export function AccountUpgradeModal({
                 textAlign: 'center',
               }}
             >
-              No email verification — you'll be signed in immediately.
+              {t('auth.noVerificationNote')}
             </div>
           )}
           </>

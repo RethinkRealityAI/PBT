@@ -7,6 +7,40 @@
 import type { settings as en } from '../en/settings';
 
 export const settings: Record<keyof typeof en, string> = {
+  // ── Chrome de l'écran ─────────────────────────────────────
+  'settings.title': 'Vous',
+  'settings.noProfile': 'Faites le quiz pour créer votre profil.',
+  'settings.anonymousSession': 'Session anonyme',
+  'settings.notSignedIn': 'Non connecté',
+
+  // ── Section Pratique ──────────────────────────────────────
+  'settings.section.practice': 'Pratique',
+  'settings.theme.label': 'Thème',
+  'settings.theme.light': 'Clair',
+  'settings.theme.dark': 'Sombre',
+  'settings.theme.system': 'Système',
+  'settings.retakeQuiz': 'Refaire le quiz ECHO',
+
+  // ── Section Compte ────────────────────────────────────────
+  'settings.section.account': 'Compte',
+  'settings.signedInAs': 'Connecté en tant que',
+  'settings.signOut': 'Se déconnecter',
+  'settings.saveProgress': 'Sauvegardez votre progression',
+  'settings.signUp': "S'inscrire",
+  'settings.signIn': 'Se connecter',
+
+  // ── Section Rétroaction ───────────────────────────────────
+  'settings.section.feedback': 'Rétroaction',
+  'settings.report.bug': 'Signaler un problème',
+  'settings.report.suggestion': 'Proposer une amélioration',
+
+  // ── Section À propos ──────────────────────────────────────
+  'settings.section.about': 'À propos',
+  'settings.version': "Version de l'application",
+  'settings.reset.row': 'Réinitialiser les données locales',
+  'settings.reset.confirm':
+    'Cette action efface votre profil, vos séances et vos réglages. Continuer ?',
+
   // ── Confidentialité et données (spec §8.3) ────────────────
   'settings.privacy.label': "Autoriser l'utilisation des données d'entraînement",
   'settings.privacy.help':
@@ -31,6 +65,8 @@ export const settings: Record<keyof typeof en, string> = {
   'settings.delete.error':
     "Nous n'avons pas pu supprimer votre compte. Veuillez réessayer.",
   'settings.delete.close': 'Fermer',
+  'settings.delete.notSignedIn': 'Non connecté',
+  'settings.delete.requestFailed': 'Échec de la requête ({status})',
 
   // ── Vérification par courriel (contrôlée par le drapeau) ──
   'auth.verify.eyebrow': 'Encore une étape',
