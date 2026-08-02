@@ -2,6 +2,7 @@ import type { Catalog } from '../catalog';
 import { analyzer } from './analyzer';
 import { chat } from './chat';
 import { chrome } from './chrome';
+import { create } from './create';
 import { drivers as driversData } from './data/drivers';
 import { quiz as quizData } from './data/quiz';
 import { home } from './home';
@@ -22,6 +23,7 @@ export const fr: Catalog = {
   ...chrome,
   ...chat,
   ...home,
+  ...create,
   ...settings,
   ...analyzer,
   ...onboarding,

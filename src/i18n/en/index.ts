@@ -1,6 +1,7 @@
 import { analyzer } from './analyzer';
 import { chat } from './chat';
 import { chrome } from './chrome';
+import { create } from './create';
 import { home } from './home';
 import { onboarding } from './onboarding';
 import { quiz } from './quiz';
@@ -18,6 +19,7 @@ export const en = {
   ...chrome,
   ...chat,
   ...home,
+  ...create,
   ...settings,
   ...analyzer,
   ...onboarding,

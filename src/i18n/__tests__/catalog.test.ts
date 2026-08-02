@@ -4,6 +4,7 @@ import { fr } from '../fr';
 import { chrome as enChrome } from '../en/chrome';
 import { chat as enChat } from '../en/chat';
 import { home as enHome } from '../en/home';
+import { create as enCreate } from '../en/create';
 import { settings as enSettings } from '../en/settings';
 import { analyzer as enAnalyzer } from '../en/analyzer';
 import { onboarding as enOnboarding } from '../en/onboarding';
@@ -29,6 +30,8 @@ const IDENTICAL_ALLOWED = new Set<string>([
   'analyzer.savedPets.stats', // '{weightKg} kg · BCS {bcs}/9' — units + clinical initialism only
   'onboarding.slide1.eyebrow', // 'PBT · Pushback Training' — product wordmark, untranslated by design
   'terms.eyebrow', // same product wordmark as the onboarding eyebrow
+  'home.actions.analyzer.sub', // 'BCS · MCS · kcal' — clinical initialisms + SI unit only
+  'create.weight.unit', // 'kg' — SI unit symbol
 ]);
 
 const CATALOGS = { en, fr } as const;
@@ -87,6 +90,7 @@ describe('locale catalogs', () => {
       enChrome,
       enChat,
       enHome,
+      enCreate,
       enSettings,
       enAnalyzer,
       enOnboarding,
