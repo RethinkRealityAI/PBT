@@ -2,6 +2,8 @@ import type { Catalog } from '../catalog';
 import { analyzer } from './analyzer';
 import { chat } from './chat';
 import { chrome } from './chrome';
+import { drivers as driversData } from './data/drivers';
+import { quiz as quizData } from './data/quiz';
 import { home } from './home';
 import { settings } from './settings';
 
@@ -23,4 +25,7 @@ export const fr: Catalog = {
  * registered by loadCatalog into src/i18n/dataRegistry.ts. Domains are added
  * by the data-l10n batches as `./data/<domain>.ts` files and spread here.
  */
-export const frData: Record<string, unknown> = {};
+export const frData: Record<string, unknown> = {
+  quiz: quizData,
+  drivers: driversData,
+};
