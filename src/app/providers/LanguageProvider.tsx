@@ -52,7 +52,7 @@ export function LanguageProvider({ children, initialLocale }: LanguageProviderPr
     const stored = initialLocale ?? readStorage(STORAGE_KEYS.locale);
     return isLocale(stored) ? stored : DEFAULT_LOCALE;
   });
-  const [, setCatalogVersion] = useState(0);
+  const [catalogVersion, setCatalogVersion] = useState(0);
 
   // Cold start in a lazy-catalog locale: load it, then force one re-render.
   useEffect(() => {
@@ -79,9 +79,14 @@ export function LanguageProvider({ children, initialLocale }: LanguageProviderPr
     });
   }, []);
 
+  // catalogVersion is a real dependency: on a cold start in a lazy-catalog
+  // locale the strings CHANGE when the catalog lands, so `t`'s identity must
+  // change too — otherwise the memoized context value stays referentially
+  // identical and no consumer re-renders (the UI would stay English forever).
   const t = useCallback(
     (key: CatalogKey, params?: TranslateParams) => translate(locale, key, params),
-    [locale],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [locale, catalogVersion],
   );
 
   const value = useMemo(() => ({ locale, setLocale, t }), [locale, setLocale, t]);
