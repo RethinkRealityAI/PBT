@@ -27,6 +27,7 @@ import {
   useCoachHint,
 } from '../features/chat/CoachHint';
 import { useSimulationConfig } from '../app/providers/FlagProvider';
+import { useT } from '../i18n/useT';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -727,7 +728,7 @@ export function ChatScreen() {
     setVoiceAnalyzing(true);
     setVoiceAnalysisError(null);
     try {
-      const { report, transcript } = await voiceEndRef.current();
+      const { report, transcript, sessionId } = await voiceEndRef.current();
       if (gen !== finalizeGenRef.current || modeRef.current !== 'voice') {
         // User toggled away (or another finalize already started). The
         // voice session has already been ended/torn down by the toggle
@@ -736,7 +737,9 @@ export function ChatScreen() {
         setVoiceAnalyzing(false);
         return;
       }
-      await chatRef.current.applyVoiceSessionComplete(report, transcript);
+      // Pass the voice session's id so the saved record reuses the id the
+      // scorer telemetry was already written under.
+      await chatRef.current.applyVoiceSessionComplete(report, transcript, sessionId);
       if (gen !== finalizeGenRef.current || modeRef.current !== 'voice') {
         setVoiceAnalyzing(false);
         return;
@@ -1388,6 +1391,7 @@ function VoiceMode({
   onRetry?: () => void;
   driverKey: DriverKey;
 }) {
+  const t = useT();
   const dc = DRIVER_COLORS[driverKey];
   const emotionColors = emotionPalette(dc);
   const emotionColor = emotionColors[voice.emotion];
@@ -1395,6 +1399,13 @@ function VoiceMode({
   const isReady = voice.status === 'idle';
   const isConnecting = voice.status === 'connecting';
   const hasStartError = voice.status === 'error' && !!voice.error;
+  // Duration cap (VOICE_SESSION_CAPS): warn only while the conversation is
+  // still live — once we're scoring or ended the notice is just noise.
+  const sessionLive =
+    voice.status === 'listening' ||
+    voice.status === 'thinking' ||
+    voice.status === 'aiSpeaking';
+  const showCapWarning = !!voice.capWarning && sessionLive && !isAnalyzing && !isReadyProp;
 
   // Voice transcript display:
   // - AI line: render ONLY `voice.liveAiText`. The voice session keeps it
@@ -1474,6 +1485,27 @@ function VoiceMode({
             : isReady
             ? 'Voice ready'
             : STATUS_LABELS[voice.status] ?? ''}
+        </div>
+      )}
+
+      {/* Duration-cap notice — announced politely so a screen-reader user
+          gets the same heads-up before the session wraps itself up. */}
+      {showCapWarning && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            marginTop: -6,
+            marginBottom: 12,
+            maxWidth: 320,
+            fontFamily: 'var(--pbt-font-sans)',
+            fontSize: 12,
+            lineHeight: 1.45,
+            color: 'var(--pbt-text-muted)',
+            textAlign: 'center',
+          }}
+        >
+          {t('chat.voice.capWarning')}
         </div>
       )}
 

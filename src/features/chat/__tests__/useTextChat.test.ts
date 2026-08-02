@@ -180,6 +180,46 @@ describe('useTextChat.rescore', () => {
     expect(evaluateConversation.mock.calls.length).toBe(callsBefore);
   });
 
+  it('saves a voice session under the id the voice scorer already used', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+
+    // A text session ran first on this shared hook, leaving a stale record id.
+    await act(async () => {
+      await result.current.open();
+    });
+    const staleId = result.current.sessionId;
+    expect(staleId).toBeTruthy();
+
+    // Voice allocated its own id at start() and scored under it — that id wins.
+    const voiceId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    await act(async () => {
+      await result.current.applyVoiceSessionComplete(
+        goodReport(70),
+        [aiTurn('This kibble costs more than my own food.')],
+        voiceId,
+      );
+    });
+
+    expect(result.current.sessionId).toBe(voiceId);
+    const saved = readStorage(SESSIONS_KEY);
+    expect(saved[0].id).toBe(voiceId);
+    expect(persistRagDocument.mock.calls.at(-1)?.[0].sessionId).toBe(voiceId);
+  });
+
+  it('falls back to the existing record id when no voice session id is passed', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+
+    await act(async () => {
+      await result.current.applyVoiceSessionComplete(goodReport(61), [
+        aiTurn('This kibble costs more than my own food.'),
+      ]);
+    });
+
+    const id = result.current.sessionId;
+    expect(id).toBeTruthy();
+    expect(readStorage(SESSIONS_KEY)[0].id).toBe(id);
+  });
+
   it('binds a voice session to the scenario it was recorded under', async () => {
     const { result, rerender } = renderHook(({ s }) => useTextChat(s), {
       initialProps: { s: SCENARIO_A },

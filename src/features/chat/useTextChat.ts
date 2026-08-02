@@ -125,10 +125,19 @@ export interface UseTextChat {
    * The previous attempt is still abandoned for admin telemetry.
    */
   restart: () => Promise<void>;
-  /** Voice pipeline: persist transcript + scorecard into shared chat state + history. */
+  /**
+   * Voice pipeline: persist transcript + scorecard into shared chat state + history.
+   *
+   * `sessionId` is the id the voice session allocated at start() and already
+   * used for its scorer telemetry — pass it so the AI-call rows, the local
+   * SessionRecord and the Supabase row share ONE id. Optional for backward
+   * compatibility; when present it wins over any id left over from an earlier
+   * text session.
+   */
   applyVoiceSessionComplete: (
     report: ScoreReport | null,
     transcript: ChatMessage[],
+    sessionId?: string | null,
   ) => Promise<void>;
   /**
    * Re-run the scorer on the already-captured transcript after a scoring
@@ -635,7 +644,11 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   }, []);
 
   const applyVoiceSessionComplete = useCallback(
-    async (report: ScoreReport | null, transcript: ChatMessage[]) => {
+    async (
+      report: ScoreReport | null,
+      transcript: ChatMessage[],
+      voiceSessionId?: string | null,
+    ) => {
       const msgs = transcript.filter((m) => !m._transientError);
       setTransientError(null);
       // Voice path bypasses appendTurn (the voice session has its own
@@ -650,9 +663,12 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       // Skip local history + RAG and write a single abandoned admin row
       // so the session shows up in telemetry but doesn't poison
       // downstream scoring or fine-tuning.
-      const recordId = recordIdRef.current ?? uuid();
-      // Voice sessions never call open(), so the ref may be unset. Pin it so
-      // sessionId is exposed (post-session feedback attributes to it).
+      // The voice session's own id WINS when supplied: it's what the scorer
+      // telemetry rows were written against, and recordIdRef may still hold a
+      // stale id from an earlier text session on this shared hook (voice never
+      // calls open()). Fall back to the existing/new id for older callers.
+      const recordId = voiceSessionId ?? recordIdRef.current ?? uuid();
+      // Pin it so sessionId is exposed (post-session feedback attributes to it).
       recordIdRef.current = recordId;
       // Bind the record to the scenario it was played against — see
       // scoredScenarioRef (a later rescore() must not use a newer selection).

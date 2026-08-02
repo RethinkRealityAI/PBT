@@ -8,6 +8,7 @@ import { useSimulationConfig } from '../app/providers/FlagProvider';
 import { retrieveContext } from './ragClient';
 import { resolveRag } from '../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from './ragShared';
+import { uuid } from '../lib/id';
 
 export type EmotionColor = 'red' | 'yellow' | 'green';
 export type VoiceStatus =
@@ -22,6 +23,14 @@ export type VoiceStatus =
 export interface VoiceSessionResult {
   report: ScoreReport | null;
   transcript: ChatMessage[];
+  /**
+   * The id allocated at `start()` and used as the telemetry `sessionId` for
+   * the scorer call. Consumers persist the session under this SAME id
+   * (`useTextChat.applyVoiceSessionComplete`) so AI-call rows, the local
+   * SessionRecord and the Supabase `training_sessions` row all line up.
+   * Null when the session never started.
+   */
+  sessionId: string | null;
 }
 
 export interface UseVoiceSessionReturn {
@@ -30,6 +39,11 @@ export interface UseVoiceSessionReturn {
   messages: ChatMessage[];
   /** Live, partial AI text for the in-flight turn (cleared when next AI turn begins). */
   liveAiText: string;
+  /**
+   * True once the session passes the warning threshold (4:00) and until it
+   * stops/restarts — the UI announces that the hard cap is approaching.
+   */
+  capWarning: boolean;
   start: (scenario: Scenario) => Promise<void>;
   stop: () => void;
   endSession: () => Promise<VoiceSessionResult>;
@@ -40,6 +54,25 @@ export interface UseVoiceSessionReturn {
 
 const SAMPLE_RATE_OUT = 24000;
 const SAMPLE_RATE_IN = 16000;
+
+/**
+ * Wall-clock caps on a live voice session, measured from socket open.
+ *
+ * Live audio bills per second on both legs, so an abandoned tab (phone in a
+ * pocket, forgotten desktop) is a runaway-cost hazard — nothing in the
+ * conversation loop ever ends a session the user walked away from. At
+ * `warnMs` the UI announces the wrap-up; at `hardCapMs` we trigger the SAME
+ * graceful end path the model's `endSimulation` tool uses, so queued TTS
+ * finishes and the session is scored rather than dropped.
+ *
+ * Exported so the thresholds are unit-testable without a socket/audio harness.
+ */
+export const VOICE_SESSION_CAPS = {
+  /** 4:00 — "about a minute left" warning. */
+  warnMs: 4 * 60_000,
+  /** 5:00 — graceful end. */
+  hardCapMs: 5 * 60_000,
+} as const;
 
 // Strip any control-token / function-call narration that leaks into the AI's
 // transcribed audio. Keeps both the on-screen `liveAiText` and the saved
@@ -71,6 +104,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const [emotion, setEmotion] = useState<EmotionColor>('red');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [liveAiText, setLiveAiText] = useState('');
+  const [capWarning, setCapWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Global admin simulation config — held in a ref so the prompt build + the
@@ -103,6 +137,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const aiTextBufferRef = useRef('');
   const userTextBufferRef = useRef('');
   const scenarioRef = useRef<Scenario | null>(null);
+  /**
+   * Session id allocated at start(), BEFORE the socket opens. Threaded into
+   * the scorer call (`evaluateConversation`'s telemetry `sessionId`) and
+   * returned from endSession() so the saved record reuses it — previously the
+   * record id was minted later in `applyVoiceSessionComplete`, leaving every
+   * voice scorer telemetry row unattributed.
+   */
+  const sessionIdRef = useRef<string | null>(null);
   const statusRef = useRef<VoiceStatus>('idle');
   const finalizePromiseRef = useRef<Promise<VoiceSessionResult> | null>(null);
   const naturalEndHandlerRef = useRef<(() => void) | null>(null);
@@ -130,6 +172,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
    * the scheduled end of the playback queue as a belt-and-braces fallback.
    */
   const playbackEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Duration-cap timers (see VOICE_SESSION_CAPS) — armed on socket open. */
+  const capWarnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const capEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Gates mic audio until the AI delivers its first complete turn (prevents double opening)
   const openingDeliveredRef = useRef(false);
   // Timestamp until which mic audio should be suppressed (post-AI-speech grace period).
@@ -158,6 +203,47 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       naturalEndHandlerRef.current?.();
     }, delayMs);
   }, []);
+
+  const clearCapTimers = useCallback(() => {
+    if (capWarnTimerRef.current) {
+      clearTimeout(capWarnTimerRef.current);
+      capWarnTimerRef.current = null;
+    }
+    if (capEndTimerRef.current) {
+      clearTimeout(capEndTimerRef.current);
+      capEndTimerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Arm the duration cap. Called from `onopen` so the clock starts when the
+   * socket (and therefore the billing) actually starts, not at the Begin tap.
+   */
+  const startCapTimers = useCallback(() => {
+    clearCapTimers();
+    setCapWarning(false);
+    capWarnTimerRef.current = setTimeout(() => {
+      capWarnTimerRef.current = null;
+      setCapWarning(true);
+    }, VOICE_SESSION_CAPS.warnMs);
+    capEndTimerRef.current = setTimeout(() => {
+      capEndTimerRef.current = null;
+      // Already wrapping up (endSimulation / green-primed close, or the user
+      // hit End) — let that path finish rather than double-triggering.
+      if (pendingNaturalEndRef.current) return;
+      const live =
+        statusRef.current === 'listening' ||
+        statusRef.current === 'thinking' ||
+        statusRef.current === 'aiSpeaking';
+      if (!live) return;
+      // Same graceful exit as the model's endSimulation tool: let queued TTS
+      // drain, then fire the registered natural-end handler (ChatScreen →
+      // finalizeVoice → scoring). Deliberately NOT a socket kill — a hard
+      // close mid-sentence would lose the closing line and the scorecard.
+      pendingNaturalEndRef.current = true;
+      scheduleNaturalEndAfterPlayback();
+    }, VOICE_SESSION_CAPS.hardCapMs);
+  }, [clearCapTimers, scheduleNaturalEndAfterPlayback]);
 
   const addAiMessage = useCallback(() => {
     const text = sanitizeAiText(aiTextBufferRef.current);
@@ -383,6 +469,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       clearTimeout(playbackEndTimerRef.current);
       playbackEndTimerRef.current = null;
     }
+    clearCapTimers();
     pendingNaturalEndRef.current = false;
     endPrimedRef.current = false;
     stopRecording();
@@ -397,7 +484,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       sessionPromiseRef.current = null;
     }
     nextPlayTimeRef.current = 0;
-  }, [stopRecording]);
+  }, [clearCapTimers, stopRecording]);
 
   const registerNaturalEndHandler = useCallback((handler: (() => void) | null) => {
     naturalEndHandlerRef.current = handler;
@@ -426,6 +513,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         clearTimeout(naturalEndTimerRef.current);
         naturalEndTimerRef.current = null;
       }
+      clearCapTimers();
+      setCapWarning(false);
+      // One id for this session: telemetry rows written by the scorer, the
+      // local SessionRecord and the Supabase row all key off it.
+      sessionIdRef.current = uuid();
       micUnmuteAtRef.current = 0;
       setError(null);
       emotionRef.current = 'red';
@@ -546,6 +638,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             // already-live stream into the capture pipeline. Wiring after
             // onopen keeps processor sends from racing a null session.
             startRecording(sessionPromise);
+            // Billing starts here — so does the duration cap.
+            startCapTimers();
           },
           onmessage: (msg: Record<string, unknown>) => {
             // Tool calls
@@ -774,9 +868,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     addAiMessage,
     addUserMessage,
     cleanup,
+    clearCapTimers,
     playAudioChunk,
     scheduleNaturalEndAfterPlayback,
     setStatusSync,
+    startCapTimers,
     startRecording,
     stopRecording,
   ]);
@@ -784,6 +880,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const stop = useCallback(() => {
     finalizePromiseRef.current = null;
     cleanup();
+    clearCapTimers();
+    setCapWarning(false);
+    sessionIdRef.current = null;
     setError(null);
     emotionRef.current = 'red';
     setEmotion('red');
@@ -794,7 +893,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     userTextBufferRef.current = '';
     scenarioRef.current = null;
     setStatusSync('idle');
-  }, [cleanup, setStatusSync]);
+  }, [cleanup, clearCapTimers, setStatusSync]);
 
   const endSession = useCallback(async (): Promise<VoiceSessionResult> => {
     if (finalizePromiseRef.current) return finalizePromiseRef.current;
@@ -811,6 +910,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
     const transcriptSnapshot = [...transcriptRef.current];
     const scenario = scenarioRef.current;
+    // Snapshot the id BEFORE cleanup so telemetry and the saved record agree
+    // even if stop() lands while scoring is in flight.
+    const sessionId = sessionIdRef.current;
 
     finalizePromiseRef.current = (async (): Promise<VoiceSessionResult> => {
       cleanup();
@@ -820,6 +922,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       if (transcriptSnapshot.length && scenario) {
         try {
           report = await evaluateConversation(scenario, transcriptSnapshot, {
+            sessionId,
             config: configRef.current ?? undefined,
           });
         } catch {
@@ -827,7 +930,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         }
       }
 
-      return { report, transcript: transcriptSnapshot };
+      return { report, transcript: transcriptSnapshot, sessionId };
     })();
 
     try {
@@ -841,5 +944,16 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     return () => { cleanup(); };
   }, [cleanup]);
 
-  return { status, emotion, messages, liveAiText, start, stop, endSession, registerNaturalEndHandler, error };
+  return {
+    status,
+    emotion,
+    messages,
+    liveAiText,
+    capWarning,
+    start,
+    stop,
+    endSession,
+    registerNaturalEndHandler,
+    error,
+  };
 }

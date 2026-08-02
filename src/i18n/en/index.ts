@@ -1,3 +1,4 @@
+import { chat } from './chat';
 import { chrome } from './chrome';
 
 /**
@@ -8,4 +9,5 @@ import { chrome } from './chrome';
  */
 export const en = {
   ...chrome,
+  ...chat,
 } as const;

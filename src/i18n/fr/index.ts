@@ -1,4 +1,5 @@
 import type { Catalog } from '../catalog';
+import { chat } from './chat';
 import { chrome } from './chrome';
 
 /**
@@ -8,4 +9,5 @@ import { chrome } from './chrome';
  */
 export const fr: Catalog = {
   ...chrome,
+  ...chat,
 };
