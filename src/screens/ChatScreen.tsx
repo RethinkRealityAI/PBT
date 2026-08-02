@@ -845,6 +845,21 @@ useThinkingSound(
   // Voice mode stays visually ready until the user taps Begin simulation.
   const openRef = useRef(chat.open);
   openRef.current = chat.open;
+
+  // Entering the chat screen with a stale COMPLETED session (e.g. Stats →
+  // Home → "Start scenario", which never resets the shared chat hook) must
+  // start clean: the finished session is already persisted, and leaving it
+  // in place makes applyVoiceSessionComplete reuse its record id — a new
+  // session would then overwrite the old history row. Mount-only on purpose:
+  // a session that completes WHILE this screen is mounted still auto-routes
+  // to the scorecard below.
+  useEffect(() => {
+    if (chatRef.current.status === 'complete') {
+      chatRef.current.reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (mode === 'text' && scenario && chat.status === 'idle') {
       void openRef.current();
@@ -1345,12 +1360,6 @@ function TypingIndicator() {
   );
 }
 
-const EMOTION_LABELS: Record<EmotionColor, string> = {
-  red: 'Defensive',
-  yellow: 'Receptive',
-  green: 'Convinced',
-};
-
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Initializing…',
   connecting: 'Connecting…',
@@ -1614,7 +1623,7 @@ function VoiceMode({
             marginLeft: 3,
           }}
         >
-          {isThinking ? 'Processing' : EMOTION_LABELS[voice.emotion]}
+          {isThinking ? 'Processing' : AI_STATE_LABEL[voice.emotion]}
         </span>
       </div>
 

@@ -16,12 +16,14 @@ import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import { ScenarioHints } from '../features/scenarios/ScenarioHints';
 import { useResolvedLibraryScenarios } from '../data/useResolvedScenarios';
-import { useFlag, useFlagValue, IfFlag } from '../app/providers/FlagProvider';
+import { useFlag, useFlagValue, useFlags, useSimulationConfig, IfFlag } from '../app/providers/FlagProvider';
+import { resolveDimensions } from '../data/knowledge/simulationConfig';
+import type { DimensionKey } from '../data/knowledge/scoringRubric';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
 import { ReportModal } from '../features/reporting/ReportModal';
-import { dailyPickIndex } from '../lib/dailyPick';
+import { resolveDailyPickBase, type DailyPickBase } from '../lib/dailyPick';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -196,6 +198,10 @@ export function HomeScreen() {
   /** Ripples / Orb CSS pulse / breathing — off until Start Here → scoring modal is closed. */
   const [heroOrbMotion, setHeroOrbMotion] = useState(() => readStorage(SEEN_START_HERE_KEY));
   const pendingStartHereRef = useRef(false);
+  // Daily-pick base, pinned once the (async, admin-filtered) library resolves
+  // so the hero card can't swap mid-view. See resolveDailyPickBase.
+  const { ready: flagsReady } = useFlags();
+  const pickBaseRef = useRef<DailyPickBase | null>(null);
 
   useEffect(() => {
     const welcomed = readStorage(DASHBOARD_WELCOMED_KEY);
@@ -219,8 +225,16 @@ export function HomeScreen() {
   const driverColors = DRIVER_COLORS[profile.primary];
   const total = resolvedLibrary.length;
   // Today's pick rotates by calendar day + the user's driver; the manual
-  // prev/next pager offsets from that daily base.
-  const dailyBase = dailyPickIndex(total, profile.primary);
+  // prev/next pager offsets from that daily base. The base is held steady
+  // once the library has resolved so a late flag snapshot (or the 5-minute
+  // refresh) changing the visible scenario count can't shuffle the card the
+  // user is currently looking at.
+  pickBaseRef.current = resolveDailyPickBase(pickBaseRef.current, {
+    total,
+    driverSeed: profile.primary,
+    resolved: flagsReady,
+  });
+  const dailyBase = pickBaseRef.current?.base ?? 0;
   const safeIndex = total === 0 ? 0 : (((dailyBase + pickIndex) % total) + total) % total;
   // If an admin hides every scenario, fall back to the canonical first entry
   // so the hero card stays renderable. The Start button still routes correctly.
@@ -1093,36 +1107,21 @@ function ScenarioInfoModal({
   );
 }
 
-const SCORING_DIMENSIONS: Array<{ label: string; weight: string; description: string }> = [
-  { label: 'Empathy & Tone', weight: '20%', description: 'Warm, non-judgmental language. Validate feelings before pivoting.' },
-  { label: 'Active Listening', weight: '18%', description: 'Reflect back what the client said. Ask one specific clarifying question.' },
-  { label: 'Objection Handling', weight: '18%', description: 'Acknowledge the concern, clarify the root cause, then transform with evidence.' },
-  { label: 'Product Knowledge', weight: '14%', description: 'Cite Royal Canin specifics — 97% palatability, 12-week trial, BCS, MCS.' },
-  { label: 'Confidence', weight: '12%', description: 'Speak with calm authority. No hedging, no shaming.' },
-  { label: 'Closing', weight: '10%', description: 'Make a clear, specific recommendation the client can act on today.' },
-  { label: 'Pacing', weight: '8%', description: "Match the client's rhythm. Don't rush past the emotion." },
-];
-
-/** OKLCH hues per dimension — pills + row accents (aligned with brand cherry / analyzer / harmonizer family). */
-function hueForDimensionLabel(label: string): number {
-  const h: Record<string, number> = {
-    'Empathy & Tone': 24,
-    'Active Listening': 238,
-    'Objection Handling': 72,
-    'Product Knowledge': 292,
-    Confidence: 148,
-    Closing: 168,
-    Pacing: 258,
-    Empathy: 24,
-    Listening: 238,
-    Objection: 72,
-    Product: 292,
+/** OKLCH hues per rubric dimension — pills + row accents. Keyed by the
+ *  stable DimensionKey so admin re-labels don't break the palette. */
+function hueForDimension(key: DimensionKey): number {
+  const h: Record<DimensionKey, number> = {
+    acknowledge: 24,
+    clarify: 238,
+    transform: 72,
+    empathy: 292,
+    rapport: 258,
   };
-  return h[label] ?? 28;
+  return h[key] ?? 28;
 }
 
-function exampleScorecardPillStyle(shortLabel: string, dark: boolean): CSSProperties {
-  const hue = hueForDimensionLabel(shortLabel);
+function exampleScorecardPillStyle(key: DimensionKey, dark: boolean): CSSProperties {
+  const hue = hueForDimension(key);
   return {
     padding: '5px 11px',
     borderRadius: 9999,
@@ -1141,14 +1140,14 @@ function exampleScorecardPillStyle(shortLabel: string, dark: boolean): CSSProper
   };
 }
 
-function exampleScoreValueColor(shortLabel: string, dark: boolean): string {
-  const hue = hueForDimensionLabel(shortLabel);
+function exampleScoreValueColor(key: DimensionKey, dark: boolean): string {
+  const hue = hueForDimension(key);
   return dark ? `oklch(0.78 0.12 ${hue})` : `oklch(0.40 0.16 ${hue})`;
 }
 
 /** Returns only the per-row accent override — layout/glass comes from className="pbt-glass-card". */
-function dimensionAccentBorder(label: string): CSSProperties {
-  const hue = hueForDimensionLabel(label);
+function dimensionAccentBorder(key: DimensionKey): CSSProperties {
+  const hue = hueForDimension(key);
   return {
     borderLeft: `4px solid color-mix(in oklab, oklch(0.62 0.15 ${hue}) 72%, transparent)`,
     marginBottom: 6,
@@ -1158,6 +1157,15 @@ function dimensionAccentBorder(label: string): CSSProperties {
 function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
+  // Live ACT-first rubric (admin re-weights/labels included) — this modal
+  // previously described a retired 7-dimension sales rubric.
+  const simulationConfig = useSimulationConfig();
+  const scoringDimensions = resolveDimensions(simulationConfig ?? {}).map((d) => ({
+    key: d.key,
+    label: d.label,
+    weight: `${Math.round(d.weight * 100)}%`,
+    description: d.description,
+  }));
 
   return (
     <AnimatePresence>
@@ -1371,24 +1379,22 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2" style={{ marginBottom: 10 }}>
-                  {[
-                    { l: 'Empathy', v: 92 },
-                    { l: 'Listening', v: 88 },
-                    { l: 'Objection', v: 85 },
-                    { l: 'Product', v: 82 },
-                    { l: 'Confidence', v: 89 },
-                    { l: 'Closing', v: 84 },
-                    { l: 'Pacing', v: 86 },
-                  ].map((m) => (
-                    <span key={m.l} style={exampleScorecardPillStyle(m.l, dark)}>
+                  {([
+                    { k: 'acknowledge', l: 'Acknowledge', v: 92 },
+                    { k: 'clarify', l: 'Clarify', v: 88 },
+                    { k: 'transform', l: 'Transform', v: 85 },
+                    { k: 'empathy', l: 'Empathy', v: 90 },
+                    { k: 'rapport', l: 'Rapport', v: 86 },
+                  ] as Array<{ k: DimensionKey; l: string; v: number }>).map((m) => (
+                    <span key={m.k} style={exampleScorecardPillStyle(m.k, dark)}>
                       {m.l}{' '}
-                      <span style={{ color: exampleScoreValueColor(m.l, dark), fontWeight: 800 }}>{m.v}</span>
+                      <span style={{ color: exampleScoreValueColor(m.k, dark), fontWeight: 800 }}>{m.v}</span>
                     </span>
                   ))}
                 </div>
                 <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text)', fontWeight: 540 }}>
-                  <strong style={{ fontWeight: 800 }}>Coach note:</strong> Strong empathy opener and a clean Royal Canin Satiety pivot.
-                  Next time, name the 12-week trial earlier to lift Closing.
+                  <strong style={{ fontWeight: 800 }}>Coach note:</strong> Strong acknowledge opener and a clean Royal Canin Satiety pivot.
+                  Next time, propose the week-two weigh-in earlier to lift Transform.
                 </p>
               </div>
 
@@ -1403,16 +1409,16 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                   marginBottom: 8,
                 }}
               >
-                The seven dimensions
+                The five dimensions
               </div>
               <div style={{ marginBottom: 18 }}>
-                {SCORING_DIMENSIONS.map((d) => {
-                  const hue = hueForDimensionLabel(d.label);
+                {scoringDimensions.map((d) => {
+                  const hue = hueForDimension(d.key);
                   return (
                     <div
-                      key={d.label}
+                      key={d.key}
                       className="pbt-glass-card flex items-start gap-2.5"
-                      style={dimensionAccentBorder(d.label)}
+                      style={dimensionAccentBorder(d.key)}
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div

@@ -245,7 +245,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     }
 
     const finishSpeaking = () => {
-      if (statusRef.current === 'aiSpeaking') setStatusSync('listening');
+      // Only arm the grace period when we're actually leaving an AI-speaking
+      // state. If we're already out of it, the exit was a barge-in (the
+      // `interrupted` handler drops to 'listening' and deliberately zeroes
+      // micUnmuteAtRef so the user's live speech flows immediately) or a
+      // teardown — re-arming here would mute 250ms of audio the user is
+      // mid-way through speaking.
+      if (statusRef.current !== 'aiSpeaking') return;
+      setStatusSync('listening');
       // 250ms grace before mic re-opens — lets AI audio tail decay so it doesn't
       // get captured and sent back as a phantom user turn.
       micUnmuteAtRef.current = performance.now() + 250;
@@ -648,6 +655,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             // Barge-in — reset playback pointer
             if (serverContent?.interrupted) {
               nextPlayTimeRef.current = playbackCtxRef.current?.currentTime ?? 0;
+              // Disarm the playback-end watchdog. It was scheduled for the end
+              // of the (now abandoned) audio queue; letting it fire would call
+              // finishSpeaking() and re-arm the 250ms mic grace in the middle
+              // of the user's barge-in, swallowing the start of what they say.
+              if (playbackEndTimerRef.current) {
+                clearTimeout(playbackEndTimerRef.current);
+                playbackEndTimerRef.current = null;
+              }
               if (statusRef.current === 'aiSpeaking') setStatusSync('listening');
               // Don't apply mic grace on user-initiated barge-in — they're actively
               // speaking, we want their input flowing immediately.

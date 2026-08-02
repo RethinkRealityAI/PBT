@@ -238,6 +238,21 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Allocated at open() so AI telemetry rows can attribute to the session
   // even before it's saved to history.
   const recordIdRef = useRef<string | null>(null);
+  /**
+   * The scenario the CURRENTLY SAVED record (recordIdRef) was recorded under.
+   *
+   * `scenario` is a live prop: ChatProvider holds this hook for the whole app
+   * and re-renders it with whatever ScenarioProvider currently points at.
+   * Several surfaces change that selection without calling reset()
+   * (Home "Start scenario", Create → Start, the admin preview runner), so a
+   * finished-but-unscored session can outlive its scenario. rescore() must
+   * evaluate + re-persist the saved transcript against the scenario that
+   * actually produced it, never the one the user has since picked.
+   *
+   * Snapshotted at end()/applyVoiceSessionComplete (the two places a record
+   * is written) and cleared wherever the record id is dropped or replaced.
+   */
+  const scoredScenarioRef = useRef<Scenario | null>(null);
   // Knowledge retrieved for this session (RAG) — fetched once at open(),
   // injected into every customer turn + the scorer. [] = ungrounded.
   const retrievedRef = useRef<RetrievedChunk[]>([]);
@@ -279,6 +294,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setTransientError(null);
     startedAtRef.current = Date.now();
     recordIdRef.current = uuid();
+    scoredScenarioRef.current = null;
     persistedRef.current = false;
     logEvent({
       type: 'custom',
@@ -421,6 +437,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     if (msgs.length === 0) return;
     setStatus('scoring');
     setTransientError(null);
+    // Bind the record about to be written to the scenario it was played
+    // against — see scoredScenarioRef.
+    scoredScenarioRef.current = scenario;
 
     let report: ScoreReport | null = null;
     try {
@@ -480,10 +499,14 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     const msgs = transcriptRef.current.filter((m) => !m._transientError);
     const recordId = recordIdRef.current;
     if (msgs.length === 0 || !recordId) return false;
+    // Score the transcript against the scenario it was recorded under. Falls
+    // back to the live scenario only when no snapshot exists (a transcript
+    // that never reached end()/applyVoiceSessionComplete).
+    const scoredScenario = scoredScenarioRef.current ?? scenario;
 
     let report: ScoreReport | null = null;
     try {
-      report = await evaluateConversation(scenario, msgs, {
+      report = await evaluateConversation(scoredScenario, msgs, {
         sessionId: recordId,
         config: simulationConfig ?? undefined,
         retrieved: retrievedRef.current,
@@ -511,7 +534,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       );
     }
     void persistToSupabase({
-      scenario,
+      scenario: scoredScenario,
       recordId,
       transcript: msgs,
       durationSeconds,
@@ -522,7 +545,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     });
     void persistRagDocument({
       sessionId: recordId,
-      scenario,
+      scenario: scoredScenario,
       transcript: msgs,
       scoreReport: scored,
       durationSeconds,
@@ -589,6 +612,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setTransientError(null);
     startedAtRef.current = Date.now();
     recordIdRef.current = uuid();
+    scoredScenarioRef.current = null;
     persistedRef.current = false;
     logEvent({
       type: 'custom',
@@ -606,6 +630,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setTransientError(null);
     startedAtRef.current = null;
     recordIdRef.current = null;
+    scoredScenarioRef.current = null;
     persistedRef.current = false;
   }, []);
 
@@ -629,6 +654,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       // Voice sessions never call open(), so the ref may be unset. Pin it so
       // sessionId is exposed (post-session feedback attributes to it).
       recordIdRef.current = recordId;
+      // Bind the record to the scenario it was played against — see
+      // scoredScenarioRef (a later rescore() must not use a newer selection).
+      scoredScenarioRef.current = scenario;
       if (msgs.length === 0) {
         setStatus('idle');
         persistedRef.current = true;
