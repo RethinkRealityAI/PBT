@@ -1,4 +1,32 @@
-import zxcvbn from 'zxcvbn';
+import type zxcvbnType from 'zxcvbn';
+
+/**
+ * zxcvbn ships ~390 kB gzip of password dictionaries, so it is loaded on
+ * demand (dynamic import → its own `vendor-zxcvbn` chunk) instead of riding
+ * the consumer's critical path. `preloadPasswordStrength()` lets the
+ * sign-up UI start the fetch when the modal opens, so the dictionaries are
+ * usually resident before the first keystroke needs them.
+ */
+type Zxcvbn = typeof zxcvbnType;
+
+let zxcvbnFn: Zxcvbn | null = null;
+let zxcvbnLoading: Promise<Zxcvbn> | null = null;
+
+function loadZxcvbn(): Promise<Zxcvbn> {
+  if (zxcvbnFn) return Promise.resolve(zxcvbnFn);
+  zxcvbnLoading ??= import('zxcvbn').then((m) => {
+    zxcvbnFn = m.default;
+    return m.default;
+  });
+  return zxcvbnLoading;
+}
+
+export function preloadPasswordStrength(): void {
+  void loadZxcvbn().catch(() => {
+    // Network hiccup — checkPassword() will retry when actually needed.
+    zxcvbnLoading = null;
+  });
+}
 
 export interface PasswordCheck {
   score: 0 | 1 | 2 | 3 | 4;
@@ -14,7 +42,7 @@ const MESSAGES: Record<number, string> = {
   4: 'Excellent.',
 };
 
-export function checkPassword(password: string): PasswordCheck {
+export async function checkPassword(password: string): Promise<PasswordCheck> {
   if (!password) return { score: 0, feedback: 'Enter a password.', ok: false };
   if (password.length < 10) {
     return {
@@ -23,6 +51,7 @@ export function checkPassword(password: string): PasswordCheck {
       ok: false,
     };
   }
+  const zxcvbn = await loadZxcvbn();
   const result = zxcvbn(password);
   const score = result.score as PasswordCheck['score'];
   return {

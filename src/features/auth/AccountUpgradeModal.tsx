@@ -1,11 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Glass } from '../../design-system/Glass';
 import { PillButton } from '../../design-system/PillButton';
 import { Icon } from '../../design-system/Icon';
 import { Segmented } from '../../design-system/Segmented';
 import { useTheme } from '../../app/providers/ThemeProvider';
 import { getSupabase } from './supabaseClient';
-import { checkPassword } from './passwordStrength';
+import {
+  checkPassword,
+  preloadPasswordStrength,
+  type PasswordCheck,
+} from './passwordStrength';
 import { FLAGS } from '../../app/flags';
 import { useProfile, type Profile } from '../../app/providers/ProfileProvider';
 import { readStorage, writeStorage, STORAGE_KEYS } from '../../lib/storage';
@@ -42,15 +46,37 @@ export function AccountUpgradeModal({
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
 
-  const pwCheck = useMemo(() => checkPassword(password), [password]);
+  // checkPassword is async (zxcvbn's dictionaries load on demand); mirror the
+  // latest result into state for the live hint, and re-check at submit time so
+  // a fast type-then-click can't race a stale result.
+  const [pwCheck, setPwCheck] = useState<PasswordCheck>({
+    score: 0,
+    feedback: 'Enter a password.',
+    ok: false,
+  });
+  useEffect(() => {
+    if (open) preloadPasswordStrength();
+  }, [open]);
+  useEffect(() => {
+    let stale = false;
+    void checkPassword(password).then((r) => {
+      if (!stale) setPwCheck(r);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [password]);
 
   if (!open) return null;
 
   const submit = async () => {
     setError(null);
-    if (mode === 'signup' && !pwCheck.ok) {
-      setError(pwCheck.feedback);
-      return;
+    if (mode === 'signup') {
+      const check = await checkPassword(password);
+      if (!check.ok) {
+        setError(check.feedback);
+        return;
+      }
     }
     const sb = getSupabase();
     if (!sb) {

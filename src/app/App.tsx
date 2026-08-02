@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { ThemeProvider } from './providers/ThemeProvider';
 import { LanguageProvider } from './providers/LanguageProvider';
 import { ProfileProvider, useProfile } from './providers/ProfileProvider';
@@ -28,20 +28,66 @@ import { TabBar } from '../shell/TabBar';
 import { useCloudSync } from '../features/auth/useCloudSync';
 import { logEvent, startAnalytics } from '../lib/analytics';
 
+/*
+ * Screen loading strategy (spec §13.9 — main JS chunk < 500 kB gzip).
+ *
+ * EAGER: the screens reachable on first paint or that are trivially small.
+ * `onboarding` / `terms` are the cold-start entry for a new user, `home` is
+ * the cold-start entry for a returning one, and `settings` is small enough
+ * that a separate request costs more than it saves.
+ *
+ * LAZY: everything else. Each becomes its own async chunk fetched the first
+ * time the state machine routes to it, behind the single <ScreenFallback />
+ * Suspense boundary in ScreenSwitch. Screens are NAMED exports, so every
+ * import() is remapped to a default export for React.lazy.
+ *
+ * Note: ChatProvider mounts useTextChat at the app root, so geminiService
+ * stays in the main chunk by design — lazy-loading ChatScreen does not (and
+ * is not meant to) defer the AI SDK.
+ */
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { TermsScreen } from '../screens/TermsScreen';
-import { QuizScreen } from '../screens/QuizScreen';
-import { ResultScreen } from '../screens/ResultScreen';
 import { HomeScreen } from '../screens/HomeScreen';
-import { CreateScreen } from '../screens/CreateScreen';
-import { ChatScreen } from '../screens/ChatScreen';
-import { StatsScreen } from '../screens/StatsScreen';
-import { HistoryScreen } from '../screens/HistoryScreen';
-import { HistoryDetailScreen } from '../screens/HistoryDetailScreen';
-import { PetAnalyzerScreen } from '../screens/PetAnalyzerScreen';
-import { ResourcesScreen } from '../screens/ResourcesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { ActGuideScreen } from '../screens/ActGuideScreen';
+
+const QuizScreen = lazy(() =>
+  import('../screens/QuizScreen').then((m) => ({ default: m.QuizScreen })),
+);
+const ResultScreen = lazy(() =>
+  import('../screens/ResultScreen').then((m) => ({ default: m.ResultScreen })),
+);
+const CreateScreen = lazy(() =>
+  import('../screens/CreateScreen').then((m) => ({ default: m.CreateScreen })),
+);
+const ChatScreen = lazy(() =>
+  import('../screens/ChatScreen').then((m) => ({ default: m.ChatScreen })),
+);
+const StatsScreen = lazy(() =>
+  import('../screens/StatsScreen').then((m) => ({ default: m.StatsScreen })),
+);
+const HistoryScreen = lazy(() =>
+  import('../screens/HistoryScreen').then((m) => ({ default: m.HistoryScreen })),
+);
+const HistoryDetailScreen = lazy(() =>
+  import('../screens/HistoryDetailScreen').then((m) => ({
+    default: m.HistoryDetailScreen,
+  })),
+);
+const PetAnalyzerScreen = lazy(() =>
+  import('../screens/PetAnalyzerScreen').then((m) => ({
+    default: m.PetAnalyzerScreen,
+  })),
+);
+const ResourcesScreen = lazy(() =>
+  import('../screens/ResourcesScreen').then((m) => ({
+    default: m.ResourcesScreen,
+  })),
+);
+const ActGuideScreen = lazy(() =>
+  import('../screens/ActGuideScreen').then((m) => ({
+    default: m.ActGuideScreen,
+  })),
+);
 
 import { readStorage, STORAGE_KEYS, getOrCreateSessionId } from '../lib/storage';
 
@@ -237,7 +283,49 @@ function PreviewRunner() {
   return null;
 }
 
+/**
+ * Suspense fallback for lazily-loaded screens.
+ *
+ * Occupies exactly the same box a real screen would (`flex-1 min-h-0` inside
+ * AppFrame's content column) so swapping fallback → screen never shifts the
+ * shell chrome. Deliberately minimal: a neutral driver-tinted ring, no glass,
+ * no copy — chunks resolve in a few frames on a warm connection and a heavier
+ * placeholder would flash.
+ */
+function ScreenFallback() {
+  return (
+    <div
+      className="flex min-h-0 flex-1 items-center justify-center"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <span className="sr-only">Loading</span>
+      <span
+        aria-hidden
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: '50%',
+          border:
+            '2px solid color-mix(in oklab, var(--pbt-driver-primary) 28%, transparent)',
+          borderTopColor: 'var(--pbt-driver-primary)',
+          animation: 'pbtSpin 0.8s linear infinite',
+        }}
+      />
+    </div>
+  );
+}
+
 function ScreenSwitch() {
+  return (
+    <Suspense fallback={<ScreenFallback />}>
+      <CurrentScreen />
+    </Suspense>
+  );
+}
+
+function CurrentScreen() {
   const { current } = useNavigation();
   const allowed = useScreenGate(current);
   if (!allowed) return null;
