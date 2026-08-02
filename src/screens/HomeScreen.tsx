@@ -27,6 +27,8 @@ import { resolveDailyPickBase, type DailyPickBase } from '../lib/dailyPick';
 import { computeStreak } from '../lib/streak';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
 import { useT } from '../i18n/useT';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { localizedScenario, localizedLifeStage } from '../i18n/dataL10n/scenarios';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -281,6 +283,7 @@ export function HomeScreen() {
   const { user } = useSession();
   const { setScenario } = useScenario();
   const t = useT();
+  const { locale } = useLanguage();
   // Manual pager offset applied on top of the date+driver daily base.
   const [pickIndex, setPickIndex] = useState(0);
   const [scoringInfoOpen, setScoringInfoOpen] = useState(false);
@@ -356,12 +359,12 @@ export function HomeScreen() {
   const headline = headlineOverride.trim() || t('home.headline');
   const cardTitle =
     todaysOverride?.card_title_override?.trim() ||
-    todaysPick.pushback.title;
+    localizedScenario(todaysPick, locale).pushback.title;
   const cardSubtitle =
     todaysOverride?.card_subtitle_override?.trim() ||
     t('home.pick.subtitle', {
       breed: todaysPick.breed,
-      age: todaysPick.age,
+      age: localizedLifeStage(todaysPick.age, locale),
       driver: todaysPick.suggestedDriver,
     });
   const startButtonLabel =

@@ -30,6 +30,17 @@ import { DRIVER_KEYS, type DriverKey } from '../design-system/tokens';
 import { persistUserScenario } from '../features/scenarios/persistScenario';
 import { logEvent } from '../lib/analytics';
 import { useT } from '../i18n/useT';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import {
+  localizedScenario,
+  localizedLifeStage,
+  localizedPersona,
+} from '../i18n/dataL10n/scenarios';
+import {
+  localizedDifficulty,
+  localizedDifficultyLabel,
+  localizedPushbackCategory,
+} from '../i18n/dataL10n/pushbacks';
 
 type Tab = 'build' | 'library';
 
@@ -43,6 +54,7 @@ export function CreateScreen() {
   const { profile } = useProfile();
   const { savedPets } = useSavedPets();
   const t = useT();
+  const { locale } = useLanguage();
   const tabOptions: { value: Tab; label: string }[] = [
     { value: 'build', label: t('create.tab.build') },
     { value: 'library', label: t('create.tab.library') },
@@ -148,10 +160,11 @@ export function CreateScreen() {
                 <div className="flex items-start justify-between gap-3">
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
-                      {scenario.pushback.title}
+                      {localizedScenario(scenario, locale).pushback.title}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', marginBottom: 8 }}>
-                      {scenario.breed} · {scenario.age} · {scenario.persona}
+                      {scenario.breed} · {localizedLifeStage(scenario.age, locale)} ·{' '}
+                      {localizedPersona(scenario.persona, locale)}
                     </div>
                     <span
                       style={{
@@ -168,7 +181,7 @@ export function CreateScreen() {
                         color: '#fff',
                       }}
                     >
-                      {DIFFICULTY_LABELS[scenario.difficulty]}
+                      {localizedDifficultyLabel(scenario.difficulty, locale)}
                     </span>
                   </div>
                   <button
@@ -298,7 +311,7 @@ export function CreateScreen() {
                     radius={18}
                     padding={14}
                     onClick={() => setAge(stage)}
-                    ariaLabel={stage}
+                    ariaLabel={localizedLifeStage(stage, locale)}
                     glow={stage === age ? 'var(--pbt-driver-primary)' : null}
                     style={{
                       border:
@@ -307,7 +320,9 @@ export function CreateScreen() {
                           : undefined,
                     }}
                   >
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{stage}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {localizedLifeStage(stage, locale)}
+                    </div>
                   </Glass>
                 ))}
               </div>
@@ -339,10 +354,10 @@ export function CreateScreen() {
                       ) : (
                         <>
                           <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--pbt-text)' }}>
-                            {pushback.title}
+                            {localizedPushbackCategory(pushback, locale).title}
                           </div>
                           <div style={{ fontSize: 12.5, color: 'var(--pbt-text-muted)', marginTop: 2, fontStyle: 'italic' }}>
-                            {pushback.example}
+                            {localizedPushbackCategory(pushback, locale).example}
                           </div>
                         </>
                       )}
@@ -415,10 +430,10 @@ export function CreateScreen() {
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--pbt-text)' }}>
-                                    {cat.title}
+                                    {localizedPushbackCategory(cat, locale).title}
                                   </div>
                                   <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', fontStyle: 'italic', marginTop: 1 }}>
-                                    {cat.example}
+                                    {localizedPushbackCategory(cat, locale).example}
                                   </div>
                                 </div>
                               </button>
@@ -560,7 +575,9 @@ export function CreateScreen() {
             <Section label={t('create.section.persona')}>
               <div className="flex flex-wrap gap-2">
                 {OWNER_PERSONAS.map((p) => (
-                  <Chip key={p} active={p === persona} onClick={() => setPersona(p)}>{p}</Chip>
+                  <Chip key={p} active={p === persona} onClick={() => setPersona(p)}>
+                    {localizedPersona(p, locale)}
+                  </Chip>
                 ))}
               </div>
             </Section>
@@ -679,6 +696,7 @@ function DifficultySlider({
   onChange: (d: Difficulty) => void;
   ariaLabel: string;
 }) {
+  const { locale } = useLanguage();
   const STEPS = [1, 2, 3, 4] as Difficulty[];
   const fraction = (value - 1) / 3;
   const pct = fraction * 100;
@@ -707,7 +725,7 @@ function DifficultySlider({
               lineHeight: 1,
             }}
           >
-            {DIFFICULTY_LABELS[d]}
+            {localizedDifficultyLabel(d, locale)}
           </button>
         ))}
       </div>
@@ -821,7 +839,7 @@ function DifficultySlider({
                 {value}/4
               </span>
               <p style={{ margin: 0, fontSize: 13, color: 'var(--pbt-text-muted)', lineHeight: 1.5 }}>
-                {DIFFICULTY_DESCRIPTIONS[value]}
+                {localizedDifficulty(value, locale).description}
               </p>
             </div>
           </Glass>

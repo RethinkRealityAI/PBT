@@ -11,6 +11,8 @@ import { useTheme } from '../app/providers/ThemeProvider';
 import type { DriverKey } from '../design-system/tokens';
 import type { QuizOption } from '../data/quizQuestions';
 import { useT } from '../i18n/useT';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { localizedQuizQuestion, localizedTieBreaker } from '../i18n/dataL10n/quiz';
 
 // All four driver colors — ambient UI stays multicolor; answers don’t reveal mapping
 const RAINBOW = [
@@ -58,6 +60,7 @@ export function QuizScreen() {
   const { setProfile } = useProfile();
   const { resolvedTheme, toggle } = useTheme();
   const t = useT();
+  const { locale } = useLanguage();
   const dark = resolvedTheme === 'dark';
   const { step, currentQuestion, tieBreaker, answer } = useQuiz();
   const [chosen, setChosen] = useState<QuizOption | null>(null);
@@ -86,14 +89,14 @@ export function QuizScreen() {
 
   const question =
     step.kind === 'question'
-      ? currentQuestion
+      ? localizedQuizQuestion(currentQuestion!, locale)
       : step.kind === 'tieBreaker'
         ? {
             id: 16,
             part: 0,
             partLabel: t('quiz.tieBreaker.label'),
-            prompt: tieBreaker!.prompt,
-            options: tieBreaker!.options,
+            prompt: localizedTieBreaker(tieBreaker!, locale).prompt,
+            options: localizedTieBreaker(tieBreaker!, locale).options,
           }
         : null;
 

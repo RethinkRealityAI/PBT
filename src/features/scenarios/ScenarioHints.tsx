@@ -1,6 +1,7 @@
 import type { Scenario } from '../../data/scenarios';
-import { getPushbackKnowledge } from '../../data/knowledge/pushbackTaxonomy';
 import { useT } from '../../i18n/useT';
+import { useLanguage } from '../../app/providers/LanguageProvider';
+import { localizedPushbackHints } from '../../i18n/dataL10n/pushbacks';
 
 /**
  * Pre-session coaching hints — surfaces three ACT-aligned cue groups
@@ -16,10 +17,11 @@ import { useT } from '../../i18n/useT';
  * scenario info modal.
  */
 export function ScenarioHints({ scenario }: { scenario: Scenario }) {
-  // Hook first — the taxonomy miss below returns null and must not change
+  // Hooks first — the taxonomy miss below returns null and must not change
   // the hook order between renders.
   const t = useT();
-  const pb = getPushbackKnowledge(scenario.pushback.id);
+  const { locale } = useLanguage();
+  const pb = localizedPushbackHints(scenario.pushback.id, locale);
   if (!pb) return null;
   const sections: Array<{ id: string; heading: string; items: string[] }> = [
     { id: 'acknowledge', heading: t('create.hints.acknowledge'), items: pb.acknowledgePatterns.slice(0, 2) },

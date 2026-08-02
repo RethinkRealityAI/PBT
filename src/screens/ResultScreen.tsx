@@ -9,9 +9,9 @@ import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
-import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS, DRIVER_KEYS } from '../design-system/tokens';
 import { useLanguage } from '../app/providers/LanguageProvider';
+import { localizedDriver } from '../i18n/dataL10n/drivers';
 import { formatPercent } from '../i18n/format';
 import type { CatalogKey } from '../i18n/catalog';
 
@@ -121,8 +121,8 @@ export function ResultScreen() {
 
   if (!profile) return null;
 
-  const primary = ECHO_DRIVERS[profile.primary];
-  const secondary = ECHO_DRIVERS[profile.secondary];
+  const primary = localizedDriver(profile.primary, locale);
+  const secondary = localizedDriver(profile.secondary, locale);
   const primaryColors = DRIVER_COLORS[profile.primary];
   const secondaryColors = DRIVER_COLORS[profile.secondary];
   const totalAnswers = profile.answers.length;
