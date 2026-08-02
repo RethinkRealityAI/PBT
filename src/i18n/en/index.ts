@@ -2,7 +2,11 @@ import { analyzer } from './analyzer';
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { home } from './home';
+import { onboarding } from './onboarding';
+import { quiz } from './quiz';
+import { result } from './result';
 import { settings } from './settings';
+import { terms } from './terms';
 
 /**
  * The English catalog is the source of truth: its keys define `CatalogKey`,
@@ -16,4 +20,8 @@ export const en = {
   ...home,
   ...settings,
   ...analyzer,
+  ...onboarding,
+  ...terms,
+  ...quiz,
+  ...result,
 } as const;

@@ -6,6 +6,10 @@ import { chat as enChat } from '../en/chat';
 import { home as enHome } from '../en/home';
 import { settings as enSettings } from '../en/settings';
 import { analyzer as enAnalyzer } from '../en/analyzer';
+import { onboarding as enOnboarding } from '../en/onboarding';
+import { terms as enTerms } from '../en/terms';
+import { quiz as enQuiz } from '../en/quiz';
+import { result as enResult } from '../en/result';
 import { LOCALES, isLocale } from '../locales';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { translate, registerCatalog } from '../translate';
@@ -23,6 +27,8 @@ const IDENTICAL_ALLOWED = new Set<string>([
   // and reviewed; a growing allowlist usually means lazy translations.
   'settings.delete.placeholder', // pure '{word}' token, no prose
   'analyzer.savedPets.stats', // '{weightKg} kg · BCS {bcs}/9' — units + clinical initialism only
+  'onboarding.slide1.eyebrow', // 'PBT · Pushback Training' — product wordmark, untranslated by design
+  'terms.eyebrow', // same product wordmark as the onboarding eyebrow
 ]);
 
 const CATALOGS = { en, fr } as const;
@@ -77,7 +83,17 @@ describe('locale catalogs', () => {
     // en is a spread-merge of its namespace files; if two namespaces declare
     // the same key, the merged catalog silently keeps the last one. Guard by
     // checking the sum of namespace key counts equals the merged count.
-    const namespaces = [enChrome, enChat, enHome, enSettings, enAnalyzer];
+    const namespaces = [
+      enChrome,
+      enChat,
+      enHome,
+      enSettings,
+      enAnalyzer,
+      enOnboarding,
+      enTerms,
+      enQuiz,
+      enResult,
+    ];
     const total = namespaces.reduce((n, ns) => n + Object.keys(ns).length, 0);
     expect(Object.keys(en).length).toBe(total);
   });

@@ -7,38 +7,39 @@ import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { writeStorage, STORAGE_KEYS } from '../lib/storage';
 import { RADII } from '../design-system/tokens';
+import { useT } from '../i18n/useT';
+import type { CatalogKey } from '../i18n/catalog';
 
 const TERMS_VERSION = 1;
 
-const SECTIONS: { title: string; body: string }[] = [
+/**
+ * Section copy lives in the `terms` catalog namespace (legal-adjacent — see
+ * the note in `src/i18n/en/terms.ts`). `id` is the stable React key.
+ */
+const SECTIONS: { id: string; title: CatalogKey; body: CatalogKey }[] = [
+  { id: 'what', title: 'terms.section.what.title', body: 'terms.section.what.body' },
+  { id: 'act', title: 'terms.section.act.title', body: 'terms.section.act.body' },
+  { id: 'ai', title: 'terms.section.ai.title', body: 'terms.section.ai.body' },
   {
-    title: 'What this is',
-    body: 'PBT (Pushback Training) is a simulation tool designed to help veterinary teams practise handling common client objections — pricing, breed diets, raw food, and more. Scenarios here are roleplay exercises, not real client interactions. They are not a substitute for professional judgment.',
+    id: 'knowledge',
+    title: 'terms.section.knowledge.title',
+    body: 'terms.section.knowledge.body',
   },
   {
-    title: 'The ACT framework',
-    body: 'Sessions are scored against the ACT model: Acknowledge, Clarify, Transform. The AI plays the customer; you practise your response. Scores reflect communication quality within the simulation, not clinical competence.',
+    id: 'anonymous',
+    title: 'terms.section.anonymous.title',
+    body: 'terms.section.anonymous.body',
   },
   {
-    title: 'How the AI works',
-    body: "Customer roleplay and scoring are powered by a large language model. The AI may produce imperfect or unexpected responses — treat its output as a training stimulus, not authoritative fact. (Responses are used to continuously improve the simulation anonymously.)",
-  },
-  {
-    title: 'Knowledge base',
-    body: 'PBT references published guidelines (WSAVA, NRC) and Royal Canin training material as context for realistic scenarios. Always verify clinical decisions with your own expertise and up-to-date sources.',
-  },
-  {
-    title: 'Anonymous by default',
-    body: "You can use PBT without an account. Your profile and session history live in your browser's local storage on this device only. Creating an account is optional — it backs up your data to a private, encrypted cloud profile.",
-  },
-  {
-    title: 'Privacy',
-    body: 'No personally identifiable information is collected unless you explicitly create an account. Session data is not shared with third parties and is not used for advertising. For questions, contact the Royal Canin training team.',
+    id: 'privacy',
+    title: 'terms.section.privacy.title',
+    body: 'terms.section.privacy.body',
   },
 ];
 
 export function TermsScreen() {
   const { replace } = useNavigation();
+  const t = useT();
   const [agreed, setAgreed] = useState(false);
 
   const handleAccept = () => {
@@ -49,7 +50,7 @@ export function TermsScreen() {
 
   return (
     <>
-      <TopBar title="Before we begin" />
+      <TopBar title={t('terms.topbar.title')} />
       <Page>
         {/* Eyebrow */}
         <div
@@ -63,7 +64,7 @@ export function TermsScreen() {
             fontWeight: 700,
           }}
         >
-          PBT · Pushback Training
+          {t('terms.eyebrow')}
         </div>
 
         {/* Headline */}
@@ -78,13 +79,13 @@ export function TermsScreen() {
             whiteSpace: 'pre-line',
           }}
         >
-          {`A few things\nbefore we start.`}
+          {t('terms.headline')}
         </h1>
 
         {/* Content sections */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
           {SECTIONS.map((s) => (
-            <Glass key={s.title} radius={RADII.lg} padding={18}>
+            <Glass key={s.id} radius={RADII.lg} padding={18}>
               <div
                 style={{
                   fontFamily: 'var(--pbt-font-mono)',
@@ -96,7 +97,7 @@ export function TermsScreen() {
                   marginBottom: 7,
                 }}
               >
-                {s.title}
+                {t(s.title)}
               </div>
               <div
                 style={{
@@ -106,7 +107,7 @@ export function TermsScreen() {
                   opacity: 0.82,
                 }}
               >
-                {s.body}
+                {t(s.body)}
               </div>
             </Glass>
           ))}
@@ -139,10 +140,7 @@ export function TermsScreen() {
                 cursor: 'pointer',
               }}
             />
-            <span>
-              I understand PBT is a training simulator, not a substitute for professional
-              judgment, and I agree to the privacy approach above.
-            </span>
+            <span>{t('terms.agree.checkbox')}</span>
           </label>
           <PillButton
             fullWidth
@@ -150,7 +148,7 @@ export function TermsScreen() {
             icon={<Icon.arrow />}
             onClick={handleAccept}
           >
-            I agree — let&apos;s go
+            {t('terms.agree.cta')}
           </PillButton>
         </Glass>
       </Page>

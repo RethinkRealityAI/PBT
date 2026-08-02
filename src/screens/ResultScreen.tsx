@@ -11,15 +11,19 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS, DRIVER_KEYS } from '../design-system/tokens';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { formatPercent } from '../i18n/format';
+import type { CatalogKey } from '../i18n/catalog';
 
 const INTRO_CYCLE_MS = 520;
 const easeOut = [0.22, 1, 0.36, 1] as const;
 
-const INTRO_PHASES = [
-  'Finding your ECHO personality driver',
-  'Analyzing questions and answers',
-  'Configuring your driver profile',
-] as const;
+/** Reveal-overlay copy phases — catalog keys, resolved at render. */
+const INTRO_PHASES: readonly CatalogKey[] = [
+  'result.intro.phase1',
+  'result.intro.phase2',
+  'result.intro.phase3',
+];
 const PHASE_DURATION_MS = 2000;
 
 /**
@@ -55,6 +59,7 @@ const itemVariants = {
 export function ResultScreen() {
   const { go, history } = useNavigation();
   const { profile } = useProfile();
+  const { t, locale } = useLanguage();
   const reduceMotion = useReducedMotion();
   // Animation only plays when arriving from the quiz. Re-opening the
   // results from Home/Settings goes straight to the locked profile view —
@@ -215,7 +220,7 @@ export function ResultScreen() {
                           color: 'var(--pbt-text-muted)',
                         }}
                       >
-                        {INTRO_PHASES[phaseIdx]}
+                        {t(INTRO_PHASES[phaseIdx])}
                       </motion.div>
                     )}
                     {stage === 'primaryLand' && (
@@ -236,7 +241,7 @@ export function ResultScreen() {
                           marginBottom: 6,
                           fontWeight: 700,
                         }}>
-                          Your primary ECHO driver
+                          {t('result.intro.primaryLabel')}
                         </div>
                         <div style={{
                           fontSize: 36,
@@ -267,7 +272,7 @@ export function ResultScreen() {
                           marginBottom: 6,
                           fontWeight: 700,
                         }}>
-                          Your support driver
+                          {t('result.intro.secondaryLabel')}
                         </div>
                         <div style={{
                           fontSize: 36,
@@ -483,7 +488,9 @@ export function ResultScreen() {
                     background: `linear-gradient(135deg, ${primaryColors.primary}, ${primaryColors.accent})`,
                   }}
                 >
-                  Primary Driver · {matchPct}% match
+                  {t('result.primary.badge', {
+                    pct: formatPercent(matchPct, locale),
+                  })}
                 </div>
                 <h1
                   style={{
@@ -579,7 +586,7 @@ export function ResultScreen() {
                     marginBottom: 6,
                   }}
                 >
-                  Support driver
+                  {t('result.support.label')}
                 </div>
                 <h3
                   style={{
@@ -630,7 +637,7 @@ export function ResultScreen() {
                   marginBottom: 12,
                 }}
               >
-                Driver mix · {totalAnswers} answers
+                {t('result.mix.title', { count: totalAnswers })}
               </div>
               {DRIVER_KEYS.map((k, idx) => {
                 const count = profile.tally[k];
@@ -680,7 +687,8 @@ export function ResultScreen() {
                         flexShrink: 0,
                       }}
                     >
-                      {count} · {pct}%
+                      {/* Numerals + separator only — nothing to translate. */}
+                      {count} · {formatPercent(pct, locale)}
                     </div>
                     <div
                       style={{
@@ -731,7 +739,7 @@ export function ResultScreen() {
               paddingLeft: 2,
             }}
           >
-            {primary.name} · in practice
+            {t('result.inPractice', { driver: primary.name })}
           </motion.div>
           {primary.traits.map((t) => (
             <motion.div
@@ -824,7 +832,7 @@ export function ResultScreen() {
                   fontWeight: 700,
                 }}
               >
-                Growth Edge
+                {t('result.growthEdge')}
               </div>
               <div
                 style={{
@@ -854,7 +862,7 @@ export function ResultScreen() {
             icon={<Icon.arrow />}
             onClick={() => go('home')}
           >
-            Start training
+            {t('result.cta.startTraining')}
           </PillButton>
         </div>
       ) : null}

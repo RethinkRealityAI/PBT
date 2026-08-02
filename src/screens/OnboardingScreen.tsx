@@ -5,29 +5,33 @@ import { PillButton } from '../design-system/PillButton';
 import { Icon } from '../design-system/Icon';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { AccountUpgradeModal } from '../features/auth/AccountUpgradeModal';
+import { useT } from '../i18n/useT';
+import type { CatalogKey } from '../i18n/catalog';
 
 const BRAND_RED = 'oklch(0.62 0.22 22)';
 
-const SLIDES: { eyebrow: string; title: string; body: string }[] = [
+/** Slide copy lives in the `onboarding` catalog namespace — these are keys. */
+const SLIDES: { eyebrow: CatalogKey; title: CatalogKey; body: CatalogKey }[] = [
   {
-    eyebrow: 'PBT · Pushback Training',
-    title: 'Helping you navigate\ndifficult conversations.',
-    body: 'This human connection tool is designed to help you forge genuine, empathetic relationships. Perfect in business and everyday life.',
+    eyebrow: 'onboarding.slide1.eyebrow',
+    title: 'onboarding.slide1.title',
+    body: 'onboarding.slide1.body',
   },
   {
-    eyebrow: 'Built for clinic conversations',
-    title: 'Every Customer\nis Different.',
-    body: "This tool provides you with the place to ask and then practice how to deal with difficult customer conversations.",
+    eyebrow: 'onboarding.slide2.eyebrow',
+    title: 'onboarding.slide2.title',
+    body: 'onboarding.slide2.body',
   },
   {
-    eyebrow: 'Score with rigour',
-    title: "See what landed.\nFix what didn't.",
-    body: "After every practice you'll receive feedback on how you Acknowledged the client's feelings, Clarified their real concern, and Transformed the pushback — plus your empathy and rapport. You'll get concrete next-line suggestions too.",
+    eyebrow: 'onboarding.slide3.eyebrow',
+    title: 'onboarding.slide3.title',
+    body: 'onboarding.slide3.body',
   },
 ];
 
 export function OnboardingScreen() {
   const { go } = useNavigation();
+  const t = useT();
   const [slide, setSlide] = useState(0);
   // The "Sign in" link on the landing page now opens this modal instead of
   // jumping straight to the quiz — that previous behaviour bypassed the
@@ -61,7 +65,7 @@ export function OnboardingScreen() {
             color: 'var(--pbt-text-muted)',
           }}
         >
-          {current.eyebrow}
+          {t(current.eyebrow)}
         </div>
       </div>
 
@@ -144,7 +148,7 @@ export function OnboardingScreen() {
             maxWidth: '88vw',
           }}
         >
-          {current.title}
+          {t(current.title)}
         </h1>
         <p
           style={{
@@ -156,7 +160,7 @@ export function OnboardingScreen() {
             textWrap: 'pretty' as never,
           }}
         >
-          {current.body}
+          {t(current.body)}
         </p>
       </div>
 
@@ -185,7 +189,7 @@ export function OnboardingScreen() {
           icon={<Icon.arrow />}
           fullWidth
         >
-          {lastSlide ? 'Get Started' : 'Continue'}
+          {t(lastSlide ? 'onboarding.cta.getStarted' : 'onboarding.cta.continue')}
         </PillButton>
         <button
           onClick={() => setAuthOpen('signin')}
@@ -198,7 +202,7 @@ export function OnboardingScreen() {
             padding: '6px 10px',
           }}
         >
-          I already have an account · Sign in
+          {t('onboarding.signIn')}
         </button>
       </div>
 

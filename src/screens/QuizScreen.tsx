@@ -10,6 +10,7 @@ import { useProfile } from '../app/providers/ProfileProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
 import type { DriverKey } from '../design-system/tokens';
 import type { QuizOption } from '../data/quizQuestions';
+import { useT } from '../i18n/useT';
 
 // All four driver colors — ambient UI stays multicolor; answers don’t reveal mapping
 const RAINBOW = [
@@ -56,6 +57,7 @@ export function QuizScreen() {
   const { replace, back } = useNavigation();
   const { setProfile } = useProfile();
   const { resolvedTheme, toggle } = useTheme();
+  const t = useT();
   const dark = resolvedTheme === 'dark';
   const { step, currentQuestion, tieBreaker, answer } = useQuiz();
   const [chosen, setChosen] = useState<QuizOption | null>(null);
@@ -89,7 +91,7 @@ export function QuizScreen() {
         ? {
             id: 16,
             part: 0,
-            partLabel: 'Tie-breaker',
+            partLabel: t('quiz.tieBreaker.label'),
             prompt: tieBreaker!.prompt,
             options: tieBreaker!.options,
           }
@@ -97,10 +99,12 @@ export function QuizScreen() {
 
   if (!question) return null;
 
+  // Pure numerals + a separator — no translatable prose, so it is composed
+  // here rather than living in the catalog.
   const counter =
     step.kind === 'question'
       ? `${step.index + 1} / ${step.total}`
-      : 'Tie-breaker';
+      : t('quiz.tieBreaker.label');
 
   const handleChoose = (opt: QuizOption) => {
     if (chosen || answering.current) return;
@@ -151,7 +155,7 @@ export function QuizScreen() {
                 blur={20}
                 tint={0.45}
                 onClick={back}
-                ariaLabel="Back"
+                ariaLabel={t('quiz.back.aria')}
                 shine={false}
                 className="flex h-9 w-9 shrink-0 items-center justify-center"
               >
@@ -168,7 +172,7 @@ export function QuizScreen() {
                 color: 'var(--pbt-text)',
               }}
             >
-              ECHO Driver Quiz
+              {t('quiz.title')}
             </h1>
             <button
               type="button"
@@ -194,7 +198,11 @@ export function QuizScreen() {
               tint={0.3}
               shine={false}
               onClick={toggle}
-              ariaLabel={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+              ariaLabel={t(
+                resolvedTheme === 'dark'
+                  ? 'quiz.theme.toLight.aria'
+                  : 'quiz.theme.toDark.aria',
+              )}
               className="flex h-9 w-9 shrink-0 items-center justify-center"
             >
               {resolvedTheme === 'dark' ? <Icon.sun /> : <Icon.moon />}
@@ -283,8 +291,11 @@ export function QuizScreen() {
               }}
             >
               {step.kind === 'question'
-                ? `Part ${question.part} · ${question.partLabel}`
-                : 'Final question · pick what fits best'}
+                ? t('quiz.part', {
+                    part: question.part,
+                    label: question.partLabel,
+                  })
+                : t('quiz.tieBreaker.heading')}
             </div>
           </header>
 

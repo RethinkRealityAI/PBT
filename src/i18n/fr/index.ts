@@ -5,7 +5,11 @@ import { chrome } from './chrome';
 import { drivers as driversData } from './data/drivers';
 import { quiz as quizData } from './data/quiz';
 import { home } from './home';
+import { onboarding } from './onboarding';
+import { quiz } from './quiz';
+import { result } from './result';
 import { settings } from './settings';
+import { terms } from './terms';
 import { actGuide } from './data/actGuide';
 import { clinical } from './data/clinical';
 
@@ -20,6 +24,10 @@ export const fr: Catalog = {
   ...home,
   ...settings,
   ...analyzer,
+  ...onboarding,
+  ...terms,
+  ...quiz,
+  ...result,
 };
 
 /**
