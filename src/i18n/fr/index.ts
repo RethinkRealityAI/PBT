@@ -2,6 +2,7 @@ import type { Catalog } from '../catalog';
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { home } from './home';
+import { settings } from './settings';
 
 /**
  * Canadian-French catalog. Typed as `Catalog` so any key missing relative to
@@ -12,4 +13,5 @@ export const fr: Catalog = {
   ...chrome,
   ...chat,
   ...home,
+  ...settings,
 };

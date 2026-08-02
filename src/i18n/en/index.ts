@@ -1,6 +1,7 @@
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { home } from './home';
+import { settings } from './settings';
 
 /**
  * The English catalog is the source of truth: its keys define `CatalogKey`,
@@ -12,4 +13,5 @@ export const en = {
   ...chrome,
   ...chat,
   ...home,
+  ...settings,
 } as const;

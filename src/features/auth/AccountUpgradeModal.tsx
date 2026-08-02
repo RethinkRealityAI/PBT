@@ -15,9 +15,35 @@ import { useProfile, type Profile } from '../../app/providers/ProfileProvider';
 import { readStorage, writeStorage, STORAGE_KEYS } from '../../lib/storage';
 import { backfillLocalDataToCloud } from './backfillLocalData';
 import { DRIVER_KEYS, type DriverKey } from '../../design-system/tokens';
+import { useT } from '../../i18n/useT';
 
 const isDriverKey = (v: unknown): v is DriverKey =>
   typeof v === 'string' && (DRIVER_KEYS as readonly string[]).includes(v);
+
+/** Seconds the "Resend email" button stays disabled after a send. */
+const RESEND_COOLDOWN_S = 60;
+
+/** Supabase's unconfirmed-email sign-in failure, by message or error code. */
+const isEmailNotConfirmed = (e: unknown): boolean => {
+  const code = (e as { code?: string } | null)?.code ?? '';
+  const message = e instanceof Error ? e.message : String(e ?? '');
+  return code === 'email_not_confirmed' || /email\s*not\s*confirmed/i.test(message);
+};
+
+/**
+ * A sign-up that produced a user but no session hasn't been confirmed yet.
+ * Supabase also returns an EMPTY `identities` array when the address already
+ * exists (enumeration protection) — both cases end in "check your inbox".
+ */
+const isVerifyPending = (data: {
+  user?: { identities?: unknown[] | null } | null;
+  session?: unknown | null;
+}): boolean => {
+  if (!data.user) return false;
+  if (!data.session) return true;
+  const identities = data.user.identities;
+  return Array.isArray(identities) && identities.length === 0;
+};
 
 export interface AccountUpgradeModalProps {
   open: boolean;
@@ -45,6 +71,15 @@ export function AccountUpgradeModal({
   const { profile, setProfile } = useProfile();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
+  const t = useT();
+
+  // Email verification (FLAGS.EMAIL_VERIFICATION). Read through a widened
+  // boolean so TypeScript doesn't narrow the flag's `false` literal away —
+  // every branch below is dead code today and must stay compilable.
+  const emailVerification: boolean = FLAGS.EMAIL_VERIFICATION;
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
+  const [resendLeft, setResendLeft] = useState(0);
+  const [resendNote, setResendNote] = useState<string | null>(null);
 
   // checkPassword is async (zxcvbn's dictionaries load on demand); mirror the
   // latest result into state for the live hint, and re-check at submit time so
@@ -67,7 +102,34 @@ export function AccountUpgradeModal({
     };
   }, [password]);
 
+  useEffect(() => {
+    if (resendLeft <= 0) return;
+    const id = setInterval(() => setResendLeft((s) => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(id);
+  }, [resendLeft]);
+
   if (!open) return null;
+
+  const resend = async () => {
+    const sb = getSupabase();
+    if (!sb || !verifyEmail || resendLeft > 0) return;
+    setError(null);
+    setResendNote(null);
+    setResendLeft(RESEND_COOLDOWN_S);
+    try {
+      const { error } = await sb.auth.resend({ type: 'signup', email: verifyEmail });
+      if (error) throw error;
+      setResendNote(t('auth.verify.resent'));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not resend');
+    }
+  };
+
+  const leaveVerify = () => {
+    setVerifyEmail(null);
+    setResendNote(null);
+    setError(null);
+  };
 
   const submit = async () => {
     setError(null);
@@ -93,11 +155,23 @@ export function AccountUpgradeModal({
           password,
           options: {
             data: { display_name: displayName || null },
-            // No email confirmation in v1; users sign in immediately.
-            emailRedirectTo: FLAGS.EMAIL_VERIFICATION ? undefined : undefined,
+            // Only meaningful when verification is on: where the confirmation
+            // link lands. Omitted entirely in v1 (users sign in immediately).
+            ...(emailVerification ? { emailRedirectTo: window.location.origin } : {}),
           },
         });
         if (error) throw error;
+
+        // Verification on + no session yet → nothing is authenticated, so the
+        // profile upsert and backfill below would be rejected by RLS. Park the
+        // user on the "check your inbox" pane instead of closing the modal.
+        if (emailVerification && isVerifyPending(data)) {
+          setVerifyEmail(email);
+          setResendLeft(RESEND_COOLDOWN_S);
+          setBusy(false);
+          return;
+        }
+
         const userId = data.user?.id;
         if (userId) {
           if (profile) {
@@ -175,6 +249,15 @@ export function AccountUpgradeModal({
         onSignedIn?.();
       }
     } catch (e) {
+      // Sign-in against an unconfirmed address: route to the same inbox pane
+      // so the user gets a resend affordance instead of a dead-end error.
+      if (emailVerification && isEmailNotConfirmed(e)) {
+        setVerifyEmail(email);
+        setResendNote(null);
+        setResendLeft(0);
+        setError(t('auth.verify.unconfirmed'));
+        return;
+      }
       const message = e instanceof Error ? e.message : 'Auth failed';
       setError(message);
     } finally {
@@ -230,7 +313,11 @@ export function AccountUpgradeModal({
                   marginBottom: 6,
                 }}
               >
-                {mode === 'signup' ? 'Save your progress' : 'Welcome back'}
+                {verifyEmail
+                  ? t('auth.verify.eyebrow')
+                  : mode === 'signup'
+                    ? 'Save your progress'
+                    : 'Welcome back'}
               </div>
               <h2
                 id="pbt-auth-title"
@@ -243,7 +330,11 @@ export function AccountUpgradeModal({
                   color: 'var(--pbt-text)',
                 }}
               >
-                {mode === 'signup' ? 'Create your account' : 'Sign in'}
+                {verifyEmail
+                  ? t('auth.verify.title')
+                  : mode === 'signup'
+                    ? 'Create your account'
+                    : 'Sign in'}
               </h2>
             </div>
             <button
@@ -266,6 +357,49 @@ export function AccountUpgradeModal({
             </button>
           </div>
 
+          {/* Verify-pending pane. Only reachable with FLAGS.EMAIL_VERIFICATION
+              on — `verifyEmail` stays null otherwise, so the form below renders
+              exactly as it did before this branch existed. */}
+          {verifyEmail ? (
+            <div className="flex flex-col gap-3">
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  color: 'var(--pbt-text)',
+                }}
+              >
+                {t('auth.verify.body', { email: verifyEmail })}
+              </p>
+              {resendNote && (
+                <div style={{ fontSize: 13, color: 'var(--pbt-score-good)' }}>{resendNote}</div>
+              )}
+              {error && (
+                <div
+                  role="alert"
+                  style={{
+                    fontSize: 13,
+                    color: 'var(--pbt-score-poor)',
+                    padding: '6px 10px',
+                    borderRadius: 12,
+                    background: 'color-mix(in oklab, var(--pbt-score-poor) 14%, transparent)',
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+              <PillButton fullWidth onClick={resend} disabled={resendLeft > 0}>
+                {resendLeft > 0
+                  ? t('auth.verify.resendIn', { seconds: resendLeft })
+                  : t('auth.verify.resend')}
+              </PillButton>
+              <PillButton variant="ghost" fullWidth onClick={leaveVerify}>
+                {t('auth.verify.back')}
+              </PillButton>
+            </div>
+          ) : (
+          <>
           <div className="mb-3">
             <Segmented
               value={mode}
@@ -343,7 +477,7 @@ export function AccountUpgradeModal({
                   : 'Sign in'}
             </PillButton>
           </div>
-          {mode === 'signup' && (
+          {mode === 'signup' && !emailVerification && (
             <div
               style={{
                 marginTop: 8,
@@ -354,6 +488,8 @@ export function AccountUpgradeModal({
             >
               No email verification — you'll be signed in immediately.
             </div>
+          )}
+          </>
           )}
         </div>
       </Glass>

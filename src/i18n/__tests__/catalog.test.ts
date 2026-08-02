@@ -4,6 +4,7 @@ import { fr } from '../fr';
 import { chrome as enChrome } from '../en/chrome';
 import { chat as enChat } from '../en/chat';
 import { home as enHome } from '../en/home';
+import { settings as enSettings } from '../en/settings';
 import { LOCALES, isLocale } from '../locales';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { translate, registerCatalog } from '../translate';
@@ -19,6 +20,7 @@ import { translate, registerCatalog } from '../translate';
 const IDENTICAL_ALLOWED = new Set<string>([
   // e.g. 'chrome.brand' — product names, breed names. Keep this list short
   // and reviewed; a growing allowlist usually means lazy translations.
+  'settings.delete.placeholder', // pure '{word}' token, no prose
 ]);
 
 const CATALOGS = { en, fr } as const;
@@ -73,7 +75,7 @@ describe('locale catalogs', () => {
     // en is a spread-merge of its namespace files; if two namespaces declare
     // the same key, the merged catalog silently keeps the last one. Guard by
     // checking the sum of namespace key counts equals the merged count.
-    const namespaces = [enChrome, enChat, enHome];
+    const namespaces = [enChrome, enChat, enHome, enSettings];
     const total = namespaces.reduce((n, ns) => n + Object.keys(ns).length, 0);
     expect(Object.keys(en).length).toBe(total);
   });

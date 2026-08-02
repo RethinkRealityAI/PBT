@@ -111,6 +111,19 @@ export const STORAGE_KEYS = {
     validate: (v): v is string[] =>
       Array.isArray(v) && v.every((item) => typeof item === 'string'),
   } as StorageKeyDef<string[]>,
+
+  /**
+   * Privacy control (spec §8.3): may this device's anonymised activity feed
+   * product analytics, AI-quality telemetry, and the RAG training corpus?
+   *
+   * Opt-OUT — fallback `true` so behaviour is unchanged until the user says
+   * otherwise. Read it through `src/lib/privacy.ts`, never directly.
+   */
+  allowTrainingUse: {
+    key: 'allow_training_use',
+    fallback: true,
+    validate: (v): v is boolean => typeof v === 'boolean',
+  } as StorageKeyDef<boolean>,
 };
 
 /**

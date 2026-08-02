@@ -110,6 +110,63 @@ export async function requireAdmin(req: Request): Promise<AdminCtx | Response> {
   return { user: userData.user, sb };
 }
 
+/**
+ * Like `requireAdmin`, but only proves WHO the caller is — no `is_admin`
+ * requirement. For endpoints where a signed-in user acts on their OWN account
+ * (e.g. `account-delete`). The returned `sb` is still the service-role client,
+ * because self-service deletion has to reach `auth.admin.*` and tables whose
+ * RLS only grants `select`/`insert` to the owner — so every caller of this
+ * helper MUST scope its writes to `ctx.user.id` itself.
+ *
+ * Disabled accounts are rejected here for the same reason as in requireAdmin:
+ * an already-issued access token outlives the Auth ban.
+ */
+export async function requireUser(req: Request): Promise<AdminCtx | Response> {
+  const auth = req.headers.get('authorization') ?? '';
+  if (!auth.toLowerCase().startsWith('bearer ')) {
+    return errorResponse(401, 'Missing bearer token');
+  }
+  const token = auth.slice('bearer '.length);
+
+  const url = envFirst('SUPABASE_URL', 'VITE_SUPABASE_URL');
+  const anonKey = envFirst(
+    'SUPABASE_ANON_KEY',
+    'VITE_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_PUBLISHABLE_KEY',
+  );
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  if (!url || !anonKey || !serviceKey) {
+    const missing = [
+      !url && 'SUPABASE_URL/VITE_SUPABASE_URL',
+      !anonKey && 'SUPABASE_ANON_KEY/VITE_SUPABASE_PUBLISHABLE_KEY',
+      !serviceKey && 'SUPABASE_SERVICE_ROLE_KEY',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    console.error('[auth] env missing:', missing);
+    return errorResponse(500, `Server misconfigured: missing ${missing}`);
+  }
+
+  const anon = createClient(url, anonKey);
+  const { data: userData, error: userErr } = await anon.auth.getUser(token);
+  if (userErr || !userData.user) {
+    return errorResponse(401, 'Invalid token');
+  }
+
+  const sb = createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: profile } = await sb
+    .from('profiles')
+    .select('disabled')
+    .eq('user_id', userData.user.id)
+    .maybeSingle();
+  if (profile?.disabled) return errorResponse(403, 'Account disabled');
+
+  return { user: userData.user, sb };
+}
+
 /** Helper to parse `?since=&limit=&completed=` from a Netlify Request. */
 export function readRange(req: Request): { since: string; limit: number } {
   const params = new URL(req.url).searchParams;
