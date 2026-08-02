@@ -29,6 +29,7 @@ import {
 import { useSimulationConfig } from '../app/providers/FlagProvider';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
+import { useLanguage } from '../app/providers/LanguageProvider';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -695,6 +696,12 @@ export function ChatScreen() {
   // the live session).
   const voiceStatusRef = useRef(voice.status);
   voiceStatusRef.current = voice.status;
+  // App locale for the live session (customer's spoken language + speech
+  // languageCode). Held in a ref like the other voice handles so the start
+  // callbacks don't need re-creating when the user flips languages.
+  const { locale } = useLanguage();
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
   const voiceFinalizeBusyRef = useRef(false);
   // Mode + finalize-generation refs: lets in-flight `finalizeVoice` bail
   // if the user toggled to text mid-scoring instead of stomping on the
@@ -777,7 +784,7 @@ export function ChatScreen() {
     setVoiceAnalyzing(false);
     setVoiceAnalysisError(null);
     setScenarioDetailsOpen(false);
-    void voiceStartRef.current(scenario);
+    void voiceStartRef.current(scenario, { locale: localeRef.current });
   }, [scenario]);
 
   const cycleScenario = useCallback(
@@ -834,7 +841,7 @@ export function ChatScreen() {
       voiceFinalizeBusyRef.current = false;
       setVoiceAnalyzing(false);
       setVoiceAnalysisError(null);
-      void voiceStartRef.current(scenario);
+      void voiceStartRef.current(scenario, { locale: localeRef.current });
     }
   }, [scenario]);
 

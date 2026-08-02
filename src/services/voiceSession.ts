@@ -9,6 +9,7 @@ import { retrieveContext } from './ragClient';
 import { resolveRag } from '../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from './ragShared';
 import { uuid } from '../lib/id';
+import { DEFAULT_LOCALE, LOCALE_BCP47, type Locale } from '../i18n/locales';
 
 export type EmotionColor = 'red' | 'yellow' | 'green';
 export type VoiceStatus =
@@ -33,6 +34,22 @@ export interface VoiceSessionResult {
   sessionId: string | null;
 }
 
+export interface VoiceStartOptions {
+  /**
+   * App locale. Drives the customer's spoken language (prompt) and the live
+   * speech config's `languageCode`. Defaults to English.
+   */
+  locale?: Locale;
+  /**
+   * Pre-localized opening pushback line for the kickoff cue.
+   *
+   * The caller owns scenario localization — this hook deliberately does NOT
+   * import the scenario l10n helpers, so the two concerns stay separable.
+   * Falls back to `scenario.openingLine` when omitted.
+   */
+  openingLine?: string | null;
+}
+
 export interface UseVoiceSessionReturn {
   status: VoiceStatus;
   emotion: EmotionColor;
@@ -44,7 +61,7 @@ export interface UseVoiceSessionReturn {
    * stops/restarts — the UI announces that the hard cap is approaching.
    */
   capWarning: boolean;
-  start: (scenario: Scenario) => Promise<void>;
+  start: (scenario: Scenario, options?: VoiceStartOptions) => Promise<void>;
   stop: () => void;
   endSession: () => Promise<VoiceSessionResult>;
   /** Fires once after the model calls endSimulation. */
@@ -78,13 +95,24 @@ export const VOICE_SESSION_CAPS = {
 // transcribed audio. Keeps both the on-screen `liveAiText` and the saved
 // transcript clean — important for future RAG training where stray
 // "endSimulation" / "[END_SIMULATION]" text would poison samples.
-function sanitizeAiText(raw: string): string {
+export function sanitizeAiText(raw: string): string {
   const cleaned = raw
     // Drop entire sentences that mention calling the tool / function names.
+    // English narration…
     .replace(/[^.?!]*\b(?:calling|invoke|invoking|i(?:'|')ll\s+call)\b[^.?!]*(?:end[_\s-]*simulation|update[_\s-]*emotion)[^.?!]*[.?!]?/gi, '')
+    // …and the French equivalents. A francophone model narrates the tool as
+    // "j'appelle endSimulation" / "en appelant updateEmotion" — the English
+    // verb list above never matches, so the narration used to survive into
+    // the saved transcript (and from there into the RAG corpus).
+    .replace(/[^.?!]*\b(?:j(?:'|’)appelle|je\s+vais\s+appeler|en\s+appelant|appel\s+(?:de|à)|j(?:'|’)invoque)\b[^.?!]*(?:end[_\s-]*simulation|update[_\s-]*emotion)[^.?!]*[.?!]?/gi, '')
     .replace(/[^.?!]*\b(?:end[_\s-]*simulation|update[_\s-]*emotion)\b[^.?!]*[.?!]?/gi, '')
+    // French narration of the END token itself, spoken as words rather than
+    // emitted. The token is never translated (see END_SIMULATION_TOKEN), so
+    // any French phrasing of it is by definition narration, not signal.
+    .replace(/[^.?!]*\b(?:fin\s+(?:de\s+)?(?:la\s+)?simulation|terminer\s+la\s+simulation|arrêter\s+la\s+simulation)\b[^.?!]*[.?!]?/gi, '')
     // Strip stray bracket tokens / function-call literals.
     .replace(/\[\s*end[_\s-]*simulation\s*\]/gi, '')
+    .replace(/\[\s*fin[_\s-]*(?:de[_\s-]*)?simulation\s*\]/gi, '')
     .replace(/\[\s*update[_\s-]*emotion\s*\]/gi, '')
     .replace(/update[_\s-]*emotion\s*\([^)]*\)/gi, '')
     .replace(/end[_\s-]*simulation\s*\([^)]*\)/gi, '')
@@ -137,6 +165,15 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const aiTextBufferRef = useRef('');
   const userTextBufferRef = useRef('');
   const scenarioRef = useRef<Scenario | null>(null);
+  /** Locale for this session — read inside socket callbacks + the scorer. */
+  const localeRef = useRef<Locale>(DEFAULT_LOCALE);
+  /**
+   * The opening line actually used for this session: the caller's
+   * pre-localized line when supplied, else the scenario's own. Pinned onto
+   * the first AI turn when transcription mismatches it, so the transcript
+   * shows the line the customer was told to say — in the right language.
+   */
+  const openingLineRef = useRef<string | null>(null);
   /**
    * Session id allocated at start(), BEFORE the socket opens. Threaded into
    * the scorer call (`evaluateConversation`'s telemetry `sessionId`) and
@@ -490,7 +527,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     naturalEndHandlerRef.current = handler;
   }, []);
 
-  const start = useCallback(async (scenario: Scenario) => {
+  const start = useCallback(async (scenario: Scenario, options: VoiceStartOptions = {}) => {
     // Re-entrancy guard BEFORE any await. The previous guard sat after an
     // async RAG fetch, so a double-tap on Begin (or a fast mode toggle)
     // could pass the check twice and open two live sockets. statusRef is
@@ -529,6 +566,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       userTextBufferRef.current = '';
       nextPlayTimeRef.current = 0;
       scenarioRef.current = scenario;
+      localeRef.current = options.locale ?? DEFAULT_LOCALE;
+      openingLineRef.current = options.openingLine ?? scenario.openingLine ?? null;
 
       const apiKey =
         (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
@@ -583,14 +622,22 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
       const ai = new GoogleGenAI({ apiKey });
 
-      const openingHint = scenario.openingLine
-        ? `Begin the simulation now. Deliver this exact opening line as the ${scenario.persona} owner: "${scenario.openingLine}"`
+      // The cue itself stays English (it is an instruction to the model, not
+      // dialogue); the LINE it quotes is whatever the caller localized.
+      const openingLine = openingLineRef.current;
+      const openingHint = openingLine
+        ? `Begin the simulation now. Deliver this exact opening line as the ${scenario.persona} owner: "${openingLine}"`
         : 'Please begin the simulation now by delivering your opening statement.';
 
       const sessionPromise = (ai.live.connect as (opts: unknown) => Promise<unknown>)({
         model: MODEL_LIVE,
         config: {
-          systemInstruction: buildVoiceSystemPrompt(scenario, {}, configRef.current ?? undefined, retrievedRef.current),
+          systemInstruction: buildVoiceSystemPrompt({
+            scenario,
+            config: configRef.current ?? undefined,
+            retrieved: retrievedRef.current,
+            locale: localeRef.current,
+          }),
           tools: [
             {
               functionDeclarations: [
@@ -625,8 +672,17 @@ export function useVoiceSession(): UseVoiceSessionReturn {
           // Requesting [AUDIO, TEXT] together closes the socket immediately.
           responseModalities: [Modality.AUDIO],
           speechConfig: {
+            // Same prebuilt voice across locales — it is the customer's
+            // persona, not their accent, and swapping it per language would
+            // make the same scenario feel like a different person.
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } },
-            languageCode: 'en-US',
+            // BCP-47 for the app locale: en-US, or fr-CA for French.
+            // NOTE: if fr-CA turns out to be unsupported or mis-accented by
+            // the live model at runtime, fr-FR is the fallback to try — but
+            // that is a deliberate config change, NOT runtime detection.
+            // Silently probing locales here would make session startup
+            // non-deterministic and hide the regression.
+            languageCode: LOCALE_BCP47[localeRef.current],
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
@@ -774,10 +830,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             if (serverContent?.turnComplete) {
               const isOpeningTurn =
                 !openingDeliveredRef.current &&
-                !!scenarioRef.current?.openingLine &&
+                !!openingLineRef.current &&
                 transcriptRef.current.filter((m) => m.role === 'ai').length === 0;
-              if (isOpeningTurn && scenarioRef.current?.openingLine) {
-                aiTextBufferRef.current = scenarioRef.current.openingLine;
+              if (isOpeningTurn && openingLineRef.current) {
+                aiTextBufferRef.current = openingLineRef.current;
               }
               const finalText = sanitizeAiText(aiTextBufferRef.current);
               addAiMessage();
@@ -892,6 +948,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     aiTextBufferRef.current = '';
     userTextBufferRef.current = '';
     scenarioRef.current = null;
+    openingLineRef.current = null;
     setStatusSync('idle');
   }, [cleanup, clearCapTimers, setStatusSync]);
 
@@ -924,6 +981,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
           report = await evaluateConversation(scenario, transcriptSnapshot, {
             sessionId,
             config: configRef.current ?? undefined,
+            locale: localeRef.current,
           });
         } catch {
           report = null;

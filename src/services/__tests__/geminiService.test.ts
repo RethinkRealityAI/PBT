@@ -153,6 +153,88 @@ describe('evaluateConversation', () => {
   });
 });
 
+describe('locale threading', () => {
+  it('roleplay defaults to the English customer prompt and schema description', async () => {
+    generateContent.mockResolvedValueOnce({ text: 'Why is it so expensive?' });
+    await generateRoleplayMessage(SEED_SCENARIOS[0], []);
+    const arg = generateContent.mock.calls[0][0];
+    expect(arg.config.systemInstruction).toContain('Speak conversational AMERICAN ENGLISH');
+    expect(arg.config.responseSchema.properties.text.description).toBe(
+      'Your in-character reply to the trainee. 1–3 sentences.',
+    );
+  });
+
+  it('roleplay with locale "fr" swaps the dialect block and the text description', async () => {
+    generateContent.mockResolvedValueOnce({ text: 'Ben, c\'est cher.' });
+    await generateRoleplayMessage(SEED_SCENARIOS[0], [], undefined, { locale: 'fr' });
+    const arg = generateContent.mock.calls[0][0];
+    expect(arg.config.systemInstruction).toContain('FRANÇAIS QUÉBÉCOIS');
+    expect(arg.config.responseSchema.properties.text.description).toContain(
+      'français québécois',
+    );
+    // Machine values are untouched by locale.
+    expect(arg.config.responseSchema.properties.emotion.enum).toEqual([
+      'red',
+      'yellow',
+      'green',
+    ]);
+  });
+
+  it('scorer keeps English schema descriptions off free-text fields by default', async () => {
+    generateContent.mockResolvedValueOnce({ text: '{}' });
+    await evaluateConversation(SEED_SCENARIOS[0], [
+      { role: 'user', text: 'hi', timestamp: 1 },
+    ]);
+    const schema = generateContent.mock.calls[0][0].config.responseSchema;
+    expect(schema.properties.critique).toEqual({ type: 'STRING' });
+    expect(schema.properties.betterAlternative).toEqual({ type: 'STRING' });
+  });
+
+  it('scorer with locale "fr" adds French free-text directives but no key changes', async () => {
+    generateContent.mockResolvedValueOnce({ text: '{}' });
+    await evaluateConversation(
+      SEED_SCENARIOS[0],
+      [{ role: 'user', text: 'hi', timestamp: 1 }],
+      { locale: 'fr' },
+    );
+    const call = generateContent.mock.calls[0][0];
+    expect(call.config.systemInstruction).toContain('# OUTPUT LANGUAGE — CANADIAN FRENCH');
+    const schema = call.config.responseSchema;
+    expect(schema.properties.critique.description).toContain('français canadien');
+    expect(schema.properties.keyMoments.items.properties.quote.description).toContain(
+      'MOT POUR MOT',
+    );
+    // The typed ScoreReport contract is fixed — keys and required list stay put.
+    expect(schema.required).toEqual([
+      'acknowledge',
+      'clarify',
+      'transform',
+      'empathy',
+      'rapport',
+      'critique',
+      'betterAlternative',
+      'perDimensionNotes',
+      'keyMoments',
+      'turnSentiment',
+    ]);
+    expect(Object.keys(schema.properties.perDimensionNotes.properties)).toEqual([
+      'acknowledge',
+      'clarify',
+      'transform',
+      'empathy',
+      'rapport',
+    ]);
+  });
+
+  it('coach hint follows the app locale', async () => {
+    generateContent.mockResolvedValueOnce({ text: 'Nommez sa crainte avant d\'expliquer.' });
+    await generateCoachHint(SEED_SCENARIOS[0], [], { locale: 'fr' });
+    expect(generateContent.mock.calls[0][0].config.systemInstruction).toContain(
+      '# OUTPUT LANGUAGE — CANADIAN FRENCH',
+    );
+  });
+});
+
 describe('generateCoachHint', () => {
   it('returns the coach nudge text', async () => {
     generateContent.mockResolvedValueOnce({

@@ -17,6 +17,7 @@ import {
   type SimulationConfig,
 } from '../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from './ragShared';
+import { DEFAULT_LOCALE, type Locale } from '../i18n/locales';
 import {
   estimateCostUsd,
   estimateTokens,
@@ -62,6 +63,29 @@ interface CallOptions {
   config?: SimulationConfig;
   /** Retrieved knowledge chunks (RAG) — grounds customer + scorer prompts. */
   retrieved?: RetrievedChunk[];
+  /**
+   * App locale. Drives the language the CUSTOMER speaks and the language the
+   * COACHING output is written in. Defaults to English, so every existing
+   * caller keeps today's behaviour untouched.
+   */
+  locale?: Locale;
+}
+
+/**
+ * Localized `description` for a structured-output field whose VALUE is
+ * free-form prose the trainee will read.
+ *
+ * Returns an empty object for English so the English schema literal is
+ * byte-identical to what it always was — the response schema is part of the
+ * prompt, and an added description is a behaviour change. Field KEYS and
+ * enum VALUES are never localized: `ScoreReport` is a typed contract and
+ * `red|yellow|green` are machine values.
+ */
+function frDescription(
+  locale: Locale | undefined,
+  french: string,
+): { description?: string } {
+  return (locale ?? DEFAULT_LOCALE) === 'fr' ? { description: french } : {};
 }
 
 interface UsageMetadata {
@@ -86,12 +110,14 @@ export async function generateRoleplayMessage(
   options: CallOptions = {},
 ): Promise<ChatMessage> {
   const ai = getClient();
-  const systemInstruction = buildCustomerSystemPrompt(
+  const systemInstruction = buildCustomerSystemPrompt({
     scenario,
-    options.promptOverrides,
-    options.config,
-    options.retrieved,
-  );
+    overrides: options.promptOverrides,
+    config: options.config,
+    retrieved: options.retrieved,
+    locale: options.locale,
+    mode: 'text',
+  });
 
   // Strip any transient error messages from history before sending to the model
   const cleanHistory = history.filter((m) => !m._transientError);
@@ -128,7 +154,10 @@ export async function generateRoleplayMessage(
       },
       text: {
         type: Type.STRING,
-        description: 'Your in-character reply to the trainee. 1–3 sentences.',
+        description:
+          (options.locale ?? DEFAULT_LOCALE) === 'fr'
+            ? 'Ta réplique, en personnage, adressée à la personne en formation. 1 à 3 phrases, en français québécois parlé.'
+            : 'Your in-character reply to the trainee. 1–3 sentences.',
       },
     },
   } as const;
@@ -208,7 +237,11 @@ export async function generateCoachHint(
   options: CallOptions = {},
 ): Promise<string> {
   const ai = getClient();
-  const systemInstruction = buildCoachHintSystemPrompt(scenario, options.config);
+  const systemInstruction = buildCoachHintSystemPrompt({
+    scenario,
+    config: options.config,
+    locale: options.locale,
+  });
   const formatted = history
     .filter((m) => !m._transientError)
     .map((m) => `${m.role === 'user' ? 'STAFF' : 'CUSTOMER'}: ${m.text}`)
@@ -274,7 +307,12 @@ export async function evaluateConversation(
   options: CallOptions = {},
 ): Promise<ScoreReport> {
   const ai = getClient();
-  const systemInstruction = buildScoringSystemPrompt(scenario, options.config, options.retrieved);
+  const systemInstruction = buildScoringSystemPrompt({
+    scenario,
+    config: options.config,
+    retrieved: options.retrieved,
+    locale: options.locale,
+  });
   const evalT0 = performance.now();
 
   const formatted = transcript
@@ -301,16 +339,43 @@ export async function evaluateConversation(
             transform: { type: Type.INTEGER, description: '0-100' },
             empathy: { type: Type.INTEGER, description: '0-100' },
             rapport: { type: Type.INTEGER, description: '0-100' },
-            critique: { type: Type.STRING },
-            betterAlternative: { type: Type.STRING },
+            critique: {
+              type: Type.STRING,
+              ...frDescription(
+                options.locale,
+                'Critique en plusieurs paragraphes, rédigée en français canadien. Les extraits du dialogue sont cités mot pour mot dans la langue où ils ont été dits.',
+              ),
+            },
+            betterAlternative: {
+              type: Type.STRING,
+              ...frDescription(
+                options.locale,
+                'Exemple de réplique améliorée, en français canadien.',
+              ),
+            },
             perDimensionNotes: {
               type: Type.OBJECT,
               properties: {
-                acknowledge: { type: Type.STRING },
-                clarify: { type: Type.STRING },
-                transform: { type: Type.STRING },
-                empathy: { type: Type.STRING },
-                rapport: { type: Type.STRING },
+                acknowledge: {
+                  type: Type.STRING,
+                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
+                },
+                clarify: {
+                  type: Type.STRING,
+                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
+                },
+                transform: {
+                  type: Type.STRING,
+                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
+                },
+                empathy: {
+                  type: Type.STRING,
+                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
+                },
+                rapport: {
+                  type: Type.STRING,
+                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
+                },
               },
               required: [
                 'acknowledge',
@@ -326,9 +391,19 @@ export async function evaluateConversation(
                 type: Type.OBJECT,
                 properties: {
                   ts: { type: Type.STRING },
+                  // `type` stays a machine value (win|miss) in every locale.
                   type: { type: Type.STRING },
-                  label: { type: Type.STRING },
-                  quote: { type: Type.STRING },
+                  label: {
+                    type: Type.STRING,
+                    ...frDescription(options.locale, 'Titre court du moment, en français canadien.'),
+                  },
+                  quote: {
+                    type: Type.STRING,
+                    ...frDescription(
+                      options.locale,
+                      "Extrait du dialogue cité MOT POUR MOT, dans la langue où il a été dit — ne jamais traduire une citation.",
+                    ),
+                  },
                 },
                 required: ['ts', 'type', 'label', 'quote'],
               },

@@ -8,6 +8,7 @@ import type { Scenario } from '../../data/scenarios';
 import type { SimulationConfig } from '../../data/knowledge/simulationConfig';
 import { logEvent } from '../../lib/analytics';
 import { useT } from '../../i18n/useT';
+import { useLanguage } from '../../app/providers/LanguageProvider';
 
 /**
  * In-chat coach: a discreet, capped "give me a nudge" affordance for text
@@ -40,6 +41,9 @@ export function useCoachHint(args: {
   config?: SimulationConfig;
 }): UseCoachHint {
   const { scenario, messages, sessionId, config } = args;
+  // The nudge is coaching prose the trainee reads, so it follows the app
+  // locale rather than the transcript's language.
+  const { locale } = useLanguage();
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<CoachStatus>('idle');
   const [hint, setHint] = useState<string | null>(null);
@@ -65,7 +69,7 @@ export function useCoachHint(args: {
       target: 'coach_hint_request',
       meta: { sessionId, turn: messages.length },
     });
-    void generateCoachHint(scenario, messages, { sessionId, config })
+    void generateCoachHint(scenario, messages, { sessionId, config, locale })
       .then((text) => {
         setHint(text);
         setStatus('idle');
@@ -75,7 +79,7 @@ export function useCoachHint(args: {
         // Failed hints don't burn the budget.
         setStatus('error');
       });
-  }, [scenario, status, used, messages, sessionId, config]);
+  }, [scenario, status, used, messages, sessionId, config, locale]);
 
   const dismiss = useCallback(() => {
     setOpen(false);

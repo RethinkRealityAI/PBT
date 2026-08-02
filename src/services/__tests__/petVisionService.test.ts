@@ -85,6 +85,50 @@ describe('analyzePetPhoto', () => {
   });
 });
 
+describe('analyzePetPhoto — locale', () => {
+  it('sends the English prompt unchanged by default', async () => {
+    generateContent.mockResolvedValueOnce({ text: JSON.stringify(validResult) });
+    await analyzePetPhoto('x', 'image/jpeg');
+    const instruction = generateContent.mock.calls[0][0].config.systemInstruction;
+    expect(instruction).toContain('veterinary visual triage assistant');
+    expect(instruction).not.toContain('CANADIAN FRENCH');
+  });
+
+  it('appends a French output directive for locale "fr"', async () => {
+    generateContent.mockResolvedValueOnce({ text: JSON.stringify(validResult) });
+    await analyzePetPhoto('x', 'image/jpeg', { locale: 'fr' });
+    const call = generateContent.mock.calls[0][0];
+    expect(call.config.systemInstruction).toContain('# OUTPUT LANGUAGE — CANADIAN FRENCH');
+    // The clinical scaffolding is retained, not replaced.
+    expect(call.config.systemInstruction).toContain('BODY CONDITION SCORE (WSAVA 1–9)');
+    // Enums stay machine-stable in every locale.
+    expect(call.config.responseSchema.properties.lifeStage.enum).toEqual([
+      'puppy',
+      'junior',
+      'adult',
+      'senior',
+      'unknown',
+    ]);
+    expect(call.config.responseSchema.properties.dermatitis.properties.severity.enum).toEqual(
+      ['none', 'mild', 'moderate', 'marked'],
+    );
+  });
+
+  it('localises the age-estimate fallback', async () => {
+    generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ...validResult, ageEstimate: '' }),
+    });
+    const fr = await analyzePetPhoto('x', 'image/jpeg', { locale: 'fr' });
+    expect(fr.ageEstimate).toBe('Impossible à déterminer à partir de la photo');
+
+    generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ...validResult, ageEstimate: '' }),
+    });
+    const en = await analyzePetPhoto('x', 'image/jpeg');
+    expect(en.ageEstimate).toBe('Not determinable from photo');
+  });
+});
+
 describe('visionLifeStageToLabel', () => {
   it('maps vision stages onto scenario life-stage labels', () => {
     expect(visionLifeStageToLabel('puppy')).toBe('Puppy (<1)');

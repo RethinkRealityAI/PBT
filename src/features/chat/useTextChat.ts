@@ -26,6 +26,7 @@ import { retrieveContext } from '../../services/ragClient';
 import { resolveRag } from '../../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from '../../services/ragShared';
 import { logEvent } from '../../lib/analytics';
+import { useLanguage } from '../../app/providers/LanguageProvider';
 
 const MAX_SESSIONS = 50;
 
@@ -229,6 +230,10 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Global admin simulation config (scoring weights/prompt, driver + pushback
   // edits). Null = code defaults. Threaded into every generate/evaluate call.
   const simulationConfig = useSimulationConfig();
+  // App locale — decides the language the AI customer speaks and the language
+  // the scorecard's coaching prose comes back in. LanguageProvider sits above
+  // ChatProvider, and useLanguage() falls back to English outside a provider.
+  const { locale } = useLanguage();
   const promptOverrides = useMemo<PromptOverrides>(
     () => ({
       promptPrefix: overrideRow?.prompt_prefix ?? null,
@@ -334,6 +339,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         promptOverrides,
         config: simulationConfig ?? undefined,
         retrieved: retrievedRef.current,
+        locale,
       });
       appendTurn(first);
       setStatus('awaitingUser');
@@ -346,7 +352,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       setTransientError(friendly);
       setStatus('error');
     }
-  }, [scenario, status, promptOverrides, simulationConfig]);
+  }, [scenario, status, promptOverrides, simulationConfig, locale]);
 
   const send = useCallback(
     async (text: string) => {
@@ -371,6 +377,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
             promptOverrides,
             config: simulationConfig ?? undefined,
             retrieved: retrievedRef.current,
+            locale,
           },
         );
 
@@ -430,7 +437,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         setStatus('awaitingUser');
       }
     },
-    [scenario, appendTurn, promptOverrides, simulationConfig],
+    [scenario, appendTurn, promptOverrides, simulationConfig, locale],
   );
 
   const end = useCallback(async () => {
@@ -448,6 +455,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         sessionId: recordIdRef.current,
         config: simulationConfig ?? undefined,
         retrieved: retrievedRef.current,
+        locale,
       });
     } catch (err) {
       console.error('[useTextChat] scoring failed', err);
@@ -494,7 +502,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       completed: true,
       retrieved: retrievedRef.current,
     });
-  }, [scenario, simulationConfig]);
+  }, [scenario, simulationConfig, locale]);
 
   const rescore = useCallback(async (): Promise<boolean> => {
     const msgs = transcriptRef.current.filter((m) => !m._transientError);
@@ -511,6 +519,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         sessionId: recordId,
         config: simulationConfig ?? undefined,
         retrieved: retrievedRef.current,
+        locale,
       });
     } catch (err) {
       console.error('[useTextChat] rescore failed', err);
@@ -562,7 +571,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       meta: { sessionId: recordId, overall: scored.overall },
     });
     return true;
-  }, [scenario, simulationConfig]);
+  }, [scenario, simulationConfig, locale]);
 
   const abandon = useCallback(
     async (reason: 'user_exit' | 'timeout' | 'error' = 'user_exit') => {
