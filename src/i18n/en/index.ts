@@ -1,3 +1,4 @@
+import { analyzer } from './analyzer';
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { home } from './home';
@@ -14,4 +15,5 @@ export const en = {
   ...chat,
   ...home,
   ...settings,
+  ...analyzer,
 } as const;

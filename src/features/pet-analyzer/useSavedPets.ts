@@ -3,6 +3,7 @@ import { readStorage, writeStorage } from '../../lib/storage';
 import { deriveVerdict, type PetState } from './usePetAnalyzer';
 import { uuid } from '../../lib/id';
 import { calorieFor } from '../../data/calorieTable';
+import { MCS_LEVELS } from '../../data/mcsLevels';
 import { getSupabase } from '../auth/supabaseClient';
 import { logEvent } from '../../lib/analytics';
 import type {
@@ -34,6 +35,88 @@ const SAVED_PETS_KEY = {
   fallback: [] as SavedPet[],
   validate: (v: unknown): v is SavedPet[] => Array.isArray(v),
 };
+
+/**
+ * Analyzer input bounds. The weight range mirrors the slider in
+ * `PetAnalyzerScreen`; BCS mirrors the 9-point WSAVA scale.
+ */
+const WEIGHT_MIN_KG = 2;
+const WEIGHT_MAX_KG = 90;
+const BCS_MIN = 1;
+const BCS_MAX = 9;
+
+/** Analyzer defaults, mirrored from `usePetAnalyzer`'s initial state. */
+const DEFAULT_WEIGHT_KG = 12;
+const DEFAULT_BCS = 5;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Usable number, or `null` when the field is missing / not a number.
+ *
+ * Deliberately stricter than `Number(value)`: that coerces `null`, `''` and
+ * `[]` to 0, which would silently clamp a missing BCS to 1 ("emaciated")
+ * instead of falling through to the analyzer's default.
+ */
+function finiteOrNull(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+/**
+ * Map a stored pet back onto analyzer state (drops `id` / `savedAt` /
+ * provenance).
+ *
+ * Deliberately defensive: `SAVED_PETS_KEY`'s validator only asserts that the
+ * stored value is an array, so an individual record — written by an older
+ * build, or hand-edited in devtools — can carry missing, non-numeric, or
+ * out-of-range fields. Anything unusable falls back to the analyzer's own
+ * defaults rather than pushing a NaN into the calorie maths or parking the
+ * weight slider off its track.
+ */
+export function savedPetToPetState(pet: SavedPet): PetState {
+  const weightKg = finiteOrNull(pet?.weightKg);
+  const bcs = finiteOrNull(pet?.bcs);
+  return {
+    name: typeof pet?.name === 'string' ? pet.name : '',
+    breed: typeof pet?.breed === 'string' ? pet.breed : '',
+    weightKg:
+      weightKg == null
+        ? DEFAULT_WEIGHT_KG
+        : clamp(Math.round(weightKg), WEIGHT_MIN_KG, WEIGHT_MAX_KG),
+    bcs: bcs == null ? DEFAULT_BCS : clamp(Math.round(bcs), BCS_MIN, BCS_MAX),
+    mcs: MCS_LEVELS.some((level) => level.key === pet?.mcs)
+      ? pet.mcs
+      : 'normal',
+    activity: pet?.activity === 'inactive' ? 'inactive' : 'active',
+  };
+}
+
+/**
+ * Field-by-field equality on analyzer state.
+ *
+ * Lets the screen *derive* which saved row is currently on display instead of
+ * tracking a "loaded id" in state. That matters twice: editing any field
+ * silently drops the marker (the values no longer mirror the row), and
+ * deleting the displayed row simply removes it from the list — the analyzer
+ * keeps the user's on-screen work with nothing to clean up.
+ */
+export function petStateEquals(a: PetState, b: PetState): boolean {
+  return (
+    a.name === b.name &&
+    a.breed === b.breed &&
+    a.weightKg === b.weightKg &&
+    a.bcs === b.bcs &&
+    a.mcs === b.mcs &&
+    a.activity === b.activity
+  );
+}
 
 /** UI verdict bands → admin-dashboard verdict buckets. */
 function adminVerdict(state: PetState): 'on_track' | 'watch' | 'adjust' | 'concern' {

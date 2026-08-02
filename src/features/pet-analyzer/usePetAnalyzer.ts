@@ -68,6 +68,14 @@ export function usePetAnalyzer(initial?: Partial<PetState>) {
   const update = <K extends keyof PetState>(key: K, value: PetState[K]) =>
     setState((s) => ({ ...s, [key]: value }));
 
+  /**
+   * Replace every field at once — used when a saved pet is loaded back in.
+   * Six sequential `update` calls would also work, but this keeps the swap
+   * atomic (one render, no intermediate half-loaded state feeding the calorie
+   * / verdict memos).
+   */
+  const load = (next: PetState) => setState(next);
+
   const calorieTarget = useMemo(
     () => calorieFor(state.weightKg, state.activity),
     [state.weightKg, state.activity],
@@ -81,6 +89,7 @@ export function usePetAnalyzer(initial?: Partial<PetState>) {
   return {
     state,
     update,
+    load,
     calorieTarget,
     reference,
     verdictResult,

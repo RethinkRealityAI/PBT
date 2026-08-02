@@ -1,4 +1,5 @@
 import type { Catalog } from '../catalog';
+import { analyzer } from './analyzer';
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { home } from './home';
@@ -14,4 +15,5 @@ export const fr: Catalog = {
   ...chat,
   ...home,
   ...settings,
+  ...analyzer,
 };
