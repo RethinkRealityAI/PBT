@@ -65,13 +65,13 @@ Drivers: Activator · Energizer · Analyzer · Harmonizer.
 Services call `@google/genai`:
 
 
-| Function                  | Model                          | Purpose                       |
-| ------------------------- | ------------------------------ | ----------------------------- |
-| `generateRoleplayMessage` | `gemini-2.5-flash`             | Customer turn                 |
-| `evaluateConversation`    | `gemini-2.5-flash` (JSON mode) | ACT-first 5-dim scorecard     |
-| `generateCoachHint`       | `gemini-2.5-flash`             | In-chat coach nudge (text mode, ≤3/session) |
-| `analyzePetPhoto`         | `gemini-2.5-flash` (multimodal)| Pet Vision (breed/BCS/derm)   |
-| `ai.live.connect`         | `gemini-2.0-flash-live-001`    | Voice mode                    |
+| Function                  | Model (`MODEL_TEXT` / `MODEL_LIVE`)     | Purpose                       |
+| ------------------------- | --------------------------------------- | ----------------------------- |
+| `generateRoleplayMessage` | `gemini-3-flash-preview`                | Customer turn                 |
+| `evaluateConversation`    | `gemini-3-flash-preview` (JSON mode)    | ACT-first 5-dim scorecard     |
+| `generateCoachHint`       | `gemini-3-flash-preview`                | In-chat coach nudge (text mode, ≤3/session) |
+| `analyzePetPhoto`         | `gemini-3-flash-preview` (multimodal)   | Pet Vision (breed/BCS/derm)   |
+| `ai.live.connect`         | `gemini-3.1-flash-live-preview`         | Voice mode                    |
 
 **Scoring is ACT-first (Phase 2):** 5 dimensions — `acknowledge`, `clarify`,
 `transform`, `empathy`, `rapport` (see `scoringRubric.ts`). ACT pillars carry
