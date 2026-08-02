@@ -24,6 +24,9 @@ import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
 import { ReportModal } from '../features/reporting/ReportModal';
 import { resolveDailyPickBase, type DailyPickBase } from '../lib/dailyPick';
+import { computeStreak } from '../lib/streak';
+import { SESSIONS_KEY } from '../lib/sessionsKey';
+import { useT } from '../i18n/useT';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -110,6 +113,90 @@ function roundGlassControlStyle(dc: DriverColors, dark: boolean): CSSProperties 
         : '0 8px 16px -10px rgba(15,14,20,0.12), 0 1px 4px rgba(15,14,20,0.04)',
     ].join(', '),
   };
+}
+
+/**
+ * Streak strip (spec §9.4) — practice-cadence chips under the headline.
+ * Hidden entirely until there is something worth showing (no zero-state
+ * guilt for first-time users).
+ */
+function StreakStrip({ driverColors, dark }: { driverColors: DriverColors; dark: boolean }) {
+  const t = useT();
+  const stats = computeStreak(readStorage(SESSIONS_KEY).map((s) => s.createdAt));
+  if (stats.streakDays === 0 && stats.sessionsThisWeek === 0) return null;
+
+  const monoChip: CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontFamily: 'var(--pbt-font-mono)',
+    fontSize: 10.5,
+    letterSpacing: '0.10em',
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap',
+    color: 'var(--pbt-text)',
+  };
+
+  const streakLabel =
+    stats.streakDays === 1
+      ? t('home.streak.daysOne')
+      : t('home.streak.days', { count: stats.streakDays });
+  const weekLabel =
+    stats.sessionsThisWeek === 1
+      ? t('home.streak.thisWeekOne')
+      : t('home.streak.thisWeek', { count: stats.sessionsThisWeek });
+
+  return (
+    <div
+      role="group"
+      aria-label={t('home.streak.aria')}
+      style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}
+    >
+      {stats.streakDays > 0 && (
+        <Glass
+          radius={9999}
+          padding={0}
+          tint={dark ? 0.44 : 0.18}
+          shine={false}
+          style={{ padding: '7px 12px' }}
+        >
+          <span style={monoChip}>
+            <Icon.flame
+              aria-hidden
+              style={{
+                width: 13,
+                height: 13,
+                color: stats.practicedToday ? driverColors.primary : 'var(--pbt-text-muted)',
+              }}
+            />
+            {streakLabel}
+          </span>
+        </Glass>
+      )}
+      {stats.sessionsThisWeek > 0 && (
+        <Glass
+          radius={9999}
+          padding={0}
+          tint={dark ? 0.44 : 0.18}
+          shine={false}
+          style={{ padding: '7px 12px' }}
+        >
+          <span style={monoChip}>{weekLabel}</span>
+        </Glass>
+      )}
+      {stats.streakDays > 0 && (
+        <span
+          style={{
+            ...monoChip,
+            color: 'var(--pbt-text-muted)',
+            alignSelf: 'center',
+          }}
+        >
+          {stats.practicedToday ? t('home.streak.practicedToday') : t('home.streak.keepItAlive')}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /** Subtitle animation: Acknowledge → dot → Clarify → dot → Transform, once per dashboard visit. */
@@ -541,6 +628,9 @@ export function HomeScreen() {
                 ECHO Driver · {driver.name}
               </span>
             </div>
+
+            {/* Streak strip — practice cadence, computed from saved sessions */}
+            <StreakStrip driverColors={driverColors} dark={dark} />
 
             {/* ACT Guide — just above hero scenario card */}
             {showActCard && (

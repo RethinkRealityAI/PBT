@@ -3,6 +3,7 @@ import { en } from '../en';
 import { fr } from '../fr';
 import { chrome as enChrome } from '../en/chrome';
 import { chat as enChat } from '../en/chat';
+import { home as enHome } from '../en/home';
 import { LOCALES, isLocale } from '../locales';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { translate, registerCatalog } from '../translate';
@@ -72,7 +73,7 @@ describe('locale catalogs', () => {
     // en is a spread-merge of its namespace files; if two namespaces declare
     // the same key, the merged catalog silently keeps the last one. Guard by
     // checking the sum of namespace key counts equals the merged count.
-    const namespaces = [enChrome, enChat];
+    const namespaces = [enChrome, enChat, enHome];
     const total = namespaces.reduce((n, ns) => n + Object.keys(ns).length, 0);
     expect(Object.keys(en).length).toBe(total);
   });

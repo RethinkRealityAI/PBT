@@ -20,6 +20,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SessionRecord, ChatMessage, ScoreReport } from '../../services/types';
+import { SESSIONS_KEY } from '../../lib/sessionsKey';
 import type { Scenario } from '../../data/scenarios';
 import {
   readStorage,
@@ -39,12 +40,6 @@ interface SavedPetLike {
   activity: 'active' | 'inactive';
   savedAt?: string;
 }
-
-const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
-  key: 'sessions',
-  fallback: [],
-  validate: (v): v is SessionRecord[] => Array.isArray(v),
-};
 
 const SAVED_PETS_KEY: StorageKeyDef<SavedPetLike[]> = {
   key: 'saved_pets',

@@ -8,7 +8,8 @@ import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { DIMENSIONS, bandFor } from '../data/knowledge/scoringRubric';
 import { COLORS } from '../design-system/tokens';
-import { readStorage, type StorageKeyDef } from '../lib/storage';
+import { readStorage } from '../lib/storage';
+import { SESSIONS_KEY } from '../lib/sessionsKey';
 import {
   isScoreUnavailable,
   normalizeScoreReport,
@@ -20,12 +21,6 @@ import { emotionJourney } from '../features/scorecard/scorecardInsights';
 import { ResolutionJourney } from '../features/scorecard/ResolutionJourney';
 import { SessionFeedbackCard } from '../features/feedback/SessionFeedbackCard';
 import { isSessionRated } from '../features/feedback/useSessionFeedback';
-
-const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
-  key: 'sessions',
-  fallback: [],
-  validate: (v): v is SessionRecord[] => Array.isArray(v),
-};
 
 type Tab = 'scorecard' | 'transcript';
 

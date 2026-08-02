@@ -1,6 +1,7 @@
 import type { Catalog } from '../catalog';
 import { chat } from './chat';
 import { chrome } from './chrome';
+import { home } from './home';
 
 /**
  * Canadian-French catalog. Typed as `Catalog` so any key missing relative to
@@ -10,4 +11,5 @@ import { chrome } from './chrome';
 export const fr: Catalog = {
   ...chrome,
   ...chat,
+  ...home,
 };

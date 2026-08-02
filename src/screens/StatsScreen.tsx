@@ -10,11 +10,7 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { useChat } from '../app/providers/ChatProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { DIMENSIONS, bandFor } from '../data/knowledge/scoringRubric';
-import {
-  isScoreUnavailable,
-  normalizeScoreReport,
-  type SessionRecord,
-} from '../services/types';
+import { isScoreUnavailable, normalizeScoreReport } from '../services/types';
 import { SessionFeedbackCard } from '../features/feedback/SessionFeedbackCard';
 import {
   computeScoreDelta,
@@ -23,14 +19,9 @@ import {
 } from '../features/scorecard/scorecardInsights';
 import { ResolutionJourney } from '../features/scorecard/ResolutionJourney';
 import { COLORS } from '../design-system/tokens';
-import { readStorage, type StorageKeyDef } from '../lib/storage';
+import { readStorage } from '../lib/storage';
+import { SESSIONS_KEY } from '../lib/sessionsKey';
 import { setSelectedSessionId } from '../lib/selectedSession';
-
-const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
-  key: 'sessions',
-  fallback: [],
-  validate: (v): v is SessionRecord[] => Array.isArray(v),
-};
 
 const easeOut = [0.22, 1, 0.36, 1] as const;
 

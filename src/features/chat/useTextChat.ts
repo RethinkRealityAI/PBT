@@ -16,11 +16,8 @@ import { useScenarioOverride, useSimulationConfig } from '../../app/providers/Fl
 import { seedScenarioId } from '../../data/scenarioOverrides';
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
 import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
-import {
-  readStorage,
-  writeStorage,
-  type StorageKeyDef,
-} from '../../lib/storage';
+import { readStorage, writeStorage } from '../../lib/storage';
+import { SESSIONS_KEY } from '../../lib/sessionsKey';
 import { uuid } from '../../lib/id';
 import { getSupabase } from '../auth/supabaseClient';
 import { recordTurns } from '../../services/aiTelemetry';
@@ -30,11 +27,6 @@ import { resolveRag } from '../../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from '../../services/ragShared';
 import { logEvent } from '../../lib/analytics';
 
-const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
-  key: 'sessions',
-  fallback: [],
-  validate: (v): v is SessionRecord[] => Array.isArray(v),
-};
 const MAX_SESSIONS = 50;
 
 const SCORE_UNAVAILABLE: ScoreReport = {

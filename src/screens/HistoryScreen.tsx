@@ -7,16 +7,11 @@ import { PillButton } from '../design-system/PillButton';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { PUSHBACK_CATEGORIES } from '../data/scenarios';
-import { readStorage, type StorageKeyDef } from '../lib/storage';
-import { isScoreUnavailable, type SessionRecord } from '../services/types';
+import { readStorage } from '../lib/storage';
+import { SESSIONS_KEY } from '../lib/sessionsKey';
+import { isScoreUnavailable } from '../services/types';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { setSelectedSessionId } from '../lib/selectedSession';
-
-const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
-  key: 'sessions',
-  fallback: [],
-  validate: (v): v is SessionRecord[] => Array.isArray(v),
-};
 
 export function HistoryScreen() {
   const { go } = useNavigation();
