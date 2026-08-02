@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Glass } from '../design-system/Glass';
 import { DriverWave } from '../design-system/DriverWave';
+import { PillButton } from '../design-system/PillButton';
 import { Segmented } from '../design-system/Segmented';
 import { Icon } from '../design-system/Icon';
 import { TopBar } from '../shell/TopBar';
@@ -9,29 +10,47 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { useSession } from '../app/providers/SessionProvider';
 import { useTheme, type ThemeMode } from '../app/providers/ThemeProvider';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { LOCALES, LOCALE_LABELS, type Locale } from '../i18n/locales';
 import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS } from '../design-system/tokens';
 import { clearAllStorage } from '../lib/storage';
+import { isTrainingUseAllowed, setTrainingUseAllowed } from '../lib/privacy';
+import { useT } from '../i18n/useT';
 import { AccountUpgradeModal } from '../features/auth/AccountUpgradeModal';
 import { getSupabase } from '../features/auth/supabaseClient';
 import { ReportModal } from '../features/reporting/ReportModal';
 import type { ReportKind } from '../features/reporting/usePlatformReport';
 
+/**
+ * Themed modal fill — dark mode must NOT get a forced-light pane or the
+ * near-white `--pbt-text` blends out. See "Modals & overlays" in CLAUDE.md.
+ */
+const MODAL_FILL_DARK =
+  'linear-gradient(165deg, rgba(20,18,26,0.80) 0%, rgba(12,11,17,0.60) 100%)';
+const MODAL_FILL_LIGHT =
+  'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.30) 100%)';
+
+const DANGER = 'oklch(0.55 0.24 18)';
+
 export function SettingsScreen() {
   const { go, replace } = useNavigation();
   const { profile, setProfile } = useProfile();
   const { theme, setTheme } = useTheme();
+  const { locale, setLocale, t } = useLanguage();
   const { user } = useSession();
   const [authMode, setAuthMode] = useState<'signup' | 'signin' | null>(null);
   const [reportKind, setReportKind] = useState<ReportKind | null>(null);
+  const [allowTraining, setAllowTraining] = useState(() => isTrainingUseAllowed());
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (!profile) {
     return (
       <>
-        <TopBar showBack title="You" />
+        <TopBar showBack title={t('settings.title')} />
         <Page withTabBar>
           <Glass radius={22} padding={22}>
-            <p style={{ color: 'var(--pbt-text-muted)' }}>Take the quiz to set up your profile.</p>
+            <p style={{ color: 'var(--pbt-text-muted)' }}>{t('settings.noProfile')}</p>
           </Glass>
         </Page>
       </>
@@ -45,15 +64,15 @@ export function SettingsScreen() {
   const userMeta = (user as { user_metadata?: { display_name?: string } } | null)?.user_metadata;
   const displayName = userMeta?.display_name?.trim()
     || (user?.email ? user.email.split('@')[0] : null);
-  const headerName = displayName ?? 'Anonymous session';
-  const headerSubtitle = user?.email ?? (user ? '' : 'Not signed in');
+  const headerName = displayName ?? t('settings.anonymousSession');
+  const headerSubtitle = user?.email ?? (user ? '' : t('settings.notSignedIn'));
   const avatarText = displayName
     ? displayName.trim().slice(0, 2).toUpperCase()
     : profile.primary[0];
 
   return (
     <>
-      <TopBar title="You" />
+      <TopBar title={t('settings.title')} />
       <Page withTabBar>
         <Glass
           radius={22}
@@ -119,52 +138,73 @@ export function SettingsScreen() {
           </div>
         </Glass>
 
-        <SectionHeader>Practice</SectionHeader>
+        <SectionHeader>{t('settings.section.practice')}</SectionHeader>
         <Glass radius={20} padding={4} style={{ marginBottom: 16 }}>
-          <Row label="Theme">
+          <Row label={t('settings.theme.label')}>
             <Segmented
               value={theme}
               onChange={(v) => setTheme(v as ThemeMode)}
-              ariaLabel="Theme"
+              ariaLabel={t('settings.theme.label')}
               options={[
-                { value: 'light', label: 'Light' },
-                { value: 'dark', label: 'Dark' },
-                { value: 'system', label: 'System' },
+                { value: 'light', label: t('settings.theme.light') },
+                { value: 'dark', label: t('settings.theme.dark') },
+                { value: 'system', label: t('settings.theme.system') },
               ]}
             />
           </Row>
-          <Row label="Retake ECHO Quiz" onClick={() => { setProfile(null); replace('quiz'); }}>
+          <Row label={t('settings.language.label')}>
+            <Segmented
+              value={locale}
+              onChange={(v) => setLocale(v as Locale)}
+              ariaLabel={t('settings.language.label')}
+              options={LOCALES.map((l) => ({ value: l, label: LOCALE_LABELS[l] }))}
+            />
+          </Row>
+          <Row
+            label={t('settings.retakeQuiz')}
+            onClick={() => { setProfile(null); replace('quiz'); }}
+          >
             <span style={{ color: 'var(--pbt-text-muted)' }}>→</span>
           </Row>
         </Glass>
 
-        <SectionHeader>Account</SectionHeader>
+        <SectionHeader>{t('settings.section.account')}</SectionHeader>
         <Glass radius={20} padding={4} style={{ marginBottom: 16 }}>
           {user ? (
             <>
-              <Row label="Signed in as">
+              <Row label={t('settings.signedInAs')}>
                 <span style={{ color: 'var(--pbt-text-muted)', fontSize: 12 }}>
                   {user.email}
                 </span>
               </Row>
               <Row
-                label="Sign out"
+                label={t('settings.signOut')}
                 onClick={async () => {
                   const sb = getSupabase();
                   if (sb) await sb.auth.signOut();
                 }}
               >
-                <span style={{ color: 'oklch(0.55 0.24 18)' }}>→</span>
+                <span style={{ color: DANGER }}>→</span>
+              </Row>
+              <Row
+                label={t('settings.delete.row')}
+                labelColor={DANGER}
+                onClick={() => setDeleteOpen(true)}
+              >
+                <span style={{ color: DANGER }}>→</span>
               </Row>
             </>
           ) : (
             <>
-              <Row label="Save your progress" onClick={() => setAuthMode('signup')}>
+              <Row
+                label={t('settings.saveProgress')}
+                onClick={() => setAuthMode('signup')}
+              >
                 <span style={{ color: driverColors.primary, fontWeight: 600 }}>
-                  Sign up
+                  {t('settings.signUp')}
                 </span>
               </Row>
-              <Row label="Sign in" onClick={() => setAuthMode('signin')}>
+              <Row label={t('settings.signIn')} onClick={() => setAuthMode('signin')}>
                 <span style={{ color: 'var(--pbt-text-muted)' }}>→</span>
               </Row>
             </>
@@ -177,12 +217,17 @@ export function SettingsScreen() {
           onClose={() => setAuthMode(null)}
         />
 
-        <SectionHeader>Feedback</SectionHeader>
+        <DeleteAccountModal open={deleteOpen} onClose={() => setDeleteOpen(false)} />
+
+        <SectionHeader>{t('settings.section.feedback')}</SectionHeader>
         <Glass radius={20} padding={4} style={{ marginBottom: 16 }}>
-          <Row label="Report a problem" onClick={() => setReportKind('bug')}>
+          <Row label={t('settings.report.bug')} onClick={() => setReportKind('bug')}>
             <span style={{ color: 'var(--pbt-text-muted)' }}>→</span>
           </Row>
-          <Row label="Suggest an improvement" onClick={() => setReportKind('suggestion')}>
+          <Row
+            label={t('settings.report.suggestion')}
+            onClick={() => setReportKind('suggestion')}
+          >
             <span style={{ color: 'var(--pbt-text-muted)' }}>→</span>
           </Row>
         </Glass>
@@ -194,20 +239,37 @@ export function SettingsScreen() {
           onClose={() => setReportKind(null)}
         />
 
-        <SectionHeader>About</SectionHeader>
+        <SectionHeader>{t('settings.section.about')}</SectionHeader>
         <Glass radius={20} padding={4} style={{ marginBottom: 16 }}>
-          <Row label="Privacy & data" onClick={() => go('onboarding')}>
+          <Row label={t('settings.privacy.label')} sublabel={t('settings.privacy.help')}>
+            <Segmented
+              value={allowTraining ? 'on' : 'off'}
+              onChange={(v) => {
+                const next = v === 'on';
+                setAllowTraining(next);
+                setTrainingUseAllowed(next);
+              }}
+              ariaLabel={t('settings.privacy.ariaLabel')}
+              options={[
+                { value: 'on', label: t('settings.privacy.on') },
+                { value: 'off', label: t('settings.privacy.off') },
+              ]}
+            />
+          </Row>
+          {/* The old "Privacy & data" row was the only route back to the terms
+              copy, so keep a dedicated link now that the row is a toggle. */}
+          <Row label={t('settings.privacy.terms')} onClick={() => go('onboarding')}>
             <span style={{ color: 'var(--pbt-text-muted)' }}>→</span>
           </Row>
-          <Row label="Version" >
+          <Row label={t('settings.version')}>
             <span style={{ color: 'var(--pbt-text-muted)', fontFamily: 'var(--pbt-font-mono)', fontSize: 11 }}>
               0.0.1
             </span>
           </Row>
           <Row
-            label="Reset all local data"
+            label={t('settings.reset.row')}
             onClick={() => {
-              if (confirm('This clears your profile, sessions, and settings. Continue?')) {
+              if (confirm(t('settings.reset.confirm'))) {
                 clearAllStorage();
                 window.location.reload();
               }
@@ -243,10 +305,15 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 function Row({
   label,
+  sublabel,
+  labelColor,
   onClick,
   children,
 }: {
   label: string;
+  /** One-line explanation rendered under the label. */
+  sublabel?: string;
+  labelColor?: string;
   onClick?: () => void;
   children?: React.ReactNode;
 }) {
@@ -255,18 +322,254 @@ function Row({
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
       style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: sublabel ? 'flex-start' : 'center',
         justifyContent: 'space-between',
-        gap: 8,
+        gap: 12,
         padding: '12px 14px',
         cursor: onClick ? 'pointer' : 'default',
         borderBottom: '0.5px solid rgba(60,20,15,0.06)',
       }}
     >
-      <span style={{ fontSize: 14 }}>{label}</span>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ fontSize: 14, color: labelColor, display: 'block' }}>{label}</span>
+        {sublabel && (
+          <span
+            style={{
+              display: 'block',
+              fontSize: 12,
+              lineHeight: 1.45,
+              color: 'var(--pbt-text-muted)',
+              marginTop: 4,
+            }}
+          >
+            {sublabel}
+          </span>
+        )}
+      </span>
       {children}
+    </div>
+  );
+}
+
+/**
+ * Destructive confirm for self-service account deletion (spec §9.11).
+ *
+ * Requires typing the localised confirm word, then POSTs the caller's access
+ * token to `account-delete`. On success the local device is wiped too —
+ * signing out alone would leave the anonymous copy of their history behind.
+ */
+function DeleteAccountModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT();
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) return null;
+
+  const confirmWord = t('settings.delete.confirmWord');
+  const canDelete = typed.trim().toUpperCase() === confirmWord.toUpperCase() && !busy;
+
+  const close = () => {
+    if (busy) return;
+    setTyped('');
+    setError(null);
+    onClose();
+  };
+
+  const handleDelete = async () => {
+    setError(null);
+    const sb = getSupabase();
+    if (!sb) {
+      setError(t('settings.delete.error'));
+      return;
+    }
+    setBusy(true);
+    try {
+      const {
+        data: { session },
+      } = await sb.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error(t('settings.delete.notSignedIn'));
+
+      const res = await fetch('/.netlify/functions/account-delete', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(
+          body.error ?? t('settings.delete.requestFailed', { status: res.status }),
+        );
+      }
+
+      await sb.auth.signOut().catch(() => {});
+      clearAllStorage();
+      window.location.reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('settings.delete.error'));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal
+      aria-labelledby="pbt-delete-title"
+      onClick={close}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(10, 5, 8, 0.18)',
+        backdropFilter: 'blur(10px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(10px) saturate(180%)',
+        padding: 16,
+      }}
+    >
+      <Glass
+        radius={28}
+        padding={0}
+        glow={DANGER}
+        backdropSaturatePct={235}
+        style={{
+          maxWidth: 420,
+          width: '100%',
+          background: dark ? MODAL_FILL_DARK : MODAL_FILL_LIGHT,
+        }}
+      >
+        <div style={{ padding: 24 }} onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-start justify-between" style={{ marginBottom: 14 }}>
+            <div>
+              <div
+                style={{
+                  fontFamily: 'var(--pbt-font-mono)',
+                  fontSize: 11,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  color: DANGER,
+                  marginBottom: 6,
+                }}
+              >
+                {t('settings.delete.eyebrow')}
+              </div>
+              <h2
+                id="pbt-delete-title"
+                style={{
+                  margin: 0,
+                  fontSize: 24,
+                  fontWeight: 400,
+                  letterSpacing: '-0.025em',
+                  lineHeight: 1.1,
+                  color: 'var(--pbt-text)',
+                }}
+              >
+                {t('settings.delete.title')}
+              </h2>
+            </div>
+            <button
+              onClick={close}
+              aria-label={t('settings.delete.close')}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                border: 'none',
+                background: dark ? 'rgba(255,255,255,0.10)' : 'rgba(60,20,15,0.06)',
+                cursor: 'pointer',
+                color: 'var(--pbt-text)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <Icon.close />
+            </button>
+          </div>
+
+          <p
+            style={{
+              margin: '0 0 16px',
+              fontSize: 14,
+              lineHeight: 1.6,
+              color: 'var(--pbt-text)',
+            }}
+          >
+            {t('settings.delete.confirmBody')}
+          </p>
+
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span
+              style={{
+                fontFamily: 'var(--pbt-font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color: 'var(--pbt-text-muted)',
+                fontWeight: 700,
+                paddingLeft: 4,
+              }}
+            >
+              {t('settings.delete.typePrompt', { word: confirmWord })}
+            </span>
+            <input
+              type="text"
+              value={typed}
+              autoFocus
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={t('settings.delete.placeholder', { word: confirmWord })}
+              className="pbt-glass-input"
+            />
+          </label>
+
+          {error && (
+            <div
+              role="alert"
+              style={{
+                marginTop: 10,
+                fontSize: 13,
+                color: 'var(--pbt-score-poor)',
+                padding: '6px 10px',
+                borderRadius: 12,
+                background: 'color-mix(in oklab, var(--pbt-score-poor) 14%, transparent)',
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
+            <PillButton variant="ghost" fullWidth onClick={close} disabled={busy}>
+              {t('settings.delete.cancel')}
+            </PillButton>
+            <PillButton fullWidth onClick={handleDelete} disabled={!canDelete}>
+              {busy ? t('settings.delete.working') : t('settings.delete.confirm')}
+            </PillButton>
+          </div>
+        </div>
+      </Glass>
     </div>
   );
 }

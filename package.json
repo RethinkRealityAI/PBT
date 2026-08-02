@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "typecheck": "tsc --noEmit",
+    "check:bundle": "node scripts/check-bundle-size.mjs",
     "verify:db": "node scripts/verify-db-schema.mjs"
   },
   "dependencies": {

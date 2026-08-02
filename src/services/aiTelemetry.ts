@@ -10,6 +10,7 @@
  * logged to the console only.
  */
 import { getSupabase } from '../features/auth/supabaseClient';
+import { isTrainingUseAllowed } from '../lib/privacy';
 
 export type CallType = 'roleplay' | 'evaluate' | 'voice' | 'hint' | 'vision';
 
@@ -90,6 +91,11 @@ export function estimateTokens(text: string): number {
 }
 
 export async function recordCall(rec: AiCallRecord): Promise<void> {
+  // Privacy gate (spec §8.3). AI telemetry exists to improve the model +
+  // product, so it is "training use" and stops on opt-out. Deliberately NOT
+  // applied to the user's own saved sessions, session_feedback, or
+  // platform_reports — that is their own data, not training use.
+  if (!isTrainingUseAllowed()) return;
   const sb = getSupabase();
   if (!sb) return;
   try {
@@ -117,6 +123,8 @@ export async function recordCall(rec: AiCallRecord): Promise<void> {
 }
 
 export async function recordTurns(turns: AiTurnRecord[]): Promise<void> {
+  // Privacy gate (spec §8.3) — same rationale as recordCall above.
+  if (!isTrainingUseAllowed()) return;
   if (turns.length === 0) return;
   const sb = getSupabase();
   if (!sb) return;

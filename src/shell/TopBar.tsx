@@ -3,6 +3,8 @@ import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
+import { LocaleToggle } from './LocaleToggle';
+import { useT } from '../i18n/useT';
 
 export interface TopBarProps {
   title?: string;
@@ -27,6 +29,7 @@ export function TopBar({
 }: TopBarProps) {
   const { back } = useNavigation();
   const { resolvedTheme, toggle } = useTheme();
+  const t = useT();
   const handleBack = onBack ?? back;
 
   const middle = center ?? (
@@ -55,7 +58,7 @@ export function TopBar({
             blur={20}
             tint={0.45}
             onClick={handleBack}
-            ariaLabel="Back"
+            ariaLabel={t('chrome.back')}
             shine={false}
             className="flex h-9 w-9 shrink-0 items-center justify-center"
           >
@@ -68,13 +71,18 @@ export function TopBar({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {trailing}
+        <LocaleToggle />
         <Glass
           radius={9999}
           padding={0}
           tint={0.3}
           shine={false}
           onClick={toggle}
-          ariaLabel={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+          ariaLabel={
+            resolvedTheme === 'dark'
+              ? t('chrome.themeToggle.toLight')
+              : t('chrome.themeToggle.toDark')
+          }
           className="flex h-9 w-9 items-center justify-center"
         >
           {resolvedTheme === 'dark' ? <Icon.sun /> : <Icon.moon />}

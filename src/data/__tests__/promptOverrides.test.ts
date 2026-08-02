@@ -7,15 +7,16 @@ const scenario: Scenario = LIBRARY_SCENARIOS[0];
 
 describe('buildCustomerSystemPrompt with overrides', () => {
   it('produces a stable prompt without overrides', () => {
-    const out = buildCustomerSystemPrompt(scenario);
+    const out = buildCustomerSystemPrompt({ scenario });
     expect(out).toContain('You are roleplaying a Royal Canin customer');
     expect(out).not.toContain('# ADMIN NOTES');
     expect(out).not.toContain('# ADMIN ADDENDUM');
   });
 
   it('inserts the prefix at the very top under ADMIN NOTES', () => {
-    const out = buildCustomerSystemPrompt(scenario, {
-      promptPrefix: 'Be extra patient on the first turn.',
+    const out = buildCustomerSystemPrompt({
+      scenario,
+      overrides: { promptPrefix: 'Be extra patient on the first turn.' },
     });
     expect(out.indexOf('# ADMIN NOTES')).toBeLessThan(
       out.indexOf('You are roleplaying'),
@@ -24,8 +25,9 @@ describe('buildCustomerSystemPrompt with overrides', () => {
   });
 
   it('appends the suffix after the rules block', () => {
-    const out = buildCustomerSystemPrompt(scenario, {
-      promptSuffix: 'CLINIC-SPECIFIC: mention Brisbane prices.',
+    const out = buildCustomerSystemPrompt({
+      scenario,
+      overrides: { promptSuffix: 'CLINIC-SPECIFIC: mention Brisbane prices.' },
     });
     expect(out).toContain('# ADMIN ADDENDUM');
     expect(out).toContain('CLINIC-SPECIFIC: mention Brisbane prices.');
@@ -35,8 +37,9 @@ describe('buildCustomerSystemPrompt with overrides', () => {
 
   it('caps overrides at 1500 chars', () => {
     const long = 'x'.repeat(2000);
-    const out = buildCustomerSystemPrompt(scenario, {
-      promptPrefix: long,
+    const out = buildCustomerSystemPrompt({
+      scenario,
+      overrides: { promptPrefix: long },
     });
     expect(out).toContain('xxxxx');
     // The original 2000-char string must not appear unmodified.
@@ -44,9 +47,9 @@ describe('buildCustomerSystemPrompt with overrides', () => {
   });
 
   it('ignores empty / whitespace overrides', () => {
-    const out = buildCustomerSystemPrompt(scenario, {
-      promptPrefix: '   ',
-      promptSuffix: '',
+    const out = buildCustomerSystemPrompt({
+      scenario,
+      overrides: { promptPrefix: '   ', promptSuffix: '' },
     });
     expect(out).not.toContain('# ADMIN NOTES');
     expect(out).not.toContain('# ADMIN ADDENDUM');

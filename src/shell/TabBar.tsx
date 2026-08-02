@@ -7,6 +7,8 @@ import { useTheme } from '../app/providers/ThemeProvider';
 import { useFlags } from '../app/providers/FlagProvider';
 import type { FlagKey } from '../services/flagsClient';
 import { DRIVER_COLORS } from '../design-system/tokens';
+import { useT } from '../i18n/useT';
+import type { CatalogKey } from '../i18n/catalog';
 
 const TAB_FLAG: Record<string, FlagKey> = {
   home: 'nav.tab.home.enabled',
@@ -15,12 +17,21 @@ const TAB_FLAG: Record<string, FlagKey> = {
   settings: 'nav.tab.settings.enabled',
 };
 
+/** Tab display labels — routes.ts keeps the English label as a stable id. */
+const TAB_LABEL_KEY: Record<string, CatalogKey> = {
+  home: 'tab.train',
+  history: 'tab.history',
+  resources: 'tab.library',
+  settings: 'tab.you',
+};
+
 const FALLBACK_TAB_BG =
   'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.56 0.24 18))';
 const FALLBACK_TAB_SHADOW = '0 4px 12px -4px oklch(0.55 0.22 18 / 0.45)';
 
 export function TabBar() {
   const { current, go } = useNavigation();
+  const t = useT();
   const { profile } = useProfile();
   const { resolvedTheme } = useTheme();
   const { getFlag } = useFlags();
@@ -52,11 +63,14 @@ export function TabBar() {
           {visibleTabs.map((tab) => {
             const active = current === tab.screen;
             const IconCmp = Icon[tab.iconKey];
+            const label = TAB_LABEL_KEY[tab.screen]
+              ? t(TAB_LABEL_KEY[tab.screen])
+              : tab.label;
             return (
               <button
                 key={tab.screen}
                 onClick={() => go(tab.screen)}
-                aria-label={tab.label}
+                aria-label={label}
                 aria-pressed={active}
                 style={{
                   display: 'inline-flex',
@@ -89,7 +103,7 @@ export function TabBar() {
                 }}
               >
                 <IconCmp />
-                {active && <span>{tab.label}</span>}
+                {active && <span>{label}</span>}
               </button>
             );
           })}

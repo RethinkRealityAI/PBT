@@ -4,6 +4,7 @@ import {
   type PetVisionResult,
 } from '../../services/petVisionService';
 import { logEvent } from '../../lib/analytics';
+import { useLanguage } from '../../app/providers/LanguageProvider';
 
 export type VisionStatus = 'idle' | 'analyzing' | 'done' | 'error';
 
@@ -46,6 +47,7 @@ export interface UsePetVision {
 }
 
 export function usePetVision(): UsePetVision {
+  const { locale } = useLanguage();
   const [status, setStatus] = useState<VisionStatus>('idle');
   const [result, setResult] = useState<PetVisionResult | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -117,7 +119,7 @@ export function usePetVision(): UsePetVision {
     setPreviewUrl(parts.previewUrl);
 
     try {
-      const r = await analyzePetPhoto(parts.base64, parts.mimeType);
+      const r = await analyzePetPhoto(parts.base64, parts.mimeType, { locale });
       if (!isCurrent()) return null; // superseded mid-analysis — ignore stale result
       setResult(r);
       setStatus('done');
@@ -145,7 +147,7 @@ export function usePetVision(): UsePetVision {
       setStatus('error');
       return null;
     }
-  }, []);
+  }, [locale]);
 
   return { status, result, previewUrl, error, analyzeFile, reset };
 }

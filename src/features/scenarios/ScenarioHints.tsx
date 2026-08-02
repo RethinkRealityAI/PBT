@@ -1,5 +1,7 @@
 import type { Scenario } from '../../data/scenarios';
-import { getPushbackKnowledge } from '../../data/knowledge/pushbackTaxonomy';
+import { useT } from '../../i18n/useT';
+import { useLanguage } from '../../app/providers/LanguageProvider';
+import { localizedPushbackHints } from '../../i18n/dataL10n/pushbacks';
 
 /**
  * Pre-session coaching hints — surfaces three ACT-aligned cue groups
@@ -15,12 +17,16 @@ import { getPushbackKnowledge } from '../../data/knowledge/pushbackTaxonomy';
  * scenario info modal.
  */
 export function ScenarioHints({ scenario }: { scenario: Scenario }) {
-  const pb = getPushbackKnowledge(scenario.pushback.id);
+  // Hooks first — the taxonomy miss below returns null and must not change
+  // the hook order between renders.
+  const t = useT();
+  const { locale } = useLanguage();
+  const pb = localizedPushbackHints(scenario.pushback.id, locale);
   if (!pb) return null;
-  const sections: Array<{ heading: string; items: string[] }> = [
-    { heading: 'Acknowledge', items: pb.acknowledgePatterns.slice(0, 2) },
-    { heading: 'Clarify', items: pb.clarifyQuestions.slice(0, 2) },
-    { heading: 'Take action', items: pb.takeActionPatterns.slice(0, 2) },
+  const sections: Array<{ id: string; heading: string; items: string[] }> = [
+    { id: 'acknowledge', heading: t('create.hints.acknowledge'), items: pb.acknowledgePatterns.slice(0, 2) },
+    { id: 'clarify', heading: t('create.hints.clarify'), items: pb.clarifyQuestions.slice(0, 2) },
+    { id: 'takeAction', heading: t('create.hints.takeAction'), items: pb.takeActionPatterns.slice(0, 2) },
   ];
   return (
     <div style={{ marginBottom: 12 }}>
@@ -34,11 +40,11 @@ export function ScenarioHints({ scenario }: { scenario: Scenario }) {
           marginBottom: 8,
         }}
       >
-        What earns credit
+        {t('create.hints.eyebrow')}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {sections.map((section) => (
-          <div key={section.heading}>
+          <div key={section.id}>
             <div
               style={{
                 fontSize: 11,

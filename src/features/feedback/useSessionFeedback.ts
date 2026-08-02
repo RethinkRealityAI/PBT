@@ -1,7 +1,30 @@
 import { useCallback, useState } from 'react';
 import { getSupabase } from '../auth/supabaseClient';
 import { logEvent } from '../../lib/analytics';
-import { getOrCreateSessionId } from '../../lib/storage';
+import { getOrCreateSessionId, readStorage, writeStorage, STORAGE_KEYS } from '../../lib/storage';
+
+/** Most rated-session ids we keep locally (oldest entries fall off the front). */
+export const RATED_SESSIONS_CAP = 100;
+
+/** Has this session already been rated on this device? */
+export function isSessionRated(sessionId?: string | null): boolean {
+  if (!sessionId) return false;
+  return readStorage(STORAGE_KEYS.ratedSessionIds).includes(sessionId);
+}
+
+/**
+ * Remember that `sessionId` was rated. Idempotent (deduped) and capped at
+ * {@link RATED_SESSIONS_CAP}, newest last.
+ */
+export function markSessionRated(sessionId?: string | null): void {
+  if (!sessionId) return;
+  const existing = readStorage(STORAGE_KEYS.ratedSessionIds);
+  const next = [...existing.filter((id) => id !== sessionId), sessionId];
+  writeStorage(
+    STORAGE_KEYS.ratedSessionIds,
+    next.length > RATED_SESSIONS_CAP ? next.slice(next.length - RATED_SESSIONS_CAP) : next,
+  );
+}
 
 /**
  * Simulation Feedback Tool — "rate the session".
@@ -47,6 +70,7 @@ export function useSessionFeedback() {
     if (!sb) {
       // No backend configured — the analytics event above still fired, so
       // treat it as a soft success rather than blocking the user.
+      markSessionRated(input.sessionId);
       setStatus('done');
       return true;
     }
@@ -66,6 +90,7 @@ export function useSessionFeedback() {
         pushback_id: input.pushbackId ?? null,
       });
       if (error) throw error;
+      markSessionRated(input.sessionId);
       setStatus('done');
       return true;
     } catch (err) {

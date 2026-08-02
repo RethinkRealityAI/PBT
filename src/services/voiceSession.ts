@@ -8,6 +8,8 @@ import { useSimulationConfig } from '../app/providers/FlagProvider';
 import { retrieveContext } from './ragClient';
 import { resolveRag } from '../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from './ragShared';
+import { uuid } from '../lib/id';
+import { DEFAULT_LOCALE, LOCALE_BCP47, type Locale } from '../i18n/locales';
 
 export type EmotionColor = 'red' | 'yellow' | 'green';
 export type VoiceStatus =
@@ -22,6 +24,30 @@ export type VoiceStatus =
 export interface VoiceSessionResult {
   report: ScoreReport | null;
   transcript: ChatMessage[];
+  /**
+   * The id allocated at `start()` and used as the telemetry `sessionId` for
+   * the scorer call. Consumers persist the session under this SAME id
+   * (`useTextChat.applyVoiceSessionComplete`) so AI-call rows, the local
+   * SessionRecord and the Supabase `training_sessions` row all line up.
+   * Null when the session never started.
+   */
+  sessionId: string | null;
+}
+
+export interface VoiceStartOptions {
+  /**
+   * App locale. Drives the customer's spoken language (prompt) and the live
+   * speech config's `languageCode`. Defaults to English.
+   */
+  locale?: Locale;
+  /**
+   * Pre-localized opening pushback line for the kickoff cue.
+   *
+   * The caller owns scenario localization — this hook deliberately does NOT
+   * import the scenario l10n helpers, so the two concerns stay separable.
+   * Falls back to `scenario.openingLine` when omitted.
+   */
+  openingLine?: string | null;
 }
 
 export interface UseVoiceSessionReturn {
@@ -30,7 +56,12 @@ export interface UseVoiceSessionReturn {
   messages: ChatMessage[];
   /** Live, partial AI text for the in-flight turn (cleared when next AI turn begins). */
   liveAiText: string;
-  start: (scenario: Scenario) => Promise<void>;
+  /**
+   * True once the session passes the warning threshold (4:00) and until it
+   * stops/restarts — the UI announces that the hard cap is approaching.
+   */
+  capWarning: boolean;
+  start: (scenario: Scenario, options?: VoiceStartOptions) => Promise<void>;
   stop: () => void;
   endSession: () => Promise<VoiceSessionResult>;
   /** Fires once after the model calls endSimulation. */
@@ -41,17 +72,47 @@ export interface UseVoiceSessionReturn {
 const SAMPLE_RATE_OUT = 24000;
 const SAMPLE_RATE_IN = 16000;
 
+/**
+ * Wall-clock caps on a live voice session, measured from socket open.
+ *
+ * Live audio bills per second on both legs, so an abandoned tab (phone in a
+ * pocket, forgotten desktop) is a runaway-cost hazard — nothing in the
+ * conversation loop ever ends a session the user walked away from. At
+ * `warnMs` the UI announces the wrap-up; at `hardCapMs` we trigger the SAME
+ * graceful end path the model's `endSimulation` tool uses, so queued TTS
+ * finishes and the session is scored rather than dropped.
+ *
+ * Exported so the thresholds are unit-testable without a socket/audio harness.
+ */
+export const VOICE_SESSION_CAPS = {
+  /** 4:00 — "about a minute left" warning. */
+  warnMs: 4 * 60_000,
+  /** 5:00 — graceful end. */
+  hardCapMs: 5 * 60_000,
+} as const;
+
 // Strip any control-token / function-call narration that leaks into the AI's
 // transcribed audio. Keeps both the on-screen `liveAiText` and the saved
 // transcript clean — important for future RAG training where stray
 // "endSimulation" / "[END_SIMULATION]" text would poison samples.
-function sanitizeAiText(raw: string): string {
+export function sanitizeAiText(raw: string): string {
   const cleaned = raw
     // Drop entire sentences that mention calling the tool / function names.
+    // English narration…
     .replace(/[^.?!]*\b(?:calling|invoke|invoking|i(?:'|')ll\s+call)\b[^.?!]*(?:end[_\s-]*simulation|update[_\s-]*emotion)[^.?!]*[.?!]?/gi, '')
+    // …and the French equivalents. A francophone model narrates the tool as
+    // "j'appelle endSimulation" / "en appelant updateEmotion" — the English
+    // verb list above never matches, so the narration used to survive into
+    // the saved transcript (and from there into the RAG corpus).
+    .replace(/[^.?!]*\b(?:j(?:'|’)appelle|je\s+vais\s+appeler|en\s+appelant|appel\s+(?:de|à)|j(?:'|’)invoque)\b[^.?!]*(?:end[_\s-]*simulation|update[_\s-]*emotion)[^.?!]*[.?!]?/gi, '')
     .replace(/[^.?!]*\b(?:end[_\s-]*simulation|update[_\s-]*emotion)\b[^.?!]*[.?!]?/gi, '')
+    // French narration of the END token itself, spoken as words rather than
+    // emitted. The token is never translated (see END_SIMULATION_TOKEN), so
+    // any French phrasing of it is by definition narration, not signal.
+    .replace(/[^.?!]*\b(?:fin\s+(?:de\s+)?(?:la\s+)?simulation|terminer\s+la\s+simulation|arrêter\s+la\s+simulation)\b[^.?!]*[.?!]?/gi, '')
     // Strip stray bracket tokens / function-call literals.
     .replace(/\[\s*end[_\s-]*simulation\s*\]/gi, '')
+    .replace(/\[\s*fin[_\s-]*(?:de[_\s-]*)?simulation\s*\]/gi, '')
     .replace(/\[\s*update[_\s-]*emotion\s*\]/gi, '')
     .replace(/update[_\s-]*emotion\s*\([^)]*\)/gi, '')
     .replace(/end[_\s-]*simulation\s*\([^)]*\)/gi, '')
@@ -71,6 +132,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const [emotion, setEmotion] = useState<EmotionColor>('red');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [liveAiText, setLiveAiText] = useState('');
+  const [capWarning, setCapWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Global admin simulation config — held in a ref so the prompt build + the
@@ -93,12 +155,33 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const nextPlayTimeRef = useRef(0);
 
   const transcriptRef = useRef<ChatMessage[]>([]);
+  // Mirrors the emotion state for use inside socket callbacks — AI turns are
+  // stamped with the customer's resolution state at commit time so the
+  // scorecard's resolution arc works for voice sessions, not just text.
+  const emotionRef = useRef<EmotionColor>('red');
   // Single source of truth for the AI's current turn text — accumulated from
   // outputAudioTranscription chunks. modelTurn.parts.text fallback also feeds in
   // for the rare case it appears, but with AUDIO-only modality it usually does not.
   const aiTextBufferRef = useRef('');
   const userTextBufferRef = useRef('');
   const scenarioRef = useRef<Scenario | null>(null);
+  /** Locale for this session — read inside socket callbacks + the scorer. */
+  const localeRef = useRef<Locale>(DEFAULT_LOCALE);
+  /**
+   * The opening line actually used for this session: the caller's
+   * pre-localized line when supplied, else the scenario's own. Pinned onto
+   * the first AI turn when transcription mismatches it, so the transcript
+   * shows the line the customer was told to say — in the right language.
+   */
+  const openingLineRef = useRef<string | null>(null);
+  /**
+   * Session id allocated at start(), BEFORE the socket opens. Threaded into
+   * the scorer call (`evaluateConversation`'s telemetry `sessionId`) and
+   * returned from endSession() so the saved record reuses it — previously the
+   * record id was minted later in `applyVoiceSessionComplete`, leaving every
+   * voice scorer telemetry row unattributed.
+   */
+  const sessionIdRef = useRef<string | null>(null);
   const statusRef = useRef<VoiceStatus>('idle');
   const finalizePromiseRef = useRef<Promise<VoiceSessionResult> | null>(null);
   const naturalEndHandlerRef = useRef<(() => void) | null>(null);
@@ -117,6 +200,18 @@ export function useVoiceSession(): UseVoiceSessionReturn {
    */
   const endPrimedRef = useRef(false);
   const naturalEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Watchdog for the aiSpeaking → listening transition. The primary signal
+   * is the last buffer source's `onended`, but that callback can be missed
+   * (suspended AudioContext, tab backgrounded, timing skew) — and a stuck
+   * 'aiSpeaking' permanently mutes the mic, which reads to the user as
+   * "it stopped hearing me". Rescheduled on every chunk; fires ~350ms after
+   * the scheduled end of the playback queue as a belt-and-braces fallback.
+   */
+  const playbackEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Duration-cap timers (see VOICE_SESSION_CAPS) — armed on socket open. */
+  const capWarnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const capEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Gates mic audio until the AI delivers its first complete turn (prevents double opening)
   const openingDeliveredRef = useRef(false);
   // Timestamp until which mic audio should be suppressed (post-AI-speech grace period).
@@ -146,10 +241,56 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     }, delayMs);
   }, []);
 
+  const clearCapTimers = useCallback(() => {
+    if (capWarnTimerRef.current) {
+      clearTimeout(capWarnTimerRef.current);
+      capWarnTimerRef.current = null;
+    }
+    if (capEndTimerRef.current) {
+      clearTimeout(capEndTimerRef.current);
+      capEndTimerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Arm the duration cap. Called from `onopen` so the clock starts when the
+   * socket (and therefore the billing) actually starts, not at the Begin tap.
+   */
+  const startCapTimers = useCallback(() => {
+    clearCapTimers();
+    setCapWarning(false);
+    capWarnTimerRef.current = setTimeout(() => {
+      capWarnTimerRef.current = null;
+      setCapWarning(true);
+    }, VOICE_SESSION_CAPS.warnMs);
+    capEndTimerRef.current = setTimeout(() => {
+      capEndTimerRef.current = null;
+      // Already wrapping up (endSimulation / green-primed close, or the user
+      // hit End) — let that path finish rather than double-triggering.
+      if (pendingNaturalEndRef.current) return;
+      const live =
+        statusRef.current === 'listening' ||
+        statusRef.current === 'thinking' ||
+        statusRef.current === 'aiSpeaking';
+      if (!live) return;
+      // Same graceful exit as the model's endSimulation tool: let queued TTS
+      // drain, then fire the registered natural-end handler (ChatScreen →
+      // finalizeVoice → scoring). Deliberately NOT a socket kill — a hard
+      // close mid-sentence would lose the closing line and the scorecard.
+      pendingNaturalEndRef.current = true;
+      scheduleNaturalEndAfterPlayback();
+    }, VOICE_SESSION_CAPS.hardCapMs);
+  }, [clearCapTimers, scheduleNaturalEndAfterPlayback]);
+
   const addAiMessage = useCallback(() => {
     const text = sanitizeAiText(aiTextBufferRef.current);
     if (!text) return;
-    const msg: ChatMessage = { role: 'ai', text, timestamp: Date.now() };
+    const msg: ChatMessage = {
+      role: 'ai',
+      text,
+      timestamp: Date.now(),
+      emotion: emotionRef.current,
+    };
     transcriptRef.current = [...transcriptRef.current, msg];
     setMessages([...transcriptRef.current]);
     aiTextBufferRef.current = '';
@@ -167,6 +308,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const playAudioChunk = useCallback((base64Audio: string) => {
     const ctx = playbackCtxRef.current;
     if (!ctx || ctx.state === 'closed') return;
+    // Autoplay policy can re-suspend the context after creation (notably
+    // iOS Safari). A suspended context freezes currentTime, silently piles
+    // up scheduled sources, and never fires onended — resume defensively.
+    if (ctx.state === 'suspended') {
+      void ctx.resume().catch(() => { /* non-fatal */ });
+    }
 
     if (statusRef.current !== 'aiSpeaking') {
       setStatusSync('aiSpeaking');
@@ -220,14 +367,39 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       queueMicrotask(() => scheduleNaturalEndAfterPlayback());
     }
 
+    const finishSpeaking = () => {
+      // Only arm the grace period when we're actually leaving an AI-speaking
+      // state. If we're already out of it, the exit was a barge-in (the
+      // `interrupted` handler drops to 'listening' and deliberately zeroes
+      // micUnmuteAtRef so the user's live speech flows immediately) or a
+      // teardown — re-arming here would mute 250ms of audio the user is
+      // mid-way through speaking.
+      if (statusRef.current !== 'aiSpeaking') return;
+      setStatusSync('listening');
+      // 250ms grace before mic re-opens — lets AI audio tail decay so it doesn't
+      // get captured and sent back as a phantom user turn.
+      micUnmuteAtRef.current = performance.now() + 250;
+    };
+
     source.onended = () => {
       if (ctx.state !== 'closed' && ctx.currentTime >= nextPlayTimeRef.current - 0.1) {
-        if (statusRef.current === 'aiSpeaking') setStatusSync('listening');
-        // 250ms grace before mic re-opens — lets AI audio tail decay so it doesn't
-        // get captured and sent back as a phantom user turn.
-        micUnmuteAtRef.current = performance.now() + 250;
+        finishSpeaking();
       }
     };
+
+    // Watchdog: rescheduled on every chunk, so it only fires after the LAST
+    // chunk's scheduled end. If onended was missed the state machine still
+    // exits aiSpeaking and the mic un-mutes — a stuck aiSpeaking otherwise
+    // silently discards everything the user says for the rest of the session.
+    if (playbackEndTimerRef.current) clearTimeout(playbackEndTimerRef.current);
+    const msUntilQueueEnd = Math.max(
+      0,
+      Math.ceil((nextPlayTimeRef.current - ctx.currentTime) * 1000),
+    );
+    playbackEndTimerRef.current = setTimeout(() => {
+      playbackEndTimerRef.current = null;
+      finishSpeaking();
+    }, msUntilQueueEnd + 350);
   }, [scheduleNaturalEndAfterPlayback, setStatusSync]);
 
   const stopRecording = useCallback(() => {
@@ -241,19 +413,41 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     recordingCtxRef.current = null;
   }, []);
 
-  // Mic setup happens INSIDE onopen — the critical fix from the reference.
-  // Starting mic before the WebSocket opens causes a race that closes the socket.
-  const startRecording = useCallback(async (sessionPromise: Promise<unknown>) => {
+  /**
+   * Phase 1 of mic setup — permission + stream acquisition. Called at the
+   * very start of start(), inside the user's Begin tap, BEFORE the WebSocket
+   * connects or any audio plays. This is the fix for the permission race:
+   * previously getUserMedia ran inside onopen, so the socket connected, the
+   * kickoff was sent, and the AI began SPEAKING while the browser's
+   * permission dialog was still on screen — the user missed the opening
+   * line and (on deny/slow grant) the capture side never came up cleanly.
+   * Nothing else happens until this resolves. Throws on denial.
+   */
+  const acquireMic = useCallback(async (): Promise<MediaStream> => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: SAMPLE_RATE_IN,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
+    });
+    mediaStreamRef.current = stream;
+    return stream;
+  }, []);
+
+  /**
+   * Phase 2 — wire the (already-granted) stream into a capture pipeline.
+   * Runs inside onopen: attaching the processor before the socket is open
+   * would race sends against a null session.
+   */
+  const startRecording = useCallback((sessionPromise: Promise<unknown>) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: SAMPLE_RATE_IN,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
-      mediaStreamRef.current = stream;
+      const stream = mediaStreamRef.current;
+      if (!stream || stream.getTracks().every((t) => t.readyState === 'ended')) {
+        // stop() ran while the socket was connecting — nothing to wire.
+        return;
+      }
 
       const recordingCtx = new AudioContext({ sampleRate: SAMPLE_RATE_IN });
       recordingCtxRef.current = recordingCtx;
@@ -297,8 +491,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       source.connect(processor);
       processor.connect(recordingCtx.destination);
     } catch (err) {
-      console.error('[voiceSession] mic error', err);
-      setError('Microphone access denied or unavailable. Please allow microphone access and try again.');
+      console.error('[voiceSession] mic wiring error', err);
+      setError('Microphone could not be started. Please check your microphone and try again.');
       setStatusSync('error');
     }
   }, [setError, setStatusSync]);
@@ -308,6 +502,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       clearTimeout(naturalEndTimerRef.current);
       naturalEndTimerRef.current = null;
     }
+    if (playbackEndTimerRef.current) {
+      clearTimeout(playbackEndTimerRef.current);
+      playbackEndTimerRef.current = null;
+    }
+    clearCapTimers();
     pendingNaturalEndRef.current = false;
     endPrimedRef.current = false;
     stopRecording();
@@ -322,26 +521,26 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       sessionPromiseRef.current = null;
     }
     nextPlayTimeRef.current = 0;
-  }, [stopRecording]);
+  }, [clearCapTimers, stopRecording]);
 
   const registerNaturalEndHandler = useCallback((handler: (() => void) | null) => {
     naturalEndHandlerRef.current = handler;
   }, []);
 
-  const start = useCallback(async (scenario: Scenario) => {
-    // RAG: fail-open retrieval before the prompt is built (mirrors text mode).
-    try {
-      const ragCfg = resolveRag(configRef.current ?? undefined);
-      retrievedRef.current = ragCfg.enabled
-        ? await retrieveContext(
-            `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
-            { k: ragCfg.k, cacheKey: scenario._overrideId ?? scenario.pushback.id + scenario.breed },
-          )
-        : [];
-    } catch {
-      retrievedRef.current = [];
+  const start = useCallback(async (scenario: Scenario, options: VoiceStartOptions = {}) => {
+    // Re-entrancy guard BEFORE any await. The previous guard sat after an
+    // async RAG fetch, so a double-tap on Begin (or a fast mode toggle)
+    // could pass the check twice and open two live sockets. statusRef is
+    // set synchronously here, so the second caller bails immediately.
+    if (
+      statusRef.current === 'connecting' ||
+      statusRef.current === 'listening' ||
+      statusRef.current === 'thinking' ||
+      statusRef.current === 'aiSpeaking'
+    ) {
+      return;
     }
-    if (statusRef.current === 'connecting') return;
+    setStatusSync('connecting');
     try {
       finalizePromiseRef.current = null;
       openingDeliveredRef.current = false;
@@ -351,9 +550,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         clearTimeout(naturalEndTimerRef.current);
         naturalEndTimerRef.current = null;
       }
+      clearCapTimers();
+      setCapWarning(false);
+      // One id for this session: telemetry rows written by the scorer, the
+      // local SessionRecord and the Supabase row all key off it.
+      sessionIdRef.current = uuid();
       micUnmuteAtRef.current = 0;
-      setStatusSync('connecting');
       setError(null);
+      emotionRef.current = 'red';
       setEmotion('red');
       setMessages([]);
       setLiveAiText('');
@@ -362,6 +566,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       userTextBufferRef.current = '';
       nextPlayTimeRef.current = 0;
       scenarioRef.current = scenario;
+      localeRef.current = options.locale ?? DEFAULT_LOCALE;
+      openingLineRef.current = options.openingLine ?? scenario.openingLine ?? null;
 
       const apiKey =
         (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
@@ -377,16 +583,61 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         try { await playbackCtx.resume(); } catch { /* non-fatal */ }
       }
 
+      // MIC PERMISSION FIRST. Nothing connects and nothing plays until the
+      // user has granted the microphone — the permission dialog is the very
+      // first thing they see after tapping Begin. A denial lands in the
+      // catch below and the session never starts half-broken.
+      try {
+        await acquireMic();
+      } catch (micErr) {
+        console.error('[voiceSession] mic permission error', micErr);
+        setError('Microphone access denied or unavailable. Please allow microphone access and try again.');
+        setStatusSync('error');
+        cleanup();
+        return;
+      }
+      // stop() may have run while the permission dialog was up (user backed
+      // out of the screen) — don't connect a socket nobody is listening to.
+      // (Cast: TS narrows from the top guard and can't see the ref mutate
+      // across the awaits above.)
+      if ((statusRef.current as VoiceStatus) !== 'connecting') {
+        stopRecording();
+        return;
+      }
+
+      // RAG: fail-open retrieval before the prompt is built (mirrors text
+      // mode). After the permission grant so the dialog isn't delayed by a
+      // network round-trip.
+      try {
+        const ragCfg = resolveRag(configRef.current ?? undefined);
+        retrievedRef.current = ragCfg.enabled
+          ? await retrieveContext(
+              `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
+              { k: ragCfg.k, cacheKey: scenario._overrideId ?? scenario.pushback.id + scenario.breed },
+            )
+          : [];
+      } catch {
+        retrievedRef.current = [];
+      }
+
       const ai = new GoogleGenAI({ apiKey });
 
-      const openingHint = scenario.openingLine
-        ? `Begin the simulation now. Deliver this exact opening line as the ${scenario.persona} owner: "${scenario.openingLine}"`
+      // The cue itself stays English (it is an instruction to the model, not
+      // dialogue); the LINE it quotes is whatever the caller localized.
+      const openingLine = openingLineRef.current;
+      const openingHint = openingLine
+        ? `Begin the simulation now. Deliver this exact opening line as the ${scenario.persona} owner: "${openingLine}"`
         : 'Please begin the simulation now by delivering your opening statement.';
 
       const sessionPromise = (ai.live.connect as (opts: unknown) => Promise<unknown>)({
         model: MODEL_LIVE,
         config: {
-          systemInstruction: buildVoiceSystemPrompt(scenario, {}, configRef.current ?? undefined, retrievedRef.current),
+          systemInstruction: buildVoiceSystemPrompt({
+            scenario,
+            config: configRef.current ?? undefined,
+            retrieved: retrievedRef.current,
+            locale: localeRef.current,
+          }),
           tools: [
             {
               functionDeclarations: [
@@ -421,8 +672,17 @@ export function useVoiceSession(): UseVoiceSessionReturn {
           // Requesting [AUDIO, TEXT] together closes the socket immediately.
           responseModalities: [Modality.AUDIO],
           speechConfig: {
+            // Same prebuilt voice across locales — it is the customer's
+            // persona, not their accent, and swapping it per language would
+            // make the same scenario feel like a different person.
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } },
-            languageCode: 'en-US',
+            // BCP-47 for the app locale: en-US, or fr-CA for French.
+            // NOTE: if fr-CA turns out to be unsupported or mis-accented by
+            // the live model at runtime, fr-FR is the fallback to try — but
+            // that is a deliberate config change, NOT runtime detection.
+            // Silently probing locales here would make session startup
+            // non-deterministic and hide the regression.
+            languageCode: LOCALE_BCP47[localeRef.current],
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
@@ -430,9 +690,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         callbacks: {
           onopen: () => {
             setStatusSync('listening');
-            // Mic is wired AFTER the WebSocket opens — prevents the socket from
-            // closing while waiting for getUserMedia permissions.
-            void startRecording(sessionPromise);
+            // Permission was granted BEFORE connect; here we only wire the
+            // already-live stream into the capture pipeline. Wiring after
+            // onopen keeps processor sends from racing a null session.
+            startRecording(sessionPromise);
+            // Billing starts here — so does the duration cap.
+            startCapTimers();
           },
           onmessage: (msg: Record<string, unknown>) => {
             // Tool calls
@@ -449,6 +712,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
                 if (fc.name === 'updateEmotion') {
                   const next = ((args.emotion as string)?.toLowerCase().trim() as EmotionColor) ?? 'red';
+                  emotionRef.current = next;
                   setEmotion(next);
                   // Convinced → next AI turn IS the closing line; prime the
                   // end so we trigger the natural-end after this same turn's
@@ -541,6 +805,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             // Barge-in — reset playback pointer
             if (serverContent?.interrupted) {
               nextPlayTimeRef.current = playbackCtxRef.current?.currentTime ?? 0;
+              // Disarm the playback-end watchdog. It was scheduled for the end
+              // of the (now abandoned) audio queue; letting it fire would call
+              // finishSpeaking() and re-arm the 250ms mic grace in the middle
+              // of the user's barge-in, swallowing the start of what they say.
+              if (playbackEndTimerRef.current) {
+                clearTimeout(playbackEndTimerRef.current);
+                playbackEndTimerRef.current = null;
+              }
               if (statusRef.current === 'aiSpeaking') setStatusSync('listening');
               // Don't apply mic grace on user-initiated barge-in — they're actively
               // speaking, we want their input flowing immediately.
@@ -558,10 +830,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             if (serverContent?.turnComplete) {
               const isOpeningTurn =
                 !openingDeliveredRef.current &&
-                !!scenarioRef.current?.openingLine &&
+                !!openingLineRef.current &&
                 transcriptRef.current.filter((m) => m.role === 'ai').length === 0;
-              if (isOpeningTurn && scenarioRef.current?.openingLine) {
-                aiTextBufferRef.current = scenarioRef.current.openingLine;
+              if (isOpeningTurn && openingLineRef.current) {
+                aiTextBufferRef.current = openingLineRef.current;
               }
               const finalText = sanitizeAiText(aiTextBufferRef.current);
               addAiMessage();
@@ -600,7 +872,19 @@ export function useVoiceSession(): UseVoiceSessionReturn {
           onclose: (e: unknown) => {
             const evt = e as { code?: number; reason?: string };
             console.warn('[voiceSession] socket closed', { code: evt?.code, reason: evt?.reason });
-            if (statusRef.current !== 'ended' && statusRef.current !== 'error') {
+            // A close during an ACTIVE conversation is a failure the user
+            // must see — silently flipping to 'idle' left the orb frozen
+            // with no explanation of why the customer stopped responding.
+            const active =
+              statusRef.current === 'listening' ||
+              statusRef.current === 'thinking' ||
+              statusRef.current === 'aiSpeaking' ||
+              statusRef.current === 'connecting';
+            if (active) {
+              setError('Voice connection lost. Check your network and tap Begin simulation to restart.');
+              setStatusSync('error');
+              cleanup();
+            } else if (statusRef.current !== 'ended' && statusRef.current !== 'error') {
               setStatusSync('idle');
             }
           },
@@ -636,19 +920,27 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       cleanup();
     }
   }, [
+    acquireMic,
     addAiMessage,
     addUserMessage,
     cleanup,
+    clearCapTimers,
     playAudioChunk,
     scheduleNaturalEndAfterPlayback,
     setStatusSync,
+    startCapTimers,
     startRecording,
+    stopRecording,
   ]);
 
   const stop = useCallback(() => {
     finalizePromiseRef.current = null;
     cleanup();
+    clearCapTimers();
+    setCapWarning(false);
+    sessionIdRef.current = null;
     setError(null);
+    emotionRef.current = 'red';
     setEmotion('red');
     setMessages([]);
     setLiveAiText('');
@@ -656,8 +948,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     aiTextBufferRef.current = '';
     userTextBufferRef.current = '';
     scenarioRef.current = null;
+    openingLineRef.current = null;
     setStatusSync('idle');
-  }, [cleanup, setStatusSync]);
+  }, [cleanup, clearCapTimers, setStatusSync]);
 
   const endSession = useCallback(async (): Promise<VoiceSessionResult> => {
     if (finalizePromiseRef.current) return finalizePromiseRef.current;
@@ -674,6 +967,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
     const transcriptSnapshot = [...transcriptRef.current];
     const scenario = scenarioRef.current;
+    // Snapshot the id BEFORE cleanup so telemetry and the saved record agree
+    // even if stop() lands while scoring is in flight.
+    const sessionId = sessionIdRef.current;
 
     finalizePromiseRef.current = (async (): Promise<VoiceSessionResult> => {
       cleanup();
@@ -683,14 +979,16 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       if (transcriptSnapshot.length && scenario) {
         try {
           report = await evaluateConversation(scenario, transcriptSnapshot, {
+            sessionId,
             config: configRef.current ?? undefined,
+            locale: localeRef.current,
           });
         } catch {
           report = null;
         }
       }
 
-      return { report, transcript: transcriptSnapshot };
+      return { report, transcript: transcriptSnapshot, sessionId };
     })();
 
     try {
@@ -704,5 +1002,16 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     return () => { cleanup(); };
   }, [cleanup]);
 
-  return { status, emotion, messages, liveAiText, start, stop, endSession, registerNaturalEndHandler, error };
+  return {
+    status,
+    emotion,
+    messages,
+    liveAiText,
+    capWarning,
+    start,
+    stop,
+    endSession,
+    registerNaturalEndHandler,
+    error,
+  };
 }

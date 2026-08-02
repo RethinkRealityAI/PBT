@@ -8,6 +8,19 @@ import {
   backfillLocalDataToCloud,
   hasLocalDataToBackfill,
 } from './backfillLocalData';
+import { useLanguage } from '../../app/providers/LanguageProvider';
+import { useTheme } from '../../app/providers/ThemeProvider';
+import { isLocale } from '../../i18n/locales';
+
+/**
+ * Whether the user has EXPLICITLY chosen a locale on this device.
+ * `readStorage` can't distinguish "absent" from "explicitly 'en'", so we
+ * check the raw slot: absent → the cloud preference may hydrate.
+ */
+function hasExplicitLocalLocale(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem('pbt:locale') != null;
+}
 
 const DEBOUNCE_MS = 1500;
 
@@ -29,6 +42,8 @@ const isDriverKey = (v: unknown): v is DriverKey =>
 export function useCloudSync() {
   const { user } = useSession();
   const { profile, setProfile } = useProfile();
+  const { locale, setLocale } = useLanguage();
+  const { theme } = useTheme();
   const profileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydratedForUserRef = useRef<string | null>(null);
   const backfilledForUserRef = useRef<string | null>(null);
@@ -77,13 +92,18 @@ export function useCloudSync() {
     void (async () => {
       const { data, error } = await sb
         .from('profiles')
-        .select('echo_primary, echo_secondary, echo_tally, created_at')
+        .select('echo_primary, echo_secondary, echo_tally, created_at, locale')
         .eq('user_id', user.id)
         .maybeSingle();
       if (cancelled) return;
       if (error) {
         console.warn('[cloud-sync] profile pull failed', error);
         return;
+      }
+      // Language preference: cloud hydrates only when this device has no
+      // explicit local choice — a local pick always wins.
+      if (data && isLocale(data.locale) && !hasExplicitLocalLocale()) {
+        setLocale(data.locale);
       }
       if (
         data &&
@@ -113,7 +133,7 @@ export function useCloudSync() {
     return () => {
       cancelled = true;
     };
-  }, [user, profile, setProfile]);
+  }, [user, profile, setProfile, setLocale]);
 
   // ── Push (debounced) ────────────────────────────────────────
   useEffect(() => {
@@ -128,10 +148,12 @@ export function useCloudSync() {
         echo_primary: profile.primary,
         echo_secondary: profile.secondary,
         echo_tally: profile.tally,
+        locale,
+        theme,
       });
     }, DEBOUNCE_MS);
     return () => {
       if (profileTimerRef.current) clearTimeout(profileTimerRef.current);
     };
-  }, [user, profile]);
+  }, [user, profile, locale, theme]);
 }

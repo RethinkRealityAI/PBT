@@ -50,6 +50,13 @@ export interface ScoreReport extends LegacyScoreFields {
   perDimensionNotes: Record<DimensionKey, string>;
   keyMoments: KeyMoment[];
   /**
+   * True when the scorer could not be reached and this report is a
+   * placeholder, NOT a real evaluation. Consumers must not present the
+   * zeroed dimensions as a genuine score: the scorecard offers a retry,
+   * History shows "—" instead of 0, and aggregates skip the record.
+   */
+  scoreUnavailable?: true;
+  /**
    * Per-turn sentiment, populated by the scorer model. One entry per turn
    * in the transcript (aligned by index). Range -1 (hostile) → +1 (warm),
    * 0 = neutral. Both staff and customer turns are scored — drives the
@@ -129,6 +136,22 @@ export function normalizeScoreReport(report: ScoreReport): ScoreReport {
       rapport: legacyNote('rapport'),
     },
   };
+}
+
+/**
+ * Whether a report is a scoring-failure placeholder rather than a real
+ * evaluation. Newer records carry the explicit `scoreUnavailable` flag;
+ * older failure records are recognised by their canonical fallback critique
+ * (both the hook's and the service's variants) paired with a zero overall.
+ */
+export function isScoreUnavailable(report: ScoreReport | null | undefined): boolean {
+  if (!report) return true;
+  if (report.scoreUnavailable === true) return true;
+  return (
+    report.overall === 0 &&
+    (report.critique === 'Scoring unavailable.' ||
+      report.critique.startsWith('We could not score this session'))
+  );
 }
 
 export interface SessionRecord {

@@ -6,6 +6,7 @@ import {
   recordCall,
 } from './aiTelemetry';
 import { MODEL_TEXT } from './geminiService';
+import { DEFAULT_LOCALE, type Locale } from '../i18n/locales';
 
 /**
  * Pet Vision Analyzer — multimodal dog-photo analysis.
@@ -93,6 +94,29 @@ healthy. Only report indicators you can actually see.
 - Weight cannot be measured from a photo — always include it in notVisible.
 `.trim();
 
+/**
+ * Locale addendum for the vision prompt.
+ *
+ * As with the roleplay prompts, the clinical scaffolding stays English and
+ * only the OUTPUT language switches. Enum values (`lifeStage`, dermatitis
+ * `severity`), the numeric BCS and breed names are machine/glossary values
+ * and are never translated — a French `lifeStage` would fail the schema and
+ * a translated breed would break the scenario prefill downstream.
+ */
+function languageAddendum(locale: Locale): string {
+  if (locale !== 'fr') return '';
+  return `
+
+# OUTPUT LANGUAGE — CANADIAN FRENCH
+Write every free-text field in Canadian French (Québec register, professional
+clinic voice): ageEstimate, bcsRationale, dermatitis.note, dermatitis
+indicators, guidance, and notVisible.
+Do NOT translate: the enum values (lifeStage, dermatitis severity), the BCS
+number, the "BCS" initialism itself, or dog breed names — breed and
+alternativeBreeds stay in their standard English/kennel-club form
+(e.g. "Labrador Retriever", "Mixed breed").`;
+}
+
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   required: [
@@ -156,8 +180,11 @@ function clampConfidence(n: unknown): number {
 export async function analyzePetPhoto(
   imageBase64: string,
   mimeType: string,
+  options: { locale?: Locale } = {},
 ): Promise<PetVisionResult> {
   const ai = getClient();
+  const locale = options.locale ?? DEFAULT_LOCALE;
+  const systemInstruction = SYSTEM_INSTRUCTION + languageAddendum(locale);
   const t0 = performance.now();
   try {
     const response = await ai.models.generateContent({
@@ -174,7 +201,7 @@ export async function analyzePetPhoto(
         },
       ],
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction,
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA,
       },
@@ -193,7 +220,9 @@ export async function analyzePetPhoto(
         ? parsed.alternativeBreeds.filter((s): s is string => typeof s === 'string')
         : [],
       lifeStage: (parsed.lifeStage as VisionLifeStage) ?? 'unknown',
-      ageEstimate: parsed.ageEstimate?.trim() || 'Not determinable from photo',
+      ageEstimate:
+        parsed.ageEstimate?.trim() ||
+        (locale === 'fr' ? 'Impossible à déterminer à partir de la photo' : 'Not determinable from photo'),
       bcs: clampBcs(parsed.bcs),
       bcsRationale: parsed.bcsRationale?.trim() || '',
       dermatitis: {
@@ -212,7 +241,7 @@ export async function analyzePetPhoto(
     const latency = Math.round(performance.now() - t0);
     const usage = (response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } })
       .usageMetadata;
-    const tokensIn = usage?.promptTokenCount ?? estimateTokens(SYSTEM_INSTRUCTION);
+    const tokensIn = usage?.promptTokenCount ?? estimateTokens(systemInstruction);
     const tokensOut = usage?.candidatesTokenCount ?? estimateTokens(raw);
     void recordCall({
       callType: 'vision',

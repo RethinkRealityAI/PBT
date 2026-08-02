@@ -15,6 +15,7 @@ import type { Scenario } from '../data/scenarios';
 import type { ChatMessage, ScoreReport } from './types';
 import { getSupabase } from '../features/auth/supabaseClient';
 import { estimateTokens } from './aiTelemetry';
+import { isTrainingUseAllowed } from '../lib/privacy';
 import type { RetrievedChunk } from './ragShared';
 
 /**
@@ -149,6 +150,12 @@ function assembleContent(
 }
 
 export async function persistRagDocument(args: PersistArgs): Promise<void> {
+  // Privacy gate (spec §8.3). rag_documents / rag_chunks are the training
+  // corpus by definition, so opting out stops them entirely. The user's own
+  // session record, session_feedback, and platform_reports are deliberately
+  // NOT gated — that is their own data / deliberate submissions, not
+  // "training use".
+  if (!isTrainingUseAllowed()) return;
   const sb = getSupabase();
   if (!sb) return;
   try {

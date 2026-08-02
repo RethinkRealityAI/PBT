@@ -4,8 +4,14 @@ import { Icon } from '../design-system/Icon';
 import { PillButton } from '../design-system/PillButton';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
-import { usePetAnalyzer } from '../features/pet-analyzer/usePetAnalyzer';
-import { useSavedPets, type VisionSaveMeta } from '../features/pet-analyzer/useSavedPets';
+import { usePetAnalyzer, type PetState } from '../features/pet-analyzer/usePetAnalyzer';
+import {
+  petStateEquals,
+  savedPetToPetState,
+  useSavedPets,
+  type SavedPet,
+  type VisionSaveMeta,
+} from '../features/pet-analyzer/useSavedPets';
 import { usePetVision } from '../features/pet-analyzer/usePetVision';
 import { PetVisionCard } from '../features/pet-analyzer/PetVisionCard';
 import { BreedSearch } from '../features/pet-analyzer/BreedSearch';
@@ -15,6 +21,10 @@ import { MCS_LEVELS } from '../data/mcsLevels';
 import { COLORS } from '../design-system/tokens';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
+import { useTheme } from '../app/providers/ThemeProvider';
+import { useT, type TFunction } from '../i18n/useT';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { localizedBcsLevel, localizedMcsLevel } from '../i18n/dataL10n/clinical';
 import { PUSHBACK_CATEGORIES, type Scenario } from '../data/scenarios';
 import {
   visionLifeStageToLabel,
@@ -60,12 +70,17 @@ function scenarioFromVision(
 }
 
 export function PetAnalyzerScreen() {
-  const { state, update, calorieTarget, reference, verdictResult } = usePetAnalyzer();
-  const { savePet } = useSavedPets();
+  const { state, update, load, calorieTarget, reference, verdictResult } =
+    usePetAnalyzer();
+  const { savedPets, savePet, deletePet } = useSavedPets();
   const vision = usePetVision();
   const { go } = useNavigation();
   const { setScenario } = useScenario();
+  const t = useT();
+  const { locale } = useLanguage();
   const [saved, setSaved] = useState(false);
+  // Inline delete confirmation, one row at a time. No browser confirm().
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Vision provenance to attach on save — present once a photo has been
   // analysed (and the user may have edited the seeded fields afterwards).
@@ -98,6 +113,22 @@ export function PetAnalyzerScreen() {
       update('bcs', r.bcs);
     }
   };
+  const handleLoadPet = (pet: SavedPet) => {
+    load(savedPetToPetState(pet));
+    // A saved profile supersedes whatever photo is on screen. Without this the
+    // stale vision provenance would ride along on the next save, and the
+    // "Train with this pet" handoff would describe a different animal.
+    vision.reset();
+    setConfirmDeleteId(null);
+  };
+
+  const handleDeletePet = (id: string) => {
+    deletePet(id);
+    setConfirmDeleteId(null);
+    // Nothing else to unwind: analyzer state is independent of the list, and
+    // the "loaded" marker is derived, so it just stops matching.
+  };
+
   const verdictColor =
     verdictResult.verdict === 'good'
       ? COLORS.score.good
@@ -105,7 +136,8 @@ export function PetAnalyzerScreen() {
         ? COLORS.score.poor
         : COLORS.score.ok;
 
-  const bcsLevel = BCS_LEVELS.find((l) => l.score === state.bcs);
+  const bcsLevelRaw = BCS_LEVELS.find((l) => l.score === state.bcs);
+  const bcsLevel = bcsLevelRaw ? localizedBcsLevel(bcsLevelRaw, locale) : bcsLevelRaw;
   // Weight outside the breed's typical range → soft hint (not a hard error).
   const weightPlausible = isWeightPlausibleFor(state.breed, state.weightKg);
   const breedEntry = resolveBreed(state.breed);
@@ -113,7 +145,7 @@ export function PetAnalyzerScreen() {
 
   return (
     <>
-      <TopBar showBack title="Pet Analyzer" />
+      <TopBar showBack title={t('analyzer.title')} />
       <Page>
         {/*
          * Two-column grid on desktop.
@@ -231,8 +263,8 @@ export function PetAnalyzerScreen() {
                   <input
                     value={state.name}
                     onChange={(e) => update('name', e.target.value)}
-                    placeholder="Pet name"
-                    aria-label="Pet name"
+                    placeholder={t('analyzer.petName')}
+                    aria-label={t('analyzer.petName')}
                     style={{
                       width: '100%',
                       border: 'none',
@@ -248,7 +280,7 @@ export function PetAnalyzerScreen() {
               </div>
 
               {/* Breed section */}
-              <Eyebrow>Breed</Eyebrow>
+              <Eyebrow>{t('analyzer.breed.label')}</Eyebrow>
               <BreedSearch
                 value={state.breed}
                 onChange={(v) => update('breed', v)}
@@ -273,8 +305,11 @@ export function PetAnalyzerScreen() {
                     letterSpacing: '0.06em',
                   }}
                 >
-                  {breedEntry.group} group · typical adult{' '}
-                  {breedEntry.sizeKg[0]}–{breedEntry.sizeKg[1]} kg
+                  {t('analyzer.breed.typical', {
+                    group: breedEntry.group,
+                    min: breedEntry.sizeKg[0],
+                    max: breedEntry.sizeKg[1],
+                  })}
                 </div>
               )}
             </div>
@@ -283,13 +318,13 @@ export function PetAnalyzerScreen() {
 
         {/* ── Card 2: Weight & activity ── */}
         <Glass radius={22} padding={18} style={{ marginBottom: 14 }}>
-          <Eyebrow>Weight &amp; activity</Eyebrow>
+          <Eyebrow>{t('analyzer.weight.label')}</Eyebrow>
           <div className="flex items-baseline gap-2 mb-4">
             <span style={{ fontSize: 40, fontWeight: 700, letterSpacing: '-0.03em' }}>
               {state.weightKg}
             </span>
             <span style={{ fontSize: 15, color: 'var(--pbt-text-muted)' }}>
-              kg
+              {t('analyzer.weight.unit')}
             </span>
           </div>
           <input
@@ -314,9 +349,12 @@ export function PetAnalyzerScreen() {
                 border: `1px solid color-mix(in oklab, ${COLORS.score.poor} 30%, transparent)`,
               }}
             >
-              {state.weightKg} kg is unusual for a {breedEntry.name}
-              {' '}— typical adults are {breedEntry.sizeKg[0]}–{breedEntry.sizeKg[1]} kg.
-              Double-check before recommending a calorie target.
+              {t('analyzer.weight.implausible', {
+                weight: state.weightKg,
+                breed: breedEntry.name,
+                min: breedEntry.sizeKg[0],
+                max: breedEntry.sizeKg[1],
+              })}
             </div>
           )}
 
@@ -357,7 +395,9 @@ export function PetAnalyzerScreen() {
                       marginBottom: 3,
                     }}
                   >
-                    {act === 'active' ? 'Active' : 'Inactive'}
+                    {act === 'active'
+                      ? t('analyzer.activity.active')
+                      : t('analyzer.activity.inactive')}
                   </div>
                   <div
                     style={{
@@ -377,12 +417,13 @@ export function PetAnalyzerScreen() {
 
         {/* ── Card 3: Body condition (BCS) ── */}
         <Glass radius={22} padding={18} style={{ marginBottom: 14 }}>
-          <Eyebrow>Body condition (BCS)</Eyebrow>
+          <Eyebrow>{t('analyzer.bcs.label')}</Eyebrow>
           <div
             className="grid"
             style={{ gridTemplateColumns: 'repeat(9, 1fr)', gap: 4, marginBottom: 10 }}
           >
-            {BCS_LEVELS.map((l) => {
+            {BCS_LEVELS.map((rawLevel) => {
+              const l = localizedBcsLevel(rawLevel, locale);
               const active = l.score === state.bcs;
               return (
                 <button
@@ -407,7 +448,10 @@ export function PetAnalyzerScreen() {
                     fontWeight: 700,
                     transition: 'all 0.2s',
                   }}
-                  aria-label={`BCS ${l.score}: ${l.label}`}
+                  aria-label={t('analyzer.bcs.buttonAria', {
+                    score: l.score,
+                    label: l.label,
+                  })}
                   aria-pressed={active}
                 >
                   {l.score}
@@ -441,9 +485,10 @@ export function PetAnalyzerScreen() {
 
         {/* ── Card 4: Muscle condition (MCS) ── */}
         <Glass radius={22} padding={18} style={{ marginBottom: 14 }}>
-          <Eyebrow>Muscle condition (MCS)</Eyebrow>
+          <Eyebrow>{t('analyzer.mcs.label')}</Eyebrow>
           <div className="grid grid-cols-2 gap-2">
-            {MCS_LEVELS.map((m) => {
+            {MCS_LEVELS.map((rawLevel) => {
+              const m = localizedMcsLevel(rawLevel, locale);
               const active = m.key === state.mcs;
               return (
                 <button
@@ -487,13 +532,13 @@ export function PetAnalyzerScreen() {
           glow={verdictColor}
           style={{ marginBottom: 14 }}
         >
-          <Eyebrow>Calorie target &amp; verdict</Eyebrow>
+          <Eyebrow>{t('analyzer.calorie.label')}</Eyebrow>
           <div className="flex items-baseline gap-3 mb-3">
             <span style={{ fontSize: 42, fontWeight: 700, letterSpacing: '-0.03em' }}>
               {calorieTarget}
             </span>
             <span style={{ fontSize: 14, color: 'var(--pbt-text-muted)' }}>
-              kcal/day
+              {t('analyzer.calorie.unit')}
             </span>
             {bcsLevel && (
               <span
@@ -514,7 +559,7 @@ export function PetAnalyzerScreen() {
                   textShadow: '0 1px 2px rgba(0,0,0,0.35)',
                 }}
               >
-                BCS {bcsLevel.score}/9
+                {t('analyzer.calorie.bcsChip', { score: bcsLevel.score })}
               </span>
             )}
           </div>
@@ -532,7 +577,13 @@ export function PetAnalyzerScreen() {
               color: 'var(--pbt-text)',
             }}
           >
-            <Eyebrow>{verdictResult.verdict.toUpperCase()}</Eyebrow>
+            <Eyebrow>
+              {verdictResult.verdict === 'good'
+                ? t('analyzer.verdict.good')
+                : verdictResult.verdict === 'warn'
+                  ? t('analyzer.verdict.warn')
+                  : t('analyzer.verdict.ok')}
+            </Eyebrow>
             {verdictResult.message}
           </div>
         </Glass>
@@ -549,13 +600,31 @@ export function PetAnalyzerScreen() {
         >
           <div className="flex items-center gap-2 mb-2">
             <Icon.book />
-            <Eyebrow>Reference (WSAVA · 2006 NRC DMER)</Eyebrow>
+            <Eyebrow>{t('analyzer.reference.label')}</Eyebrow>
           </div>
           <div style={{ fontSize: 13, color: 'var(--pbt-text-muted)' }}>
-            Closest row: <strong>{reference.weightKg} kg</strong> →{' '}
-            {reference.activeKcal} kcal active · {reference.inactiveKcal} kcal inactive
+            {t('analyzer.reference.closestRow')}{' '}
+            <strong>
+              {reference.weightKg} {t('analyzer.weight.unit')}
+            </strong>{' '}
+            →{' '}
+            {t('analyzer.reference.kcalSplit', {
+              active: reference.activeKcal,
+              inactive: reference.inactiveKcal,
+            })}
           </div>
         </Glass>
+
+        {/* ── Card 7: Saved pets ── (renders only when there is at least one) */}
+        <SavedPetsCard
+          pets={savedPets}
+          currentState={state}
+          confirmDeleteId={confirmDeleteId}
+          onRequestDelete={setConfirmDeleteId}
+          onConfirmDelete={handleDeletePet}
+          onLoad={handleLoadPet}
+          t={t}
+        />
 
         <div style={{ height: 100 }} className="lg:hidden" />
         </div>{/* end right column */}
@@ -581,7 +650,7 @@ export function PetAnalyzerScreen() {
               go('chat');
             }}
           >
-            Train with this pet
+            {t('analyzer.action.train')}
           </PillButton>
         )}
         <PillButton
@@ -598,13 +667,269 @@ export function PetAnalyzerScreen() {
           style={saved ? { opacity: 0.7 } : undefined}
         >
           {saved
-            ? 'Saved to profiles'
+            ? t('analyzer.action.saved')
             : canSave
-              ? 'Save as profile'
-              : 'Pick a breed first'}
+              ? t('analyzer.action.save')
+              : t('analyzer.action.needBreed')}
         </PillButton>
       </div>
     </>
+  );
+}
+
+/**
+ * Compact pill action used inside a saved-pet row. Mono/uppercase to match the
+ * screen's label language; theme-aware fills so the row never becomes a
+ * forced-light pane under near-white `--pbt-text`.
+ */
+function RowButton({
+  children,
+  onClick,
+  dark,
+  tone = 'neutral',
+  disabled = false,
+  ariaLabel,
+  iconOnly = false,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  dark: boolean;
+  tone?: 'neutral' | 'danger';
+  disabled?: boolean;
+  ariaLabel?: string;
+  iconOnly?: boolean;
+}) {
+  const danger = tone === 'danger';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        height: 30,
+        width: iconOnly ? 30 : undefined,
+        padding: iconOnly ? 0 : '0 12px',
+        borderRadius: 9999,
+        fontFamily: 'var(--pbt-font-mono)',
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
+        cursor: disabled ? 'default' : 'pointer',
+        color: 'var(--pbt-text)',
+        opacity: disabled ? 0.55 : 1,
+        border: danger
+          ? `1px solid color-mix(in oklab, ${COLORS.score.poor} 55%, transparent)`
+          : `1px solid ${dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.60)'}`,
+        background: danger
+          ? `color-mix(in oklab, ${COLORS.score.poor} ${dark ? 26 : 14}%, ${
+              dark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.40)'
+            })`
+          : dark
+            ? 'rgba(255,255,255,0.08)'
+            : 'rgba(255,255,255,0.45)',
+        backdropFilter: 'blur(12px) saturate(200%)',
+        WebkitBackdropFilter: 'blur(12px) saturate(200%)',
+        transition: 'all 0.2s ease',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Saved pet profiles, listed under the analyzer controls.
+ *
+ * Renders nothing at all when there is nothing saved — the analyzer stays
+ * uncluttered for first-time users.
+ *
+ * The "loaded" marker is *derived* (`petStateEquals`) rather than stored, so it
+ * disappears the moment the user edits a field and there is no dangling id to
+ * clean up when the displayed row is deleted.
+ */
+function SavedPetsCard({
+  pets,
+  currentState,
+  confirmDeleteId,
+  onRequestDelete,
+  onConfirmDelete,
+  onLoad,
+  t,
+}: {
+  pets: SavedPet[];
+  currentState: PetState;
+  confirmDeleteId: string | null;
+  onRequestDelete: (id: string | null) => void;
+  onConfirmDelete: (id: string) => void;
+  onLoad: (pet: SavedPet) => void;
+  t: TFunction;
+}) {
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
+
+  if (pets.length === 0) return null;
+
+  return (
+    <Glass radius={22} padding={18} glow={null} style={{ marginTop: 14 }}>
+      <Eyebrow>{t('analyzer.savedPets.title')}</Eyebrow>
+      <div
+        style={{
+          fontSize: 12.5,
+          lineHeight: 1.5,
+          color: 'var(--pbt-text-muted)',
+          marginTop: -3,
+          marginBottom: 12,
+        }}
+      >
+        {t('analyzer.savedPets.hint')}
+      </div>
+
+      <ul
+        style={{
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+        }}
+      >
+        {pets.map((pet) => {
+          // Compare against the sanitised mapping, not the raw record — that's
+          // exactly what a Load would put on screen.
+          const mapped = savedPetToPetState(pet);
+          const isLoaded = petStateEquals(mapped, currentState);
+          const confirming = confirmDeleteId === pet.id;
+          const displayName =
+            pet.name.trim() || t('analyzer.savedPets.unnamed');
+
+          return (
+            <li
+              key={pet.id}
+              style={{
+                padding: '11px 13px',
+                borderRadius: 16,
+                border: isLoaded
+                  ? '1px solid color-mix(in oklab, var(--pbt-driver-primary) 58%, rgba(255,255,255,0.38))'
+                  : `1px solid ${dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.50)'}`,
+                background: isLoaded
+                  ? 'color-mix(in oklab, var(--pbt-driver-primary) 17%, rgba(255,255,255,0.06))'
+                  : dark
+                    ? 'rgba(255,255,255,0.05)'
+                    : 'rgba(255,255,255,0.22)',
+                backdropFilter: 'blur(18px) saturate(240%)',
+                WebkitBackdropFilter: 'blur(18px) saturate(240%)',
+                color: 'var(--pbt-text)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: 14,
+                      color: 'var(--pbt-text)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {displayName}
+                  </div>
+                  {mapped.breed && (
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: 'var(--pbt-text-muted)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {mapped.breed}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      marginTop: 3,
+                      fontFamily: 'var(--pbt-font-mono)',
+                      fontSize: 10,
+                      letterSpacing: '0.08em',
+                      color: 'var(--pbt-text-muted)',
+                    }}
+                  >
+                    {t('analyzer.savedPets.stats', {
+                      weightKg: mapped.weightKg,
+                      bcs: mapped.bcs,
+                    })}
+                    {pet.source === 'vision' &&
+                      ` · ${t('analyzer.savedPets.fromPhoto')}`}
+                  </div>
+                </div>
+
+                {!confirming && (
+                  <div className="flex items-center gap-2">
+                    <RowButton
+                      dark={dark}
+                      disabled={isLoaded}
+                      onClick={() => onLoad(pet)}
+                      ariaLabel={t('analyzer.savedPets.loadAria', {
+                        name: displayName,
+                      })}
+                    >
+                      {isLoaded
+                        ? t('analyzer.savedPets.loaded')
+                        : t('analyzer.savedPets.load')}
+                    </RowButton>
+                    <RowButton
+                      dark={dark}
+                      iconOnly
+                      onClick={() => onRequestDelete(pet.id)}
+                      ariaLabel={t('analyzer.savedPets.deleteAria', {
+                        name: displayName,
+                      })}
+                    >
+                      <Icon.close width={14} height={14} />
+                    </RowButton>
+                  </div>
+                )}
+              </div>
+
+              {confirming && (
+                <div
+                  className="flex flex-wrap items-center gap-2"
+                  style={{ marginTop: 10 }}
+                >
+                  <span style={{ fontSize: 12.5, color: 'var(--pbt-text)' }}>
+                    {t('analyzer.savedPets.confirmQuestion')}
+                  </span>
+                  <div className="flex items-center gap-2" style={{ marginLeft: 'auto' }}>
+                    <RowButton dark={dark} onClick={() => onRequestDelete(null)}>
+                      {t('analyzer.savedPets.confirmCancel')}
+                    </RowButton>
+                    <RowButton
+                      dark={dark}
+                      tone="danger"
+                      onClick={() => onConfirmDelete(pet.id)}
+                    >
+                      {t('analyzer.savedPets.confirmYes')}
+                    </RowButton>
+                  </div>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Glass>
   );
 }
 

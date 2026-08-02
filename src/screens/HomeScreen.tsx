@@ -16,11 +16,19 @@ import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import { ScenarioHints } from '../features/scenarios/ScenarioHints';
 import { useResolvedLibraryScenarios } from '../data/useResolvedScenarios';
-import { useFlag, useFlagValue, IfFlag } from '../app/providers/FlagProvider';
+import { useFlag, useFlagValue, useFlags, useSimulationConfig, IfFlag } from '../app/providers/FlagProvider';
+import { resolveDimensions } from '../data/knowledge/simulationConfig';
+import type { DimensionKey } from '../data/knowledge/scoringRubric';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
 import { ReportModal } from '../features/reporting/ReportModal';
+import { resolveDailyPickBase, type DailyPickBase } from '../lib/dailyPick';
+import { computeStreak } from '../lib/streak';
+import { SESSIONS_KEY } from '../lib/sessionsKey';
+import { useT } from '../i18n/useT';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { localizedScenario, localizedLifeStage } from '../i18n/dataL10n/scenarios';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -109,8 +117,96 @@ function roundGlassControlStyle(dc: DriverColors, dark: boolean): CSSProperties 
   };
 }
 
+/**
+ * Streak strip (spec §9.4) — practice-cadence chips under the headline.
+ * Hidden entirely until there is something worth showing (no zero-state
+ * guilt for first-time users).
+ */
+function StreakStrip({ driverColors, dark }: { driverColors: DriverColors; dark: boolean }) {
+  const t = useT();
+  const stats = computeStreak(readStorage(SESSIONS_KEY).map((s) => s.createdAt));
+  if (stats.streakDays === 0 && stats.sessionsThisWeek === 0) return null;
+
+  const monoChip: CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontFamily: 'var(--pbt-font-mono)',
+    fontSize: 10.5,
+    letterSpacing: '0.10em',
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap',
+    color: 'var(--pbt-text)',
+  };
+
+  const streakLabel =
+    stats.streakDays === 1
+      ? t('home.streak.daysOne')
+      : t('home.streak.days', { count: stats.streakDays });
+  const weekLabel =
+    stats.sessionsThisWeek === 1
+      ? t('home.streak.thisWeekOne')
+      : t('home.streak.thisWeek', { count: stats.sessionsThisWeek });
+
+  return (
+    <div
+      role="group"
+      aria-label={t('home.streak.aria')}
+      style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}
+    >
+      {stats.streakDays > 0 && (
+        <Glass
+          radius={9999}
+          padding={0}
+          tint={dark ? 0.44 : 0.18}
+          shine={false}
+          style={{ padding: '7px 12px' }}
+        >
+          <span style={monoChip}>
+            <Icon.flame
+              aria-hidden
+              style={{
+                width: 13,
+                height: 13,
+                color: stats.practicedToday ? driverColors.primary : 'var(--pbt-text-muted)',
+              }}
+            />
+            {streakLabel}
+          </span>
+        </Glass>
+      )}
+      {stats.sessionsThisWeek > 0 && (
+        <Glass
+          radius={9999}
+          padding={0}
+          tint={dark ? 0.44 : 0.18}
+          shine={false}
+          style={{ padding: '7px 12px' }}
+        >
+          <span style={monoChip}>{weekLabel}</span>
+        </Glass>
+      )}
+      {stats.streakDays > 0 && (
+        <span
+          style={{
+            ...monoChip,
+            color: 'var(--pbt-text-muted)',
+            alignSelf: 'center',
+          }}
+        >
+          {stats.practicedToday ? t('home.streak.practicedToday') : t('home.streak.keepItAlive')}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Subtitle animation: Acknowledge → dot → Clarify → dot → Transform, once per dashboard visit. */
-const ACT_SUBTITLE_PARTS = ['Acknowledge', '·', 'Clarify', '·', 'Transform'] as const;
+const ACT_SUBTITLE_KEYS = [
+  'home.dim.acknowledge',
+  'home.dim.clarify',
+  'home.dim.transform',
+] as const;
 
 function AcTGuideCard({
   driverColors,
@@ -121,13 +217,19 @@ function AcTGuideCard({
   dark: boolean;
   onClick: () => void;
 }) {
+  const t = useT();
+  // Interleave the three ACT steps with the '·' separator glyph (not text —
+  // it never localizes) so the stagger animation keeps its original rhythm.
+  const parts: string[] = ACT_SUBTITLE_KEYS.flatMap((key, i) =>
+    i === 0 ? [t(key)] : ['·', t(key)],
+  );
   return (
     <Glass
       radius={RADII.lg}
       padding="13px 16px"
       {...dashTileGlass(dark)}
       onClick={onClick}
-      ariaLabel="ACT Guide"
+      ariaLabel={t('home.actCard.title')}
       style={{ marginBottom: 14 }}
     >
       <div className="flex items-center gap-3">
@@ -135,11 +237,13 @@ function AcTGuideCard({
           <Icon.layers />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.15 }}>ACT Guide</div>
+          <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.15 }}>
+            {t('home.actCard.title')}
+          </div>
           <div
             style={{ fontSize: 12, lineHeight: 1.25, color: 'var(--pbt-text-muted)', whiteSpace: 'nowrap' }}
           >
-            {ACT_SUBTITLE_PARTS.map((part, i) => (
+            {parts.map((part, i) => (
               <motion.span
                 key={`${part}-${i}`}
                 initial={{ opacity: 0, x: part === '·' ? 0 : -8 }}
@@ -178,6 +282,9 @@ export function HomeScreen() {
   const { profile } = useProfile();
   const { user } = useSession();
   const { setScenario } = useScenario();
+  const t = useT();
+  const { locale } = useLanguage();
+  // Manual pager offset applied on top of the date+driver daily base.
   const [pickIndex, setPickIndex] = useState(0);
   const [scoringInfoOpen, setScoringInfoOpen] = useState(false);
   const [scenarioInfoOpen, setScenarioInfoOpen] = useState(false);
@@ -194,6 +301,10 @@ export function HomeScreen() {
   /** Ripples / Orb CSS pulse / breathing — off until Start Here → scoring modal is closed. */
   const [heroOrbMotion, setHeroOrbMotion] = useState(() => readStorage(SEEN_START_HERE_KEY));
   const pendingStartHereRef = useRef(false);
+  // Daily-pick base, pinned once the (async, admin-filtered) library resolves
+  // so the hero card can't swap mid-view. See resolveDailyPickBase.
+  const { ready: flagsReady } = useFlags();
+  const pickBaseRef = useRef<DailyPickBase | null>(null);
 
   useEffect(() => {
     const welcomed = readStorage(DASHBOARD_WELCOMED_KEY);
@@ -216,7 +327,18 @@ export function HomeScreen() {
   const driver = ECHO_DRIVERS[profile.primary];
   const driverColors = DRIVER_COLORS[profile.primary];
   const total = resolvedLibrary.length;
-  const safeIndex = total === 0 ? 0 : pickIndex % total;
+  // Today's pick rotates by calendar day + the user's driver; the manual
+  // prev/next pager offsets from that daily base. The base is held steady
+  // once the library has resolved so a late flag snapshot (or the 5-minute
+  // refresh) changing the visible scenario count can't shuffle the card the
+  // user is currently looking at.
+  pickBaseRef.current = resolveDailyPickBase(pickBaseRef.current, {
+    total,
+    driverSeed: profile.primary,
+    resolved: flagsReady,
+  });
+  const dailyBase = pickBaseRef.current?.base ?? 0;
+  const safeIndex = total === 0 ? 0 : (((dailyBase + pickIndex) % total) + total) % total;
   // If an admin hides every scenario, fall back to the canonical first entry
   // so the hero card stays renderable. The Start button still routes correctly.
   const resolvedSlot = resolvedLibrary[safeIndex];
@@ -234,15 +356,19 @@ export function HomeScreen() {
   const cardDriverColors = DRIVER_COLORS[cardDriverKey] ?? driverColors;
   const initials = getDisplayInitials(user);
   const displayName = getDisplayName(user);
-  const headline = headlineOverride.trim() || `What pushback are\nyou ready for today?`;
+  const headline = headlineOverride.trim() || t('home.headline');
   const cardTitle =
     todaysOverride?.card_title_override?.trim() ||
-    todaysPick.pushback.title;
+    localizedScenario(todaysPick, locale).pushback.title;
   const cardSubtitle =
     todaysOverride?.card_subtitle_override?.trim() ||
-    `${todaysPick.breed}, ${todaysPick.age}. Driver: ${todaysPick.suggestedDriver}.`;
+    t('home.pick.subtitle', {
+      breed: todaysPick.breed,
+      age: localizedLifeStage(todaysPick.age, locale),
+      driver: todaysPick.suggestedDriver,
+    });
   const startButtonLabel =
-    todaysOverride?.start_button_label?.trim() || 'Start scenario';
+    todaysOverride?.start_button_label?.trim() || t('home.pick.start');
   const infoModalTitle = todaysOverride?.info_modal_title?.trim() || '';
   const infoModalBody = todaysOverride?.info_modal_body?.trim() || '';
   const hasScenarioInfo = infoModalBody.length > 0;
@@ -320,7 +446,9 @@ export function HomeScreen() {
                   marginBottom: 8,
                 }}
               >
-                {displayName ? `Welcome, ${displayName}.` : 'Welcome, anonymous guest.'}
+                {displayName
+                  ? t('home.welcome.named', { name: displayName })
+                  : t('home.welcome.anonymous')}
               </div>
               <div
                 style={{
@@ -331,7 +459,7 @@ export function HomeScreen() {
                   color: 'var(--pbt-text-muted)',
                 }}
               >
-                ECHO Driver &middot; {driver.name}
+                {t('home.driverPill', { name: driver.name })}
               </div>
             </motion.div>
           </motion.div>
@@ -350,7 +478,9 @@ export function HomeScreen() {
                 marginBottom: 3,
               }}
             >
-              {displayName ? `Good day, ${displayName}.` : 'Good day.'}
+              {displayName
+                ? t('home.greeting.named', { name: displayName })
+                : t('home.greeting.anonymous')}
             </div>
             <div
               className="flex items-center gap-2"
@@ -380,7 +510,7 @@ export function HomeScreen() {
                   textOverflow: 'ellipsis',
                 }}
               >
-                ECHO Driver · {driver.name}
+                {t('home.driverPill', { name: driver.name })}
               </span>
             </div>
           </div>
@@ -393,7 +523,7 @@ export function HomeScreen() {
               tint={0.3}
               shine={false}
               onClick={() => go('settings')}
-              ariaLabel="Profile"
+              ariaLabel={t('home.profileAria')}
               className="flex h-9 w-9 items-center justify-center"
               style={{
                 background: driverAvatarGradient(driverColors),
@@ -423,7 +553,9 @@ export function HomeScreen() {
                 marginBottom: 6,
               }}
             >
-              {displayName ? `Good day, ${displayName}.` : 'Good day.'}
+              {displayName
+                ? t('home.greeting.named', { name: displayName })
+                : t('home.greeting.anonymous')}
             </div>
             <h1
               style={{
@@ -446,7 +578,7 @@ export function HomeScreen() {
               tint={0.3}
               shine={false}
               onClick={() => go('settings')}
-              ariaLabel="Profile"
+              ariaLabel={t('home.profileAria')}
               className="flex h-11 w-11 items-center justify-center flex-shrink-0"
               style={{
                 background: driverAvatarGradient(driverColors),
@@ -519,9 +651,12 @@ export function HomeScreen() {
                   color: 'var(--pbt-text-muted)',
                 }}
               >
-                ECHO Driver · {driver.name}
+                {t('home.driverPill', { name: driver.name })}
               </span>
             </div>
+
+            {/* Streak strip — practice cadence, computed from saved sessions */}
+            <StreakStrip driverColors={driverColors} dark={dark} />
 
             {/* ACT Guide — just above hero scenario card */}
             {showActCard && (
@@ -636,8 +771,8 @@ export function HomeScreen() {
                 <div aria-hidden style={{ flex: 1, minWidth: 8 }} />
                 <div className="flex shrink-0 items-center gap-1">
                   <button
-                    onClick={() => setPickIndex((i) => (i - 1 + total) % total)}
-                    aria-label="Previous scenario"
+                    onClick={() => setPickIndex((i) => i - 1)}
+                    aria-label={t('home.pick.prevAria')}
                     style={{
                       width: 28,
                       height: 28,
@@ -662,11 +797,11 @@ export function HomeScreen() {
                       textAlign: 'center',
                     }}
                   >
-                    {pickIndex + 1}/{total}
+                    {safeIndex + 1}/{total}
                   </span>
                   <button
-                    onClick={() => setPickIndex((i) => (i + 1) % total)}
-                    aria-label="Next scenario"
+                    onClick={() => setPickIndex((i) => i + 1)}
+                    aria-label={t('home.pick.nextAria')}
                     style={{
                       width: 28,
                       height: 28,
@@ -763,13 +898,13 @@ export function HomeScreen() {
                           pointerEvents: 'none',
                         }}
                       >
-                        Start here →
+                        {t('home.pick.startHere')}
                       </motion.span>
                     )}
                   </AnimatePresence>
                   <button
                     type="button"
-                    aria-label="How sessions are scored"
+                    aria-label={t('home.pick.scoringAria')}
                     onClick={openScoringInfo}
                     style={{
                       width: 34,
@@ -803,8 +938,18 @@ export function HomeScreen() {
 
             <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 14 }}>
               {([
-                { label: 'Build a scenario', sub: 'Custom pushback', icon: <Icon.plus />, screen: 'create' as const },
-                { label: 'Pet Analyzer',     sub: 'BCS · MCS · kcal', icon: <Icon.paw />,  screen: 'analyzer' as const },
+                {
+                  label: t('home.actions.build.title'),
+                  sub: t('home.actions.build.sub'),
+                  icon: <Icon.plus />,
+                  screen: 'create' as const,
+                },
+                {
+                  label: t('home.actions.analyzer.title'),
+                  sub: t('home.actions.analyzer.sub'),
+                  icon: <Icon.paw />,
+                  screen: 'analyzer' as const,
+                },
               ] as const).map(({ label, sub, icon, screen }) => (
                 <Glass
                   key={screen}
@@ -859,7 +1004,7 @@ export function HomeScreen() {
               padding={16}
               {...dashTileGlass(dark)}
               onClick={() => go('resources')}
-              ariaLabel="Library"
+              ariaLabel={t('home.library.aria')}
               style={{ marginBottom: 10 }}
             >
               <div className="flex items-center gap-3">
@@ -868,10 +1013,10 @@ export function HomeScreen() {
                 </div>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 15 }}>
-                    Clinical library
+                    {t('home.library.title')}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)' }}>
-                    WSAVA · BCS · MCS · calorie targets
+                    {t('home.library.sub')}
                   </div>
                 </div>
               </div>
@@ -884,7 +1029,7 @@ export function HomeScreen() {
               padding={16}
               {...dashTileGlass(dark)}
               onClick={() => go('result')}
-              ariaLabel="Your ECHO driver profile"
+              ariaLabel={t('home.echo.aria')}
               style={{ marginBottom: 14, minHeight: 72, position: 'relative', overflow: 'hidden' }}
             >
               {/* Driver wave at the bottom of the ECHO profile card */}
@@ -917,10 +1062,10 @@ export function HomeScreen() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--pbt-text)' }}>
-                    Your ECHO profile
+                    {t('home.echo.title')}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', fontWeight: 500 }}>
-                    ECHO Driver · {profile.primary} · tap to review
+                    {t('home.echo.sub', { name: profile.primary })}
                   </div>
                 </div>
               </div>
@@ -958,7 +1103,7 @@ export function HomeScreen() {
               <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
               <line x1="4" y1="22" x2="4" y2="15"/>
             </svg>
-            Report a problem
+            {t('home.report.button')}
           </button>
         </div>
       </Page>
@@ -991,13 +1136,14 @@ function ScenarioInfoModal({
   scenario?: Scenario;
   onClose: () => void;
 }) {
+  const t = useT();
   return (
     <AnimatePresence>
       {open && (
         <>
           <motion.button
             type="button"
-            aria-label="Close scenario info"
+            aria-label={t('home.scenarioInfo.closeAria')}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1046,7 +1192,7 @@ function ScenarioInfoModal({
                 </h2>
                 <button
                   type="button"
-                  aria-label="Close"
+                  aria-label={t('home.modal.close')}
                   onClick={onClose}
                   style={{
                     flexShrink: 0,
@@ -1088,36 +1234,21 @@ function ScenarioInfoModal({
   );
 }
 
-const SCORING_DIMENSIONS: Array<{ label: string; weight: string; description: string }> = [
-  { label: 'Empathy & Tone', weight: '20%', description: 'Warm, non-judgmental language. Validate feelings before pivoting.' },
-  { label: 'Active Listening', weight: '18%', description: 'Reflect back what the client said. Ask one specific clarifying question.' },
-  { label: 'Objection Handling', weight: '18%', description: 'Acknowledge the concern, clarify the root cause, then transform with evidence.' },
-  { label: 'Product Knowledge', weight: '14%', description: 'Cite Royal Canin specifics — 97% palatability, 12-week trial, BCS, MCS.' },
-  { label: 'Confidence', weight: '12%', description: 'Speak with calm authority. No hedging, no shaming.' },
-  { label: 'Closing', weight: '10%', description: 'Make a clear, specific recommendation the client can act on today.' },
-  { label: 'Pacing', weight: '8%', description: "Match the client's rhythm. Don't rush past the emotion." },
-];
-
-/** OKLCH hues per dimension — pills + row accents (aligned with brand cherry / analyzer / harmonizer family). */
-function hueForDimensionLabel(label: string): number {
-  const h: Record<string, number> = {
-    'Empathy & Tone': 24,
-    'Active Listening': 238,
-    'Objection Handling': 72,
-    'Product Knowledge': 292,
-    Confidence: 148,
-    Closing: 168,
-    Pacing: 258,
-    Empathy: 24,
-    Listening: 238,
-    Objection: 72,
-    Product: 292,
+/** OKLCH hues per rubric dimension — pills + row accents. Keyed by the
+ *  stable DimensionKey so admin re-labels don't break the palette. */
+function hueForDimension(key: DimensionKey): number {
+  const h: Record<DimensionKey, number> = {
+    acknowledge: 24,
+    clarify: 238,
+    transform: 72,
+    empathy: 292,
+    rapport: 258,
   };
-  return h[label] ?? 28;
+  return h[key] ?? 28;
 }
 
-function exampleScorecardPillStyle(shortLabel: string, dark: boolean): CSSProperties {
-  const hue = hueForDimensionLabel(shortLabel);
+function exampleScorecardPillStyle(key: DimensionKey, dark: boolean): CSSProperties {
+  const hue = hueForDimension(key);
   return {
     padding: '5px 11px',
     borderRadius: 9999,
@@ -1136,14 +1267,14 @@ function exampleScorecardPillStyle(shortLabel: string, dark: boolean): CSSProper
   };
 }
 
-function exampleScoreValueColor(shortLabel: string, dark: boolean): string {
-  const hue = hueForDimensionLabel(shortLabel);
+function exampleScoreValueColor(key: DimensionKey, dark: boolean): string {
+  const hue = hueForDimension(key);
   return dark ? `oklch(0.78 0.12 ${hue})` : `oklch(0.40 0.16 ${hue})`;
 }
 
 /** Returns only the per-row accent override — layout/glass comes from className="pbt-glass-card". */
-function dimensionAccentBorder(label: string): CSSProperties {
-  const hue = hueForDimensionLabel(label);
+function dimensionAccentBorder(key: DimensionKey): CSSProperties {
+  const hue = hueForDimension(key);
   return {
     borderLeft: `4px solid color-mix(in oklab, oklch(0.62 0.15 ${hue}) 72%, transparent)`,
     marginBottom: 6,
@@ -1151,8 +1282,25 @@ function dimensionAccentBorder(label: string): CSSProperties {
 }
 
 function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
+  // Live ACT-first rubric (admin re-weights/labels included) — this modal
+  // previously described a retired 7-dimension sales rubric.
+  const simulationConfig = useSimulationConfig();
+  // ACT chain shown in bold in the intro — assembled from the same three
+  // dimension keys the ACT guide card uses so the wording never drifts.
+  const actChain = [
+    t('home.dim.acknowledge'),
+    t('home.dim.clarify'),
+    t('home.dim.transform'),
+  ].join(' → ');
+  const scoringDimensions = resolveDimensions(simulationConfig ?? {}).map((d) => ({
+    key: d.key,
+    label: d.label,
+    weight: `${Math.round(d.weight * 100)}%`,
+    description: d.description,
+  }));
 
   return (
     <AnimatePresence>
@@ -1160,7 +1308,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
         <>
           <motion.button
             type="button"
-            aria-label="Close scoring guide"
+            aria-label={t('home.scoring.closeAria')}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1209,7 +1357,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                       marginBottom: 5,
                     }}
                   >
-                    How you're scored
+                    {t('home.scoring.eyebrow')}
                   </div>
                   <h2
                     id="scoring-info-title"
@@ -1221,12 +1369,12 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                       letterSpacing: '-0.02em',
                     }}
                   >
-                    Seven dimensions, one overall score
+                    {t('home.scoring.title')}
                   </h2>
                 </div>
                 <button
                   type="button"
-                  aria-label="Close"
+                  aria-label={t('home.modal.close')}
                   onClick={onClose}
                   style={{
                     flexShrink: 0,
@@ -1260,7 +1408,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                     marginBottom: 8,
                   }}
                 >
-                  How scenarios work
+                  {t('home.scoring.scenariosEyebrow')}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -1278,10 +1426,10 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                         minWidth: 44,
                       }}
                     >
-                      Voice
+                      {t('home.scoring.voiceLabel')}
                     </span>
                     <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)', fontWeight: 550 }}>
-                      A live conversation — the AI customer speaks and listens in real time. Respond naturally, as you would on the clinic floor.
+                      {t('home.scoring.voiceBody')}
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -1299,10 +1447,10 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                         minWidth: 44,
                       }}
                     >
-                      Chat
+                      {t('home.scoring.chatLabel')}
                     </span>
                     <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)', fontWeight: 550 }}>
-                      Turn-based — the AI sends a message, you reply, and so on. Take your time crafting each response.
+                      {t('home.scoring.chatBody')}
                     </p>
                   </div>
                   <p
@@ -1315,7 +1463,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                       opacity: dark ? 0.88 : 0.92,
                     }}
                   >
-                    The session ends automatically once the AI determines the conversation has reached a natural close — usually after you have acknowledged the concern, clarified the facts, and reframed the value.
+                    {t('home.scoring.autoEnd')}
                   </p>
                 </div>
               </div>
@@ -1323,8 +1471,9 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
               {/* Intro */}
               <div className="pbt-glass-card" style={{ marginBottom: 16, padding: '13px 15px' }}>
                 <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: 'var(--pbt-text)', fontWeight: 540 }}>
-                  Each session is scored 0–100 across seven dimensions and rolled into a weighted overall score.
-                  The fastest path to a high score: <strong style={{ fontWeight: 800 }}>Acknowledge → Clarify → Transform</strong> — don't pitch product before the client feels heard.
+                  {t('home.scoring.introLead')}{' '}
+                  <strong style={{ fontWeight: 800 }}>{actChain}</strong>{' '}
+                  {t('home.scoring.introTail')}
                 </p>
               </div>
 
@@ -1340,11 +1489,11 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                     marginBottom: 10,
                   }}
                 >
-                  Example scorecard
+                  {t('home.scoring.exampleEyebrow')}
                 </div>
                 <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--pbt-text-muted)', fontWeight: 600 }}>Overall</div>
+                    <div style={{ fontSize: 11, color: 'var(--pbt-text-muted)', fontWeight: 600 }}>{t('home.scoring.exampleOverall')}</div>
                     <div style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: 'oklch(0.58 0.18 145)' }}>
                       87
                     </div>
@@ -1362,28 +1511,26 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                       background: 'oklch(0.58 0.18 145)',
                     }}
                   >
-                    Strong
+                    {t('home.scoring.exampleBand')}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2" style={{ marginBottom: 10 }}>
-                  {[
-                    { l: 'Empathy', v: 92 },
-                    { l: 'Listening', v: 88 },
-                    { l: 'Objection', v: 85 },
-                    { l: 'Product', v: 82 },
-                    { l: 'Confidence', v: 89 },
-                    { l: 'Closing', v: 84 },
-                    { l: 'Pacing', v: 86 },
-                  ].map((m) => (
-                    <span key={m.l} style={exampleScorecardPillStyle(m.l, dark)}>
+                  {([
+                    { k: 'acknowledge', l: t('home.dim.acknowledge'), v: 92 },
+                    { k: 'clarify', l: t('home.dim.clarify'), v: 88 },
+                    { k: 'transform', l: t('home.dim.transform'), v: 85 },
+                    { k: 'empathy', l: t('home.dim.empathy'), v: 90 },
+                    { k: 'rapport', l: t('home.dim.rapport'), v: 86 },
+                  ] as Array<{ k: DimensionKey; l: string; v: number }>).map((m) => (
+                    <span key={m.k} style={exampleScorecardPillStyle(m.k, dark)}>
                       {m.l}{' '}
-                      <span style={{ color: exampleScoreValueColor(m.l, dark), fontWeight: 800 }}>{m.v}</span>
+                      <span style={{ color: exampleScoreValueColor(m.k, dark), fontWeight: 800 }}>{m.v}</span>
                     </span>
                   ))}
                 </div>
                 <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text)', fontWeight: 540 }}>
-                  <strong style={{ fontWeight: 800 }}>Coach note:</strong> Strong empathy opener and a clean Royal Canin Satiety pivot.
-                  Next time, name the 12-week trial earlier to lift Closing.
+                  <strong style={{ fontWeight: 800 }}>{t('home.scoring.coachNoteLabel')}</strong>{' '}
+                  {t('home.scoring.coachNoteBody')}
                 </p>
               </div>
 
@@ -1398,16 +1545,16 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                   marginBottom: 8,
                 }}
               >
-                The seven dimensions
+                {t('home.scoring.dimensionsEyebrow')}
               </div>
               <div style={{ marginBottom: 18 }}>
-                {SCORING_DIMENSIONS.map((d) => {
-                  const hue = hueForDimensionLabel(d.label);
+                {scoringDimensions.map((d) => {
+                  const hue = hueForDimension(d.key);
                   return (
                     <div
-                      key={d.label}
+                      key={d.key}
                       className="pbt-glass-card flex items-start gap-2.5"
-                      style={dimensionAccentBorder(d.label)}
+                      style={dimensionAccentBorder(d.key)}
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
@@ -1465,20 +1612,19 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                   marginBottom: 8,
                 }}
               >
-                How a scenario ends
+                {t('home.scoring.endEyebrow')}
               </div>
               <div className="pbt-glass-card" style={{ marginBottom: 12, padding: 15 }}>
                 <p style={{ margin: '0 0 11px', fontSize: 13, lineHeight: 1.58, color: 'var(--pbt-text)', fontWeight: 540 }}>
-                  The customer's receptiveness moves through three states. Watch the dot under the orb to see how
-                  you're doing in real time:
+                  {t('home.scoring.endIntro')}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                   {[
-                    { c: 'oklch(0.55 0.22 18)', l: 'Red — Defensive', t: 'They start here. Push back, repeat the concern. Acknowledge feelings before anything else.' },
-                    { c: 'oklch(0.72 0.19 80)', l: 'Yellow — Receptive', t: 'They feel heard. Ask one specific clarifying question to surface the real concern.' },
-                    { c: 'oklch(0.58 0.18 145)', l: 'Green — Convinced', t: "They're ready to act. Offer a concrete Royal Canin recommendation and the 12-week trial — the session ends as resolved." },
+                    { id: 'red', c: 'oklch(0.55 0.22 18)', l: t('home.scoring.state.red.label'), body: t('home.scoring.state.red.body') },
+                    { id: 'yellow', c: 'oklch(0.72 0.19 80)', l: t('home.scoring.state.yellow.label'), body: t('home.scoring.state.yellow.body') },
+                    { id: 'green', c: 'oklch(0.58 0.18 145)', l: t('home.scoring.state.green.label'), body: t('home.scoring.state.green.body') },
                   ].map((row) => (
-                    <div key={row.l} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <div key={row.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                       <span
                         style={{
                           flexShrink: 0,
@@ -1493,7 +1639,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pbt-text)', marginBottom: 2 }}>{row.l}</div>
                         <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--pbt-text-muted)' }}>
-                          {row.t}
+                          {row.body}
                         </div>
                       </div>
                     </div>
@@ -1510,8 +1656,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                     fontWeight: 480,
                   }}
                 >
-                  If you can't move them past Red after ~15 turns, the session ends as a "stalemate." Either way,
-                  the full transcript is scored against the seven dimensions above.
+                  {t('home.scoring.stalemate')}
                 </p>
               </div>
 
@@ -1527,7 +1672,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
                   fontWeight: 500,
                 }}
               >
-                Bands: 85+ Strong · 70–84 On track · &lt;70 Needs work
+                {t('home.scoring.bands')}
               </p>
             </Glass>
           </motion.div>

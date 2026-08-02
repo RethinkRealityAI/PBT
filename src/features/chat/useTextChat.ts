@@ -6,16 +6,18 @@ import {
   MODEL_LIVE,
   MODEL_TEXT,
 } from '../../services/geminiService';
-import type { ChatMessage, ScoreReport, SessionRecord } from '../../services/types';
+import {
+  isScoreUnavailable,
+  type ChatMessage,
+  type ScoreReport,
+  type SessionRecord,
+} from '../../services/types';
 import { useScenarioOverride, useSimulationConfig } from '../../app/providers/FlagProvider';
 import { seedScenarioId } from '../../data/scenarioOverrides';
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
 import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
-import {
-  readStorage,
-  writeStorage,
-  type StorageKeyDef,
-} from '../../lib/storage';
+import { readStorage, writeStorage } from '../../lib/storage';
+import { SESSIONS_KEY } from '../../lib/sessionsKey';
 import { uuid } from '../../lib/id';
 import { getSupabase } from '../auth/supabaseClient';
 import { recordTurns } from '../../services/aiTelemetry';
@@ -24,12 +26,8 @@ import { retrieveContext } from '../../services/ragClient';
 import { resolveRag } from '../../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from '../../services/ragShared';
 import { logEvent } from '../../lib/analytics';
+import { useLanguage } from '../../app/providers/LanguageProvider';
 
-const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
-  key: 'sessions',
-  fallback: [],
-  validate: (v): v is SessionRecord[] => Array.isArray(v),
-};
 const MAX_SESSIONS = 50;
 
 const SCORE_UNAVAILABLE: ScoreReport = {
@@ -51,6 +49,7 @@ const SCORE_UNAVAILABLE: ScoreReport = {
   },
   keyMoments: [],
   turnSentiment: [],
+  scoreUnavailable: true,
 };
 
 function scenarioSummaryLine(scenario: Scenario): string {
@@ -119,11 +118,27 @@ export interface UseTextChat {
    * The previous attempt is still abandoned for admin telemetry.
    */
   restart: () => Promise<void>;
-  /** Voice pipeline: persist transcript + scorecard into shared chat state + history. */
+  /**
+   * Voice pipeline: persist transcript + scorecard into shared chat state + history.
+   *
+   * `sessionId` is the id the voice session allocated at start() and already
+   * used for its scorer telemetry — pass it so the AI-call rows, the local
+   * SessionRecord and the Supabase row share ONE id. Optional for backward
+   * compatibility; when present it wins over any id left over from an earlier
+   * text session.
+   */
   applyVoiceSessionComplete: (
     report: ScoreReport | null,
     transcript: ChatMessage[],
+    sessionId?: string | null,
   ) => Promise<void>;
+  /**
+   * Re-run the scorer on the already-captured transcript after a scoring
+   * failure — the conversation is done, only the evaluation is missing.
+   * Updates the in-memory report AND rewrites the saved history record.
+   * Resolves true when a real (non-placeholder) score was obtained.
+   */
+  rescore: () => Promise<boolean>;
   reset: () => void;
   startedAt: number | null;
 }
@@ -215,6 +230,10 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Global admin simulation config (scoring weights/prompt, driver + pushback
   // edits). Null = code defaults. Threaded into every generate/evaluate call.
   const simulationConfig = useSimulationConfig();
+  // App locale — decides the language the AI customer speaks and the language
+  // the scorecard's coaching prose comes back in. LanguageProvider sits above
+  // ChatProvider, and useLanguage() falls back to English outside a provider.
+  const { locale } = useLanguage();
   const promptOverrides = useMemo<PromptOverrides>(
     () => ({
       promptPrefix: overrideRow?.prompt_prefix ?? null,
@@ -225,6 +244,21 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Allocated at open() so AI telemetry rows can attribute to the session
   // even before it's saved to history.
   const recordIdRef = useRef<string | null>(null);
+  /**
+   * The scenario the CURRENTLY SAVED record (recordIdRef) was recorded under.
+   *
+   * `scenario` is a live prop: ChatProvider holds this hook for the whole app
+   * and re-renders it with whatever ScenarioProvider currently points at.
+   * Several surfaces change that selection without calling reset()
+   * (Home "Start scenario", Create → Start, the admin preview runner), so a
+   * finished-but-unscored session can outlive its scenario. rescore() must
+   * evaluate + re-persist the saved transcript against the scenario that
+   * actually produced it, never the one the user has since picked.
+   *
+   * Snapshotted at end()/applyVoiceSessionComplete (the two places a record
+   * is written) and cleared wherever the record id is dropped or replaced.
+   */
+  const scoredScenarioRef = useRef<Scenario | null>(null);
   // Knowledge retrieved for this session (RAG) — fetched once at open(),
   // injected into every customer turn + the scorer. [] = ungrounded.
   const retrievedRef = useRef<RetrievedChunk[]>([]);
@@ -266,6 +300,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setTransientError(null);
     startedAtRef.current = Date.now();
     recordIdRef.current = uuid();
+    scoredScenarioRef.current = null;
     persistedRef.current = false;
     logEvent({
       type: 'custom',
@@ -304,6 +339,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         promptOverrides,
         config: simulationConfig ?? undefined,
         retrieved: retrievedRef.current,
+        locale,
       });
       appendTurn(first);
       setStatus('awaitingUser');
@@ -316,7 +352,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       setTransientError(friendly);
       setStatus('error');
     }
-  }, [scenario, status, promptOverrides, simulationConfig]);
+  }, [scenario, status, promptOverrides, simulationConfig, locale]);
 
   const send = useCallback(
     async (text: string) => {
@@ -341,6 +377,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
             promptOverrides,
             config: simulationConfig ?? undefined,
             retrieved: retrievedRef.current,
+            locale,
           },
         );
 
@@ -400,7 +437,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         setStatus('awaitingUser');
       }
     },
-    [scenario, appendTurn, promptOverrides, simulationConfig],
+    [scenario, appendTurn, promptOverrides, simulationConfig, locale],
   );
 
   const end = useCallback(async () => {
@@ -408,6 +445,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     if (msgs.length === 0) return;
     setStatus('scoring');
     setTransientError(null);
+    // Bind the record about to be written to the scenario it was played
+    // against — see scoredScenarioRef.
+    scoredScenarioRef.current = scenario;
 
     let report: ScoreReport | null = null;
     try {
@@ -415,6 +455,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         sessionId: recordIdRef.current,
         config: simulationConfig ?? undefined,
         retrieved: retrievedRef.current,
+        locale,
       });
     } catch (err) {
       console.error('[useTextChat] scoring failed', err);
@@ -461,7 +502,76 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       completed: true,
       retrieved: retrievedRef.current,
     });
-  }, [scenario, simulationConfig]);
+  }, [scenario, simulationConfig, locale]);
+
+  const rescore = useCallback(async (): Promise<boolean> => {
+    const msgs = transcriptRef.current.filter((m) => !m._transientError);
+    const recordId = recordIdRef.current;
+    if (msgs.length === 0 || !recordId) return false;
+    // Score the transcript against the scenario it was recorded under. Falls
+    // back to the live scenario only when no snapshot exists (a transcript
+    // that never reached end()/applyVoiceSessionComplete).
+    const scoredScenario = scoredScenarioRef.current ?? scenario;
+
+    let report: ScoreReport | null = null;
+    try {
+      report = await evaluateConversation(scoredScenario, msgs, {
+        sessionId: recordId,
+        config: simulationConfig ?? undefined,
+        retrieved: retrievedRef.current,
+        locale,
+      });
+    } catch (err) {
+      console.error('[useTextChat] rescore failed', err);
+    }
+    if (!report || isScoreUnavailable(report)) return false;
+    const scored = report;
+
+    setScoreReport(scored);
+
+    // Rewrite the saved history record in place. Mode + duration come from
+    // the stored copy so a voice-session rescore stays accurate.
+    const existing = readStorage(SESSIONS_KEY);
+    const saved = existing.find((s) => s.id === recordId) ?? null;
+    const mode = saved?.mode ?? 'text';
+    const durationSeconds =
+      saved?.durationSeconds ??
+      Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000);
+    if (saved) {
+      writeStorage(
+        SESSIONS_KEY,
+        existing.map((s) => (s.id === recordId ? { ...s, scoreReport: scored } : s)),
+      );
+    }
+    void persistToSupabase({
+      scenario: scoredScenario,
+      recordId,
+      transcript: msgs,
+      durationSeconds,
+      mode,
+      scoreReport: scored,
+      completed: true,
+      endedReason: 'completed',
+    });
+    void persistRagDocument({
+      sessionId: recordId,
+      scenario: scoredScenario,
+      transcript: msgs,
+      scoreReport: scored,
+      durationSeconds,
+      mode,
+      modelId: mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
+      completed: true,
+      retrieved: retrievedRef.current,
+    });
+    logEvent({
+      type: 'custom',
+      screen: 'stats',
+      target: 'session_rescore',
+      meta: { sessionId: recordId, overall: scored.overall },
+    });
+    return true;
+  }, [scenario, simulationConfig, locale]);
 
   const abandon = useCallback(
     async (reason: 'user_exit' | 'timeout' | 'error' = 'user_exit') => {
@@ -512,6 +622,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setTransientError(null);
     startedAtRef.current = Date.now();
     recordIdRef.current = uuid();
+    scoredScenarioRef.current = null;
     persistedRef.current = false;
     logEvent({
       type: 'custom',
@@ -529,11 +640,16 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     setTransientError(null);
     startedAtRef.current = null;
     recordIdRef.current = null;
+    scoredScenarioRef.current = null;
     persistedRef.current = false;
   }, []);
 
   const applyVoiceSessionComplete = useCallback(
-    async (report: ScoreReport | null, transcript: ChatMessage[]) => {
+    async (
+      report: ScoreReport | null,
+      transcript: ChatMessage[],
+      voiceSessionId?: string | null,
+    ) => {
       const msgs = transcript.filter((m) => !m._transientError);
       setTransientError(null);
       // Voice path bypasses appendTurn (the voice session has its own
@@ -548,10 +664,16 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       // Skip local history + RAG and write a single abandoned admin row
       // so the session shows up in telemetry but doesn't poison
       // downstream scoring or fine-tuning.
-      const recordId = recordIdRef.current ?? uuid();
-      // Voice sessions never call open(), so the ref may be unset. Pin it so
-      // sessionId is exposed (post-session feedback attributes to it).
+      // The voice session's own id WINS when supplied: it's what the scorer
+      // telemetry rows were written against, and recordIdRef may still hold a
+      // stale id from an earlier text session on this shared hook (voice never
+      // calls open()). Fall back to the existing/new id for older callers.
+      const recordId = voiceSessionId ?? recordIdRef.current ?? uuid();
+      // Pin it so sessionId is exposed (post-session feedback attributes to it).
       recordIdRef.current = recordId;
+      // Bind the record to the scenario it was played against — see
+      // scoredScenarioRef (a later rescore() must not use a newer selection).
+      scoredScenarioRef.current = scenario;
       if (msgs.length === 0) {
         setStatus('idle');
         persistedRef.current = true;
@@ -625,6 +747,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     abandon,
     restart,
     applyVoiceSessionComplete,
+    rescore,
     reset,
     startedAt: startedAtRef.current,
   };

@@ -14,6 +14,17 @@ import {
   type SimulationConfig,
 } from './simulationConfig';
 import type { RetrievedChunk } from '../../services/ragShared';
+import { DEFAULT_LOCALE, type Locale } from '../../i18n/locales';
+
+/**
+ * Which side of the simulation a customer prompt is driving.
+ *
+ * Voice used to be derived by string-replacing one bullet out of the text
+ * prompt after the fact — brittle surgery that silently no-ops the day the
+ * bullet is reworded. The mode is now an input, so each variant is composed
+ * from the same template rather than patched afterwards.
+ */
+export type PromptMode = 'text' | 'voice';
 
 /** Render retrieved knowledge chunks as a named prompt section (RAG). */
 function formatRetrievedBlock(
@@ -96,19 +107,209 @@ or improvise something true to your driver type, breed, and pushback category.
 `.trim();
 
 /**
+ * The machine end-of-simulation signal. NEVER localized, never spoken, never
+ * narrated — detection downstream (`useTextChat`'s END_TOKEN_RX) matches this
+ * literal regardless of the conversation language, so translating it would
+ * strand a French session with no way to end.
+ */
+export const END_SIMULATION_TOKEN = '[END_SIMULATION]';
+
+/**
+ * Locale-varying fragments of the customer + voice prompts.
+ *
+ * The prompt SCAFFOLDING stays English on purpose — instruction-following is
+ * measurably better in English even when the model must *speak* another
+ * language. Only the bits that dictate the customer's spoken register, its
+ * example utterances, and the coaching output language switch per locale.
+ *
+ * The English values here are byte-for-byte the strings that were inlined in
+ * the template before locales existed; `enPromptParity.test.ts` pins that.
+ */
+interface LanguageRules {
+  /** Extra block naming the output language. Empty for English. */
+  outputLanguageBlock: string;
+  /**
+   * Trailing sentence hammering that the end token is never translated.
+   * Empty for English (nothing to mistranslate — and the English prompt is
+   * pinned byte-for-byte by the parity fixtures).
+   */
+  tokenNote: string;
+  /** The "# RULES" dialect bullet body (no leading "- "). */
+  dialectRule: string;
+  /** In-character acceptance lines illustrating end-trigger (a). */
+  acceptExamples: string;
+  /** Trainee wrap-up cues illustrating end-trigger (b). */
+  closeCues: string;
+  /** The one correct final message, token included. */
+  correctFinalExample: string;
+  /** The "do NOT do these" counter-examples block (already indented). */
+  incorrectExamples: string;
+  /** Voice-mode DIALECT bullet body. */
+  voiceDialectRule: string;
+  /** Voice-mode mandatory lead-in filler bullet body. */
+  voiceLeadInRule: string;
+  /** Voice closing line examples for a resolved end. */
+  voiceResolvedExamples: string;
+  /** Voice closing line example for a stalemate end. */
+  voiceStalemateExample: string;
+}
+
+const EN_RULES: LanguageRules = {
+  outputLanguageBlock: '',
+  tokenNote: '',
+  dialectRule:
+    'Speak conversational AMERICAN ENGLISH. Use words like "friend", "buddy", "guys" — NOT "mate"/"mates"/"reckon"/"crikey"/"bloke". American spelling (color, behavior, recognize). No Australian or British slang.',
+  acceptExamples:
+    '("Okay, let\'s try it." / "Alright, I\'ll book the recheck." / "Sounds good — I\'ll grab the bag on my way out.")',
+  closeCues:
+    '(They say goodbye, thanks, "I appreciate it", "have a good one", "see you next time", or signal they\'re wrapping up.)',
+  // The token genuinely sits on its own line here — the example demonstrates
+  // the "NEW line at the end of that same message" rule literally.
+  correctFinalExample:
+    '"Okay, that makes sense — let\'s give it a try. Thanks for taking the time.\n[END_SIMULATION]"',
+  incorrectExamples: `      "Okay let's end the simulation here." ← narrating, no token
+      "[end simulation] thanks!" ← token before content
+      "Alright, end_simulation" ← missing brackets
+      "Thanks!" → next turn → "Thanks again!" → next turn ← looping, never emitting the token`,
+  voiceDialectRule:
+    'DIALECT: Speak in conversational AMERICAN ENGLISH. Use American vocabulary and idioms — say "friend" / "buddy" / "guys" instead of "mate"/"mates", "for sure"/"yeah" instead of "yeah nah"/"reckon", "vet" instead of "vetinary", "I think" instead of "I reckon". Do NOT use Australian or British slang ("mate", "crikey", "bloke", "arvo", "blimey", "cheers" as goodbye, "whilst", "fortnight"). Spelling: American (color, flavor, behavior, recognize, neighborhood). Voice/accent: neutral American.',
+  voiceLeadInRule:
+    'ABSOLUTE LEAD-IN REQUIREMENT (CRITICAL): EVERY single spoken turn — including the very first word out of your mouth — MUST begin with a short throwaway verbal filler. Acceptable openers: "Well,", "Look,", "Okay,", "Hmm,", "So,", "I mean,", "Yeah,", "Right,", "Listen,". Then a tiny pause, then your real content. NEVER start a turn directly with the substantive first word of your response. The speech-to-text reliably drops the first ~200ms of audio every turn, so the throwaway is what gets lost — your real content stays intact. This rule is non-negotiable. If you find yourself about to say "What are you trying to imply", you must instead say "Well, what are you trying to imply". Vary the filler across turns so it doesn\'t feel robotic.',
+  voiceResolvedExamples:
+    '"Okay, that makes sense — let\'s give it a try." or "Alright, I trust you on this. Thanks for taking the time."',
+  voiceStalemateExample:
+    '"I appreciate the time, but I think I\'ll need to think about this more."',
+};
+
+/**
+ * Canadian French (Québec). The customer is a real clinic client, so it uses
+ * the register a client actually uses at the counter — including `tu` where a
+ * regular would plausibly tutoyer the staff — rather than textbook
+ * metropolitan French.
+ */
+const FR_RULES: LanguageRules = {
+  outputLanguageBlock: `
+# OUTPUT LANGUAGE — CANADIAN FRENCH
+Every word you SAY is in French. The instructions above and below are in
+English for your benefit only — never echo them, never switch to English,
+never translate your own line back into English. The one exception is the
+literal machine token described under ENDING THE SIMULATION, which is never
+translated.
+`,
+  tokenNote: ` NEVER translate, accent, or re-spell the token — it is ASCII and always exactly ${END_SIMULATION_TOKEN}, whatever language you are speaking, and it is never read aloud.`,
+  dialectRule:
+    "Parle en FRANÇAIS QUÉBÉCOIS naturel, comme un vrai client de clinique. Registre parlé, pas de français écrit ni de tournures de la France : dis \"c'est pas mal cher\", \"ça a pas d'allure\", \"je capote un peu\", \"faut que je regarde ça\", \"mon chien file pas\" — jamais \"c'est onéreux\", \"cela m'inquiète\", \"nous verrons\". Tutoie l'employé(e) si un client régulier le ferait naturellement (\"tu penses vraiment que…\"), sinon garde le vous : reste cohérent une fois que tu as choisi. Utilise des marqueurs d'oral québécois avec parcimonie (\"ben\", \"là\", \"fait que\", \"pantoute\", \"c'est-tu\") — assez pour sonner vrai, pas au point de caricaturer. Pas d'anglicismes gratuits, mais garde ceux qu'un Québécois dit vraiment (\"la job\", \"le check-up\").",
+  acceptExamples:
+    '(« OK, on va l\'essayer. » / « Correct, je vais prendre un rendez-vous de suivi. » / « Ça marche — je vais prendre le sac en sortant. »)',
+  closeCues:
+    "(Il ou elle dit au revoir, merci, « ça m'a fait plaisir », « bonne journée », « à la prochaine », ou montre qu'il conclut.)",
+  correctFinalExample:
+    '« OK, ça se tient — on va l\'essayer. Merci d\'avoir pris le temps. »\n[END_SIMULATION]',
+  incorrectExamples: `      « Bon, on va arrêter la simulation ici. » ← narration, aucun token
+      « [fin de simulation] merci! » ← token traduit + placé avant le contenu
+      « Correct, fin_simulation » ← crochets manquants
+      « Merci! » → tour suivant → « Merci encore! » → tour suivant ← boucle, le token n'est jamais émis`,
+  voiceDialectRule:
+    "DIALECT: Parle en FRANÇAIS QUÉBÉCOIS parlé, avec un accent québécois neutre — pas un accent de France. Vocabulaire de tous les jours : \"c'est cher\", \"ça a pas d'allure\", \"mon chien file pas\", \"faut que j'y pense\", \"la job\", \"un check-up\". Évite les tournures écrites ou métropolitaines (\"cela\", \"onéreux\", \"je vous saurais gré\", \"c'est chouette\"). Tutoie l'employé(e) si un client régulier le ferait; sinon vouvoie, mais reste cohérent. Marqueurs d'oral (\"ben\", \"là\", \"fait que\", \"pantoute\") : assez pour sonner vrai, jamais caricatural.",
+  voiceLeadInRule:
+    "ABSOLUTE LEAD-IN REQUIREMENT (CRITICAL): EVERY single spoken turn — including the very first word out of your mouth — MUST begin with a short throwaway verbal filler, IN FRENCH. Acceptable openers: \"Ben,\", \"Écoute,\", \"Bon,\", \"OK,\", \"Hum,\", \"Fait que,\". Then a tiny pause, then your real content. NEVER start a turn directly with the substantive first word of your response. The speech-to-text reliably drops the first ~200ms of audio every turn, so the throwaway is what gets lost — your real content stays intact. This rule is non-negotiable. If you find yourself about to say \"Qu'est-ce que tu essaies de dire\", you must instead say \"Ben, qu'est-ce que tu essaies de dire\". Vary the filler across turns so it doesn't feel robotic.",
+  voiceResolvedExamples:
+    '« OK, ça se tient — on va l\'essayer. » ou « Correct, je te fais confiance là-dessus. Merci d\'avoir pris le temps. »',
+  voiceStalemateExample:
+    "« Merci pour le temps, mais je pense que je vais y réfléchir encore un peu. »",
+};
+
+const LANGUAGE_RULES: Record<Locale, LanguageRules> = {
+  en: EN_RULES,
+  fr: FR_RULES,
+};
+
+function rulesFor(locale: Locale | undefined): LanguageRules {
+  return LANGUAGE_RULES[locale ?? DEFAULT_LOCALE] ?? EN_RULES;
+}
+
+/**
+ * Coaching-output directive for the scorer + coach prompts.
+ *
+ * Rubric text, retrieved evidence and the transcript itself stay in whatever
+ * language they arrived in; only the coaching PROSE the trainee reads is
+ * localized. Transcript excerpts are quoted verbatim so a key moment never
+ * misrepresents what was actually said.
+ */
+function coachingLanguageBlock(locale: Locale | undefined): string {
+  if ((locale ?? DEFAULT_LOCALE) !== 'fr') return '';
+  return `
+# OUTPUT LANGUAGE — CANADIAN FRENCH
+Write EVERY piece of text the trainee will read in Canadian French (Québec
+register, warm and professional, vouvoiement): the critique, the better
+alternative, every per-dimension note, every key-moment label, and any hint.
+The rubric, the evidence base and the transcript above may be in English —
+that is input, not output. Quote transcript excerpts VERBATIM in the language
+they were actually spoken; never translate a quote. When you name the ACT
+steps in French, use Reconnaître / Clarifier / Transformer, and keep the
+initialism "ACT". Never translate ECHO driver names, dog breeds, Royal Canin
+product names, or the BCS / MCS initialisms.
+
+`;
+}
+
+/** Options accepted by every customer-facing prompt builder. */
+export interface CustomerPromptOptions {
+  scenario: Scenario;
+  /** Bounded per-scenario admin overrides. */
+  overrides?: PromptOverrides;
+  /** Global admin simulation config. */
+  config?: SimulationConfig;
+  /** Retrieved knowledge chunks (RAG). */
+  retrieved?: RetrievedChunk[];
+  /** Language the CUSTOMER speaks. Defaults to English. */
+  locale?: Locale;
+  /** Text chat vs live voice. Defaults to 'text'. */
+  mode?: PromptMode;
+}
+
+export interface ScoringPromptOptions {
+  scenario: Scenario;
+  config?: SimulationConfig;
+  retrieved?: RetrievedChunk[];
+  /** Language the COACHING OUTPUT is written in. Defaults to English. */
+  locale?: Locale;
+}
+
+export interface CoachPromptOptions {
+  scenario: Scenario;
+  config?: SimulationConfig;
+  /** Language the nudge is written in. Defaults to English. */
+  locale?: Locale;
+}
+
+/**
  * Builds the system prompt that drives the AI customer in roleplay.
  * Pulls in driver knowledge + pushback context + clinical guardrails.
  *
  * Optional `overrides.promptPrefix` is inserted before the canonical
  * sections; `overrides.promptSuffix` is appended after the rules block.
  * Both are length-capped so an admin can't accidentally bury the rubric.
+ *
+ * `mode: 'voice'` swaps the opening-turn rule for its voice equivalent in
+ * place. `locale` swaps the dialect rule and the in-character examples; the
+ * English scaffolding around them is intentionally kept.
  */
-export function buildCustomerSystemPrompt(
-  scenario: Scenario,
-  overrides: PromptOverrides = {},
-  config: SimulationConfig = {},
-  retrieved?: RetrievedChunk[],
-): string {
+export function buildCustomerSystemPrompt({
+  scenario,
+  overrides = {},
+  config = {},
+  retrieved,
+  locale = DEFAULT_LOCALE,
+  mode = 'text',
+}: CustomerPromptOptions): string {
+  const lang = rulesFor(locale);
+  // Voice must NOT open unprompted — the kickoff cue drives the first line,
+  // and an unprompted opener races it into a double opening.
+  const openingRule =
+    mode === 'voice'
+      ? 'Wait for the text cue to begin. When it arrives, deliver EXACTLY ONE opening pushback line, then go completely silent and wait for the staff member to speak first. Do NOT add a second statement or follow-up after your opening.'
+      : 'Open the conversation with your pushback — do not wait for staff to greet you.';
   const referenceBlock = formatRetrievedBlock(
     retrieved,
     'REFERENCE — WHAT RESEARCH SAYS ABOUT OWNERS LIKE YOU',
@@ -144,7 +345,7 @@ ${prefixBlock}You are roleplaying a Royal Canin customer pushing back during an 
 You are NOT the staff member. You are the OWNER of the dog. Stay in character.
 Reply in 1–3 sentences per turn. Never break character. Never grade the staff.
 Never mention that you are an AI.
-
+${lang.outputLanguageBlock}
 # DOG
 ${formatScenarioFacts(scenario)}
 
@@ -170,10 +371,10 @@ ${pushback.rootConcerns.map((c) => `- ${c}`).join('\n')}` : ''}
 ${scenario.context ?? '(none)'}
 
 ${referenceBlock}# RULES
-- Speak conversational AMERICAN ENGLISH. Use words like "friend", "buddy", "guys" — NOT "mate"/"mates"/"reckon"/"crikey"/"bloke". American spelling (color, behavior, recognize). No Australian or British slang.
+- ${lang.dialectRule}
 - ADDRESS THE STAFF MEMBER DIRECTLY using SECOND PERSON ("you"). They are speaking to you face-to-face. NEVER use third-person pronouns ("they", "them", "the staff", "the vet") to refer to the person you're talking with — that breaks the simulation. Only use third person when referring to other people who are NOT in the room (e.g., "my husband", "my last vet"). Examples: ✓ "What you just said about the price worries me." ✗ "What they just said about the price worries me."
 - STAY IN SCOPE: respond to what the staff member actually said in the most recent turn. Do not invent quotes, do not respond to things they didn't say, and do not drift to unrelated objections. Keep the conversation rooted in this scenario's pushback topic and the dog's specifics above.
-- Open the conversation with your pushback — do not wait for staff to greet you.
+- ${openingRule}
 - ${VARIETY_NUDGE}
 - YOUR RESOLUTION ARC (this is how a real owner moves, and it must match what good handling looks like):
   • Stay guarded until the staff member genuinely validates how you feel — name your worry or your bond — WITHOUT immediately countering it. Empty "I understand, but..." does NOT count. Real acknowledgement earns a first, visible softening.
@@ -184,21 +385,18 @@ ${referenceBlock}# RULES
 - Never say the words "ACT method" or "acknowledge / clarify / transform".
 - ENDING THE SIMULATION (read carefully — ending well is part of being realistic):
   • The simulation MUST end when ANY of these is true:
-      (a) You have credibly accepted a recommendation. ("Okay, let's try it." / "Alright, I'll book the recheck." / "Sounds good — I'll grab the bag on my way out.")
-      (b) The trainee has clearly closed the conversation. (They say goodbye, thanks, "I appreciate it", "have a good one", "see you next time", or signal they're wrapping up.)
+      (a) You have credibly accepted a recommendation. ${lang.acceptExamples}
+      (b) The trainee has clearly closed the conversation. ${lang.closeCues}
       (c) Stalemate: the trainee has not made meaningful progress AND you've been at this for 10+ customer turns. Politely disengage.
   • A real customer who got their question answered DOESN'T keep talking. Do not invent new objections to extend the scene. Do not loop on "thanks → you're welcome → thanks". Once you've genuinely accepted, end.
-  • To end: deliver ONE in-character closing line that fits the outcome (warm acceptance for a resolved close, polite disengagement for a stalemate), then on a NEW line at the end of that same message append the literal token [END_SIMULATION] — uppercase, single underscore, surrounded by square brackets, no leading/trailing words on that line.
+  • To end: deliver ONE in-character closing line that fits the outcome (warm acceptance for a resolved close, polite disengagement for a stalemate), then on a NEW line at the end of that same message append the literal token ${END_SIMULATION_TOKEN} — uppercase, single underscore, surrounded by square brackets, no leading/trailing words on that line.${lang.tokenNote}
   • Output ONLY the bracketed token. NEVER write the words "end simulation", "ending the simulation", "this simulation is over", or any narration of the token. The token is a machine signal, not dialog. The trainee never sees it.
   • Emit the token AT MOST ONCE in the entire conversation. Once you've emitted it, stop. Do not say anything more.
   • Earliest you may emit: customer turn 4 (so the trainee gets at least a few exchanges).
   • Correct example final message:
-      "Okay, that makes sense — let's give it a try. Thanks for taking the time.\n[END_SIMULATION]"
+      ${lang.correctFinalExample}
   • Incorrect (do NOT do these):
-      "Okay let's end the simulation here." ← narrating, no token
-      "[end simulation] thanks!" ← token before content
-      "Alright, end_simulation" ← missing brackets
-      "Thanks!" → next turn → "Thanks again!" → next turn ← looping, never emitting the token${suffixBlock}
+${lang.incorrectExamples}${suffixBlock}
 `.trim();
 }
 
@@ -206,11 +404,13 @@ ${referenceBlock}# RULES
  * Builds the system prompt for the scoring evaluator.
  * Returns a JSON-typed scorecard against the 7 dimensions.
  */
-export function buildScoringSystemPrompt(
-  scenario: Scenario,
-  config: SimulationConfig = {},
-  retrieved?: RetrievedChunk[],
-): string {
+export function buildScoringSystemPrompt({
+  scenario,
+  config = {},
+  retrieved,
+  locale = DEFAULT_LOCALE,
+}: ScoringPromptOptions): string {
+  const languageBlock = coachingLanguageBlock(locale);
   const evidenceBlock = formatRetrievedBlock(
     retrieved,
     'EVIDENCE BASE',
@@ -279,7 +479,7 @@ Do NOT include an overall or band — those are computed from your dimension sco
 - Sentiment for STAFF turns reflects how warm/empathetic vs flat/clinical the
   trainee sounds. Useful for spotting tone problems even when the score is OK.
 
-${evidenceBlock}# GUARDRAILS
+${evidenceBlock}${languageBlock}# GUARDRAILS
 - ${NON_SHAMING_FRAMING}
 - Empathy and clarifying come FIRST. Do not reward a strong product pitch that arrived before the client felt heard — that belongs in the lower bands of "transform".
 - A specific, credible next step (a bounded trial, a recheck, a written plan) is what "transform" rewards. Product specifics are only relevant once earned: ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}
@@ -290,22 +490,66 @@ ${evidenceBlock}# GUARDRAILS
 }
 
 /**
+ * Builds the system prompt for the in-chat coach — the discreet nudge a
+ * trainee can request mid-simulation. The coach reads the live transcript,
+ * works out which ACT stage the trainee should lean into next, and returns
+ * ONE short nudge. It teaches the skill without writing the trainee's line
+ * for them, so a hint never turns the sim into dictation.
+ */
+export function buildCoachHintSystemPrompt({
+  scenario,
+  config = {},
+  locale = DEFAULT_LOCALE,
+}: CoachPromptOptions): string {
+  const languageBlock = coachingLanguageBlock(locale);
+  const driver = resolveDriverKnowledge(scenario.suggestedDriver, config);
+  const pushback = resolvePushbackKnowledge(scenario.pushback.id, config);
+  const actLines = ACT_STEPS.map((s) => `${s.label}: ${s.goal}`).join('\n');
+
+  return `
+You are a veterinary communication coach quietly observing a live training
+roleplay. The STAFF trainee is practicing handling client pushback; the
+CUSTOMER is an AI roleplay. The trainee just asked you for a hint on their
+NEXT reply.
+
+# SCENARIO
+${formatScenarioFacts(scenario)}
+- Pushback: ${formatPushbackPromptSection(scenario).replace(/\n/g, ' | ')}
+- Customer's ECHO driver: ${scenario.suggestedDriver} — motivation: ${driver.motivation}; under stress: ${driver.stressSignature}
+
+${pushback ? `# WHAT'S REALLY GOING ON
+Root concerns the trainee needs to surface:
+${pushback.rootConcerns.map((c) => `- ${c}`).join('\n')}
+
+` : ''}# THE ACT METHOD (the skill being trained)
+${actLines}
+
+# YOUR JOB
+Read the transcript and decide what would most improve the trainee's NEXT
+reply: usually the earliest ACT stage they haven't genuinely done yet
+(acknowledge before clarify, clarify before transform), or warmth/pacing if
+the tone is the problem.
+
+Return ONE nudge:
+- Maximum 2 short sentences, under 220 characters total.
+- Coach the skill — do NOT write their reply for them. A short 3–6 word
+  example fragment is fine; a full scripted line is not.
+- Be specific to what was actually said, not generic advice.
+- Warm, direct, non-shaming. Address the trainee as "you".
+- Plain text only. No markdown, no bullet points, no surrounding quotes.
+${languageBlock}`.trim();
+}
+
+/**
  * Builds the system prompt for the live voice session.
  * Mirrors customer prompt but accommodates voice-specific concerns
  * (turn length, tool calls).
  */
-export function buildVoiceSystemPrompt(
-  scenario: Scenario,
-  overrides: PromptOverrides = {},
-  config: SimulationConfig = {},
-  retrieved?: RetrievedChunk[],
-): string {
-  // Replace the text-mode "open immediately" rule with a voice-mode equivalent
-  // that prevents a double-opening when the kickoff text triggers the model.
-  const base = buildCustomerSystemPrompt(scenario, overrides, config, retrieved).replace(
-    '- Open the conversation with your pushback — do not wait for staff to greet you.',
-    '- Wait for the text cue to begin. When it arrives, deliver EXACTLY ONE opening pushback line, then go completely silent and wait for the staff member to speak first. Do NOT add a second statement or follow-up after your opening.',
-  );
+export function buildVoiceSystemPrompt(options: CustomerPromptOptions): string {
+  // The voice-mode opening rule is composed by the customer builder itself
+  // (mode: 'voice') rather than string-replaced out of the text prompt.
+  const base = buildCustomerSystemPrompt({ ...options, mode: 'voice' });
+  const lang = rulesFor(options.locale);
 
   return (
     base +
@@ -313,8 +557,8 @@ export function buildVoiceSystemPrompt(
     `- ABSOLUTE TURN-TAKING RULE: You speak ONE turn (1–2 sentences max), then go COMPLETELY SILENT. Do not speak again until you have clearly heard the staff member's actual voice respond. Never simulate both sides. Never add a follow-up like "well?" "so?" "anyway..." or a second statement after your turn. Silence is the correct behavior — the user needs time to think and speak. If you are unsure whether they spoke, assume they did NOT and remain silent.\n` +
     `- NEVER REPEAT YOURSELF: Each turn you take must be substantively different from your previous turn. Do NOT re-ask the same question, do NOT restate your previous concern with different wording. If the staff member's answer was brief or imperfect, ACCEPT IT AS THEIR TURN and move the conversation forward (push deeper, raise a new angle, soften slightly, or yield ground if warranted). Repeating yourself is the worst possible behavior — it breaks the simulation.\n` +
     `- OPENING: Deliver exactly ONE opening pushback line when prompted by the kickoff text. After that, stop. Do not preface, do not chain a second statement, do not narrate. One line, then silence.\n` +
-    `- DIALECT: Speak in conversational AMERICAN ENGLISH. Use American vocabulary and idioms — say "friend" / "buddy" / "guys" instead of "mate"/"mates", "for sure"/"yeah" instead of "yeah nah"/"reckon", "vet" instead of "vetinary", "I think" instead of "I reckon". Do NOT use Australian or British slang ("mate", "crikey", "bloke", "arvo", "blimey", "cheers" as goodbye, "whilst", "fortnight"). Spelling: American (color, flavor, behavior, recognize, neighborhood). Voice/accent: neutral American.\n` +
-    `- ABSOLUTE LEAD-IN REQUIREMENT (CRITICAL): EVERY single spoken turn — including the very first word out of your mouth — MUST begin with a short throwaway verbal filler. Acceptable openers: "Well,", "Look,", "Okay,", "Hmm,", "So,", "I mean,", "Yeah,", "Right,", "Listen,". Then a tiny pause, then your real content. NEVER start a turn directly with the substantive first word of your response. The speech-to-text reliably drops the first ~200ms of audio every turn, so the throwaway is what gets lost — your real content stays intact. This rule is non-negotiable. If you find yourself about to say "What are you trying to imply", you must instead say "Well, what are you trying to imply". Vary the filler across turns so it doesn't feel robotic.\n` +
+    `- ${lang.voiceDialectRule}\n` +
+    `- ${lang.voiceLeadInRule}\n` +
     `- ECHO/NOISE DISCIPLINE: If incoming user audio is empty, unintelligible, or appears to be silence/noise, DO NOT respond. Wait. Only respond to clear, intelligible spoken language from the staff member. Never respond to your own voice — if what you "hear" sounds like your own previous turn, ignore it.\n` +
     `- Keep each reply short (1–2 sentences) — voice loses listeners over long turns.\n` +
     `- You have a traffic-light resolution level that the UI displays. Call updateEmotion with the emotion string whenever your receptiveness shifts:\n` +
@@ -327,8 +571,8 @@ export function buildVoiceSystemPrompt(
     `  1. The customer has reached GREEN and accepted a recommendation — call with reason "resolved".\n` +
     `  2. The conversation has lasted 15 or more customer turns AND the customer is still at RED with no movement toward yellow — call with reason "stalemate".\n` +
     `- CLOSING LINE IS REQUIRED: Before you call endSimulation, you MUST first SPEAK a brief in-character closing line (1 sentence) that fits the outcome.\n` +
-    `  • For "resolved": deliver a warm acceptance line — e.g. "Okay, that makes sense — let's give it a try." or "Alright, I trust you on this. Thanks for taking the time."\n` +
-    `  • For "stalemate": deliver a polite disengagement — e.g. "I appreciate the time, but I think I'll need to think about this more."\n` +
+    `  • For "resolved": deliver a warm acceptance line — e.g. ${lang.voiceResolvedExamples}\n` +
+    `  • For "stalemate": deliver a polite disengagement — e.g. ${lang.voiceStalemateExample}\n` +
     `  Do NOT call endSimulation silently. The closing line and the function call should happen in the same turn — speak the line, THEN call endSimulation.\n` +
     `- NEVER call endSimulation in the first 10 turns regardless of what the trainee says or does not say.\n` +
     `- NEVER call endSimulation while at yellow — if the trainee has earned yellow, keep the conversation going toward green.\n` +

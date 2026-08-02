@@ -5,6 +5,8 @@ import { Icon } from '../../design-system/Icon';
 import { Segmented } from '../../design-system/Segmented';
 import { useTheme } from '../../app/providers/ThemeProvider';
 import { usePlatformReport, type ReportKind } from './usePlatformReport';
+import { useT } from '../../i18n/useT';
+import type { CatalogKey } from '../../i18n/catalog';
 
 /**
  * Themed modal surface fill. Light = bright top-left catchlight gradient (the
@@ -17,24 +19,35 @@ const MODAL_FILL_DARK =
 const MODAL_FILL_LIGHT =
   'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.30) 100%)';
 
-const BUG_SUBJECTS = [
-  'Feature not working',
-  'AI not responding',
-  'Voice mode issue',
-  'Button not working',
-  'App crashes / glitches',
-  'Scoring issue',
-  'Other',
-] as const;
+/**
+ * Quick-subject chips. `id` is the STABLE ENGLISH string that gets prefixed
+ * onto the stored report body — keeping it locale-independent means the admin
+ * triage queue reads consistently no matter which language the reporter used.
+ * Only `key` (the visible label) is localised.
+ */
+interface Subject {
+  id: string;
+  key: CatalogKey;
+}
 
-const SUGGESTION_SUBJECTS = [
-  'New feature idea',
-  'UI improvement',
-  'Content request',
-  'Better AI responses',
-  'Accessibility',
-  'Other',
-] as const;
+const BUG_SUBJECTS: Subject[] = [
+  { id: 'Feature not working', key: 'report.subject.featureNotWorking' },
+  { id: 'AI not responding', key: 'report.subject.aiNotResponding' },
+  { id: 'Voice mode issue', key: 'report.subject.voiceMode' },
+  { id: 'Button not working', key: 'report.subject.buttonNotWorking' },
+  { id: 'App crashes / glitches', key: 'report.subject.crashes' },
+  { id: 'Scoring issue', key: 'report.subject.scoring' },
+  { id: 'Other', key: 'report.subject.other' },
+];
+
+const SUGGESTION_SUBJECTS: Subject[] = [
+  { id: 'New feature idea', key: 'report.subject.newFeature' },
+  { id: 'UI improvement', key: 'report.subject.ui' },
+  { id: 'Content request', key: 'report.subject.content' },
+  { id: 'Better AI responses', key: 'report.subject.betterAi' },
+  { id: 'Accessibility', key: 'report.subject.accessibility' },
+  { id: 'Other', key: 'report.subject.other' },
+];
 
 export function ReportModal({
   open,
@@ -48,6 +61,7 @@ export function ReportModal({
   onClose: () => void;
 }) {
   const { status, submitReport, reset } = usePlatformReport();
+  const t = useT();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   const [kind, setKind] = useState<ReportKind>(initialKind);
@@ -132,7 +146,7 @@ export function ReportModal({
                   marginBottom: 6,
                 }}
               >
-                Help us improve
+                {t('report.eyebrow')}
               </div>
               <h2
                 id="pbt-report-title"
@@ -145,12 +159,12 @@ export function ReportModal({
                   color: 'var(--pbt-text)',
                 }}
               >
-                {status === 'done' ? 'Thank you' : 'Report or suggest'}
+                {status === 'done' ? t('report.title.done') : t('report.title')}
               </h2>
             </div>
             <button
               onClick={onClose}
-              aria-label="Close"
+              aria-label={t('report.close')}
               style={{
                 width: 32,
                 height: 32,
@@ -172,11 +186,10 @@ export function ReportModal({
           {status === 'done' ? (
             <div>
               <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--pbt-text)', marginTop: 0, marginBottom: 20 }}>
-                Your {kind === 'bug' ? 'report' : 'suggestion'} reached our
-                triage queue. We read every one.
+                {kind === 'bug' ? t('report.done.bug') : t('report.done.suggestion')}
               </p>
               <PillButton fullWidth onClick={onClose}>
-                Done
+                {t('report.done.cta')}
               </PillButton>
             </div>
           ) : (
@@ -186,10 +199,10 @@ export function ReportModal({
                 <Segmented
                   value={kind}
                   onChange={(v) => { setKind(v as ReportKind); setSubject(''); }}
-                  ariaLabel="Report type"
+                  ariaLabel={t('report.kind.aria')}
                   options={[
-                    { value: 'bug', label: 'Bug report' },
-                    { value: 'suggestion', label: 'Suggestion' },
+                    { value: 'bug', label: t('report.kind.bug') },
+                    { value: 'suggestion', label: t('report.kind.suggestion') },
                   ]}
                 />
               </div>
@@ -206,15 +219,15 @@ export function ReportModal({
                     marginBottom: 8,
                   }}
                 >
-                  Quick subject
+                  {t('report.subject.label')}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {subjects.map((s) => {
-                    const selected = subject === s;
+                    const selected = subject === s.id;
                     return (
                       <button
-                        key={s}
-                        onClick={() => setSubject(selected ? '' : s)}
+                        key={s.id}
+                        onClick={() => setSubject(selected ? '' : s.id)}
                         style={{
                           ...pillBase,
                           background: selected
@@ -233,7 +246,7 @@ export function ReportModal({
                             : 'none',
                         }}
                       >
-                        {s}
+                        {t(s.key)}
                       </button>
                     );
                   })}
@@ -252,15 +265,17 @@ export function ReportModal({
                     marginBottom: 8,
                   }}
                 >
-                  {kind === 'bug' ? 'What happened?' : 'Your idea'}
+                  {kind === 'bug'
+                    ? t('report.message.label.bug')
+                    : t('report.message.label.suggestion')}
                 </div>
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder={
                     kind === 'bug'
-                      ? 'What happened? What did you expect instead?'
-                      : 'What would make this better? Any details help.'
+                      ? t('report.message.placeholder.bug')
+                      : t('report.message.placeholder.suggestion')
                   }
                   rows={6}
                   autoFocus
@@ -273,15 +288,15 @@ export function ReportModal({
                   }}
                 />
                 <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--pbt-text-muted)', marginTop: 4 }}>
-                  {message.trim().length} chars
+                  {t('report.charCount', { count: message.trim().length })}
                 </div>
               </div>
 
               {status === 'error' && (
                 <div style={{ marginBottom: 10, fontSize: 12.5, color: 'oklch(0.52 0.18 25)' }}>
                   {message.trim().length === 0
-                    ? 'Add a short description first.'
-                    : "Couldn't send that — tap submit to try again."}
+                    ? t('report.error.empty')
+                    : t('report.error.send')}
                 </div>
               )}
 
@@ -290,7 +305,7 @@ export function ReportModal({
                 disabled={!canSubmit}
                 onClick={handleSubmit}
               >
-                {status === 'submitting' ? 'Sending…' : 'Submit'}
+                {status === 'submitting' ? t('report.submitting') : t('report.submit')}
               </PillButton>
             </>
           )}

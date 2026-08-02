@@ -21,7 +21,7 @@ const customScenario: Scenario = {
 
 describe('promptBuilders', () => {
   it('customer prompt includes driver, pushback, dog details', () => {
-    const p = buildCustomerSystemPrompt(scenario);
+    const p = buildCustomerSystemPrompt({ scenario });
     expect(p).toContain(scenario.breed);
     expect(p).toContain(scenario.suggestedDriver);
     expect(p).toContain(scenario.pushback.title);
@@ -29,12 +29,12 @@ describe('promptBuilders', () => {
   });
 
   it('customer prompt enforces no-AI-mention rule', () => {
-    const p = buildCustomerSystemPrompt(scenario);
+    const p = buildCustomerSystemPrompt({ scenario });
     expect(p.toLowerCase()).toContain('never mention that you are an ai');
   });
 
   it('scoring prompt lists all 5 ACT-first dimensions and the ACT method', () => {
-    const p = buildScoringSystemPrompt(scenario);
+    const p = buildScoringSystemPrompt({ scenario });
     ['acknowledge', 'clarify', 'transform', 'empathy', 'rapport'].forEach((k) =>
       expect(p).toContain(k),
     );
@@ -46,7 +46,7 @@ describe('promptBuilders', () => {
   });
 
   it('voice prompt extends customer prompt with tool-call guidance', () => {
-    const p = buildVoiceSystemPrompt(scenario);
+    const p = buildVoiceSystemPrompt({ scenario });
     expect(p).toContain('updateEmotion');
     expect(p).toContain('endSimulation');
     expect(p).toContain('Do not invent numeric scores');
@@ -56,13 +56,13 @@ describe('promptBuilders', () => {
     const block = formatPushbackPromptSection(customScenario);
     expect(block).toContain('CUSTOM OBJECTION');
     expect(block).toContain('prescription diets');
-    const p = buildCustomerSystemPrompt(customScenario);
+    const p = buildCustomerSystemPrompt({ scenario: customScenario });
     expect(p).toContain('prescription diets');
   });
 
   it('different scenarios produce different prompts', () => {
-    const p1 = buildCustomerSystemPrompt(SEED_SCENARIOS[0]);
-    const p2 = buildCustomerSystemPrompt(SEED_SCENARIOS[1]);
+    const p1 = buildCustomerSystemPrompt({ scenario: SEED_SCENARIOS[0] });
+    const p2 = buildCustomerSystemPrompt({ scenario: SEED_SCENARIOS[1] });
     expect(p1).not.toEqual(p2);
   });
 
@@ -70,22 +70,26 @@ describe('promptBuilders', () => {
     it('customer prompt reflects an admin driver-persona override', () => {
       const config = { drivers: { Activator: { motivation: 'ZZ_CUSTOM_MOTIVE' } } };
       const activatorScenario = SEED_SCENARIOS.find((s) => s.suggestedDriver === 'Activator')!;
-      const p = buildCustomerSystemPrompt(activatorScenario, {}, config);
+      const p = buildCustomerSystemPrompt({ scenario: activatorScenario, config });
       expect(p).toContain('ZZ_CUSTOM_MOTIVE');
     });
 
     it('customer prompt reflects a global config prompt prefix', () => {
-      const p = buildCustomerSystemPrompt(scenario, {}, {
-        customerPromptPrefix: 'GLOBAL_ADMIN_NOTE_XYZ',
+      const p = buildCustomerSystemPrompt({
+        scenario,
+        config: { customerPromptPrefix: 'GLOBAL_ADMIN_NOTE_XYZ' },
       });
       expect(p).toContain('GLOBAL_ADMIN_NOTE_XYZ');
     });
 
     it('scoring prompt reflects an admin dimension label + weight + scoring prefix', () => {
-      const p = buildScoringSystemPrompt(scenario, {
-        scoring: {
-          dimensions: [{ key: 'acknowledge', label: 'ZZ_VALIDATE', weight: 0.4 }],
-          promptPrefix: 'SCORING_PREAMBLE_ABC',
+      const p = buildScoringSystemPrompt({
+        scenario,
+        config: {
+          scoring: {
+            dimensions: [{ key: 'acknowledge', label: 'ZZ_VALIDATE', weight: 0.4 }],
+            promptPrefix: 'SCORING_PREAMBLE_ABC',
+          },
         },
       });
       expect(p).toContain('ZZ_VALIDATE');
@@ -97,23 +101,23 @@ describe('promptBuilders', () => {
       const retrieved = [
         { content: 'Owners often resist weight advice.', citation: 'Davies et al., 2024', tags: null, similarity: 0.9 },
       ];
-      const customer = buildCustomerSystemPrompt(scenario, {}, {}, retrieved);
+      const customer = buildCustomerSystemPrompt({ scenario, retrieved });
       expect(customer).toContain('WHAT RESEARCH SAYS ABOUT OWNERS LIKE YOU');
       expect(customer).toContain('[Davies et al., 2024]');
       expect(customer).toContain('never cite authors or years in dialogue');
 
-      const scoring = buildScoringSystemPrompt(scenario, {}, retrieved);
+      const scoring = buildScoringSystemPrompt({ scenario, retrieved });
       expect(scoring).toContain('# EVIDENCE BASE');
       expect(scoring).toContain('[Davies et al., 2024]');
 
       // Absent retrieval → prompts identical to today (no empty block).
-      expect(buildCustomerSystemPrompt(scenario)).not.toContain('WHAT RESEARCH SAYS');
-      expect(buildScoringSystemPrompt(scenario)).not.toContain('EVIDENCE BASE');
+      expect(buildCustomerSystemPrompt({ scenario })).not.toContain('WHAT RESEARCH SAYS');
+      expect(buildScoringSystemPrompt({ scenario })).not.toContain('EVIDENCE BASE');
     });
 
     it('falls back to code defaults when config is empty', () => {
-      const withEmpty = buildScoringSystemPrompt(scenario, {});
-      const withNone = buildScoringSystemPrompt(scenario);
+      const withEmpty = buildScoringSystemPrompt({ scenario, config: {} });
+      const withNone = buildScoringSystemPrompt({ scenario });
       expect(withEmpty).toEqual(withNone);
     });
   });

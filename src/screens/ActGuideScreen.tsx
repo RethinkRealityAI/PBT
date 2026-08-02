@@ -10,6 +10,10 @@ import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { RADII } from '../design-system/tokens';
 import { ACT_STEPS } from '../data/knowledge/actGuide';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { localizedActStep } from '../i18n/dataL10n/actGuide';
+import { useT, type TFunction } from '../i18n/useT';
+import type { CatalogKey } from '../i18n/catalog';
 import type { DriverKey } from '../design-system/tokens';
 
 // ACT-specific colors (not driver colors)
@@ -31,37 +35,41 @@ const ACT_COLORS = {
   },
 } as const;
 
-const STEP_LABELS = {
-  acknowledge: 'ACKNOWLEDGE',
-  clarify: 'CLARIFY',
-  takeAction: 'TRANSFORM',
-} as const;
+type StepKey = 'acknowledge' | 'clarify' | 'takeAction';
 
-const STEP_DESCRIPTIONS = {
-  acknowledge: "Don't apologise — show empathy, not weakness. Validate the feeling before anything else.",
-  clarify: "Ask one open question at a time. Let them talk. Listen for the real concern beneath the objection.",
-  takeAction: "Redirect to value. Lead with the outcome, anchor it to a specific product benefit, and set a defined next step.",
-} as const;
+/**
+ * Screen copy lives in the `actGuide` catalog namespace. The canonical ACT
+ * step content (goal / techniques / do / don't) still comes from
+ * `src/data/knowledge/actGuide.ts` — that module is localised by the data
+ * catalog layer, not here.
+ */
+const STEP_LABEL_KEY: Record<StepKey, CatalogKey> = {
+  acknowledge: 'actGuide.step.acknowledge.label',
+  clarify: 'actGuide.step.clarify.label',
+  takeAction: 'actGuide.step.takeAction.label',
+};
 
-const STEP_PHRASES = {
-  acknowledge: '"I hear you — Bella clearly means the world to you."',
-  clarify: '"Walk me through her day — how much exercise does she get?"',
-  takeAction: '"Let\'s do a 4-week trial. 97% of dogs lost weight in 12 weeks — I\'ll check in at week two."',
-} as const;
+const STEP_DESCRIPTION_KEY: Record<StepKey, CatalogKey> = {
+  acknowledge: 'actGuide.step.acknowledge.description',
+  clarify: 'actGuide.step.clarify.description',
+  takeAction: 'actGuide.step.takeAction.description',
+};
 
-const DRIVER_ACT_TIPS: Record<DriverKey, string> = {
-  Activator:
-    'Your energy is your superpower in ACT. Lead with a confident, direct acknowledgement — clients feel your conviction. In Clarify, ask bold questions that get to the real issue fast. In Transform, paint a vivid picture of success to inspire action.',
-  Energizer:
-    'Your natural enthusiasm makes Acknowledge feel warm and genuine — clients open up to you. Use Clarify to deepen that connection with curious, open questions. In Transform, bring your storytelling flair: share a relatable example that makes the value proposition land emotionally.',
-  Analyzer:
-    'Precision is your edge in ACT. Your Acknowledge should be measured and specific — mirror their exact words back. Clarify with data-minded questions that uncover the root concern. In Transform, lead with evidence: facts, case studies, and clear ROI make your value proposition irresistible.',
-  Harmonizer:
-    'Empathy is baked into your Acknowledge — clients feel genuinely heard. Use Clarify gently, focusing on what matters most to the relationship. In Transform, frame value around partnership and long-term outcomes; Harmonizers close with care, not pressure.',
+const STEP_PHRASE_KEY: Record<StepKey, CatalogKey> = {
+  acknowledge: 'actGuide.step.acknowledge.phrase',
+  clarify: 'actGuide.step.clarify.phrase',
+  takeAction: 'actGuide.step.takeAction.phrase',
+};
+
+const DRIVER_ACT_TIP_KEY: Record<DriverKey, CatalogKey> = {
+  Activator: 'actGuide.driverTip.Activator',
+  Energizer: 'actGuide.driverTip.Energizer',
+  Analyzer: 'actGuide.driverTip.Analyzer',
+  Harmonizer: 'actGuide.driverTip.Harmonizer',
 };
 
 // SVG animated circle diagram
-function ActCircleGraphic() {
+function ActCircleGraphic({ t: tr }: { t: TFunction }) {
   const [t, setT] = useState(0);
   const rafRef = useRef<number>(0);
   const startRef = useRef<number | null>(null);
@@ -157,26 +165,28 @@ function ActCircleGraphic() {
 
       {/* Labels */}
       <text x="80" y="60" textAnchor="middle" fill="oklch(0.65 0.18 265)" fontSize="11" fontWeight="700" letterSpacing="0.12em">A</text>
-      <text x="80" y="74" textAnchor="middle" fill="oklch(0.65 0.18 265)" fontSize="8.5" letterSpacing="0.08em">ACKNOWLEDGE</text>
+      <text x="80" y="74" textAnchor="middle" fill="oklch(0.65 0.18 265)" fontSize="8.5" letterSpacing="0.08em">{tr('actGuide.step.acknowledge.label')}</text>
       <text x="160" y="60" textAnchor="middle" fill="oklch(0.68 0.18 75)" fontSize="11" fontWeight="700" letterSpacing="0.12em">C</text>
-      <text x="160" y="74" textAnchor="middle" fill="oklch(0.68 0.18 75)" fontSize="8.5" letterSpacing="0.08em">CLARIFY</text>
+      <text x="160" y="74" textAnchor="middle" fill="oklch(0.68 0.18 75)" fontSize="8.5" letterSpacing="0.08em">{tr('actGuide.step.clarify.label')}</text>
       <text x="240" y="60" textAnchor="middle" fill="oklch(0.65 0.18 160)" fontSize="11" fontWeight="700" letterSpacing="0.12em">T</text>
-      <text x="240" y="74" textAnchor="middle" fill="oklch(0.65 0.18 160)" fontSize="8.5" letterSpacing="0.08em">TRANSFORM</text>
+      <text x="240" y="74" textAnchor="middle" fill="oklch(0.65 0.18 160)" fontSize="8.5" letterSpacing="0.08em">{tr('actGuide.step.takeAction.label')}</text>
     </svg>
   );
 }
 
 interface StepCardProps {
-  stepKey: 'acknowledge' | 'clarify' | 'takeAction';
+  stepKey: StepKey;
   index: number;
 }
 
 function StepCard({ stepKey, index }: StepCardProps) {
-  const step = ACT_STEPS.find((s) => s.key === stepKey)!;
+  const t = useT();
+  const { locale } = useLanguage();
+  const step = localizedActStep(ACT_STEPS.find((s) => s.key === stepKey)!, locale);
   const colors = ACT_COLORS[stepKey];
-  const label = STEP_LABELS[stepKey];
-  const description = STEP_DESCRIPTIONS[stepKey];
-  const phrase = STEP_PHRASES[stepKey];
+  const label = t(STEP_LABEL_KEY[stepKey]);
+  const description = t(STEP_DESCRIPTION_KEY[stepKey]);
+  const phrase = t(STEP_PHRASE_KEY[stepKey]);
 
   return (
     <motion.div
@@ -206,7 +216,7 @@ function StepCard({ stepKey, index }: StepCardProps) {
             marginBottom: 4,
           }}
         >
-          Step {index + 1} · {label}
+          {t('actGuide.stepIndex', { index: index + 1, label })}
         </div>
         <div
           style={{
@@ -250,7 +260,7 @@ function StepCard({ stepKey, index }: StepCardProps) {
               opacity: 0.8,
             }}
           >
-            Example phrase
+            {t('actGuide.examplePhrase')}
           </div>
           <p
             style={{
@@ -284,31 +294,36 @@ function StepCard({ stepKey, index }: StepCardProps) {
   );
 }
 
-const EXAMPLE_STEPS: { label: string; color: string; text: string }[] = [
+const EXAMPLE_STEPS: {
+  labelKey: CatalogKey;
+  color: string;
+  textKey: CatalogKey;
+}[] = [
   {
-    label: 'ACKNOWLEDGE',
+    labelKey: 'actGuide.step.acknowledge.label',
     color: ACT_COLORS.acknowledge.primary,
-    text: '"I completely understand — budget is a real factor, and you clearly want the best for Max."',
+    textKey: 'actGuide.example.acknowledge',
   },
   {
-    label: 'CLARIFY',
+    labelKey: 'actGuide.step.clarify.label',
     color: ACT_COLORS.clarify.primary,
-    text: '"What would make you feel confident that a food change is worth it for him?"',
+    textKey: 'actGuide.example.clarify',
   },
   {
-    label: 'TRANSFORM',
+    labelKey: 'actGuide.step.takeAction.label',
     color: ACT_COLORS.takeAction.primary,
-    text: '"Based on what you\'ve shared, Satiety Support is built for exactly this — 97% of dogs lost weight in 12 weeks. Let\'s do a 4-week trial."',
+    textKey: 'actGuide.example.takeAction',
   },
 ];
 
 export function ActGuideScreen() {
   const { go } = useNavigation();
   const { profile } = useProfile();
+  const t = useT();
 
   return (
     <>
-      <TopBar title="ACT Guide" showBack />
+      <TopBar title={t('actGuide.title')} showBack />
       <Page withTabBar>
         {/* Section 1 — Hero */}
         <motion.div
@@ -327,7 +342,7 @@ export function ActGuideScreen() {
               marginBottom: 10,
             }}
           >
-            Framework
+            {t('actGuide.framework')}
           </div>
           <h2
             style={{
@@ -351,7 +366,7 @@ export function ActGuideScreen() {
               marginBottom: 14,
             }}
           >
-            Acknowledge · Clarify · Transform
+            {t('actGuide.subtitle')}
           </div>
           <p
             style={{
@@ -362,7 +377,7 @@ export function ActGuideScreen() {
               margin: '0 auto 24px',
             }}
           >
-            A proven 3-step framework for turning client pushback into meaningful conversations.
+            {t('actGuide.intro')}
           </p>
 
           {/* Animated circle graphic */}
@@ -371,7 +386,7 @@ export function ActGuideScreen() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           >
-            <ActCircleGraphic />
+            <ActCircleGraphic t={t} />
           </motion.div>
         </motion.div>
 
@@ -386,7 +401,7 @@ export function ActGuideScreen() {
             marginBottom: 14,
           }}
         >
-          The three steps
+          {t('actGuide.threeSteps')}
         </div>
 
         <StepCard stepKey="acknowledge" index={0} />
@@ -411,7 +426,7 @@ export function ActGuideScreen() {
                 marginBottom: 14,
               }}
             >
-              Your driver & ACT
+              {t('actGuide.driverSection')}
             </div>
             <Glass
               radius={RADII.xl}
@@ -453,7 +468,7 @@ export function ActGuideScreen() {
                     marginBottom: 10,
                   }}
                 >
-                  Your Driver · {profile.primary}
+                  {t('actGuide.driverLabel', { driver: profile.primary })}
                 </div>
                 <p
                   style={{
@@ -463,10 +478,10 @@ export function ActGuideScreen() {
                     margin: '0 0 20px',
                   }}
                 >
-                  {DRIVER_ACT_TIPS[profile.primary]}
+                  {t(DRIVER_ACT_TIP_KEY[profile.primary])}
                 </p>
                 <PillButton onClick={() => go('create')} icon={<Icon.arrow />}>
-                  Practice in Simulator
+                  {t('actGuide.practiceCta')}
                 </PillButton>
               </div>
             </Glass>
@@ -490,7 +505,7 @@ export function ActGuideScreen() {
               marginBottom: 14,
             }}
           >
-            Example in practice
+            {t('actGuide.exampleSection')}
           </div>
           <Glass radius={RADII.xl} padding={20}>
             {/* Objection — nested glass (driver-accent rim), not flat gray */}
@@ -516,7 +531,7 @@ export function ActGuideScreen() {
                   fontWeight: 700,
                 }}
               >
-                Client objection
+                {t('actGuide.example.objectionLabel')}
               </div>
               <p
                 style={{
@@ -527,7 +542,7 @@ export function ActGuideScreen() {
                   lineHeight: 1.5,
                 }}
               >
-                "Your pricing is too high — I can get similar food at the supermarket for half the price!"
+                {t('actGuide.example.objection')}
               </p>
             </Glass>
 
@@ -567,7 +582,7 @@ export function ActGuideScreen() {
                         marginBottom: 4,
                       }}
                     >
-                      {s.label}
+                      {t(s.labelKey)}
                     </div>
                     <p
                       style={{
@@ -578,7 +593,7 @@ export function ActGuideScreen() {
                         margin: 0,
                       }}
                     >
-                      {s.text}
+                      {t(s.textKey)}
                     </p>
                   </div>
                 </div>
@@ -596,7 +611,7 @@ export function ActGuideScreen() {
             style={{ marginTop: 16, textAlign: 'center' }}
           >
             <PillButton onClick={() => go('create')} icon={<Icon.arrow />}>
-              Practice in Simulator
+              {t('actGuide.practiceCta')}
             </PillButton>
           </motion.div>
         )}

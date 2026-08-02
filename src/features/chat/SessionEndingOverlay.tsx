@@ -51,7 +51,7 @@ function copyFor(
       return {
         eyebrow: 'Analyzing your performance',
         title: 'Building your scorecard',
-        sub: 'Scoring empathy, listening, knowledge, objection handling, confidence, closing, and pacing.',
+        sub: 'Scoring how you Acknowledged, Clarified, and Transformed the pushback — plus empathy and rapport.',
       };
     case 'ready':
       return {

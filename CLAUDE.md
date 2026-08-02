@@ -65,18 +65,31 @@ Drivers: Activator · Energizer · Analyzer · Harmonizer.
 Services call `@google/genai`:
 
 
-| Function                  | Model                          | Purpose                       |
-| ------------------------- | ------------------------------ | ----------------------------- |
-| `generateRoleplayMessage` | `gemini-2.5-flash`             | Customer turn                 |
-| `evaluateConversation`    | `gemini-2.5-flash` (JSON mode) | ACT-first 5-dim scorecard     |
-| `analyzePetPhoto`         | `gemini-2.5-flash` (multimodal)| Pet Vision (breed/BCS/derm)   |
-| `ai.live.connect`         | `gemini-2.0-flash-live-001`    | Voice mode                    |
+| Function                  | Model (`MODEL_TEXT` / `MODEL_LIVE`)     | Purpose                       |
+| ------------------------- | --------------------------------------- | ----------------------------- |
+| `generateRoleplayMessage` | `gemini-3-flash-preview`                | Customer turn                 |
+| `evaluateConversation`    | `gemini-3-flash-preview` (JSON mode)    | ACT-first 5-dim scorecard     |
+| `generateCoachHint`       | `gemini-3-flash-preview`                | In-chat coach nudge (text mode, ≤3/session) |
+| `analyzePetPhoto`         | `gemini-3-flash-preview` (multimodal)   | Pet Vision (breed/BCS/derm)   |
+| `ai.live.connect`         | `gemini-3.1-flash-live-preview`         | Voice mode                    |
 
 **Scoring is ACT-first (Phase 2):** 5 dimensions — `acknowledge`, `clarify`,
 `transform`, `empathy`, `rapport` (see `scoringRubric.ts`). ACT pillars carry
 70% of the weight; empathy + rapport the rest. `normalizeScoreReport` (in
 `services/types.ts`) backfills these from pre-Phase-2 records so historic
 sessions still render.
+
+**Scoring failure is honest, never fake-zero:** `evaluateConversation` retries
+once, then returns a fallback flagged `scoreUnavailable: true` (detect old +
+new placeholders via `isScoreUnavailable` in `services/types.ts`). Consumers
+must never present it as a real 0/100: StatsScreen offers *Retry scoring*
+(`useTextChat.rescore()` re-scores the saved transcript in place), History
+shows "—" and excludes it from averages.
+
+**Scorecard insights** (`src/features/scorecard/`): `scorecardInsights.ts`
+(delta vs history, weakest dimension, emotion journey — pure + tested) and
+`ResolutionJourney.tsx` (red/yellow/green arc strip). Both text and voice AI
+turns carry `emotion` on the transcript; keep stamping it or the arc dies.
 
 
 Use published model IDs that match your API key (AI Studio). Preview aliases may 404.
@@ -91,7 +104,7 @@ System prompts are composed in `src/data/knowledge/promptBuilders.ts` from:
 
 Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL_LIVE`.
 
-**Voice pipeline:** `src/services/voiceSession.ts` — mic first (`getUserMedia`), playback + capture `AudioContext`, `**/audio/pcm-capture-processor.js`** worklet, then `ai.live.connect`. User gesture starts session (Begin simulation). Avoid calling `session.close()` twice (guarded).
+**Voice pipeline:** `src/services/voiceSession.ts` — the ordering is load-bearing: mic **permission first** (`acquireMic()` is the first await in `start()`, inside the Begin tap — nothing connects or plays until granted), then playback `AudioContext`, then `ai.live.connect`; the capture processor is wired inside `onopen`. Re-entrancy guard runs synchronously before any await (double-Begin must not open two sockets). A playback-end watchdog force-exits `aiSpeaking` if `source.onended` is missed — a stuck `aiSpeaking` mutes the mic for the rest of the session. Avoid calling `session.close()` twice (guarded).
 
 ## Scenario builder (`CreateScreen`)
 
@@ -216,6 +229,35 @@ Active keys:
 | New screen               | Add a `Screen` value in `src/app/routes.ts` and a case in `ScreenSwitch` in `App.tsx`              |
 
 
+## Translations (MANDATORY)
+
+The platform ships in multiple languages (currently **en** + **fr** — Canadian
+French). This is a hard invariant, not a feature:
+
+- **Any change to user-facing text — new, edited, or removed — must update the
+  catalogs for EVERY locale** in `src/i18n/<locale>/`. English (`src/i18n/en/`)
+  is the source of truth; its keys define the typed `CatalogKey` union, so a
+  missing key in another locale fails `tsc`, and
+  `src/i18n/__tests__/catalog.test.ts` rejects English stubs, key drift, and
+  `{token}` mismatches.
+- **Use the translator subagent** (`.claude/agents/translator.md`) for the
+  non-English text — it carries the fr-CA register rules and the
+  do-not-translate glossary (ECHO driver names, breeds, Royal Canin products,
+  BCS/MCS, `[END_SIMULATION]`, enum keys). Don't freehand translations.
+- Components read text via `useT()` / `useLanguage()`
+  (`src/app/providers/LanguageProvider.tsx`); non-React code calls
+  `translate(locale, key)` from `src/i18n/translate.ts`. Never hardcode
+  user-visible strings in components.
+- AI output language is threaded through the prompt builders'
+  `locale` option (`promptBuilders.ts`), NOT the catalogs. Voice speech
+  config follows `LOCALE_BCP47`.
+- Dates/percentages go through `src/i18n/format.ts` (French uses U+202F
+  before `%`), never bare `toLocaleString()`.
+- Adding a locale: extend `src/i18n/locales.ts`, create the catalog dir (the
+  types force completeness), add the dynamic-import arm in `translate.ts`,
+  run the translator agent, done — no migration needed (`profiles.locale`
+  uses a pattern CHECK, not an enum).
+
 ## Conventions
 
 - All glass surfaces use `<Glass>` — never raw `backdrop-filter` styles inline.
@@ -295,10 +337,18 @@ The static test catches "migration file missing"; `verify:db` catches
 
 ## Outstanding work (v1.x polish)
 
-1. **Coach drawer**: in-chat hints — designed; needs LLM call wired up.
-2. **Today's pick rotation**: Home scenario index — rotate by date + driver (not only index 0).
-3. **Email verification**: scaffolded but disabled.
-4. **a11y polish**: focus rings exist; sweep for ARIA + keyboard parity on all screens.
+1. **Email verification**: scaffolded but disabled.
+2. **a11y polish**: focus rings exist; sweep for ARIA + keyboard parity on all screens.
+3. **Voice scorer telemetry attribution**: `voiceSession.endSession()` calls
+   `evaluateConversation` without a `sessionId` (the record id is allocated
+   later in `applyVoiceSessionComplete`), so voice scorer telemetry rows are
+   unattributed.
+4. **Saved pets surfacing**: Pet Analyzer saves pets but never lists them
+   (`useSavedPets.savedPets`/`deletePet` unused there); they only appear as
+   chips in CreateScreen.
+
+(Done since: coach drawer → `src/features/chat/CoachHint.tsx`; Today's-pick
+rotation → `src/lib/dailyPick.ts`.)
 
 ## Don'ts
 
@@ -312,4 +362,4 @@ The static test catches "migration file missing"; `verify:db` catches
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. `**npm test` — 161 tests** (incl. schema-parity guard; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. `**npm test` — 201 tests** (incl. schema-parity guard; pre-deploy `npm run verify:db`). Production build: `npm run build`.

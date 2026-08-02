@@ -29,13 +29,20 @@ import {
 import { DRIVER_KEYS, type DriverKey } from '../design-system/tokens';
 import { persistUserScenario } from '../features/scenarios/persistScenario';
 import { logEvent } from '../lib/analytics';
+import { useT } from '../i18n/useT';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import {
+  localizedScenario,
+  localizedLifeStage,
+  localizedPersona,
+} from '../i18n/dataL10n/scenarios';
+import {
+  localizedDifficulty,
+  localizedDifficultyLabel,
+  localizedPushbackCategory,
+} from '../i18n/dataL10n/pushbacks';
 
 type Tab = 'build' | 'library';
-
-const TAB_OPTIONS: { value: Tab; label: string }[] = [
-  { value: 'build', label: 'Build' },
-  { value: 'library', label: 'Library' },
-];
 
 // Dropdown: all named pushbacks (not custom)
 const DROPDOWN_PUSHBACKS = PUSHBACK_CATEGORIES.filter((c) => c.id !== 'custom');
@@ -46,9 +53,17 @@ export function CreateScreen() {
   const { setScenario } = useScenario();
   const { profile } = useProfile();
   const { savedPets } = useSavedPets();
+  const t = useT();
+  const { locale } = useLanguage();
+  const tabOptions: { value: Tab; label: string }[] = [
+    { value: 'build', label: t('create.tab.build') },
+    { value: 'library', label: t('create.tab.library') },
+  ];
 
   const [tab, setTab] = useState<Tab>('build');
-  const [breed, setBreed] = useState('Labrador Retriever');
+  // Default matches the first quick-pick chip so it renders as selected
+  // on load instead of an orphan value no chip highlights.
+  const [breed, setBreed] = useState(BREEDS[0]);
   const [weight, setWeight] = useState('');
   const [age, setAge] = useState<LifeStage>(LIFE_STAGES[2]);
   const [pushback, setPushback] = useState<PushbackCategory>(PUSHBACK_CATEGORIES[0]);
@@ -86,14 +101,14 @@ export function CreateScreen() {
   const handleGenerate = () => {
     const breedTrim = breed.trim();
     if (!breedTrim) {
-      setBreedError('Choose a breed or type one in.');
+      setBreedError(t('create.breed.error'));
       return;
     }
     setBreedError(null);
 
     const notesTrim = pushbackNotes.trim();
     if (pushback.id === 'custom' && !notesTrim) {
-      setPushbackError('Describe what the client pushed back on.');
+      setPushbackError(t('create.pushback.error'));
       return;
     }
     setPushbackError(null);
@@ -127,14 +142,14 @@ export function CreateScreen() {
 
   return (
     <>
-      <TopBar showBack title="Build a scenario" />
+      <TopBar showBack title={t('create.title')} />
       <Page>
         <div className="flex justify-center mb-5">
           <Segmented
-            options={TAB_OPTIONS}
+            options={tabOptions}
             value={tab}
             onChange={(v) => setTab(v)}
-            ariaLabel="Scenario tabs"
+            ariaLabel={t('create.tabsAria')}
           />
         </div>
 
@@ -145,10 +160,11 @@ export function CreateScreen() {
                 <div className="flex items-start justify-between gap-3">
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
-                      {scenario.pushback.title}
+                      {localizedScenario(scenario, locale).pushback.title}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', marginBottom: 8 }}>
-                      {scenario.breed} · {scenario.age} · {scenario.persona}
+                      {scenario.breed} · {localizedLifeStage(scenario.age, locale)} ·{' '}
+                      {localizedPersona(scenario.persona, locale)}
                     </div>
                     <span
                       style={{
@@ -165,7 +181,7 @@ export function CreateScreen() {
                         color: '#fff',
                       }}
                     >
-                      {DIFFICULTY_LABELS[scenario.difficulty]}
+                      {localizedDifficultyLabel(scenario.difficulty, locale)}
                     </span>
                   </div>
                   <button
@@ -188,7 +204,7 @@ export function CreateScreen() {
                         '0 4px 12px -4px color-mix(in oklab, var(--pbt-driver-primary) 42%, transparent)',
                     }}
                   >
-                    Start
+                    {t('create.library.start')}
                   </button>
                 </div>
               </Glass>
@@ -205,7 +221,7 @@ export function CreateScreen() {
             {/* Left column */}
             <div>
             {/* ── Breed ── */}
-            <Section label="Breed">
+            <Section label={t('create.section.breed')}>
               <Glass
                 radius={20}
                 padding={12}
@@ -216,7 +232,7 @@ export function CreateScreen() {
                   <input
                     value={breed}
                     onChange={(e) => { setBreed(e.target.value); if (breedError) setBreedError(null); }}
-                    placeholder="Search breed"
+                    placeholder={t('create.breed.placeholder')}
                     style={{
                       flex: 1, border: 'none', outline: 'none', background: 'transparent',
                       fontFamily: 'inherit', fontSize: 15, color: 'var(--pbt-text)',
@@ -233,7 +249,7 @@ export function CreateScreen() {
               {savedPets.length > 0 && (
                 <div style={{ marginTop: 10 }}>
                   <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--pbt-driver-primary)', marginBottom: 6, paddingLeft: 2 }}>
-                    Saved pets
+                    {t('create.savedPets.eyebrow')}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {savedPets.map((pet) => (
@@ -277,17 +293,17 @@ export function CreateScreen() {
                     }}
                   />
                   <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 13, color: 'var(--pbt-text-muted)', fontWeight: 600 }}>
-                    kg
+                    {t('create.weight.unit')}
                   </span>
                 </Glass>
                 <span style={{ fontSize: 13, color: 'var(--pbt-text-muted)' }}>
-                  Dog's weight (optional)
+                  {t('create.weight.label')}
                 </span>
               </div>
             </Section>
 
             {/* ── Life stage ── */}
-            <Section label="Life stage">
+            <Section label={t('create.section.lifeStage')}>
               <div className="grid grid-cols-2 gap-2">
                 {LIFE_STAGES.map((stage) => (
                   <Glass
@@ -295,7 +311,7 @@ export function CreateScreen() {
                     radius={18}
                     padding={14}
                     onClick={() => setAge(stage)}
-                    ariaLabel={stage}
+                    ariaLabel={localizedLifeStage(stage, locale)}
                     glow={stage === age ? 'var(--pbt-driver-primary)' : null}
                     style={{
                       border:
@@ -304,21 +320,23 @@ export function CreateScreen() {
                           : undefined,
                     }}
                   >
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{stage}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {localizedLifeStage(stage, locale)}
+                    </div>
                   </Glass>
                 ))}
               </div>
             </Section>
 
             {/* ── The pushback ── */}
-            <Section label="The pushback">
+            <Section label={t('create.section.pushback')}>
               {/* Glass dropdown trigger */}
               <div ref={dropdownRef} style={{ position: 'relative' }}>
                 <Glass
                   radius={18}
                   padding={14}
                   onClick={() => setDropdownOpen((v) => !v)}
-                  ariaLabel="Select pushback type"
+                  ariaLabel={t('create.pushback.selectAria')}
                   glow={!isCustomSelected ? 'var(--pbt-driver-primary)' : null}
                   style={{
                     cursor: 'pointer',
@@ -331,15 +349,15 @@ export function CreateScreen() {
                     <div style={{ minWidth: 0 }}>
                       {isCustomSelected ? (
                         <span style={{ fontSize: 15, color: 'var(--pbt-text-muted)' }}>
-                          Choose a pushback type…
+                          {t('create.pushback.placeholder')}
                         </span>
                       ) : (
                         <>
                           <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--pbt-text)' }}>
-                            {pushback.title}
+                            {localizedPushbackCategory(pushback, locale).title}
                           </div>
                           <div style={{ fontSize: 12.5, color: 'var(--pbt-text-muted)', marginTop: 2, fontStyle: 'italic' }}>
-                            {pushback.example}
+                            {localizedPushbackCategory(pushback, locale).example}
                           </div>
                         </>
                       )}
@@ -412,10 +430,10 @@ export function CreateScreen() {
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--pbt-text)' }}>
-                                    {cat.title}
+                                    {localizedPushbackCategory(cat, locale).title}
                                   </div>
                                   <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', fontStyle: 'italic', marginTop: 1 }}>
-                                    {cat.example}
+                                    {localizedPushbackCategory(cat, locale).example}
                                   </div>
                                 </div>
                               </button>
@@ -440,12 +458,12 @@ export function CreateScreen() {
                   >
                     <Glass radius={16} padding={14}>
                       <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)', marginBottom: 8, fontWeight: 700 }}>
-                        What exactly did they say? · optional
+                        {t('create.pushback.notesOptional')}
                       </div>
                       <textarea
                         value={pushbackNotes}
                         onChange={(e) => { setPushbackNotes(e.target.value); if (pushbackError) setPushbackError(null); }}
-                        placeholder="Add the actual wording or nuance — helps the AI stay specific."
+                        placeholder={t('create.pushback.notesOptionalPlaceholder')}
                         rows={2}
                         style={{
                           width: '100%', minHeight: 56, border: 'none', outline: 'none',
@@ -469,7 +487,7 @@ export function CreateScreen() {
               >
                 <div style={{ flex: 1, height: 1, background: 'color-mix(in oklab, var(--pbt-driver-primary) 12%, transparent)' }} />
                 <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)' }}>
-                  or
+                  {t('create.pushback.or')}
                 </span>
                 <div style={{ flex: 1, height: 1, background: 'color-mix(in oklab, var(--pbt-driver-primary) 12%, transparent)' }} />
               </div>
@@ -507,10 +525,10 @@ export function CreateScreen() {
                   </div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--pbt-text)' }}>
-                      Other pushback
+                      {t('create.pushback.otherTitle')}
                     </div>
                     <div style={{ fontSize: 12.5, color: 'var(--pbt-text-muted)', marginTop: 1 }}>
-                      Describe any objection in your own words
+                      {t('create.pushback.otherSub')}
                     </div>
                   </div>
                 </div>
@@ -528,12 +546,12 @@ export function CreateScreen() {
                   >
                     <Glass radius={16} padding={14}>
                       <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--pbt-text-muted)', marginBottom: 8, fontWeight: 700 }}>
-                        What did they push back on? · required
+                        {t('create.pushback.notesRequired')}
                       </div>
                       <textarea
                         value={pushbackNotes}
                         onChange={(e) => { setPushbackNotes(e.target.value); if (pushbackError) setPushbackError(null); }}
-                        placeholder='e.g. "They insisted supermarket senior food is identical to Rx…"'
+                        placeholder={t('create.pushback.notesRequiredPlaceholder')}
                         rows={3}
                         style={{
                           width: '100%', minHeight: 72, border: 'none', outline: 'none',
@@ -554,16 +572,18 @@ export function CreateScreen() {
             </Section>
 
             {/* ── Owner persona ── */}
-            <Section label="Owner persona">
+            <Section label={t('create.section.persona')}>
               <div className="flex flex-wrap gap-2">
                 {OWNER_PERSONAS.map((p) => (
-                  <Chip key={p} active={p === persona} onClick={() => setPersona(p)}>{p}</Chip>
+                  <Chip key={p} active={p === persona} onClick={() => setPersona(p)}>
+                    {localizedPersona(p, locale)}
+                  </Chip>
                 ))}
               </div>
             </Section>
 
             {/* ── ECHO driver ── */}
-            <Section label="ECHO driver">
+            <Section label={t('create.section.driver')}>
               <div className="flex flex-wrap gap-2">
                 {DRIVER_KEYS.map((d) => (
                   <Chip key={d} active={d === driver} onClick={() => setDriver(d)}>{d}</Chip>
@@ -575,17 +595,21 @@ export function CreateScreen() {
             {/* Right column */}
             <div>
             {/* ── Difficulty ── */}
-            <Section label="Difficulty">
-              <DifficultySlider value={difficulty} onChange={setDifficulty} />
+            <Section label={t('create.section.difficulty')}>
+              <DifficultySlider
+                value={difficulty}
+                onChange={setDifficulty}
+                ariaLabel={t('create.difficulty.aria')}
+              />
             </Section>
 
             {/* ── Additional details ── */}
-            <Section label="Additional details">
+            <Section label={t('create.section.details')}>
               <Glass radius={20} padding={14}>
                 <textarea
                   value={context}
                   onChange={(e) => setContext(e.target.value)}
-                  placeholder="Add specifics — what was said, what stalled the conversation…"
+                  placeholder={t('create.details.placeholder')}
                   rows={4}
                   style={{
                     width: '100%', minHeight: 90, border: 'none', outline: 'none',
@@ -611,7 +635,7 @@ export function CreateScreen() {
                 disabled={isSubmitting}
                 style={isSubmitting ? { opacity: 0.65 } : undefined}
               >
-                Start scenario
+                {t('create.submit')}
               </PillButton>
             </div>
 
@@ -635,7 +659,7 @@ export function CreateScreen() {
             disabled={isSubmitting}
             style={isSubmitting ? { opacity: 0.65 } : undefined}
           >
-            Start scenario
+            {t('create.submit')}
           </PillButton>
         </div>
       )}
@@ -663,7 +687,16 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function DifficultySlider({ value, onChange }: { value: Difficulty; onChange: (d: Difficulty) => void }) {
+function DifficultySlider({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: Difficulty;
+  onChange: (d: Difficulty) => void;
+  ariaLabel: string;
+}) {
+  const { locale } = useLanguage();
   const STEPS = [1, 2, 3, 4] as Difficulty[];
   const fraction = (value - 1) / 3;
   const pct = fraction * 100;
@@ -692,7 +725,7 @@ function DifficultySlider({ value, onChange }: { value: Difficulty; onChange: (d
               lineHeight: 1,
             }}
           >
-            {DIFFICULTY_LABELS[d]}
+            {localizedDifficultyLabel(d, locale)}
           </button>
         ))}
       </div>
@@ -761,7 +794,7 @@ function DifficultySlider({ value, onChange }: { value: Difficulty; onChange: (d
           step={1}
           value={value}
           onChange={(e) => onChange(Number(e.target.value) as Difficulty)}
-          aria-label="Difficulty"
+          aria-label={ariaLabel}
           style={{
             position: 'absolute',
             left: 0,
@@ -806,7 +839,7 @@ function DifficultySlider({ value, onChange }: { value: Difficulty; onChange: (d
                 {value}/4
               </span>
               <p style={{ margin: 0, fontSize: 13, color: 'var(--pbt-text-muted)', lineHeight: 1.5 }}>
-                {DIFFICULTY_DESCRIPTIONS[value]}
+                {localizedDifficulty(value, locale).description}
               </p>
             </div>
           </Glass>

@@ -13,6 +13,7 @@
  */
 import { getSupabase } from '../features/auth/supabaseClient';
 import { getOrCreateSessionId } from './storage';
+import { isTrainingUseAllowed } from './privacy';
 
 export type NavEventType =
   | 'screen_view'
@@ -137,6 +138,11 @@ export function startAnalytics(): void {
 
 /** Fire-and-forget. Safe to call before startAnalytics(). */
 export function logEvent(input: NavEventInput): void {
+  // Privacy gate (spec §8.3). Product analytics is data collected *about* the
+  // user — it stops the moment they opt out. Their own sessions,
+  // session_feedback, and platform_reports are NOT gated: that is the user's
+  // own data / deliberate submissions, not "training use".
+  if (!isTrainingUseAllowed()) return;
   const event: QueuedEvent = {
     ...input,
     ts: Date.now(),
