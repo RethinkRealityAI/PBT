@@ -118,8 +118,20 @@ Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL
 - Supabase client lazy-loaded from env vars; missing env = banner hidden, app still works.
 - `AccountUpgradeModal` does sign-up (no verification) and sign-in.
 - On sign-up: snapshot of `localStorage` profile + sessions uploaded to `profiles` + `training_sessions` tables.
-- `useCloudSync` debounce-mirrors profile changes once signed in.
-- Email verification gated behind `FLAGS.EMAIL_VERIFICATION` in `src/app/flags.ts`.
+- `useCloudSync` debounce-mirrors profile changes (incl. `theme` + `locale`)
+  once signed in; cloud `locale` applies on a fresh device only when no
+  explicit local choice exists.
+- Email verification UI exists (verify-pending pane + 60s resend cooldown in
+  `AccountUpgradeModal`) but is gated behind `FLAGS.EMAIL_VERIFICATION` in
+  `src/app/flags.ts` (currently OFF — users sign in immediately).
+- **Account deletion** (self-service): `netlify/functions/account-delete.ts`
+  (`requireUser()` in `_shared/admin.ts`) — JWT-verified, last-active-admin
+  guard, explicit deletes for every `on delete set null` relation before
+  `auth.admin.deleteUser`. UI: typed-confirm `DeleteAccountModal` in Settings,
+  which wipes local storage and reloads on success.
+- **Privacy opt-out** (spec §8.3): `pbt:allow_training_use` read via
+  `src/lib/privacy.ts`; gates `logEvent`, AI call/turn telemetry, and RAG
+  document assembly. The user's own sessions/feedback/reports are NOT gated.
 
 ## Admin dashboard (admin/)
 
@@ -145,6 +157,8 @@ Migrations:
   knowledge base; seeded from the code knowledge modules via
   `admin-knowledge` op=seed) + `rag_chunks` (embedding-ready session
   exchange/coaching chunks with tag filters, written by `ragDocument.ts`)
+- `20260801000000_profile_locale.sql` — `profiles.locale` (regex CHECK, not an
+  enum — future locales need no migration); applied to prod 2026-08
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -215,6 +229,9 @@ Active keys:
 - `pbt:profile` (Profile object)
 - `pbt:sessions` (array of SessionRecord, capped at 50)
 - `pbt:banner_dismissed_until`
+- `pbt:locale` (`'en' | 'fr'` — kept in sync with the `Locale` union; see Translations)
+- `pbt:rated_session_ids` (session ids already rated via the feedback tool, capped at 100)
+- `pbt:allow_training_use` (privacy opt-out, default `true` — read via `src/lib/privacy.ts`, never directly)
 - `pbt:supabase_session` (managed by supabase-js)
 
 ## Adding new content
@@ -302,7 +319,17 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
 ## Build pipeline
 
 - Vite injects `process.env.GEMINI_API_KEY` via the `define` block in `vite.config.ts`.
-- Bundle is split into `vendor-react`, `vendor-genai`, `vendor-supabase`, `vendor-motion`, plus the main app.
+- Vendor splitting uses the **function form** of `manualChunks` (path-matched
+  buckets: `vendor-react`, `vendor-genai`, `vendor-supabase`, `vendor-motion`,
+  `vendor-ui`, `vendor-zxcvbn`, admin-only `vendor-recharts`). Don't revert to
+  the object form — it pinned resolved module ids and silently emitted 0-byte
+  chunks / dragged recharts onto the consumer path.
+- Most screens are behind `React.lazy` (see the loading-strategy note in
+  `src/app/App.tsx`); zxcvbn loads via dynamic import
+  (`src/features/auth/passwordStrength.ts`); the French catalog rides the lazy
+  `import('./fr')` in `src/i18n/translate.ts`.
+- **Bundle gate**: `npm run check:bundle` after a build asserts the main entry
+  stays < 500 kB gzip (spec §13.9; currently ~66 kB).
 - Netlify build command: `npm run build`.
 
 ## Database migrations & deploy alignment (REQUIRED)
@@ -337,18 +364,24 @@ The static test catches "migration file missing"; `verify:db` catches
 
 ## Outstanding work (v1.x polish)
 
-1. **Email verification**: scaffolded but disabled.
-2. **a11y polish**: focus rings exist; sweep for ARIA + keyboard parity on all screens.
-3. **Voice scorer telemetry attribution**: `voiceSession.endSession()` calls
-   `evaluateConversation` without a `sessionId` (the record id is allocated
-   later in `applyVoiceSessionComplete`), so voice scorer telemetry rows are
-   unattributed.
-4. **Saved pets surfacing**: Pet Analyzer saves pets but never lists them
-   (`useSavedPets.savedPets`/`deletePet` unused there); they only appear as
-   chips in CreateScreen.
+1. **a11y deep sweep**: aria labels/aria-live/keyboard basics are in; still
+   owed: modal focus traps + Escape + `aria-modal` everywhere, CreateScreen
+   dropdown arrow-key support, Lighthouse a11y ≥90 on Home + Chat.
+2. **French Terms legal review**: `terms` fr-CA catalog was translated
+   clause-for-clause but has not been reviewed by counsel.
+3. **French live-voice smoke**: `languageCode: 'fr-CA'` + voice `Aoede` is
+   untested against the real Gemini Live socket (sandbox has no mic); fr-FR is
+   the noted fallback in `voiceSession.ts`.
+4. **Email verification**: full UI built (verify-pending pane, resend
+   cooldown), `FLAGS.EMAIL_VERIFICATION` stays OFF until product wants it.
+5. **Inclusive-writing pass (fr)**: a few quiz options use masculine-default
+   adjectives where a neutral rewrite was clumsy (flagged in
+   `src/i18n/fr/data/quiz.ts` review notes).
 
-(Done since: coach drawer → `src/features/chat/CoachHint.tsx`; Today's-pick
-rotation → `src/lib/dailyPick.ts`.)
+(Done since: coach drawer → `CoachHint.tsx`; Today's-pick rotation →
+`dailyPick.ts`; voice scorer sessionId attribution + 5-min cap; saved-pets
+list on the Pet Analyzer; privacy opt-out; account deletion; code-split;
+full fr-CA localization.)
 
 ## Don'ts
 
@@ -362,4 +395,4 @@ rotation → `src/lib/dailyPick.ts`.)
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. `**npm test` — 201 tests** (incl. schema-parity guard; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→66 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. `**npm test` — 393 tests** (incl. schema-parity + catalog guards + EN prompt byte-parity; pre-deploy `npm run verify:db`). Production build: `npm run build`.
