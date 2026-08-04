@@ -47,6 +47,33 @@ export const auth: Record<keyof typeof en, string> = {
   'auth.pw.score4': 'Excellente robustesse.',
   'auth.pw.checkFailed': 'Impossible de vérifier la robustesse du mot de passe — vérifiez votre connexion et réessayez.',
 
+  // ── Récupération du mot de passe (demande) ────────────────
+  'auth.forgot.link': 'Mot de passe oublié ?',
+  'auth.forgot.needEmail': 'Entrez d’abord votre adresse courriel.',
+  'auth.forgot.sending': 'Envoi en cours…',
+  'auth.forgot.sent':
+    'Si un compte est associé à {email}, un lien de réinitialisation est en route. Il expire dans une heure et ne peut servir qu’une fois.',
+
+  // ── Récupération du mot de passe (écran de réinitialisation) ──
+  'auth.reset.eyebrow': 'Récupération du compte',
+  'auth.reset.checking': 'Vérification de votre lien…',
+  'auth.reset.title': 'Choisissez un\nnouveau mot de passe',
+  'auth.reset.subtitle':
+    'Optez pour quelque chose de long. Une phrase courte vaut mieux qu’un mot brouillé.',
+  'auth.reset.newPassword': 'Nouveau mot de passe',
+  'auth.reset.confirm': 'Confirmez le mot de passe',
+  'auth.reset.mismatch': 'Les deux mots de passe doivent être identiques.',
+  'auth.reset.submit': 'Mettre à jour le mot de passe',
+  'auth.reset.working': 'Enregistrement…',
+  'auth.reset.error': 'Impossible de mettre à jour votre mot de passe.',
+  'auth.reset.done.title': 'Mot de passe mis à jour',
+  'auth.reset.done.body': 'Votre session est ouverte avec votre nouveau mot de passe.',
+  'auth.reset.done.cta': 'Poursuivre l’entraînement',
+  'auth.reset.expired.title': 'Lien de réinitialisation expiré',
+  'auth.reset.expired.body':
+    'Les liens de réinitialisation durent une heure et ne servent qu’une fois. Demandez-en un nouveau à partir de l’écran de connexion.',
+  'auth.reset.expired.cta': 'Retour à l’application',
+
   // ── Erreurs ───────────────────────────────────────────────
   'auth.error.notConfigured':
     "Supabase n'est pas configuré pour cette version. Définissez VITE_SUPABASE_URL et VITE_SUPABASE_PUBLISHABLE_KEY.",

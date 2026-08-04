@@ -8,7 +8,7 @@
  *
  * Every write is mirrored to admin_audit_log.
  */
-import { errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
+import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 
 interface RuleUpsert {
   id?: string;
@@ -37,7 +37,7 @@ interface PostBody {
 }
 
 export default async (req: Request): Promise<Response> => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'flags.read');
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
@@ -53,6 +53,7 @@ export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {
     return errorResponse(405, 'Method not allowed');
   }
+  if (!can(ctx, 'flags.write')) return errorResponse(403, 'Missing permission: flags.write');
 
   let body: PostBody;
   try {

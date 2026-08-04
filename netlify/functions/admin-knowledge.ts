@@ -12,7 +12,7 @@
  * This is the SOW "ingestion of the current working knowledge base": one row
  * per document with structured metadata, ready to feed an embedder in Phase 3.
  */
-import { errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
+import { can, errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
 import { embedTexts } from './_shared/gemini';
 import { chunkMarkdown } from '../../src/services/ragShared';
 import { estimateTokens } from '../../src/services/aiTelemetry';
@@ -160,7 +160,7 @@ async function seed(ctx: AdminCtx): Promise<Response> {
 }
 
 export default async (req: Request): Promise<Response> => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'knowledge.read');
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
@@ -184,6 +184,7 @@ export default async (req: Request): Promise<Response> => {
   }
 
   if (req.method !== 'POST') return errorResponse(405, 'Method not allowed');
+  if (!can(ctx, 'knowledge.write')) return errorResponse(403, 'Missing permission: knowledge.write');
 
   let body: Record<string, unknown>;
   try {

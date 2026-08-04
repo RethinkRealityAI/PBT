@@ -32,6 +32,7 @@ import { fmtAgo } from '../lib/format';
 import { Glass } from '../primitives/Glass';
 import type { AdminSession, AdminUser, AnalyzerEvent, UserScenario } from '../data/types';
 import { runUserAction } from '../data/queries';
+import { useRoles, type AdminRole } from '../data/access';
 import { SessionModal } from './SessionModal';
 
 type TabKey = 'overview' | 'sessions' | 'scenarios' | 'analyzer' | 'ai' | 'manage';
@@ -561,6 +562,7 @@ function ManageTab({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const roles = useRoles();
 
   async function run(op: string, action: () => Promise<unknown>) {
     setBusy(op);
@@ -584,23 +586,46 @@ function ManageTab({
         </div>
       )}
 
-      {/* Admin access */}
+      {/* Role */}
       <ManageRow
-        title="Admin access"
-        desc={user.is_admin ? 'This user can access the admin dashboard.' : 'Grant admin dashboard access.'}
+        title="Admin role"
+        desc={
+          user.admin_role
+            ? `Holds the ${roleName(roles.data?.roles, user.admin_role)} role. Changing it takes effect on their next request.`
+            : 'No admin access. Assign a role to let this account into the portal.'
+        }
         action={
-          <ActionButton
-            tone={user.is_admin ? 'neutral' : 'primary'}
-            disabled={busy !== null || (user.is_admin && isSelf)}
-            loading={busy === 'admin'}
-            onClick={() =>
-              run('admin', () =>
-                runUserAction({ op: 'set_admin', userId: user.user_id, value: !user.is_admin }),
+          <select
+            value={user.admin_role ?? ''}
+            disabled={busy !== null || (Boolean(user.admin_role) && isSelf)}
+            onChange={(e) =>
+              run('role', () =>
+                runUserAction({
+                  op: 'set_role',
+                  userId: user.user_id,
+                  roleKey: e.target.value || null,
+                }),
               )
             }
+            aria-label="Admin role"
+            style={{
+              padding: '8px 10px',
+              borderRadius: 10,
+              border: '1px solid rgba(60,20,15,0.12)',
+              background: 'rgba(255,255,255,0.8)',
+              fontSize: 13,
+              fontFamily: 'var(--pbt-font)',
+              color: COLOR.ink,
+              minWidth: 170,
+            }}
           >
-            {user.is_admin ? 'Revoke admin' : 'Make admin'}
-          </ActionButton>
+            <option value="">No admin access</option>
+            {(roles.data?.roles ?? []).map((r) => (
+              <option key={r.key} value={r.key}>
+                {r.name}
+              </option>
+            ))}
+          </select>
         }
       />
 
@@ -786,4 +811,9 @@ function RailRow({ label, value }: { label: string; value: string }) {
       </span>
     </div>
   );
+}
+
+/** Friendly role label, falling back to the raw key while roles load. */
+function roleName(roles: AdminRole[] | undefined, key: string): string {
+  return roles?.find((r) => r.key === key)?.name ?? key;
 }

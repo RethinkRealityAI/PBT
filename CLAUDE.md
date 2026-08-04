@@ -159,11 +159,22 @@ Migrations:
   exchange/coaching chunks with tag filters, written by `ragDocument.ts`)
 - `20260801000000_profile_locale.sql` — `profiles.locale` (regex CHECK, not an
   enum — future locales need no migration); applied to prod 2026-08
+- `20260805000000_rbac_invites_email.sql` — `admin_roles` (7 system presets +
+  custom), `profiles.admin_role` + `permission_overrides` (with triggers that
+  keep the legacy `is_admin` flag in lockstep), `admin_invites`,
+  `email_settings`, `email_templates`, `email_log`; audit-log entity types
+  extended with role/invite/email_settings/email_template. Applied to prod
+  2026-08
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
 (`admin-simulation-config` → `simulation_config`). Pet Vision data surfaces in
 the existing **Pet Analyzer** screen via `analyzer_events`.
+
+August admin screens: **Team & roles** — members, invitations, and a role /
+permission matrix editor backed by `admin-roles` + `admin-invites`; **Email** —
+branded transactional templates with a live preview, provider settings
+(Resend or SMTP), and a delivery log.
 
 July admin screens (§3.2): **User & admin management** — the Users screen +
 User modal "Manage" tab do account write-ops via `admin-user-actions`
@@ -176,6 +187,50 @@ layer: alert-threshold banner (`ALERT_THRESHOLDS`), failure-rate/latency/cost
 trends, per-model breakdown. **RAG foundation** — `admin-knowledge` function
 (list/upsert/delete + `seed` from code knowledge modules) and per-session
 `rag_chunks` written alongside `rag_documents`.
+
+## Access control (RBAC)
+
+`src/shared/access/permissions.ts` is the single source of truth, imported by
+BOTH `admin/src/**` and `netlify/functions/**` — keep it dependency-free.
+
+- 28 permissions in 6 logical categories; some declare `requires` dependencies
+  (`scenarios.write` needs `scenarios.read`), enforced by
+  `withImpliedPermissions` / `withoutDependents` in the editor and by
+  `sanitizePermissions` on the server.
+- 7 system roles (owner, admin, content_manager, clinical_reviewer, analyst,
+  support, comms_manager) + admin-authored custom roles in `admin_roles`.
+- `resolveAccess()` merges role permissions with per-user
+  `{ grant, revoke }` overrides — **revoke always wins**, and `owner` is
+  absolute (holds every permission including ones added later, and cannot be
+  partially revoked).
+- Every admin Function names its permission: `requireAdmin(req, 'flags.read')`,
+  plus `can(ctx, 'flags.write')` for write branches. **Never add an admin
+  endpoint without one** — the UI hiding a screen is not a control.
+- Escalation guards: you cannot grant a permission you don't hold, only an
+  owner may act on an owner, and the active-owner count can never reach zero
+  (pre-check + compensating post-check for concurrent demotions).
+
+## Transactional email
+
+`src/shared/email/` — `types.ts` (block model), `render.ts` (branded HTML +
+plaintext, pure), `defaults.ts` (shipped templates + their declared variables).
+The admin editor and the sender call the same `renderEmail`, so the preview
+pane is byte-identical to what ships.
+
+- Providers: Resend (HTTPS) or SMTP (nodemailer, lazily imported).
+  `netlify/functions/_shared/mailer.ts` layers `email_settings` over env vars;
+  credentials are AES-256-GCM encrypted (`_shared/secretbox.ts`, keyed by
+  `EMAIL_SECRET_KEY`) and never returned to the browser.
+- Sending never throws: it logs to `email_log` and returns a status, because
+  the action that triggered it has already succeeded.
+- Email HTML rules: `width:100%;max-width:600px` on the shell (a pixel-width
+  table can't shrink below itself and overflows every phone), inline styles
+  only, `prefers-color-scheme` block for dark clients, Outlook ghost table.
+  Guarded by `src/shared/email/__tests__/render.test.ts`.
+- Recovery + invitations go through our own functions (`auth-recover`,
+  `admin-invites`, `invite-accept`) rather than Supabase's mailer, so the
+  message is branded and admin-editable. Invite tokens are stored as SHA-256
+  hashes and rotate on resend.
 
 ## Simulation config (admin-tunable prompts + scoring)
 
@@ -233,6 +288,7 @@ Active keys:
 - `pbt:rated_session_ids` (session ids already rated via the feedback tool, capped at 100)
 - `pbt:allow_training_use` (privacy opt-out, default `true` — read via `src/lib/privacy.ts`, never directly)
 - `pbt:supabase_session` (managed by supabase-js)
+- `pbt:admin_session` (admin portal only, managed by supabase-js)
 
 ## Adding new content
 
@@ -244,6 +300,9 @@ Active keys:
 | Tweak driver content     | `src/data/echoDrivers.ts` (UI) + `src/data/knowledge/driverProfiles.ts` (AI)                       |
 | Add scoring dimension    | `src/data/knowledge/scoringRubric.ts` (then update `geminiService.ts` schema + `ScoreReport` type) |
 | New screen               | Add a `Screen` value in `src/app/routes.ts` and a case in `ScreenSwitch` in `App.tsx`              |
+| New admin permission     | `src/shared/access/permissions.ts` (catalog + presets), then gate the endpoint with `requireAdmin(req, '<key>')` |
+| New admin screen         | `ADMIN_NAV` in `admin/src/primitives/Shell.tsx` (with its `requires`) + a case in `admin/src/App.tsx` |
+| New transactional email  | `src/shared/email/defaults.ts` (template + declared variables), then call `sendTemplateEmail` |
 
 
 ## Translations (MANDATORY)

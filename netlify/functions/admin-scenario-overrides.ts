@@ -10,7 +10,7 @@
  * prompt + scoring rubric remain authoritative — these wrap the customer
  * turn only.
  */
-import { errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
+import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 
 interface OverrideUpsert {
   scenario_id: string;
@@ -90,7 +90,7 @@ function validateOverride(o: OverrideUpsert): string | null {
 }
 
 export default async (req: Request): Promise<Response> => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'scenarios.read');
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
@@ -109,6 +109,7 @@ export default async (req: Request): Promise<Response> => {
   }
 
   if (req.method !== 'POST') return errorResponse(405, 'Method not allowed');
+  if (!can(ctx, 'scenarios.write')) return errorResponse(403, 'Missing permission: scenarios.write');
 
   const op = new URL(req.url).searchParams.get('op') ?? 'upsert';
   let body: OverrideUpsert;

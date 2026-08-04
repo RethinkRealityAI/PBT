@@ -34,7 +34,7 @@ interface RagRow {
 
 export default async (req: Request) => {
   if (req.method !== 'GET') return errorResponse(405, 'Method not allowed');
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'rag.export');
   if (ctx instanceof Response) return ctx;
 
   const params = new URL(req.url).searchParams;

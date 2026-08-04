@@ -7,7 +7,7 @@ import {
 
 /** Admin: list session feedback ("rate the simulation") responses. */
 export default async (req: Request) => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'feedback.read');
   if (ctx instanceof Response) return ctx;
   const { since, limit } = readRange(req);
   const { data, error } = await ctx.sb

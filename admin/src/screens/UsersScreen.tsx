@@ -19,6 +19,7 @@ import {
 import { COLOR, DRIVERS } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
 import { UserModal } from './UserModal';
+import { useRoles } from '../data/access';
 import { Field, inputStyle, btnPrimary, btnSecondary } from './FlagsScreen';
 import { Modal, ModalCloseButton } from '../primitives';
 
@@ -185,7 +186,7 @@ export function UsersScreen({
                     }}
                   >
                     {u.display_name ?? 'Anonymous'}
-                    {u.is_admin && (
+                    {u.admin_role && (
                       <span
                         style={{
                           marginLeft: 8,
@@ -197,7 +198,7 @@ export function UsersScreen({
                           color: COLOR.brand,
                         }}
                       >
-                        ADMIN
+                        {u.admin_role.replace(/_/g, ' ').toUpperCase()}
                       </span>
                     )}
                     {u.disabled && (
@@ -319,9 +320,10 @@ function CreateUserModal({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [roleKey, setRoleKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const roles = useRoles(open ? 1 : 0);
 
   const canSubmit =
     /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) && password.length >= 8 && !busy;
@@ -335,12 +337,12 @@ function CreateUserModal({
         email: email.trim(),
         password,
         displayName: displayName.trim() || undefined,
-        isAdmin,
+        roleKey: roleKey || null,
       });
       setEmail('');
       setPassword('');
       setDisplayName('');
-      setIsAdmin(false);
+      setRoleKey('');
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create user');
@@ -366,10 +368,23 @@ function CreateUserModal({
           <Field label="Display name (optional)">
             <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputStyle} />
           </Field>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: COLOR.ink, cursor: 'pointer' }}>
-            <input type="checkbox" checked={isAdmin} onChange={(e) => setIsAdmin(e.target.checked)} />
-            Grant admin access
-          </label>
+          <Field
+            label="Admin role"
+            help="Leave as “No admin access” for a plain trainee account. Prefer an invitation when you can — it lets them set their own password."
+          >
+            <select
+              value={roleKey}
+              onChange={(e) => setRoleKey(e.target.value)}
+              style={inputStyle}
+            >
+              <option value="">No admin access</option>
+              {(roles.data?.roles ?? []).map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </Field>
           {error && <div style={{ fontSize: 12.5, color: COLOR.danger, fontWeight: 600 }}>{error}</div>}
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
             <button style={{ ...btnPrimary, opacity: canSubmit ? 1 : 0.5 }} disabled={!canSubmit} onClick={submit}>

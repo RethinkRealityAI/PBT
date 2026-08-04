@@ -94,6 +94,29 @@ export function AccountUpgradeModal({
   const [resendLeft, setResendLeft] = useState(0);
   const [resendNote, setResendNote] = useState<string | null>(null);
 
+  // Password recovery. The request goes to our own function (not Supabase's
+  // built-in mailer) so the message is the branded, admin-editable template —
+  // and so the reply is identical whether or not the address has an account.
+  const [recovery, setRecovery] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const requestRecovery = async () => {
+    if (!email.trim()) {
+      setError(t('auth.forgot.needEmail'));
+      return;
+    }
+    setRecovery('sending');
+    setError(null);
+    try {
+      await fetch('/.netlify/functions/auth-recover', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ op: 'request', email: email.trim(), scope: 'app' }),
+      });
+    } catch {
+      // Silent on purpose — the confirmation copy is the same either way.
+    }
+    setRecovery('sent');
+  };
+
   // checkPassword is async (zxcvbn's dictionaries load on demand); mirror the
   // latest result into state for the live hint, and re-check at submit time so
   // a fast type-then-click can't race a stale result.
@@ -209,6 +232,9 @@ export function AccountUpgradeModal({
           // both staff + AI turns + scorecard), pets, analyzer events,
           // and rag_documents. Mirrors the sign-in flow below.
           await backfillLocalDataToCloud(sb, userId);
+          // Branded welcome mail. Fire-and-forget: the account already exists,
+          // and a mail hiccup must never surface as a failed sign-up.
+          void sendWelcomeEmail(sb);
         }
       } else {
         const { data, error } = await sb.auth.signInWithPassword({ email, password });
@@ -503,6 +529,33 @@ export function AccountUpgradeModal({
                   : t('auth.submit.signin')}
             </PillButton>
           </div>
+          {mode === 'signin' && (
+            <div style={{ marginTop: 10, textAlign: 'center' }}>
+              {recovery === 'sent' ? (
+                <div style={{ fontSize: 12, lineHeight: 1.55, color: 'var(--pbt-text-muted)' }}>
+                  {t('auth.forgot.sent', { email })}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={requestRecovery}
+                  disabled={recovery === 'sending'}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 4,
+                    fontSize: 12,
+                    color: 'var(--pbt-text-muted)',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
+                >
+                  {recovery === 'sending' ? t('auth.forgot.sending') : t('auth.forgot.link')}
+                </button>
+              )}
+            </div>
+          )}
           {mode === 'signup' && !emailVerification && (
             <div
               style={{
@@ -521,6 +574,25 @@ export function AccountUpgradeModal({
       </Glass>
     </div>
   );
+}
+
+/**
+ * Ask the server to send the branded welcome email. The user's own JWT is the
+ * authorisation — the endpoint only ever mails the caller's own address.
+ */
+async function sendWelcomeEmail(sb: NonNullable<ReturnType<typeof getSupabase>>): Promise<void> {
+  try {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    await fetch('/.netlify/functions/auth-recover', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ op: 'welcome' }),
+    });
+  } catch {
+    // Non-fatal by design.
+  }
 }
 
 function Field({

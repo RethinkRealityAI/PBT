@@ -8,7 +8,7 @@
  * cross-user reads.
  */
 import { useEffect, useState } from 'react';
-import { apiFetch, rangeToSince } from '../lib/api';
+import { apiFetch, postJson, rangeToSince } from '../lib/api';
 import { getAccessToken } from '../lib/supabase';
 import type {
   AdminSession,
@@ -176,23 +176,7 @@ export function useFlagsSnapshot(refreshKey: number = 0) {
   );
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const token = await getAccessToken();
-  if (!token) throw new Error('Not signed in');
-  const res = await fetch(`/.netlify/functions/${path}`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${token}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error ?? `Request failed (${res.status})`);
-  }
-  return (await res.json()) as T;
-}
+
 
 export function upsertFlagRule(rule: Partial<FlagRule>): Promise<FlagRule> {
   return postJson<FlagRule>('admin-flags', { type: 'rule', op: 'upsert', rule });

@@ -12,10 +12,18 @@
  * env vars and read here at request time.
  */
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import {
+  hasPermission,
+  resolveAccess,
+  type Permission,
+  type ResolvedAccess,
+} from '../../../src/shared/access/permissions';
 
 export interface AdminCtx {
   user: User;
   sb: SupabaseClient;
+  /** Effective role + permissions for this caller. */
+  access: ResolvedAccess;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -46,7 +54,32 @@ function envFirst(...names: string[]): string {
   return '';
 }
 
-export async function requireAdmin(req: Request): Promise<AdminCtx | Response> {
+/**
+ * Load every role definition. Small table (7 system roles + any custom ones),
+ * read once per request. Falls back to the code presets if the table is
+ * missing — a deploy that runs ahead of its migration degrades to the built-in
+ * roles instead of locking every admin out.
+ */
+export async function loadRoles(
+  sb: SupabaseClient,
+): Promise<Array<{ key: string; permissions: string[] }>> {
+  const { data, error } = await sb.from('admin_roles').select('key, permissions');
+  if (error || !data) return [];
+  return data as Array<{ key: string; permissions: string[] }>;
+}
+
+/**
+ * Gate an endpoint on a specific permission.
+ *
+ * `requireAdmin(req)` alone still means "any admin", which is the right bar for
+ * the whoami probe only; every data endpoint names the permission it needs so
+ * that narrowing a role in the portal actually narrows what its holders can
+ * call. The UI hiding a screen is a convenience — this is the control.
+ */
+export async function requireAdmin(
+  req: Request,
+  permission?: Permission,
+): Promise<AdminCtx | Response> {
   const auth = req.headers.get('authorization') ?? '';
   if (!auth.toLowerCase().startsWith('bearer ')) {
     return errorResponse(401, 'Missing bearer token');
@@ -91,23 +124,59 @@ export async function requireAdmin(req: Request): Promise<AdminCtx | Response> {
   // blocks NEW sign-ins/refreshes, but an already-issued access token stays
   // valid until expiry — so a freshly disabled admin must also be rejected
   // here, not just at the auth layer.
-  const { data: profile, error: profileErr } = await sb
+  // `admin_role`/`permission_overrides` may not exist yet on a database that
+  // hasn't run the RBAC migration, so select them defensively and fall back to
+  // the legacy is_admin flag.
+  let profile: {
+    is_admin?: boolean;
+    disabled?: boolean;
+    admin_role?: string | null;
+    permission_overrides?: { grant?: string[]; revoke?: string[] } | null;
+  } | null = null;
+  const full = await sb
     .from('profiles')
-    .select('is_admin, disabled')
+    .select('is_admin, disabled, admin_role, permission_overrides')
     .eq('user_id', userData.user.id)
     .maybeSingle();
-  if (profileErr) {
-    console.error('[admin] profile lookup failed', profileErr);
-    return errorResponse(500, 'Profile lookup failed');
+  if (full.error) {
+    const legacy = await sb
+      .from('profiles')
+      .select('is_admin, disabled')
+      .eq('user_id', userData.user.id)
+      .maybeSingle();
+    if (legacy.error) {
+      console.error('[admin] profile lookup failed', legacy.error);
+      return errorResponse(500, 'Profile lookup failed');
+    }
+    profile = legacy.data;
+  } else {
+    profile = full.data;
   }
-  if (!profile?.is_admin) {
+
+  if (!profile?.is_admin && !profile?.admin_role) {
     return errorResponse(403, 'Not an admin');
   }
   if (profile.disabled) {
     return errorResponse(403, 'Account disabled');
   }
 
-  return { user: userData.user, sb };
+  const access = resolveAccess({
+    role: profile.admin_role ?? null,
+    roles: await loadRoles(sb),
+    overrides: profile.permission_overrides ?? null,
+    legacyIsAdmin: profile.is_admin === true,
+  });
+
+  if (permission && !hasPermission(access, permission)) {
+    return errorResponse(403, `Missing permission: ${permission}`);
+  }
+
+  return { user: userData.user, sb, access };
+}
+
+/** Permission check for branches inside a handler that already has a ctx. */
+export function can(ctx: AdminCtx, permission: Permission): boolean {
+  return hasPermission(ctx.access, permission);
 }
 
 /**
@@ -164,7 +233,9 @@ export async function requireUser(req: Request): Promise<AdminCtx | Response> {
     .maybeSingle();
   if (profile?.disabled) return errorResponse(403, 'Account disabled');
 
-  return { user: userData.user, sb };
+  // Self-service callers act only on their own account, so an empty access set
+  // is correct: nothing here should ever pass a permission check by accident.
+  return { user: userData.user, sb, access: resolveAccess({ role: null }) };
 }
 
 /** Helper to parse `?since=&limit=&completed=` from a Netlify Request. */
@@ -185,7 +256,16 @@ export function readRange(req: Request): { since: string; limit: number } {
 export async function writeAuditLog(
   ctx: AdminCtx,
   entry: {
-    entity_type: 'flag' | 'flag_rule' | 'scenario_override' | 'simulation_config' | 'user';
+    entity_type:
+      | 'flag'
+      | 'flag_rule'
+      | 'scenario_override'
+      | 'simulation_config'
+      | 'user'
+      | 'role'
+      | 'invite'
+      | 'email_settings'
+      | 'email_template';
     entity_id: string;
     action: 'create' | 'update' | 'delete' | 'revert';
     before?: unknown;

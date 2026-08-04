@@ -131,7 +131,7 @@ async function storeDoc(
 }
 
 export default async (req: Request): Promise<Response> => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'knowledge.write');
   if (ctx instanceof Response) return ctx;
   if (req.method !== 'POST') return errorResponse(405, 'Method not allowed');
 

@@ -32,6 +32,25 @@ export async function apiFetch<T>(
   return (await res.json()) as T;
 }
 
+/** POST JSON to an admin Netlify Function, same auth + error contract. */
+export async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Not signed in');
+  const res = await fetch(`${FUNCTIONS_BASE}/${path}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? `Request failed (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+
 /** Range → days mapping shared with the queries layer. */
 const RANGE_DAYS: Record<string, number> = { '24h': 1, '7d': 7, '28d': 28, '90d': 90 };
 

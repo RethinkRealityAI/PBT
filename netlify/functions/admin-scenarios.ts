@@ -1,7 +1,7 @@
 import { errorResponse, jsonResponse, requireAdmin } from './_shared/admin';
 
 export default async (req: Request) => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'scenarios.read');
   if (ctx instanceof Response) return ctx;
   const limit = Math.min(
     1000,

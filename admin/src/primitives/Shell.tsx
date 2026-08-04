@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 import { COLOR, RADIUS } from '../lib/tokens';
+import type { Permission } from '../../../src/shared/access/permissions';
 
 export type AdminScreen =
   | 'overview'
   | 'insights'
   | 'analytics'
   | 'users'
+  | 'team'
   | 'sessions'
   | 'scenarios'
   | 'analyzer'
@@ -16,6 +18,7 @@ export type AdminScreen =
   | 'overrides'
   | 'simulation'
   | 'knowledge'
+  | 'email'
   | 'audit'
   | 'preview';
 
@@ -23,36 +26,53 @@ export interface NavItem {
   key: AdminScreen;
   label: string;
   icon: string; // emoji glyph; keeps the admin app dependency-free.
+  /** Permission required to see (and reach) this screen. */
+  requires: Permission;
 }
 
 export const ADMIN_NAV: NavItem[] = [
-  { key: 'overview', label: 'Overview', icon: '✦' },
-  { key: 'insights', label: 'Insights', icon: '⌁' },
-  { key: 'analytics', label: 'Analytics', icon: '▦' },
-  { key: 'users', label: 'Users', icon: '◔' },
-  { key: 'sessions', label: 'Sessions', icon: '◇' },
-  { key: 'scenarios', label: 'Scenarios', icon: '▤' },
-  { key: 'analyzer', label: 'Pet Analyzer', icon: '✿' },
-  { key: 'quality', label: 'AI Quality', icon: '✺' },
-  { key: 'feedback', label: 'Feedback', icon: '☆' },
-  { key: 'reports', label: 'Reports', icon: '✎' },
-  { key: 'flags', label: 'Flags', icon: '⚑' },
-  { key: 'overrides', label: 'Builder', icon: '⛯' },
-  { key: 'simulation', label: 'Simulation', icon: '◎' },
-  { key: 'knowledge', label: 'Knowledge', icon: '⌆' },
-  { key: 'preview', label: 'Preview', icon: '◐' },
-  { key: 'audit', label: 'Audit', icon: '☷' },
+  { key: 'overview', label: 'Overview', icon: '✦', requires: 'overview.read' },
+  { key: 'insights', label: 'Insights', icon: '⌁', requires: 'insights.read' },
+  { key: 'analytics', label: 'Analytics', icon: '▦', requires: 'analytics.read' },
+  { key: 'users', label: 'Users', icon: '◔', requires: 'team.read' },
+  { key: 'team', label: 'Team & roles', icon: '⚿', requires: 'team.read' },
+  { key: 'sessions', label: 'Sessions', icon: '◇', requires: 'sessions.read' },
+  { key: 'scenarios', label: 'Scenarios', icon: '▤', requires: 'scenarios.read' },
+  { key: 'analyzer', label: 'Pet Analyzer', icon: '✿', requires: 'analyzer.read' },
+  { key: 'quality', label: 'AI Quality', icon: '✺', requires: 'quality.read' },
+  { key: 'feedback', label: 'Feedback', icon: '☆', requires: 'feedback.read' },
+  { key: 'reports', label: 'Reports', icon: '✎', requires: 'reports.read' },
+  { key: 'email', label: 'Email', icon: '✉', requires: 'email.read' },
+  { key: 'flags', label: 'Flags', icon: '⚑', requires: 'flags.read' },
+  { key: 'overrides', label: 'Builder', icon: '⛯', requires: 'scenarios.read' },
+  { key: 'simulation', label: 'Simulation', icon: '◎', requires: 'simulation.read' },
+  { key: 'knowledge', label: 'Knowledge', icon: '⌆', requires: 'knowledge.read' },
+  { key: 'preview', label: 'Preview', icon: '◐', requires: 'preview.read' },
+  { key: 'audit', label: 'Audit', icon: '☷', requires: 'audit.read' },
 ];
+
+/** Nav entries this admin may actually open. */
+export function visibleNav(permissions: readonly string[]): NavItem[] {
+  return ADMIN_NAV.filter((item) => permissions.includes(item.requires));
+}
 
 export function FloatingNav({
   active,
   onNav,
   counts,
+  permissions,
+  identity,
+  onSignOut,
 }: {
   active: AdminScreen;
   onNav: (s: AdminScreen) => void;
   counts?: Partial<Record<AdminScreen, number>>;
+  /** Effective permissions — entries without their permission aren't rendered. */
+  permissions?: readonly string[];
+  identity?: { name: string; role: string };
+  onSignOut?: () => void;
 }) {
+  const items = permissions ? visibleNav(permissions) : ADMIN_NAV;
   return (
     <div
       style={{
@@ -131,7 +151,7 @@ export function FloatingNav({
             PBT Admin
           </div>
         </div>
-        {ADMIN_NAV.map((item) => {
+        {items.map((item) => {
           const isActive = active === item.key;
           const count = counts?.[item.key];
           return (
@@ -188,6 +208,54 @@ export function FloatingNav({
             </button>
           );
         })}
+
+        {identity && (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 10,
+              height: 40,
+              padding: '0 6px 0 14px',
+              marginLeft: 4,
+              borderLeft: '0.5px solid rgba(60,20,15,0.08)',
+            }}
+          >
+            <div style={{ lineHeight: 1.2, textAlign: 'right' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: COLOR.ink }}>{identity.name}</div>
+              <div
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 800,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: COLOR.inkMute,
+                }}
+              >
+                {identity.role}
+              </div>
+            </div>
+            {onSignOut && (
+              <button
+                onClick={onSignOut}
+                title="Sign out"
+                aria-label="Sign out"
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 10,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: 'rgba(60,20,15,0.06)',
+                  color: COLOR.inkSoft,
+                  fontSize: 13,
+                }}
+              >
+                ⏻
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

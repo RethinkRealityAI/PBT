@@ -7,7 +7,7 @@ import {
 
 /** Admin: list platform reports (bug reports + suggestions) for triage. */
 export default async (req: Request) => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'reports.read');
   if (ctx instanceof Response) return ctx;
   const { since, limit } = readRange(req);
   const { data, error } = await ctx.sb

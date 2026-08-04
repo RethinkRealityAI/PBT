@@ -21,22 +21,41 @@ import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
 import { SimulationScreen } from './screens/SimulationScreen';
 import { KnowledgeScreen } from './screens/KnowledgeScreen';
+import { TeamScreen } from './screens/TeamScreen';
+import { EmailScreen } from './screens/EmailScreen';
+import { InviteAcceptPage, ResetPasswordPage } from './screens/AuthPages';
 import { SignInGate } from './screens/SignInGate';
+import { visibleNav } from './primitives/Shell';
+import type { Whoami } from './data/access';
 
 type AdminState =
   | { status: 'loading' }
   | { status: 'signed_out' }
   | { status: 'not_admin' }
   | { status: 'error'; message: string }
-  | { status: 'admin'; userId: string };
+  | { status: 'admin'; me: Whoami };
+
+/**
+ * Two paths under /admin render before the auth gate: accepting an invitation
+ * and completing a password reset. Both are reached by people who, by
+ * definition, can't sign in yet.
+ */
+function publicRoute(): 'invite' | 'reset' | null {
+  const path = location.pathname.replace(/\/+$/, '');
+  if (path.endsWith('/invite')) return 'invite';
+  if (path.endsWith('/reset')) return 'reset';
+  return null;
+}
 
 export function App() {
   const [auth, setAuth] = useState<AdminState>({ status: 'loading' });
   const [view, setView] = useState<AdminScreen>('overview');
   const [range, setRange] = useState<Range>('28d');
   const [query, setQuery] = useState('');
+  const route = publicRoute();
 
   useEffect(() => {
+    if (route) return;
     let cancelled = false;
     const sb = getSupabase();
     async function check(session: Session | null) {
@@ -45,13 +64,22 @@ export function App() {
         setAuth({ status: 'signed_out' });
         return;
       }
-      // Server-side gate: admin-whoami returns 200 only for admins. We
-      // distinguish between "not admin" (403 → show the not-authorised card)
-      // and any other error (env misconfig, network, 500 → surface the
-      // actual message so deployment issues are debuggable).
+      // Server-side gate: admin-whoami returns 200 only for admins, and tells
+      // us which permissions this account actually holds. We distinguish
+      // between "not admin" (403 → show the not-authorised card) and any other
+      // error (env misconfig, network, 500 → surface the actual message so
+      // deployment issues are debuggable).
       try {
-        const me = await apiFetch<{ user_id: string }>('admin-whoami');
-        if (!cancelled) setAuth({ status: 'admin', userId: me.user_id });
+        const me = await apiFetch<Whoami>('admin-whoami');
+        if (!cancelled) {
+          setAuth({ status: 'admin', me });
+          // Land on the first screen this role can actually open — an Analyst
+          // shouldn't boot into a blank Overview they lack permission for.
+          const allowed = visibleNav(me.permissions);
+          if (allowed.length && !allowed.some((n) => n.key === 'overview')) {
+            setView(allowed[0].key);
+          }
+        }
       } catch (err) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : 'Auth check failed';
@@ -70,7 +98,10 @@ export function App() {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [route]);
+
+  if (route === 'invite') return <InviteAcceptPage />;
+  if (route === 'reset') return <ResetPasswordPage />;
 
   if (auth.status === 'loading') {
     return <FullCenterMessage>Loading…</FullCenterMessage>;
@@ -88,8 +119,9 @@ export function App() {
           <div
             style={{ fontSize: 13, color: COLOR.inkMute, marginTop: 6, maxWidth: 360 }}
           >
-            Your account is signed in but doesn't have admin access. Ask an
-            existing admin to set <code>is_admin = true</code> on your profile.
+            Your account is signed in but doesn't hold an admin role. Ask an
+            owner to invite you from Team &amp; roles — you'll get an email with
+            a link that grants access.
           </div>
           <button
             onClick={() => void getSupabase().auth.signOut()}
@@ -153,30 +185,71 @@ export function App() {
     );
   }
 
+  const { me } = auth;
+  const perms = me.permissions;
+  const allowed = visibleNav(perms);
+  // A role can lose access to the screen it's currently on (someone changed
+  // it mid-session). Fall back rather than render a screen that will 403.
+  const current = allowed.some((n) => n.key === view) ? view : (allowed[0]?.key ?? 'overview');
+
   // Halos behind the canvas — same language as the consumer app.
   return (
     <div style={{ position: 'relative', minHeight: '100vh' }}>
       <BackgroundHalos />
       {/* Clear the shared search query on screen change — otherwise a filter
           typed on one screen silently constrains every other screen too. */}
-      <FloatingNav active={view} onNav={(s) => { setQuery(''); setView(s); }} />
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        {view === 'overview' && <OverviewScreen range={range} onRange={setRange} onNav={setView} />}
-        {view === 'insights' && <InsightsScreen range={range} onRange={setRange} />}
-        {view === 'analytics' && <AnalyticsScreen range={range} onRange={setRange} />}
-        {view === 'users' && <UsersScreen query={query} onQuery={setQuery} meUserId={auth.userId} />}
-        {view === 'sessions' && <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {view === 'scenarios' && <ScenariosScreen query={query} onQuery={setQuery} />}
-        {view === 'analyzer' && <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {view === 'quality' && <QualityScreen range={range} onRange={setRange} />}
-        {view === 'feedback' && <FeedbackScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {view === 'reports' && <ReportsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {view === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
-        {view === 'overrides' && <ScenarioBuilderScreen query={query} onQuery={setQuery} />}
-        {view === 'simulation' && <SimulationScreen />}
-        {view === 'knowledge' && <KnowledgeScreen query={query} onQuery={setQuery} />}
-        {view === 'preview' && <PreviewScreen />}
-        {view === 'audit' && <AuditLogScreen />}
+      <FloatingNav
+        active={current}
+        onNav={(s) => {
+          setQuery('');
+          setView(s);
+        }}
+        permissions={perms}
+        identity={{
+          name: me.display_name || me.email || 'Admin',
+          role: me.role_name || me.role || 'admin',
+        }}
+        onSignOut={() => void getSupabase().auth.signOut()}
+      />
+      {/*
+        No z-index here on purpose. A stacking context at z-index 1 would trap
+        every descendant below it — including the fixed-position modals, whose
+        z-index 60 would then still lose to the nav's 30 and leave their headers
+        (and close buttons) unreachable. `position: relative` alone is enough to
+        paint above the z-index-0 halos, since it comes later in the DOM.
+      */}
+      <div style={{ position: 'relative' }}>
+        {allowed.length === 0 && (
+          <FullCenterMessage>
+            <Glass padding={24} radius={16}>
+              <div style={{ fontWeight: 800, color: COLOR.ink, fontSize: 18 }}>No screens available</div>
+              <div style={{ fontSize: 13, color: COLOR.inkMute, marginTop: 6, maxWidth: 380 }}>
+                Your role doesn’t grant access to any part of the portal yet. Ask
+                an owner to widen it.
+              </div>
+            </Glass>
+          </FullCenterMessage>
+        )}
+        {current === 'overview' && <OverviewScreen range={range} onRange={setRange} onNav={setView} />}
+        {current === 'insights' && <InsightsScreen range={range} onRange={setRange} />}
+        {current === 'analytics' && <AnalyticsScreen range={range} onRange={setRange} />}
+        {current === 'users' && <UsersScreen query={query} onQuery={setQuery} meUserId={me.user_id} />}
+        {current === 'team' && (
+          <TeamScreen query={query} onQuery={setQuery} meUserId={me.user_id} myPermissions={perms} />
+        )}
+        {current === 'sessions' && <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
+        {current === 'scenarios' && <ScenariosScreen query={query} onQuery={setQuery} />}
+        {current === 'analyzer' && <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
+        {current === 'quality' && <QualityScreen range={range} onRange={setRange} />}
+        {current === 'feedback' && <FeedbackScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
+        {current === 'reports' && <ReportsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
+        {current === 'email' && <EmailScreen myPermissions={perms} />}
+        {current === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
+        {current === 'overrides' && <ScenarioBuilderScreen query={query} onQuery={setQuery} />}
+        {current === 'simulation' && <SimulationScreen />}
+        {current === 'knowledge' && <KnowledgeScreen query={query} onQuery={setQuery} />}
+        {current === 'preview' && <PreviewScreen />}
+        {current === 'audit' && <AuditLogScreen />}
       </div>
     </div>
   );

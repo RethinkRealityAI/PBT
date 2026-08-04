@@ -45,6 +45,33 @@ export const auth = {
   'auth.pw.score4': 'Excellent.',
   'auth.pw.checkFailed': "Couldn't check password strength — check your connection and try again.",
 
+  // ── Password recovery (request) ───────────────────────────
+  'auth.forgot.link': 'Forgot your password?',
+  'auth.forgot.needEmail': 'Enter your email address first.',
+  'auth.forgot.sending': 'Sending…',
+  /** Deliberately non-committal: we never confirm whether an account exists. */
+  'auth.forgot.sent':
+    'If {email} has an account, a reset link is on its way. It expires in an hour and can only be used once.',
+
+  // ── Password recovery (reset screen) ──────────────────────
+  'auth.reset.eyebrow': 'Account recovery',
+  'auth.reset.checking': 'Checking your link…',
+  'auth.reset.title': 'Choose a new\npassword',
+  'auth.reset.subtitle': 'Pick something long. A short phrase beats a scrambled word.',
+  'auth.reset.newPassword': 'New password',
+  'auth.reset.confirm': 'Confirm password',
+  'auth.reset.mismatch': 'Both passwords need to match.',
+  'auth.reset.submit': 'Update password',
+  'auth.reset.working': 'Saving…',
+  'auth.reset.error': 'Could not update your password.',
+  'auth.reset.done.title': 'Password updated',
+  'auth.reset.done.body': "You're signed in with your new password.",
+  'auth.reset.done.cta': 'Continue training',
+  'auth.reset.expired.title': 'Reset link expired',
+  'auth.reset.expired.body':
+    'Reset links last an hour and work only once. Request a new one from the sign-in screen.',
+  'auth.reset.expired.cta': 'Back to the app',
+
   // ── Errors ────────────────────────────────────────────────
   'auth.error.notConfigured':
     'Supabase is not configured for this build. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.',
