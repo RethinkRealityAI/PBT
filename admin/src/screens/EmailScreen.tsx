@@ -7,7 +7,7 @@
  */
 import { useMemo, useState } from 'react';
 import { Glass } from '../primitives/Glass';
-import { EmptyState, LoadingShimmer, PillButton } from '../primitives';
+import { EmptyState, LoadingShimmer } from '../primitives';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
@@ -24,10 +24,18 @@ import { Field, btnPrimary, btnSecondary, inputStyle } from './FlagsScreen';
 import { Callout, ErrorNote } from './TeamScreen';
 import { EmailTemplateEditor } from './EmailTemplateEditor';
 
-type Tab = 'templates' | 'settings' | 'log';
+export type EmailTab = 'templates' | 'settings' | 'log';
 
-export function EmailScreen({ myPermissions }: { myPermissions: string[] }) {
-  const [tab, setTab] = useState<Tab>('templates');
+export function EmailScreen({
+  myPermissions,
+  tab,
+  onTab,
+}: {
+  myPermissions: string[];
+  /** Controlled by the Email destination's section tabs. */
+  tab: EmailTab;
+  onTab: (t: EmailTab) => void;
+}) {
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = () => setRefreshKey((k) => k + 1);
 
@@ -51,27 +59,15 @@ export function EmailScreen({ myPermissions }: { myPermissions: string[] }) {
       <ContextBar
         title="Email"
         subtitle="Branded transactional mail — templates, provider, and delivery"
+        actions={<ProviderBadge settings={settings.data} />}
       />
       <ScreenShell>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <PillButton active={tab === 'templates'} onClick={() => setTab('templates')}>
-            Templates · {list.length}
-          </PillButton>
-          <PillButton active={tab === 'settings'} onClick={() => setTab('settings')}>
-            Settings
-          </PillButton>
-          <PillButton active={tab === 'log'} onClick={() => setTab('log')}>
-            Delivery
-          </PillButton>
-          <div style={{ flex: 1 }} />
-          <ProviderBadge settings={settings.data} />
-        </div>
 
         {problem && (
           <Callout tone="warn">
             <strong>Email isn’t sending yet.</strong> {problem}{' '}
             <button
-              onClick={() => setTab('settings')}
+              onClick={() => onTab('settings')}
               style={{
                 background: 'none',
                 border: 'none',
@@ -93,8 +89,8 @@ export function EmailScreen({ myPermissions }: { myPermissions: string[] }) {
           ) : templates.error ? (
             <ErrorNote>{templates.error}</ErrorNote>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '230px minmax(0, 1fr)', gap: 16 }}>
-              <TemplateSidebar
+            <>
+              <TemplatePicker
                 templates={list}
                 selectedKey={selected?.key ?? null}
                 onSelect={setSelectedKey}
@@ -109,7 +105,7 @@ export function EmailScreen({ myPermissions }: { myPermissions: string[] }) {
                   onSaved={refresh}
                 />
               )}
-            </div>
+            </>
           ))}
 
         {tab === 'settings' &&
@@ -162,9 +158,14 @@ function ProviderBadge({ settings }: { settings: EmailSettingsPayload | null }) 
   );
 }
 
-// ── Template sidebar ───────────────────────────────────────────────────
+// ── Template picker ────────────────────────────────────────────────────
 
-function TemplateSidebar({
+/**
+ * A horizontal grouped picker rather than a vertical rail: seven templates
+ * don't need a whole column, and taking that column back is what lets the
+ * editor and its preview sit side by side at a readable width.
+ */
+function TemplatePicker({
   templates,
   selectedKey,
   onSelect,
@@ -184,52 +185,59 @@ function TemplateSidebar({
   }, [templates]);
 
   return (
-    <Glass padding={10} radius={18} style={{ alignSelf: 'start', position: 'sticky', top: 78 }}>
-      {groups.map(([group, items]) => (
-        <div key={group} style={{ marginBottom: 10 }}>
-          <div
-            style={{
-              fontSize: 9.5,
-              fontWeight: 800,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: COLOR.inkMute,
-              fontFamily: 'var(--pbt-mono)',
-              padding: '6px 10px 4px',
-            }}
-          >
-            {group}
+    <Glass padding={12} radius={16}>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+        {groups.map(([group, items]) => (
+          <div key={group} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span
+              style={{
+                fontSize: 9.5,
+                fontWeight: 800,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                color: COLOR.inkMute,
+                fontFamily: 'var(--pbt-mono)',
+                paddingRight: 2,
+              }}
+            >
+              {group}
+            </span>
+            {items.map((t) => {
+              const active = t.key === selectedKey;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => onSelect(t.key)}
+                  aria-pressed={active}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '7px 12px',
+                    borderRadius: 10,
+                    border: active ? 'none' : '0.5px solid rgba(60,20,15,0.1)',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--pbt-font)',
+                    fontSize: 12.5,
+                    fontWeight: active ? 800 : 600,
+                    color: active ? '#fff' : COLOR.inkSoft,
+                    background: active
+                      ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.55 0.24 18))'
+                      : 'rgba(255,255,255,0.65)',
+                    boxShadow: active
+                      ? 'inset 0 1px 0 rgba(255,255,255,0.35), 0 5px 12px -6px oklch(0.55 0.22 18 / 0.5)'
+                      : 'none',
+                  }}
+                >
+                  {t.name}
+                  {!t.enabled && <Dot color={active ? 'rgba(255,255,255,0.7)' : COLOR.inkMute} title="Paused" />}
+                  {t.customized && <Dot color={active ? '#fff' : COLOR.warn} title="Edited" />}
+                </button>
+              );
+            })}
           </div>
-          {items.map((t) => {
-            const active = t.key === selectedKey;
-            return (
-              <button
-                key={t.key}
-                onClick={() => onSelect(t.key)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '9px 10px',
-                  borderRadius: 10,
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: active ? 'rgba(60,20,15,0.07)' : 'transparent',
-                  color: active ? COLOR.ink : COLOR.inkSoft,
-                  fontSize: 12.5,
-                  fontWeight: active ? 800 : 600,
-                }}
-              >
-                <span style={{ flex: 1, minWidth: 0 }}>{t.name}</span>
-                {!t.enabled && <Dot color={COLOR.inkMute} title="Paused" />}
-                {t.customized && <Dot color={COLOR.warn} title="Edited" />}
-              </button>
-            );
-          })}
-        </div>
-      ))}
+        ))}
+      </div>
     </Glass>
   );
 }

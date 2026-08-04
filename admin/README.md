@@ -24,6 +24,11 @@ deploy.
   (finish a password reset) render *before* the auth gate — the people who
   land on them have no session yet. `vite dev` mirrors the Netlify rewrites so
   these work locally too.
+- **Navigation**: a left rail of four sections over ten destinations
+  (`admin/src/primitives/nav.ts`), with closely-related screens as tabs of one
+  destination. The rail collapses to an icon strip (remembered per browser) and
+  becomes an overlay drawer under 900px. Location lives in the URL hash as
+  `#/destination/tab`, so screens are linkable and Back undoes a tab switch.
 
 ## Deploy environment
 
@@ -57,8 +62,26 @@ tells you which is in effect.
 | Scenarios  | admin-scenarios                | user_scenarios                     |
 | Analyzer   | admin-analyzer                 | analyzer_events                    |
 | AI Quality | admin-{sessions,ai-calls}      | training_sessions, ai_call_telemetry |
-| Team & roles | admin-{users,roles,invites,user-actions} | profiles, admin_roles, admin_invites |
+| People     | admin-{users,roles,invites,user-actions} | profiles, admin_roles, admin_invites |
 | Email      | admin-email-{templates,settings,log} | email_templates, email_settings, email_log |
+
+Destinations and their tabs:
+
+| Section | Destination | Tabs |
+|---------|-------------|------|
+| Monitor | Overview | — |
+| Monitor | Analytics | Insights · Traffic · AI quality |
+| Monitor | Activity | Sessions · Pet Analyzer |
+| People | People | Users · Admins · Roles · Invites |
+| Content | Library | Scenarios · Builder · Knowledge · Simulation |
+| Content | Feedback | Session feedback · Platform reports |
+| Platform | Email | Templates · Settings · Delivery |
+| Platform | Flags / Audit / Preview | — |
+
+Screens don't know they're tabbed: the destination publishes its tabs through
+`SectionTabsProvider`, and `ContextBar` — which every screen already renders —
+picks them up. Each screen keeps its own title, range picker, search, and
+export button.
 
 ## RAG export
 

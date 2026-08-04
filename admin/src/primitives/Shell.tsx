@@ -1,262 +1,92 @@
-import type { ReactNode } from 'react';
-import { COLOR, RADIUS } from '../lib/tokens';
-import type { Permission } from '../../../src/shared/access/permissions';
+import { createContext, useContext, type ReactNode } from 'react';
+import { COLOR } from '../lib/tokens';
 
-export type AdminScreen =
-  | 'overview'
-  | 'insights'
-  | 'analytics'
-  | 'users'
-  | 'team'
-  | 'sessions'
-  | 'scenarios'
-  | 'analyzer'
-  | 'quality'
-  | 'feedback'
-  | 'reports'
-  | 'flags'
-  | 'overrides'
-  | 'simulation'
-  | 'knowledge'
-  | 'email'
-  | 'audit'
-  | 'preview';
+// The navigation model moved to ./nav.ts and the rail itself to ./Sidebar.tsx.
+// Re-exported here so existing imports keep working.
+export type { AdminScreen, NavItem, NavSection, TabDef } from './nav';
+export {
+  NAV_SECTIONS,
+  findNavItem,
+  visibleItems,
+  visibleSections,
+  visibleTabs,
+} from './nav';
 
-export interface NavItem {
-  key: AdminScreen;
-  label: string;
-  icon: string; // emoji glyph; keeps the admin app dependency-free.
-  /** Permission required to see (and reach) this screen. */
-  requires: Permission;
+/**
+ * Section tabs.
+ *
+ * A destination like Analytics or People is one sidebar entry with several
+ * tabs. Rather than thread tab props through ten screens, the destination
+ * shell publishes them here and `ContextBar` — which every screen already
+ * renders — picks them up. Screens stay unaware they are tabbed, and each keeps
+ * its own title, range picker, search box, and export button.
+ */
+export interface SectionTabsValue {
+  tabs: Array<{ key: string; label: string }>;
+  active: string;
+  onChange: (key: string) => void;
 }
 
-export const ADMIN_NAV: NavItem[] = [
-  { key: 'overview', label: 'Overview', icon: '✦', requires: 'overview.read' },
-  { key: 'insights', label: 'Insights', icon: '⌁', requires: 'insights.read' },
-  { key: 'analytics', label: 'Analytics', icon: '▦', requires: 'analytics.read' },
-  { key: 'users', label: 'Users', icon: '◔', requires: 'team.read' },
-  { key: 'team', label: 'Team & roles', icon: '⚿', requires: 'team.read' },
-  { key: 'sessions', label: 'Sessions', icon: '◇', requires: 'sessions.read' },
-  { key: 'scenarios', label: 'Scenarios', icon: '▤', requires: 'scenarios.read' },
-  { key: 'analyzer', label: 'Pet Analyzer', icon: '✿', requires: 'analyzer.read' },
-  { key: 'quality', label: 'AI Quality', icon: '✺', requires: 'quality.read' },
-  { key: 'feedback', label: 'Feedback', icon: '☆', requires: 'feedback.read' },
-  { key: 'reports', label: 'Reports', icon: '✎', requires: 'reports.read' },
-  { key: 'email', label: 'Email', icon: '✉', requires: 'email.read' },
-  { key: 'flags', label: 'Flags', icon: '⚑', requires: 'flags.read' },
-  { key: 'overrides', label: 'Builder', icon: '⛯', requires: 'scenarios.read' },
-  { key: 'simulation', label: 'Simulation', icon: '◎', requires: 'simulation.read' },
-  { key: 'knowledge', label: 'Knowledge', icon: '⌆', requires: 'knowledge.read' },
-  { key: 'preview', label: 'Preview', icon: '◐', requires: 'preview.read' },
-  { key: 'audit', label: 'Audit', icon: '☷', requires: 'audit.read' },
-];
+const SectionTabsContext = createContext<SectionTabsValue | null>(null);
 
-/** Nav entries this admin may actually open. */
-export function visibleNav(permissions: readonly string[]): NavItem[] {
-  return ADMIN_NAV.filter((item) => permissions.includes(item.requires));
-}
-
-export function FloatingNav({
-  active,
-  onNav,
-  counts,
-  permissions,
-  identity,
-  onSignOut,
+export function SectionTabsProvider({
+  value,
+  children,
 }: {
-  active: AdminScreen;
-  onNav: (s: AdminScreen) => void;
-  counts?: Partial<Record<AdminScreen, number>>;
-  /** Effective permissions — entries without their permission aren't rendered. */
-  permissions?: readonly string[];
-  identity?: { name: string; role: string };
-  onSignOut?: () => void;
+  value: SectionTabsValue;
+  children: ReactNode;
 }) {
-  const items = permissions ? visibleNav(permissions) : ADMIN_NAV;
+  return <SectionTabsContext.Provider value={value}>{children}</SectionTabsContext.Provider>;
+}
+
+export function useSectionTabs(): SectionTabsValue | null {
+  return useContext(SectionTabsContext);
+}
+
+function SectionTabStrip({ value }: { value: SectionTabsValue }) {
+  // A single tab is not a choice — a lone pill is just noise.
+  if (value.tabs.length < 2) return null;
   return (
     <div
+      role="tablist"
       style={{
-        position: 'sticky',
-        top: 14,
-        zIndex: 30,
         display: 'flex',
-        justifyContent: 'center',
-        padding: '0 24px',
-        pointerEvents: 'none',
+        gap: 2,
+        flexWrap: 'wrap',
+        padding: 3,
+        borderRadius: 13,
+        background: 'rgba(255,255,255,0.6)',
+        border: '0.5px solid rgba(255,255,255,0.9)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.95)',
+        alignSelf: 'flex-start',
       }}
     >
-      <div
-        style={{
-          pointerEvents: 'auto',
-          display: 'inline-flex',
-          alignItems: 'center',
-          // 14 nav items exceed ~1450px in a single row; wrap into a second
-          // centered row on laptop widths instead of clipping off both edges.
-          flexWrap: 'wrap',
-          justifyContent: 'center',
-          maxWidth: '100%',
-          gap: 4,
-          padding: 6,
-          borderRadius: RADIUS.xl,
-          background:
-            'linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.62))',
-          backdropFilter: 'blur(36px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(36px) saturate(200%)',
-          border: '0.5px solid rgba(255,255,255,0.95)',
-          boxShadow: [
-            '0 1px 0 rgba(255,255,255,0.98) inset',
-            '0 12px 32px -12px rgba(60,20,15,0.16)',
-            '0 28px 60px -28px rgba(60,20,15,0.18)',
-          ].join(', '),
-        }}
-      >
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '0 14px 0 8px',
-            height: 40,
-            borderRight: '0.5px solid rgba(60,20,15,0.08)',
-            marginRight: 4,
-          }}
-        >
-          <div
+      {value.tabs.map((tab) => {
+        const active = tab.key === value.active;
+        return (
+          <button
+            key={tab.key}
+            role="tab"
+            aria-selected={active}
+            onClick={() => value.onChange(tab.key)}
             style={{
-              width: 28,
-              height: 28,
-              borderRadius: 9,
-              background:
-                'linear-gradient(135deg, oklch(0.66 0.22 22), oklch(0.50 0.24 18))',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontWeight: 800,
-              fontSize: 13,
-              boxShadow:
-                'inset 0 1px 0 rgba(255,255,255,0.45), 0 4px 10px -2px oklch(0.55 0.22 18 / 0.4)',
+              padding: '7px 14px',
+              borderRadius: 10,
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: 'var(--pbt-font)',
+              fontSize: 12.5,
+              fontWeight: active ? 800 : 600,
+              color: active ? COLOR.ink : COLOR.inkMute,
+              background: active ? 'rgba(255,255,255,0.95)' : 'transparent',
+              boxShadow: active ? '0 2px 8px -4px rgba(60,20,15,0.25)' : 'none',
+              transition: 'background 0.14s ease, color 0.14s ease',
             }}
           >
-            P
-          </div>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 800,
-              color: COLOR.ink,
-              letterSpacing: '-0.01em',
-            }}
-          >
-            PBT Admin
-          </div>
-        </div>
-        {items.map((item) => {
-          const isActive = active === item.key;
-          const count = counts?.[item.key];
-          return (
-            <button
-              key={item.key}
-              onClick={() => onNav(item.key)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                height: 40,
-                padding: '0 14px',
-                borderRadius: 16,
-                background: isActive
-                  ? 'linear-gradient(180deg, oklch(0.66 0.22 22), oklch(0.55 0.24 18))'
-                  : 'transparent',
-                color: isActive ? '#fff' : COLOR.inkSoft,
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: 13,
-                fontWeight: 700,
-                boxShadow: isActive
-                  ? 'inset 0 1px 0 rgba(255,255,255,0.4), 0 6px 14px -6px oklch(0.55 0.22 18 / 0.55)'
-                  : 'none',
-                transition: 'background 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.background = 'rgba(60,20,15,0.05)';
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <span aria-hidden>{item.icon}</span>
-              <span>{item.label}</span>
-              {count != null && count > 0 && (
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 800,
-                    padding: '2px 7px',
-                    borderRadius: 6,
-                    background: isActive
-                      ? 'rgba(255,255,255,0.25)'
-                      : 'oklch(0.94 0.02 20)',
-                    color: isActive ? '#fff' : 'oklch(0.45 0.04 20)',
-                    minWidth: 18,
-                    textAlign: 'center',
-                  }}
-                >
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-
-        {identity && (
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 10,
-              height: 40,
-              padding: '0 6px 0 14px',
-              marginLeft: 4,
-              borderLeft: '0.5px solid rgba(60,20,15,0.08)',
-            }}
-          >
-            <div style={{ lineHeight: 1.2, textAlign: 'right' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: COLOR.ink }}>{identity.name}</div>
-              <div
-                style={{
-                  fontSize: 9.5,
-                  fontWeight: 800,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: COLOR.inkMute,
-                }}
-              >
-                {identity.role}
-              </div>
-            </div>
-            {onSignOut && (
-              <button
-                onClick={onSignOut}
-                title="Sign out"
-                aria-label="Sign out"
-                style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: 10,
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: 'rgba(60,20,15,0.06)',
-                  color: COLOR.inkSoft,
-                  fontSize: 13,
-                }}
-              >
-                ⏻
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+            {tab.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -272,6 +102,7 @@ export function ContextBar({
   query,
   onQuery,
   onExport,
+  actions,
 }: {
   title: string;
   subtitle?: string;
@@ -280,19 +111,23 @@ export function ContextBar({
   query?: string;
   onQuery?: (q: string) => void;
   onExport?: (() => void) | null;
+  /** Screen-specific control rendered alongside search / range / export. */
+  actions?: ReactNode;
 }) {
+  const sectionTabs = useSectionTabs();
   return (
     <div
       style={{
         padding: '20px 32px 0',
         display: 'flex',
+        flexDirection: 'column',
         gap: 14,
-        flexWrap: 'wrap',
         maxWidth: 1440,
         margin: '0 auto',
         width: '100%',
       }}
     >
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', width: '100%' }}>
       <div style={{ flex: '1 1 180px', minWidth: 0 }}>
         <div
           style={{
@@ -312,6 +147,7 @@ export function ContextBar({
         )}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {actions}
         {onQuery && (
           <div
             style={{
@@ -404,6 +240,8 @@ export function ContextBar({
           </button>
         )}
       </div>
+      </div>
+      {sectionTabs && <SectionTabStrip value={sectionTabs} />}
     </div>
   );
 }

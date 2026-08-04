@@ -11,7 +11,7 @@
  */
 import { useMemo, useState } from 'react';
 import { Glass } from '../primitives/Glass';
-import { Avatar, EmptyState, LoadingShimmer, Modal, ModalCloseButton, PillButton } from '../primitives';
+import { Avatar, EmptyState, LoadingShimmer, Modal, ModalCloseButton } from '../primitives';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
@@ -35,20 +35,24 @@ import {
   type Permission,
 } from '../../../src/shared/access/permissions';
 
-type Tab = 'members' | 'invites' | 'roles';
+export type TeamTab = 'members' | 'invites' | 'roles';
 
 export function TeamScreen({
   query,
   onQuery,
   meUserId,
   myPermissions,
+  tab,
+  onTab,
 }: {
   query: string;
   onQuery: (q: string) => void;
   meUserId?: string;
   myPermissions: string[];
+  /** Controlled by the People destination's section tabs. */
+  tab: TeamTab;
+  onTab: (t: TeamTab) => void;
 }) {
-  const [tab, setTab] = useState<Tab>('members');
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = () => setRefreshKey((k) => k + 1);
 
@@ -89,16 +93,11 @@ export function TeamScreen({
         onQuery={onQuery}
       />
       <ScreenShell>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <PillButton active={tab === 'members'} onClick={() => setTab('members')}>
-            Members {members.length ? `· ${members.length}` : ''}
-          </PillButton>
-          <PillButton active={tab === 'invites'} onClick={() => setTab('invites')}>
-            Invites {pendingCount ? `· ${pendingCount}` : ''}
-          </PillButton>
-          <PillButton active={tab === 'roles'} onClick={() => setTab('roles')}>
-            Roles · {roleList.length}
-          </PillButton>
+        {/* Counts belong next to the thing they count — the tab strip above is
+            shared with the Users tab and stays static. */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Tally label={tab === 'roles' ? 'Roles' : tab === 'invites' ? 'Pending invites' : 'Admins'}
+                 value={tab === 'roles' ? roleList.length : tab === 'invites' ? pendingCount : members.length} />
           <div style={{ flex: 1 }} />
           {can('invites.manage') && (
             <button style={btnPrimary} onClick={() => setInviting(true)}>
@@ -156,7 +155,7 @@ export function TeamScreen({
         onClose={() => setInviting(false)}
         onSent={() => {
           setInviting(false);
-          setTab('invites');
+          onTab('invites');
           refresh();
         }}
       />
@@ -965,6 +964,28 @@ function RoleEditor({
 }
 
 // ── Small shared bits ──────────────────────────────────────────────────
+
+function Tally({ label, value }: { label: string; value: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+      <span style={{ fontSize: 20, fontWeight: 800, color: COLOR.ink, letterSpacing: '-0.02em' }}>
+        {value}
+      </span>
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 800,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: COLOR.inkMute,
+          fontFamily: 'var(--pbt-mono)',
+        }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
 
 function HeaderRow({ columns, grid }: { columns: string[]; grid: string }) {
   return (

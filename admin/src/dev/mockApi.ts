@@ -277,6 +277,11 @@ const ROUTES: Record<string, unknown> = {
   'admin-reports': [],
   'admin-scenarios': [],
   'admin-audit-log': [],
+  'admin-flags': { flags: [], rules: [] },
+  'admin-knowledge': { documents: [] },
+  'admin-scenario-overrides': [],
+  'admin-simulation-config': { config: {} },
+  'user-scenarios': [],
 };
 
 export function installAdminMocks(): void {

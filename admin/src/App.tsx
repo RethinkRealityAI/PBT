@@ -4,7 +4,10 @@ import { getSupabase } from './lib/supabase';
 import { apiFetch } from './lib/api';
 import { COLOR } from './lib/tokens';
 import { Glass } from './primitives/Glass';
-import { FloatingNav, type AdminScreen, type Range } from './primitives/Shell';
+import { SectionTabsProvider, type AdminScreen, type Range } from './primitives/Shell';
+import { Sidebar, SidebarTrigger, useSidebarState } from './primitives/Sidebar';
+import { defaultTab, findNavItem, visibleItems, visibleTabs } from './primitives/nav';
+import { useHashRoute } from './lib/route';
 import { OverviewScreen } from './screens/OverviewScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
 import { AnalyticsScreen } from './screens/AnalyticsScreen';
@@ -25,8 +28,9 @@ import { TeamScreen } from './screens/TeamScreen';
 import { EmailScreen } from './screens/EmailScreen';
 import { InviteAcceptPage, ResetPasswordPage } from './screens/AuthPages';
 import { SignInGate } from './screens/SignInGate';
-import { visibleNav } from './primitives/Shell';
 import type { Whoami } from './data/access';
+import type { TeamTab } from './screens/TeamScreen';
+import type { EmailTab } from './screens/EmailScreen';
 
 type AdminState =
   | { status: 'loading' }
@@ -49,9 +53,10 @@ function publicRoute(): 'invite' | 'reset' | null {
 
 export function App() {
   const [auth, setAuth] = useState<AdminState>({ status: 'loading' });
-  const [view, setView] = useState<AdminScreen>('overview');
   const [range, setRange] = useState<Range>('28d');
   const [query, setQuery] = useState('');
+  const [hashRoute, navigate] = useHashRoute();
+  const sidebar = useSidebarState();
   const route = publicRoute();
 
   useEffect(() => {
@@ -71,15 +76,7 @@ export function App() {
       // deployment issues are debuggable).
       try {
         const me = await apiFetch<Whoami>('admin-whoami');
-        if (!cancelled) {
-          setAuth({ status: 'admin', me });
-          // Land on the first screen this role can actually open — an Analyst
-          // shouldn't boot into a blank Overview they lack permission for.
-          const allowed = visibleNav(me.permissions);
-          if (allowed.length && !allowed.some((n) => n.key === 'overview')) {
-            setView(allowed[0].key);
-          }
-        }
+        if (!cancelled) setAuth({ status: 'admin', me });
       } catch (err) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : 'Auth check failed';
@@ -187,69 +184,162 @@ export function App() {
 
   const { me } = auth;
   const perms = me.permissions;
-  const allowed = visibleNav(perms);
-  // A role can lose access to the screen it's currently on (someone changed
-  // it mid-session). Fall back rather than render a screen that will 403.
-  const current = allowed.some((n) => n.key === view) ? view : (allowed[0]?.key ?? 'overview');
+  const allowed = visibleItems(perms);
+
+  if (allowed.length === 0) {
+    return (
+      <FullCenterMessage>
+        <Glass padding={24} radius={16}>
+          <div style={{ fontWeight: 800, color: COLOR.ink, fontSize: 18 }}>No screens available</div>
+          <div style={{ fontSize: 13, color: COLOR.inkMute, marginTop: 6, maxWidth: 380 }}>
+            Your role doesn’t grant access to any part of the portal yet. Ask an
+            owner to widen it.
+          </div>
+        </Glass>
+      </FullCenterMessage>
+    );
+  }
+
+  /*
+   * Resolve the URL against what this role may actually open. Three things can
+   * go wrong and all three land on the same fallback rather than a 403 screen:
+   * no hash at all (first visit), a hash naming a destination that no longer
+   * exists (old bookmark), and a hash naming one this role lost access to
+   * (their permissions changed while they had the tab open).
+   */
+  const item =
+    (hashRoute && allowed.find((i) => i.key === hashRoute.screen)) ?? allowed[0];
+  const tabs = visibleTabs(item, perms);
+  const tab =
+    tabs.find((t) => t.key === hashRoute?.tab)?.key ?? defaultTab(item, perms) ?? '';
+
+  const go = (screen: AdminScreen, nextTab?: string) => {
+    // Clear the shared search on destination change — a filter typed on one
+    // screen silently constraining every other one is a bug people report as
+    // "the list is empty".
+    if (screen !== item.key) setQuery('');
+    const target = findNavItem(screen);
+    navigate({
+      screen,
+      tab: nextTab ?? (target ? defaultTab(target, perms) : null),
+    });
+    sidebar.setDrawerOpen(false);
+  };
+
+  const contentOffset = sidebar.compact ? 0 : sidebar.width;
 
   // Halos behind the canvas — same language as the consumer app.
   return (
     <div style={{ position: 'relative', minHeight: '100vh' }}>
       <BackgroundHalos />
-      {/* Clear the shared search query on screen change — otherwise a filter
-          typed on one screen silently constrains every other screen too. */}
-      <FloatingNav
-        active={current}
-        onNav={(s) => {
-          setQuery('');
-          setView(s);
-        }}
+      <Sidebar
+        active={item.key}
+        onNav={(s) => go(s)}
         permissions={perms}
         identity={{
           name: me.display_name || me.email || 'Admin',
+          email: me.email,
           role: me.role_name || me.role || 'admin',
         }}
         onSignOut={() => void getSupabase().auth.signOut()}
+        collapsed={sidebar.collapsed}
+        onToggleCollapsed={() => sidebar.setCollapsed(!sidebar.collapsed)}
+        compact={sidebar.compact}
+        drawerOpen={sidebar.drawerOpen}
+        onCloseDrawer={() => sidebar.setDrawerOpen(false)}
       />
       {/*
         No z-index here on purpose. A stacking context at z-index 1 would trap
         every descendant below it — including the fixed-position modals, whose
-        z-index 60 would then still lose to the nav's 30 and leave their headers
-        (and close buttons) unreachable. `position: relative` alone is enough to
-        paint above the z-index-0 halos, since it comes later in the DOM.
+        z-index 60 would then still lose to the sidebar's 45 and leave their
+        headers (and close buttons) unreachable. `position: relative` alone is
+        enough to paint above the z-index-0 halos, since it comes later in the
+        DOM.
       */}
-      <div style={{ position: 'relative' }}>
-        {allowed.length === 0 && (
-          <FullCenterMessage>
-            <Glass padding={24} radius={16}>
-              <div style={{ fontWeight: 800, color: COLOR.ink, fontSize: 18 }}>No screens available</div>
-              <div style={{ fontSize: 13, color: COLOR.inkMute, marginTop: 6, maxWidth: 380 }}>
-                Your role doesn’t grant access to any part of the portal yet. Ask
-                an owner to widen it.
-              </div>
-            </Glass>
-          </FullCenterMessage>
-        )}
-        {current === 'overview' && <OverviewScreen range={range} onRange={setRange} onNav={setView} />}
-        {current === 'insights' && <InsightsScreen range={range} onRange={setRange} />}
-        {current === 'analytics' && <AnalyticsScreen range={range} onRange={setRange} />}
-        {current === 'users' && <UsersScreen query={query} onQuery={setQuery} meUserId={me.user_id} />}
-        {current === 'team' && (
-          <TeamScreen query={query} onQuery={setQuery} meUserId={me.user_id} myPermissions={perms} />
-        )}
-        {current === 'sessions' && <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {current === 'scenarios' && <ScenariosScreen query={query} onQuery={setQuery} />}
-        {current === 'analyzer' && <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {current === 'quality' && <QualityScreen range={range} onRange={setRange} />}
-        {current === 'feedback' && <FeedbackScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {current === 'reports' && <ReportsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {current === 'email' && <EmailScreen myPermissions={perms} />}
-        {current === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
-        {current === 'overrides' && <ScenarioBuilderScreen query={query} onQuery={setQuery} />}
-        {current === 'simulation' && <SimulationScreen />}
-        {current === 'knowledge' && <KnowledgeScreen query={query} onQuery={setQuery} />}
-        {current === 'preview' && <PreviewScreen />}
-        {current === 'audit' && <AuditLogScreen />}
+      <div
+        style={{
+          position: 'relative',
+          marginLeft: contentOffset,
+          transition: 'margin-left 0.18s ease',
+        }}
+      >
+        <SectionTabsProvider
+          value={{
+            tabs: tabs.map((t) => ({ key: t.key, label: t.label })),
+            active: tab,
+            onChange: (next) => go(item.key, next),
+          }}
+        >
+          {sidebar.compact && (
+            <div style={{ padding: '16px 20px 0', maxWidth: 1440, margin: '0 auto' }}>
+              <SidebarTrigger onOpen={() => sidebar.setDrawerOpen(true)} />
+            </div>
+          )}
+
+          {item.key === 'overview' && (
+            <OverviewScreen range={range} onRange={setRange} onNav={go} />
+          )}
+
+          {item.key === 'analytics' && tab === 'insights' && (
+            <InsightsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'analytics' && tab === 'traffic' && (
+            <AnalyticsScreen range={range} onRange={setRange} />
+          )}
+          {item.key === 'analytics' && tab === 'quality' && (
+            <QualityScreen range={range} onRange={setRange} />
+          )}
+
+          {item.key === 'activity' && tab === 'sessions' && (
+            <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'activity' && tab === 'analyzer' && (
+            <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+
+          {item.key === 'people' && tab === 'users' && (
+            <UsersScreen query={query} onQuery={setQuery} meUserId={me.user_id} />
+          )}
+          {item.key === 'people' && tab !== 'users' && (
+            <TeamScreen
+              query={query}
+              onQuery={setQuery}
+              meUserId={me.user_id}
+              myPermissions={perms}
+              tab={tab as TeamTab}
+              onTab={(t) => go('people', t)}
+            />
+          )}
+
+          {item.key === 'library' && tab === 'scenarios' && (
+            <ScenariosScreen query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'library' && tab === 'builder' && (
+            <ScenarioBuilderScreen query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'library' && tab === 'knowledge' && (
+            <KnowledgeScreen query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'library' && tab === 'simulation' && <SimulationScreen />}
+
+          {item.key === 'feedback' && tab === 'sessions' && (
+            <FeedbackScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'feedback' && tab === 'reports' && (
+            <ReportsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+
+          {item.key === 'email' && (
+            <EmailScreen
+              myPermissions={perms}
+              tab={tab as EmailTab}
+              onTab={(t) => go('email', t)}
+            />
+          )}
+          {item.key === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
+          {item.key === 'audit' && <AuditLogScreen />}
+          {item.key === 'preview' && <PreviewScreen />}
+        </SectionTabsProvider>
       </div>
     </div>
   );

@@ -176,6 +176,17 @@ permission matrix editor backed by `admin-roles` + `admin-invites`; **Email** �
 branded transactional templates with a live preview, provider settings
 (Resend or SMTP), and a delivery log.
 
+**Admin navigation** (`admin/src/primitives/nav.ts` + `Sidebar.tsx`): a left
+rail of 4 sections over 10 destinations, replacing the old 18-link wrapping
+pill bar. Related screens are tabs of one destination (Analytics =
+insights/traffic/quality, People = users/admins/roles/invites, Library =
+scenarios/builder/knowledge/simulation, …). The rail collapses to icons and
+becomes a drawer under 900px. Location is in the URL hash (`#/people/roles`) —
+still no router library, just a parsed hash. Screens stay unaware of tabs: a
+destination publishes them via `SectionTabsProvider` and `ContextBar` renders
+the strip. **Adding a screen means adding it to `NAV_SECTIONS` with its
+`requires` permission**, not to a flat list.
+
 July admin screens (§3.2): **User & admin management** — the Users screen +
 User modal "Manage" tab do account write-ops via `admin-user-actions`
 (promote/demote admin, disable/enable, create, delete) with self-lockout +
@@ -301,7 +312,7 @@ Active keys:
 | Add scoring dimension    | `src/data/knowledge/scoringRubric.ts` (then update `geminiService.ts` schema + `ScoreReport` type) |
 | New screen               | Add a `Screen` value in `src/app/routes.ts` and a case in `ScreenSwitch` in `App.tsx`              |
 | New admin permission     | `src/shared/access/permissions.ts` (catalog + presets), then gate the endpoint with `requireAdmin(req, '<key>')` |
-| New admin screen         | `ADMIN_NAV` in `admin/src/primitives/Shell.tsx` (with its `requires`) + a case in `admin/src/App.tsx` |
+| New admin screen         | `NAV_SECTIONS` in `admin/src/primitives/nav.ts` (destination or tab, with its `requires`) + a case in `admin/src/App.tsx` |
 | New transactional email  | `src/shared/email/defaults.ts` (template + declared variables), then call `sendTemplateEmail` |
 
 
