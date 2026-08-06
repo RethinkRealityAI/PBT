@@ -27,6 +27,7 @@ import { KnowledgeScreen } from './screens/KnowledgeScreen';
 import { TeamScreen } from './screens/TeamScreen';
 import { EmailScreen } from './screens/EmailScreen';
 import { InviteAcceptPage, ResetPasswordPage } from './screens/AuthPages';
+import { ChangePasswordModal } from './screens/ChangePasswordModal';
 import { SignInGate } from './screens/SignInGate';
 import type { Whoami } from './data/access';
 import type { TeamTab } from './screens/TeamScreen';
@@ -56,6 +57,7 @@ export function App() {
   const [range, setRange] = useState<Range>('28d');
   const [query, setQuery] = useState('');
   const [hashRoute, navigate] = useHashRoute();
+  const [changingPassword, setChangingPassword] = useState(false);
   const sidebar = useSidebarState();
   const route = publicRoute();
 
@@ -242,6 +244,7 @@ export function App() {
           role: me.role_name || me.role || 'admin',
         }}
         onSignOut={() => void getSupabase().auth.signOut()}
+        onChangePassword={() => setChangingPassword(true)}
         collapsed={sidebar.collapsed}
         onToggleCollapsed={() => sidebar.setCollapsed(!sidebar.collapsed)}
         compact={sidebar.compact}
@@ -341,6 +344,12 @@ export function App() {
           {item.key === 'preview' && <PreviewScreen />}
         </SectionTabsProvider>
       </div>
+
+      <ChangePasswordModal
+        open={changingPassword}
+        email={me.email ?? undefined}
+        onClose={() => setChangingPassword(false)}
+      />
     </div>
   );
 }

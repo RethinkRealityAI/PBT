@@ -253,6 +253,7 @@ const ROUTES: Record<string, unknown> = {
     resendKeyHint: 're_l…9f2a',
     origin: { credentials: 'database', sender: 'database' },
     problem: null,
+    advisory: null,
     dedicatedSecretKey: true,
     updatedAt: ago(3 * DAY),
     canEdit: true,

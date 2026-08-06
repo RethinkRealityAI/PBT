@@ -30,8 +30,10 @@ export interface TemplatesPayload {
   problem: string | null;
 }
 
+export type EmailProvider = 'resend' | 'smtp' | 'supabase';
+
 export interface EmailSettingsPayload {
-  provider: 'resend' | 'smtp';
+  provider: EmailProvider;
   fromEmail: string;
   fromName: string;
   replyTo: string;
@@ -46,6 +48,8 @@ export interface EmailSettingsPayload {
   resendKeyHint: string;
   origin: { credentials: 'database' | 'env' | 'none'; sender: 'database' | 'env' | 'none' };
   problem: string | null;
+  /** Working, but with caveats worth stating — currently the Supabase transport. */
+  advisory: string | null;
   dedicatedSecretKey: boolean;
   updatedAt: string | null;
   canEdit: boolean;
@@ -121,7 +125,7 @@ export const writeTemplate = (body: SaveTemplateBody) =>
 
 export interface SaveSettingsBody {
   op: 'update' | 'test';
-  provider?: 'resend' | 'smtp';
+  provider?: EmailProvider;
   fromEmail?: string;
   fromName?: string;
   replyTo?: string;

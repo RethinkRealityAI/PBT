@@ -165,6 +165,8 @@ Migrations:
   `email_settings`, `email_templates`, `email_log`; audit-log entity types
   extended with role/invite/email_settings/email_template. Applied to prod
   2026-08
+- `20260806000000_email_provider_supabase.sql` — widens the
+  `email_settings.provider` CHECK to allow `supabase`. Applied to prod 2026-08
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -174,7 +176,18 @@ the existing **Pet Analyzer** screen via `analyzer_events`.
 August admin screens: **Team & roles** — members, invitations, and a role /
 permission matrix editor backed by `admin-roles` + `admin-invites`; **Email** —
 branded transactional templates with a live preview, provider settings
-(Resend or SMTP), and a delivery log.
+(Resend, SMTP, or Supabase's built-in mailer), and a delivery log.
+
+**Two email-free routes into the portal** — both matter because a fresh deploy
+has no mail provider, and an admin who can't be emailed can't be let in:
+1. *Add existing user* (People → Admins) grants a role to an account that
+   already exists. No message, no link, no password hand-off — they sign in
+   with the credentials they already have. This is the preferred route.
+2. Creating a user with a temporary password (Users → + New user), paired with
+   **Change password** in the sidebar identity block
+   (`ChangePasswordModal.tsx`, re-authenticates before `updateUser`). Without
+   that second half the temporary password would be permanent, since the only
+   other way to change it is email recovery.
 
 **Admin navigation** (`admin/src/primitives/nav.ts` + `Sidebar.tsx`): a left
 rail of 4 sections over 10 destinations, replacing the old 18-link wrapping
@@ -228,10 +241,23 @@ plaintext, pure), `defaults.ts` (shipped templates + their declared variables).
 The admin editor and the sender call the same `renderEmail`, so the preview
 pane is byte-identical to what ships.
 
-- Providers: Resend (HTTPS) or SMTP (nodemailer, lazily imported).
-  `netlify/functions/_shared/mailer.ts` layers `email_settings` over env vars;
-  credentials are AES-256-GCM encrypted (`_shared/secretbox.ts`, keyed by
-  `EMAIL_SECRET_KEY`) and never returned to the browser.
+- Providers: Resend (HTTPS), SMTP (nodemailer, lazily imported), or
+  **`supabase`** — the project's own auth mailer, as a stopgap before real
+  credentials exist. `netlify/functions/_shared/mailer.ts` layers
+  `email_settings` over env vars; credentials are AES-256-GCM encrypted
+  (`_shared/secretbox.ts`, keyed by `EMAIL_SECRET_KEY`) and never returned to
+  the browser.
+- **The `supabase` transport is deliberately partial.** Supabase has no generic
+  send API — mail leaves only as a side effect of an auth action, rendered from
+  *their* dashboard template. `SUPABASE_AUTH_TEMPLATES` in `mailer.ts` is the
+  entire capability surface (`password_reset` → recovery, `email_verify` →
+  signup resend); every other template is logged `skipped` with a reason via
+  `supabaseDeliveryBlock`, never silently dropped. `admin_invite` is excluded on
+  purpose: `inviteUserByEmail` creates a passwordless account that collides with
+  our own token + set-your-password flow. `providerAdvisory()` carries the
+  caveats the admin UI shows. If you add a template, decide which side of that
+  boundary it falls on — `mailerSupabase.test.ts` asserts every undeliverable
+  one explains itself.
 - Sending never throws: it logs to `email_log` and returns a status, because
   the action that triggered it has already succeeded.
 - Email HTML rules: `width:100%;max-width:600px` on the shell (a pixel-width
@@ -465,4 +491,4 @@ full fr-CA localization.)
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→66 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. `**npm test` — 393 tests** (incl. schema-parity + catalog guards + EN prompt byte-parity; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→66 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. `**npm test` — 458 tests** (incl. schema-parity + catalog guards + EN prompt byte-parity; pre-deploy `npm run verify:db`). Production build: `npm run build`.

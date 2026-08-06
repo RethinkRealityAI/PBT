@@ -2,7 +2,8 @@
  * Email — the transactional messaging surface.
  *
  *   Templates — pick a message, edit it, watch the preview update live
- *   Settings  — provider (Resend or SMTP), sender identity, brand
+ *   Settings  — provider (Resend, SMTP, or Supabase's built-in), sender
+ *               identity, brand
  *   Delivery  — what actually went out, and what failed
  */
 import { useMemo, useState } from 'react';
@@ -17,6 +18,7 @@ import {
   useEmailTemplates,
   writeSettings,
   type EmailLogRow,
+  type EmailProvider,
   type EmailSettingsPayload,
   type EmailTemplateRow,
 } from '../data/email';
@@ -53,6 +55,7 @@ export function EmailScreen({
   const canEdit = myPermissions.includes('email.templates.write');
   const canSend = myPermissions.includes('email.send');
   const problem = settings.data?.problem ?? null;
+  const advisory = settings.data?.advisory ?? null;
 
   return (
     <>
@@ -82,6 +85,10 @@ export function EmailScreen({
             </button>
           </Callout>
         )}
+
+        {/* Not a failure — a working transport whose limits shape what the rest
+            of this screen can actually do, so it belongs above the tabs too. */}
+        {!problem && advisory && <Callout tone="warn">{advisory}</Callout>}
 
         {tab === 'templates' &&
           (templates.loading ? (
@@ -126,9 +133,27 @@ export function EmailScreen({
 
 // ── Provider badge ─────────────────────────────────────────────────────
 
+const PROVIDER_LABEL: Record<EmailProvider, string> = {
+  resend: 'Resend',
+  smtp: 'SMTP',
+  supabase: 'Supabase built-in',
+};
+
+const PROVIDER_CHOICES: ReadonlyArray<{ key: EmailProvider; label: string; blurb: string }> = [
+  { key: 'resend', label: 'Resend', blurb: 'HTTPS API. Paste a key, verify a domain, done.' },
+  { key: 'smtp', label: 'SMTP', blurb: 'Any provider or in-house relay, over TLS.' },
+  {
+    key: 'supabase',
+    label: 'Supabase built-in',
+    blurb: 'No setup. Auth mail only, rate-limited — a stopgap.',
+  },
+];
+
 function ProviderBadge({ settings }: { settings: EmailSettingsPayload | null }) {
   if (!settings) return null;
-  const healthy = !settings.problem;
+  // The built-in mailer isn't broken, but calling it green would overstate a
+  // transport that can't send most of these templates.
+  const healthy = !settings.problem && !settings.advisory;
   return (
     <div
       style={{
@@ -152,8 +177,12 @@ function ProviderBadge({ settings }: { settings: EmailSettingsPayload | null }) 
           background: 'currentColor',
         }}
       />
-      {settings.provider === 'resend' ? 'Resend' : 'SMTP'}
-      {settings.fromEmail ? ` · ${settings.fromEmail}` : ' · no sender'}
+      {PROVIDER_LABEL[settings.provider] ?? settings.provider}
+      {settings.provider === 'supabase'
+        ? ' · auth mail only'
+        : settings.fromEmail
+          ? ` · ${settings.fromEmail}`
+          : ' · no sender'}
     </div>
   );
 }
@@ -336,11 +365,11 @@ function SettingsPanel({
       <Glass padding={22} radius={18}>
         <SectionHeading>Provider</SectionHeading>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          {(['resend', 'smtp'] as const).map((p) => (
+          {PROVIDER_CHOICES.map((p) => (
             <button
-              key={p}
+              key={p.key}
               disabled={!canEdit}
-              onClick={() => setProvider(p)}
+              onClick={() => setProvider(p.key)}
               style={{
                 flex: 1,
                 textAlign: 'left',
@@ -348,25 +377,45 @@ function SettingsPanel({
                 borderRadius: 13,
                 cursor: canEdit ? 'pointer' : 'default',
                 border:
-                  provider === p
+                  provider === p.key
                     ? `1.5px solid ${COLOR.brand}`
                     : '1px solid rgba(60,20,15,0.1)',
-                background: provider === p ? COLOR.brandSoft : 'rgba(255,255,255,0.6)',
+                background: provider === p.key ? COLOR.brandSoft : 'rgba(255,255,255,0.6)',
               }}
             >
-              <div style={{ fontSize: 13.5, fontWeight: 800, color: COLOR.ink }}>
-                {p === 'resend' ? 'Resend' : 'SMTP'}
-              </div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: COLOR.ink }}>{p.label}</div>
               <div style={{ fontSize: 11.5, color: COLOR.inkSoft, marginTop: 3, lineHeight: 1.45 }}>
-                {p === 'resend'
-                  ? 'HTTPS API. Paste a key, verify a domain, done.'
-                  : 'Any provider or in-house relay, over TLS.'}
+                {p.blurb}
               </div>
             </button>
           ))}
         </div>
 
-        {provider === 'resend' ? (
+        {provider === 'supabase' && (
+          <Callout tone="warn">
+            <strong>A stopgap, not a destination.</strong> Supabase’s built-in
+            service sends <strong>password reset</strong> and{' '}
+            <strong>address confirmation</strong> only, using the templates from
+            your Supabase dashboard rather than the ones on the Templates tab,
+            from Supabase’s sending address rather than yours. It is rate-limited
+            (2 an hour by default) and documented as a testing service.
+            Everything else — invitations, welcome, role-change and disabled
+            notices — is recorded in the delivery log as skipped. Invitations
+            still work: the portal shows a one-time link you can pass on
+            directly, and you can grant portal access to an existing account
+            from People → Admins with no email at all.
+          </Callout>
+        )}
+
+        {provider === 'supabase' ? (
+          // Nothing to configure: the project's own service role is the entire
+          // credential, and the sender address is Supabase's, not ours.
+          <div style={{ fontSize: 12.5, color: COLOR.inkSoft, lineHeight: 1.55 }}>
+            No credentials to enter — mail goes out through this Supabase
+            project. The sender address, subject lines and wording all come from
+            your Supabase dashboard under Authentication → Email Templates.
+          </div>
+        ) : provider === 'resend' ? (
           <Field
             label="Resend API key"
             help={
@@ -445,6 +494,12 @@ function SettingsPanel({
         )}
 
         <SectionHeading style={{ marginTop: 22 }}>Sender identity</SectionHeading>
+        {provider === 'supabase' && (
+          <div style={{ fontSize: 12, color: COLOR.warn, marginBottom: 10, lineHeight: 1.5 }}>
+            Kept for when you switch to Resend or SMTP — the built-in mailer
+            ignores it and sends from Supabase’s own address.
+          </div>
+        )}
         <div style={{ display: 'grid', gap: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10 }}>
             <Field label="From name">
