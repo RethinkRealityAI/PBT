@@ -6,7 +6,7 @@ import {
 } from './_shared/admin';
 
 export default async (req: Request) => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'quality.read');
   if (ctx instanceof Response) return ctx;
   const { since, limit } = readRange(req);
   const { data, error } = await ctx.sb

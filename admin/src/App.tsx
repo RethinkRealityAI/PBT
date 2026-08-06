@@ -4,7 +4,10 @@ import { getSupabase } from './lib/supabase';
 import { apiFetch } from './lib/api';
 import { COLOR } from './lib/tokens';
 import { Glass } from './primitives/Glass';
-import { FloatingNav, type AdminScreen, type Range } from './primitives/Shell';
+import { SectionTabsProvider, type AdminScreen, type Range } from './primitives/Shell';
+import { Sidebar, SidebarTrigger, useSidebarState } from './primitives/Sidebar';
+import { defaultTab, findNavItem, visibleItems, visibleTabs } from './primitives/nav';
+import { useHashRoute } from './lib/route';
 import { OverviewScreen } from './screens/OverviewScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
 import { AnalyticsScreen } from './screens/AnalyticsScreen';
@@ -21,22 +24,43 @@ import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
 import { SimulationScreen } from './screens/SimulationScreen';
 import { KnowledgeScreen } from './screens/KnowledgeScreen';
+import { TeamScreen } from './screens/TeamScreen';
+import { EmailScreen } from './screens/EmailScreen';
+import { InviteAcceptPage, ResetPasswordPage } from './screens/AuthPages';
 import { SignInGate } from './screens/SignInGate';
+import type { Whoami } from './data/access';
+import type { TeamTab } from './screens/TeamScreen';
+import type { EmailTab } from './screens/EmailScreen';
 
 type AdminState =
   | { status: 'loading' }
   | { status: 'signed_out' }
   | { status: 'not_admin' }
   | { status: 'error'; message: string }
-  | { status: 'admin'; userId: string };
+  | { status: 'admin'; me: Whoami };
+
+/**
+ * Two paths under /admin render before the auth gate: accepting an invitation
+ * and completing a password reset. Both are reached by people who, by
+ * definition, can't sign in yet.
+ */
+function publicRoute(): 'invite' | 'reset' | null {
+  const path = location.pathname.replace(/\/+$/, '');
+  if (path.endsWith('/invite')) return 'invite';
+  if (path.endsWith('/reset')) return 'reset';
+  return null;
+}
 
 export function App() {
   const [auth, setAuth] = useState<AdminState>({ status: 'loading' });
-  const [view, setView] = useState<AdminScreen>('overview');
   const [range, setRange] = useState<Range>('28d');
   const [query, setQuery] = useState('');
+  const [hashRoute, navigate] = useHashRoute();
+  const sidebar = useSidebarState();
+  const route = publicRoute();
 
   useEffect(() => {
+    if (route) return;
     let cancelled = false;
     const sb = getSupabase();
     async function check(session: Session | null) {
@@ -45,13 +69,14 @@ export function App() {
         setAuth({ status: 'signed_out' });
         return;
       }
-      // Server-side gate: admin-whoami returns 200 only for admins. We
-      // distinguish between "not admin" (403 → show the not-authorised card)
-      // and any other error (env misconfig, network, 500 → surface the
-      // actual message so deployment issues are debuggable).
+      // Server-side gate: admin-whoami returns 200 only for admins, and tells
+      // us which permissions this account actually holds. We distinguish
+      // between "not admin" (403 → show the not-authorised card) and any other
+      // error (env misconfig, network, 500 → surface the actual message so
+      // deployment issues are debuggable).
       try {
-        const me = await apiFetch<{ user_id: string }>('admin-whoami');
-        if (!cancelled) setAuth({ status: 'admin', userId: me.user_id });
+        const me = await apiFetch<Whoami>('admin-whoami');
+        if (!cancelled) setAuth({ status: 'admin', me });
       } catch (err) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : 'Auth check failed';
@@ -70,7 +95,10 @@ export function App() {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [route]);
+
+  if (route === 'invite') return <InviteAcceptPage />;
+  if (route === 'reset') return <ResetPasswordPage />;
 
   if (auth.status === 'loading') {
     return <FullCenterMessage>Loading…</FullCenterMessage>;
@@ -88,8 +116,9 @@ export function App() {
           <div
             style={{ fontSize: 13, color: COLOR.inkMute, marginTop: 6, maxWidth: 360 }}
           >
-            Your account is signed in but doesn't have admin access. Ask an
-            existing admin to set <code>is_admin = true</code> on your profile.
+            Your account is signed in but doesn't hold an admin role. Ask an
+            owner to invite you from Team &amp; roles — you'll get an email with
+            a link that grants access.
           </div>
           <button
             onClick={() => void getSupabase().auth.signOut()}
@@ -153,30 +182,164 @@ export function App() {
     );
   }
 
+  const { me } = auth;
+  const perms = me.permissions;
+  const allowed = visibleItems(perms);
+
+  if (allowed.length === 0) {
+    return (
+      <FullCenterMessage>
+        <Glass padding={24} radius={16}>
+          <div style={{ fontWeight: 800, color: COLOR.ink, fontSize: 18 }}>No screens available</div>
+          <div style={{ fontSize: 13, color: COLOR.inkMute, marginTop: 6, maxWidth: 380 }}>
+            Your role doesn’t grant access to any part of the portal yet. Ask an
+            owner to widen it.
+          </div>
+        </Glass>
+      </FullCenterMessage>
+    );
+  }
+
+  /*
+   * Resolve the URL against what this role may actually open. Three things can
+   * go wrong and all three land on the same fallback rather than a 403 screen:
+   * no hash at all (first visit), a hash naming a destination that no longer
+   * exists (old bookmark), and a hash naming one this role lost access to
+   * (their permissions changed while they had the tab open).
+   */
+  const item =
+    (hashRoute && allowed.find((i) => i.key === hashRoute.screen)) ?? allowed[0];
+  const tabs = visibleTabs(item, perms);
+  const tab =
+    tabs.find((t) => t.key === hashRoute?.tab)?.key ?? defaultTab(item, perms) ?? '';
+
+  const go = (screen: AdminScreen, nextTab?: string) => {
+    // Clear the shared search on destination change — a filter typed on one
+    // screen silently constraining every other one is a bug people report as
+    // "the list is empty".
+    if (screen !== item.key) setQuery('');
+    const target = findNavItem(screen);
+    navigate({
+      screen,
+      tab: nextTab ?? (target ? defaultTab(target, perms) : null),
+    });
+    sidebar.setDrawerOpen(false);
+  };
+
+  const contentOffset = sidebar.compact ? 0 : sidebar.width;
+
   // Halos behind the canvas — same language as the consumer app.
   return (
     <div style={{ position: 'relative', minHeight: '100vh' }}>
       <BackgroundHalos />
-      {/* Clear the shared search query on screen change — otherwise a filter
-          typed on one screen silently constrains every other screen too. */}
-      <FloatingNav active={view} onNav={(s) => { setQuery(''); setView(s); }} />
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        {view === 'overview' && <OverviewScreen range={range} onRange={setRange} onNav={setView} />}
-        {view === 'insights' && <InsightsScreen range={range} onRange={setRange} />}
-        {view === 'analytics' && <AnalyticsScreen range={range} onRange={setRange} />}
-        {view === 'users' && <UsersScreen query={query} onQuery={setQuery} meUserId={auth.userId} />}
-        {view === 'sessions' && <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {view === 'scenarios' && <ScenariosScreen query={query} onQuery={setQuery} />}
-        {view === 'analyzer' && <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {view === 'quality' && <QualityScreen range={range} onRange={setRange} />}
-        {view === 'feedback' && <FeedbackScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {view === 'reports' && <ReportsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />}
-        {view === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
-        {view === 'overrides' && <ScenarioBuilderScreen query={query} onQuery={setQuery} />}
-        {view === 'simulation' && <SimulationScreen />}
-        {view === 'knowledge' && <KnowledgeScreen query={query} onQuery={setQuery} />}
-        {view === 'preview' && <PreviewScreen />}
-        {view === 'audit' && <AuditLogScreen />}
+      <Sidebar
+        active={item.key}
+        onNav={(s) => go(s)}
+        permissions={perms}
+        identity={{
+          name: me.display_name || me.email || 'Admin',
+          email: me.email,
+          role: me.role_name || me.role || 'admin',
+        }}
+        onSignOut={() => void getSupabase().auth.signOut()}
+        collapsed={sidebar.collapsed}
+        onToggleCollapsed={() => sidebar.setCollapsed(!sidebar.collapsed)}
+        compact={sidebar.compact}
+        drawerOpen={sidebar.drawerOpen}
+        onCloseDrawer={() => sidebar.setDrawerOpen(false)}
+      />
+      {/*
+        No z-index here on purpose. A stacking context at z-index 1 would trap
+        every descendant below it — including the fixed-position modals, whose
+        z-index 60 would then still lose to the sidebar's 45 and leave their
+        headers (and close buttons) unreachable. `position: relative` alone is
+        enough to paint above the z-index-0 halos, since it comes later in the
+        DOM.
+      */}
+      <div
+        style={{
+          position: 'relative',
+          marginLeft: contentOffset,
+          transition: 'margin-left 0.18s ease',
+        }}
+      >
+        <SectionTabsProvider
+          value={{
+            tabs: tabs.map((t) => ({ key: t.key, label: t.label })),
+            active: tab,
+            onChange: (next) => go(item.key, next),
+          }}
+        >
+          {sidebar.compact && (
+            <div style={{ padding: '16px 20px 0', maxWidth: 1440, margin: '0 auto' }}>
+              <SidebarTrigger onOpen={() => sidebar.setDrawerOpen(true)} />
+            </div>
+          )}
+
+          {item.key === 'overview' && (
+            <OverviewScreen range={range} onRange={setRange} onNav={go} />
+          )}
+
+          {item.key === 'analytics' && tab === 'insights' && (
+            <InsightsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'analytics' && tab === 'traffic' && (
+            <AnalyticsScreen range={range} onRange={setRange} />
+          )}
+          {item.key === 'analytics' && tab === 'quality' && (
+            <QualityScreen range={range} onRange={setRange} />
+          )}
+
+          {item.key === 'activity' && tab === 'sessions' && (
+            <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'activity' && tab === 'analyzer' && (
+            <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+
+          {item.key === 'people' && tab === 'users' && (
+            <UsersScreen query={query} onQuery={setQuery} meUserId={me.user_id} />
+          )}
+          {item.key === 'people' && tab !== 'users' && (
+            <TeamScreen
+              query={query}
+              onQuery={setQuery}
+              meUserId={me.user_id}
+              myPermissions={perms}
+              tab={tab as TeamTab}
+              onTab={(t) => go('people', t)}
+            />
+          )}
+
+          {item.key === 'library' && tab === 'scenarios' && (
+            <ScenariosScreen query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'library' && tab === 'builder' && (
+            <ScenarioBuilderScreen query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'library' && tab === 'knowledge' && (
+            <KnowledgeScreen query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'library' && tab === 'simulation' && <SimulationScreen />}
+
+          {item.key === 'feedback' && tab === 'sessions' && (
+            <FeedbackScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+          {item.key === 'feedback' && tab === 'reports' && (
+            <ReportsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          )}
+
+          {item.key === 'email' && (
+            <EmailScreen
+              myPermissions={perms}
+              tab={tab as EmailTab}
+              onTab={(t) => go('email', t)}
+            />
+          )}
+          {item.key === 'flags' && <FlagsScreen query={query} onQuery={setQuery} />}
+          {item.key === 'audit' && <AuditLogScreen />}
+          {item.key === 'preview' && <PreviewScreen />}
+        </SectionTabsProvider>
       </div>
     </div>
   );

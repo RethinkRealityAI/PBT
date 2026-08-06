@@ -33,7 +33,7 @@ export function OverviewScreen({
 }: {
   range: Range;
   onRange: (r: Range) => void;
-  onNav: (s: AdminScreen) => void;
+  onNav: (s: AdminScreen, tab?: string) => void;
 }) {
   const users = useAdminUsers();
   const sessions = useAdminSessions(range);
@@ -357,7 +357,7 @@ export function OverviewScreen({
               subtitle="Flagged or low-score sessions"
             />
             <button
-              onClick={() => onNav('quality')}
+              onClick={() => onNav('analytics', 'quality')}
               style={{
                 border: 'none',
                 background: 'transparent',

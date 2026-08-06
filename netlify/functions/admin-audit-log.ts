@@ -20,7 +20,7 @@ interface AuditRow {
 }
 
 export default async (req: Request): Promise<Response> => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'audit.read');
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {

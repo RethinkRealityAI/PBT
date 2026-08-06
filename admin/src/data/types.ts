@@ -7,15 +7,26 @@ export interface AdminUser {
   echo_secondary: DriverKey | null;
   is_admin: boolean;
   disabled: boolean;
+  /** Role key, or null for a plain (non-admin) account. */
+  admin_role: string | null;
+  /** Per-user exceptions layered over the role. */
+  permission_overrides: { grant?: string[]; revoke?: string[] };
   email: string | null;
   created_at: string;
 }
 
 /** Payloads for the admin-user-actions write endpoint. */
 export type UserAction =
-  | { op: 'set_admin'; userId: string; value: boolean }
+  | { op: 'set_role'; userId: string; roleKey: string | null }
+  | { op: 'set_overrides'; userId: string; grant: string[]; revoke: string[] }
   | { op: 'set_disabled'; userId: string; value: boolean }
-  | { op: 'create'; email: string; password: string; displayName?: string; isAdmin?: boolean }
+  | {
+      op: 'create';
+      email: string;
+      password: string;
+      displayName?: string;
+      roleKey?: string | null;
+    }
   | { op: 'delete'; userId: string };
 
 export interface AdminSession {

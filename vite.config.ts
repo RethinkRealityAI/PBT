@@ -1,7 +1,38 @@
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+
+/**
+ * Mirror the Netlify redirects during `vite dev`.
+ *
+ * In production `netlify.toml` rewrites `/admin/*` → `/admin.html` and
+ * everything else → `/index.html`. Without the same rule locally, real routes
+ * — `/admin/invite`, `/admin/reset`, `/reset-password` — 404 on the dev server,
+ * so the flows people actually arrive at from an email can't be tested.
+ */
+function devSpaFallback(): Plugin {
+  return {
+    name: 'pbt-dev-spa-fallback',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const url = req.url ?? '/';
+        const [pathname] = url.split('?');
+        // Leave assets, modules, and Vite's own endpoints alone.
+        if (pathname.includes('.') || pathname.startsWith('/@') || pathname.startsWith('/node_modules')) {
+          return next();
+        }
+        if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+          req.url = '/admin.html';
+        } else if (pathname !== '/') {
+          req.url = '/index.html';
+        }
+        next();
+      });
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
@@ -10,7 +41,7 @@ export default defineConfig(({ mode }) => {
         port: 3006,
         host: '0.0.0.0',
       },
-      plugins: [react(), tailwindcss()],
+      plugins: [react(), tailwindcss(), devSpaFallback()],
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),

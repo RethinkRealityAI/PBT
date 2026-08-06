@@ -11,10 +11,10 @@
  * The consumer reads the resolved value through the public flags-resolve
  * endpoint (service role); the table is not directly readable by anon/auth roles.
  */
-import { errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
+import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 
 export default async (req: Request): Promise<Response> => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, 'simulation.read');
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
@@ -31,6 +31,7 @@ export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {
     return errorResponse(405, 'Method not allowed');
   }
+  if (!can(ctx, 'simulation.write')) return errorResponse(403, 'Missing permission: simulation.write');
 
   let body: { config: unknown };
   try {

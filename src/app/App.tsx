@@ -88,6 +88,11 @@ const ActGuideScreen = lazy(() =>
     default: m.ActGuideScreen,
   })),
 );
+const ResetPasswordScreen = lazy(() =>
+  import('../screens/ResetPasswordScreen').then((m) => ({
+    default: m.ResetPasswordScreen,
+  })),
+);
 
 import { readStorage, STORAGE_KEYS, getOrCreateSessionId } from '../lib/storage';
 
@@ -97,12 +102,33 @@ function getInitialScreen(): Screen {
   return 'home';
 }
 
+/**
+ * `/reset-password` is a real URL people arrive at from a recovery email,
+ * before they can sign in. It sits outside the screen state machine — sending
+ * them through onboarding or the quiz first would be nonsense — but still
+ * inside Theme + Language so it looks and reads like the rest of the app.
+ */
+const isPasswordResetRoute = () =>
+  window.location.pathname.replace(/\/+$/, '') === '/reset-password';
+
 export function App() {
   useEffect(() => {
     mountKeyframes();
     getOrCreateSessionId();
     startAnalytics();
   }, []);
+
+  if (isPasswordResetRoute()) {
+    return (
+      <ThemeProvider>
+        <LanguageProvider>
+          <Suspense fallback={null}>
+            <ResetPasswordScreen />
+          </Suspense>
+        </LanguageProvider>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider>
