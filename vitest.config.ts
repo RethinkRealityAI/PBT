@@ -15,7 +15,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/tests/setup.ts'],
     css: false,
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // The admin dashboard is a second entry of this repo (admin/src/**); its
+    // colocated tests were previously invisible to the runner.
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'admin/src/**/*.{test,spec}.{ts,tsx}'],
     coverage: {
       reporter: ['text', 'html'],
       include: [
