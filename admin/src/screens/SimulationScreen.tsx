@@ -1182,3 +1182,280 @@ function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draf
     </div>
   );
 }
+
+// ─── Version history ────────────────────────────────────────────────────────────
+//
+// There is no version table: every save already writes an admin_audit_log row
+// carrying the FULL before/after config, so the audit log IS the history. The
+// panel lists the last 30 days of those rows and can re-apply any of them.
+
+function fmtAbsolute(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Who saved it — email when the Auth lookup worked, else a shortened id. */
+function actorLabel(v: SimulationVersion): string {
+  if (v.actor_email) return v.actor_email;
+  if (v.actor_id) return `user ${v.actor_id.slice(0, 8)}`;
+  return 'system';
+}
+
+function HistoryModal({
+  open,
+  onClose,
+  currentConfig,
+  onRestore,
+}: {
+  open: boolean;
+  onClose: () => void;
+  currentConfig: Record<string, unknown>;
+  onRestore: (v: SimulationVersion) => Promise<void>;
+}) {
+  const [versions, setVersions] = useState<SimulationVersion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetchSimulationHistory()
+      .then((rows) => {
+        if (!cancelled) setVersions(rows);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load history');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  return (
+    <Modal open={open} onClose={onClose} width={880} ariaLabel="Simulation config history">
+      <div style={{ padding: '24px 26px 8px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Eyebrow>Last 30 days</Eyebrow>
+          <h2 style={{ margin: '6px 0 0', fontSize: 20, fontWeight: 800, color: COLOR.ink }}>
+            Version history
+          </h2>
+          <div style={{ fontSize: 12.5, color: COLOR.inkMute, marginTop: 4 }}>
+            Every save is a version. Restoring re-applies that version&apos;s settings — the
+            current ones are written to history first, so a restore is itself undoable.
+          </div>
+        </div>
+        <ModalCloseButton onClose={onClose} />
+      </div>
+      <div style={{ padding: '12px 26px 26px', overflow: 'auto', display: 'grid', gap: 8 }}>
+        {loading ? (
+          <LoadingShimmer height={180} />
+        ) : error ? (
+          <div style={{ fontSize: 13, color: COLOR.danger, fontWeight: 700 }}>{error}</div>
+        ) : versions.length === 0 ? (
+          <div style={{ padding: '36px 12px', textAlign: 'center', color: COLOR.inkMute, fontSize: 13 }}>
+            No saved versions in the last 30 days.
+          </div>
+        ) : (
+          versions.map((v) => (
+            <VersionRow
+              key={v.id}
+              version={v}
+              isCurrent={configEquals(v.after, currentConfig)}
+              onRestore={() => onRestore(v)}
+            />
+          ))
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function VersionRow({
+  version,
+  isCurrent,
+  onRestore,
+}: {
+  version: SimulationVersion;
+  isCurrent: boolean;
+  onRestore: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const changed = useMemo(
+    () => summarizeConfigDelta(version.before, version.after),
+    [version.before, version.after],
+  );
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onRestore();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Restore failed');
+      setBusy(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        padding: '12px 14px',
+        borderRadius: 12,
+        background: 'rgba(255,255,255,0.6)',
+        border: '0.5px solid rgba(255,255,255,0.9)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: COLOR.ink }}>
+          {fmtAgo(new Date(version.created_at).getTime())}
+        </span>
+        <span style={{ fontSize: 11.5, color: COLOR.inkMute, fontFamily: 'var(--pbt-mono)' }}>
+          {fmtAbsolute(version.created_at)}
+        </span>
+        <span style={{ fontSize: 12, color: COLOR.inkSoft }}>{actorLabel(version)}</span>
+        {isCurrent && <StatusPill tone="success">Current</StatusPill>}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            onClick={() => setOpen((o) => !o)}
+            style={{
+              padding: '4px 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(60,20,15,0.12)',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 700,
+              fontFamily: 'var(--pbt-font)',
+              color: COLOR.ink,
+            }}
+          >
+            {open ? 'Hide' : 'Diff'}
+          </button>
+          {!isCurrent && !confirming && (
+            <button
+              onClick={() => setConfirming(true)}
+              disabled={busy}
+              style={{ ...btnSecondary, padding: '4px 10px', fontSize: 11 }}
+            >
+              Restore
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
+        {changed.length === 0 ? (
+          <StatusPill tone="neutral" dot={false}>No detected change</StatusPill>
+        ) : (
+          changed.map((c) => (
+            <StatusPill key={c} tone="info" dot={false}>
+              {c}
+            </StatusPill>
+          ))
+        )}
+        <span style={{ fontSize: 12, color: COLOR.inkMute, marginLeft: 4 }}>
+          {version.note ? version.note : <em>No description</em>}
+        </span>
+      </div>
+
+      {confirming && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: '10px 12px',
+            borderRadius: 10,
+            background: COLOR.warnSoft,
+            display: 'flex',
+            gap: 10,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: 12.5, color: COLOR.ink, fontWeight: 700 }}>
+            Restore this version? Current settings will be saved to history first.
+          </span>
+          <button
+            onClick={() => void run()}
+            disabled={busy}
+            style={{ ...btnPrimary, padding: '5px 12px', fontSize: 12, opacity: busy ? 0.6 : 1 }}
+          >
+            {busy ? 'Restoring…' : 'Yes, restore'}
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            disabled={busy}
+            style={{ ...btnSecondary, padding: '5px 12px', fontSize: 12 }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {error && (
+        <div style={{ fontSize: 12, color: COLOR.danger, fontWeight: 700, marginTop: 8 }}>
+          {error}
+        </div>
+      )}
+
+      {open && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: 10,
+            marginTop: 10,
+            fontFamily: 'var(--pbt-mono)',
+            fontSize: 11,
+          }}
+        >
+          <ConfigPane label="Before" value={version.before} />
+          <ConfigPane label="After" value={version.after} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConfigPane({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div
+      style={{
+        padding: 10,
+        borderRadius: 8,
+        background: 'rgba(60,20,15,0.04)',
+        maxHeight: 260,
+        overflow: 'auto',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          fontWeight: 800,
+          letterSpacing: '0.10em',
+          color: COLOR.inkMute,
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </div>
+      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        {value ? JSON.stringify(value, null, 2) : '—'}
+      </pre>
+    </div>
+  );
+}
