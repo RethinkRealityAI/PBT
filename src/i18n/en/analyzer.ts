@@ -9,11 +9,64 @@ export const analyzer = {
   // ── Screen chrome ─────────────────────────────────────────
   'analyzer.title': 'Pet Analyzer',
 
+  // ── Card 0: Pet Vision (photo analysis) ───────────────────
+  'analyzer.vision.eyebrow': 'Photo analysis · AI',
+  'analyzer.vision.estimateTag': 'Estimate · review & edit',
+  'analyzer.vision.uploadAria': 'Upload a dog photo to analyze',
+  'analyzer.vision.replaceAria': 'Replace photo',
+  'analyzer.vision.photoAlt': 'Selected dog',
+  'analyzer.vision.uploadTitle': 'Upload or take a photo',
+  'analyzer.vision.uploadBody':
+    'We estimate breed, life stage, body condition and visible skin signs. The photo is never stored.',
+  'analyzer.vision.analyzing': 'Analyzing photo…',
+  'analyzer.vision.tryAgain': 'Try again',
+  'analyzer.vision.notADog':
+    "That doesn't look like a dog — try a clear, well-lit photo of the dog from the side.",
+  /** {pct} is pre-formatted by `src/i18n/format.ts#formatPercent`. */
+  'analyzer.vision.confidence': '{pct} confident',
+  /** {breeds} is a comma-joined list of untranslated breed names. */
+  'analyzer.vision.alsoPossible': 'Also possible: {breeds}',
+  'analyzer.vision.bcsLead': 'BCS {score}/9.',
+  'analyzer.vision.skinLabel': 'Skin / coat · {severity}',
+  'analyzer.vision.skinNone': 'No obvious skin or coat anomalies visible.',
+  'analyzer.vision.notVisible': "Can't judge from a photo: {items}.",
+
+  // Dermatitis severity — the enum keys (none/mild/moderate/marked) are
+  // machine values sent to the model; these are their display labels.
+  'analyzer.vision.severity.none': 'none',
+  'analyzer.vision.severity.mild': 'mild',
+  'analyzer.vision.severity.moderate': 'moderate',
+  'analyzer.vision.severity.marked': 'marked',
+
+  // Pet Vision failures (`usePetVision`)
+  'analyzer.vision.error.notImage': 'Please choose an image file.',
+  'analyzer.vision.error.tooLarge': 'That image is over 5 MB — try a smaller photo.',
+  'analyzer.vision.error.unreadable': 'Could not read that image. Try another photo.',
+  'analyzer.vision.error.notConfigured':
+    'Vision is not configured — the Gemini API key is missing.',
+  'analyzer.vision.error.failed':
+    'Could not analyze the photo. Check your connection and try again.',
+
+  // Vision → scenario handoff: the `context` brief handed to the roleplay.
+  'analyzer.vision.context.pet': '{breed}, {age}.',
+  'analyzer.vision.context.bcs': 'Estimated body condition score {score}/9.',
+  'analyzer.vision.context.skin': 'Visible skin/coat signs ({severity}): {details}.',
+
   // ── Card 1: identity ──────────────────────────────────────
   'analyzer.petName': 'Pet name',
   'analyzer.breed.label': 'Breed',
   /** {group} is an untranslated breed-group name from the breeds data module. */
   'analyzer.breed.typical': '{group} group · typical adult {min}–{max} kg',
+
+  // Breed autocomplete (`BreedSearch`)
+  'analyzer.breedSearch.placeholder': 'Search breed (e.g. lab, frenchie, gsd)',
+  'analyzer.breedSearch.clearAria': 'Clear breed',
+  'analyzer.breedSearch.change': 'Change',
+  'analyzer.breedSearch.popular': 'Popular',
+  'analyzer.breedSearch.noMatches': 'No matches.',
+  'analyzer.breedSearch.useAnyway': 'Use “{value}” anyway',
+  /** {group} is an untranslated breed-group name from the breeds data module. */
+  'analyzer.breedSearch.sizeRange': '{group} · {min}–{max} kg',
 
   // ── Card 2: weight & activity ─────────────────────────────
   'analyzer.weight.label': 'Weight & activity',

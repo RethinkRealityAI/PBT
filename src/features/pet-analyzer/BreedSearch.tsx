@@ -6,6 +6,7 @@ import {
   searchBreeds,
   type BreedEntry,
 } from '../../data/breeds';
+import { useLanguage } from '../../app/providers/LanguageProvider';
 
 /**
  * Searchable breed input with autocomplete.
@@ -27,6 +28,7 @@ export interface BreedSearchProps {
   /** Called with the resolved breed entry when one is committed. Optional —
    *  consumers that don't need size hints can ignore it. */
   onSelectBreed?: (entry: BreedEntry | null) => void;
+  /** Overrides the localized default placeholder. */
   placeholder?: string;
   autoFocus?: boolean;
   /** Optional invalid hint — outlines the input red. */
@@ -37,10 +39,11 @@ export function BreedSearch({
   value,
   onChange,
   onSelectBreed,
-  placeholder = 'Search breed (e.g. lab, frenchie, gsd)',
+  placeholder,
   autoFocus,
   invalid,
 }: BreedSearchProps) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -159,8 +162,11 @@ export function BreedSearch({
                   marginTop: 2,
                 }}
               >
-                {committedEntry.group} · {committedEntry.sizeKg[0]}–
-                {committedEntry.sizeKg[1]} kg
+                {t('analyzer.breedSearch.sizeRange', {
+                  group: committedEntry.group,
+                  min: committedEntry.sizeKg[0],
+                  max: committedEntry.sizeKg[1],
+                })}
               </div>
             )}
           </div>
@@ -187,7 +193,7 @@ export function BreedSearch({
               color: 'var(--pbt-driver-primary)',
             }}
           >
-            Change
+            {t('analyzer.breedSearch.change')}
           </button>
         </div>
       )}
@@ -220,7 +226,7 @@ export function BreedSearch({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t('analyzer.breedSearch.placeholder')}
           autoFocus={autoFocus}
           role="combobox"
           aria-expanded={open}
@@ -245,7 +251,7 @@ export function BreedSearch({
         {value.length > 0 && (
           <button
             type="button"
-            aria-label="Clear breed"
+            aria-label={t('analyzer.breedSearch.clearAria')}
             onClick={() => {
               onChange('');
               onSelectBreed?.(null);
@@ -282,7 +288,7 @@ export function BreedSearch({
               paddingLeft: 2,
             }}
           >
-            Popular
+            {t('analyzer.breedSearch.popular')}
           </div>
           <div className="flex flex-wrap gap-2">
             {POPULAR_BREEDS.map((b) => (
@@ -360,7 +366,11 @@ export function BreedSearch({
                     color: 'var(--pbt-text-muted)',
                   }}
                 >
-                  {entry.group} · {entry.sizeKg[0]}–{entry.sizeKg[1]} kg
+                  {t('analyzer.breedSearch.sizeRange', {
+                    group: entry.group,
+                    min: entry.sizeKg[0],
+                    max: entry.sizeKg[1],
+                  })}
                 </span>
               </li>
             );
@@ -385,7 +395,7 @@ export function BreedSearch({
             flexWrap: 'wrap',
           }}
         >
-          <span>No matches.</span>
+          <span>{t('analyzer.breedSearch.noMatches')}</span>
           <button
             type="button"
             onMouseDown={(e) => {
@@ -403,7 +413,7 @@ export function BreedSearch({
               fontSize: 13,
             }}
           >
-            Use “{value.trim()}” anyway
+            {t('analyzer.breedSearch.useAnyway', { value: value.trim() })}
           </button>
         </div>
       )}

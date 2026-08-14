@@ -22,6 +22,7 @@ import { clinical } from './data/clinical';
 import { drivers as driversData } from './data/drivers';
 import { pushbacks } from './data/pushbacks';
 import { quiz as quizData } from './data/quiz';
+import { rubric } from './data/rubric';
 import { scenarios } from './data/scenarios';
 
 /**
@@ -62,4 +63,5 @@ export const frData: Record<string, unknown> = {
   actGuide: actGuideData,
   scenarios,
   pushbacks,
+  rubric,
 };

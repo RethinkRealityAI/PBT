@@ -59,6 +59,170 @@ const PUSHBACK_IDS = [
 const LIFE_STAGES = ['Puppy (<1)', 'Junior (1-3)', 'Adult (3-7)', 'Senior (7+)'];
 const PERSONAS = ['Skeptical', 'Anxious', 'Busy', 'Bargain-hunter', 'Devoted'];
 
+// ─────────────────────────────────────────────────────────────
+// Stepped visual editor — model + pure state helpers
+//
+// The visual editor used to render six stacked sections; the page ran long
+// enough that the live card preview scrolled out of sight. The same sections
+// are now grouped into four steps. No field moved out of the draft — only
+// where it is rendered changed.
+// ─────────────────────────────────────────────────────────────
+
+export type BuilderStepKey = 'scenario' | 'knowledge' | 'ai' | 'card';
+
+export interface BuilderStepDef {
+  key: BuilderStepKey;
+  label: string;
+  /** One-line description shown under the stepper. */
+  hint: string;
+  /**
+   * Draft columns edited on this step. Together the four steps cover every
+   * editable column of `ScenarioOverrideRow` (guarded by a unit test), so no
+   * field's override state is invisible in the stepper badges.
+   */
+  fields: Array<keyof ScenarioOverrideRow>;
+}
+
+export const BUILDER_STEPS: BuilderStepDef[] = [
+  {
+    key: 'scenario',
+    label: 'Scenario',
+    hint: 'Who the customer is, what they push back on, and how the conversation opens.',
+    fields: [
+      'breed',
+      'life_stage',
+      'pushback_id',
+      'suggested_driver',
+      'persona_override',
+      'difficulty_override',
+      'weight_kg',
+      'pushback_notes',
+      'opening_line_override',
+      'context_override',
+      // Not surfaced by a control today, but it is a scenario-level title and
+      // it does get saved — count it here so a legacy value still shows up.
+      'title_override',
+    ],
+  },
+  {
+    key: 'knowledge',
+    label: 'Knowledge & focus',
+    hint: 'Which supporting research the AI may draw on for this scenario.',
+    fields: ['focus_area', 'knowledge_slugs'],
+  },
+  {
+    key: 'ai',
+    label: 'AI instructions',
+    hint: 'Optional notes wrapped around the AI customer’s canonical briefing.',
+    fields: ['prompt_prefix', 'prompt_suffix'],
+  },
+  {
+    key: 'card',
+    label: 'Card & visibility',
+    hint: 'How the scenario appears on the Home screen — and whether it appears at all.',
+    fields: [
+      'visible',
+      'sort_order',
+      'card_driver_override',
+      'card_title_override',
+      'card_subtitle_override',
+      'start_button_label',
+      'info_modal_title',
+      'info_modal_body',
+    ],
+  },
+];
+
+/** Fields an admin-authored scenario cannot ship without. */
+export const REQUIRED_ADMIN_FIELDS: Array<{
+  key: keyof ScenarioOverrideRow;
+  label: string;
+}> = [
+  { key: 'breed', label: 'Breed' },
+  { key: 'life_stage', label: 'Life stage' },
+  { key: 'pushback_id', label: 'Pushback' },
+  { key: 'suggested_driver', label: 'Suggested driver' },
+];
+
+/** Would this value be written as an override (vs. "inherit the base")? */
+export function hasOverrideValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'number') return !Number.isNaN(value);
+  if (typeof value === 'boolean') return value;
+  return true;
+}
+
+export interface BuilderStepState {
+  /** How many of this step's fields will be saved as overrides. */
+  overrides: number;
+  /** Labels of required admin fields still empty (Scenario step only). */
+  missing: string[];
+}
+
+/**
+ * Per-step badge state.
+ *
+ * `sparse` is the output of the Builder's `sparsify` — i.e. exactly what a
+ * save would write, with fields still equal to the base scenario nulled out.
+ * That makes "has a dot" mean "this step carries overrides", which is the
+ * question an admin is actually asking. `visible` is special: it always rides
+ * along on the saved row, so it only counts when it differs from how the
+ * scenario ships (`baseVisible`).
+ */
+export function computeStepStates({
+  sparse,
+  draft,
+  baseVisible,
+  requireCoreFields,
+}: {
+  sparse: Partial<ScenarioOverrideRow>;
+  draft: Partial<ScenarioOverrideRow>;
+  baseVisible: boolean;
+  requireCoreFields: boolean;
+}): Record<BuilderStepKey, BuilderStepState> {
+  const out = {} as Record<BuilderStepKey, BuilderStepState>;
+  for (const step of BUILDER_STEPS) {
+    let overrides = 0;
+    for (const field of step.fields) {
+      if (field === 'visible') {
+        if ((draft.visible ?? baseVisible) !== baseVisible) overrides += 1;
+        continue;
+      }
+      if (hasOverrideValue(sparse[field])) overrides += 1;
+    }
+    out[step.key] = {
+      overrides,
+      missing:
+        requireCoreFields && step.key === 'scenario'
+          ? REQUIRED_ADMIN_FIELDS.filter((r) => !hasOverrideValue(draft[r.key])).map(
+              (r) => r.label,
+            )
+          : [],
+    };
+  }
+  return out;
+}
+
+/** Viewport-width watcher — mirrors the sidebar's resize listener pattern. */
+function useViewportBelow(px: number): boolean {
+  const [below, setBelow] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < px,
+  );
+  useEffect(() => {
+    const onResize = () => setBelow(window.innerWidth < px);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [px]);
+  return below;
+}
+
+/** Below this the preview stacks under the editor instead of sticking beside it. */
+const PREVIEW_STACK_BREAKPOINT = 1100;
+/** Initial estimate of the sticky action bar's height; refined by measurement. */
+const STICKY_TOP = 76;
+
 interface ListEntry {
   id: string;
   source: 'library' | 'admin' | 'user';
@@ -401,6 +565,27 @@ function Builder({
   const [error, setError] = useState<string | null>(null);
   const [testOpen, setTestOpen] = useState(false);
 
+  // The action bar wraps at narrow widths (and grows when a save error shows),
+  // so its height is content-dependent — the preview column's sticky offset
+  // tracks the measured height instead of assuming a constant.
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [stickyTop, setStickyTop] = useState(STICKY_TOP);
+  useEffect(() => {
+    const inner = barRef.current;
+    if (!inner) return;
+    const bar = inner.parentElement ?? inner; // the Glass surface around the row
+    const update = () => setStickyTop(bar.offsetHeight + 22); // + bar margin & gap
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, []);
+  // Narrow viewports drop the two-column split: the preview stacks under the
+  // editor and stops being sticky (a sticky panel on a phone-width column just
+  // eats the screen).
+  const stacked = useViewportBelow(PREVIEW_STACK_BREAKPOINT);
+
   // Keep draft.scenario_id stable.
   useEffect(() => {
     if (draft.scenario_id !== scenarioId) {
@@ -509,79 +694,117 @@ function Builder({
         subtitle={`${scenarioId}${baseDescriptor ? ` · base: ${baseDescriptor.breed} ${baseDescriptor.driver}` : ' · admin-authored'}`}
       />
       <ScreenShell>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center' }}>
-          <button
-            onClick={() => {
-              if (confirmDiscardIfDirty()) onClose();
+        {/*
+          Sticky action bar. The stepped editor is short enough to work with,
+          but Save / Discard / the Visible pill must stay reachable from any
+          step without scrolling back to the top.
+        */}
+        <Glass
+          padding={10}
+          radius={16}
+          shine={false}
+          style={{ position: 'sticky', top: 0, zIndex: 20, marginBottom: 14 }}
+        >
+          <div
+            ref={barRef}
+            style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+              flexWrap: 'wrap',
             }}
-            style={btnSecondary}
           >
-            ← Back to list
-          </button>
-          <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-            {(['visual', 'wizard'] as Tab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                style={{
-                  padding: '8px 14px',
-                  borderRadius: 9999,
-                  border: 'none',
-                  cursor: 'pointer',
-                  background:
-                    tab === t ? COLOR.brand : 'rgba(60,20,15,0.06)',
-                  color: tab === t ? '#fff' : COLOR.ink,
-                  fontSize: 12,
-                  fontWeight: 700,
-                }}
-              >
-                {t === 'visual' ? 'Visual editor' : 'AI wizard'}
+            <button
+              onClick={() => {
+                if (confirmDiscardIfDirty()) onClose();
+              }}
+              style={btnSecondary}
+            >
+              ← Back to list
+            </button>
+            <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              {(['visual', 'wizard'] as Tab[]).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 9999,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background:
+                      tab === t ? COLOR.brand : 'rgba(60,20,15,0.06)',
+                    color: tab === t ? '#fff' : COLOR.ink,
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  {t === 'visual' ? 'Visual editor' : 'AI wizard'}
+                </button>
+              ))}
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button onClick={() => setTestOpen((v) => !v)} style={btnSecondary}>
+                {testOpen ? 'Hide test' : 'Test in app'}
               </button>
-            ))}
-          </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button onClick={() => setTestOpen((v) => !v)} style={btnSecondary}>
-              {testOpen ? 'Hide test' : 'Test in app'}
-            </button>
-            <button onClick={clearAndClose} style={{ ...btnSecondary, color: COLOR.danger }}>
-              {hasOverride ? 'Remove overrides' : 'Discard'}
-            </button>
-            <StatusPill tone={draft.visible ? 'success' : 'warn'}>
-              {draft.visible ? 'Visible in app' : 'Hidden'}
-            </StatusPill>
-            {dirty && (
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: COLOR.warn,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
+              <button onClick={clearAndClose} style={{ ...btnSecondary, color: COLOR.danger }}>
+                {hasOverride ? 'Remove overrides' : 'Discard'}
+              </button>
+              <StatusPill tone={draft.visible ? 'success' : 'warn'}>
+                {draft.visible ? 'Visible in app' : 'Hidden'}
+              </StatusPill>
+              {dirty && (
                 <span
                   style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    background: COLOR.warn,
-                    display: 'inline-block',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: COLOR.warn,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
                   }}
-                />
-                Unsaved changes
-              </span>
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 999,
+                      background: COLOR.warn,
+                      display: 'inline-block',
+                    }}
+                  />
+                  Unsaved changes
+                </span>
+              )}
+              <button onClick={save} disabled={saving} style={btnPrimary}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+            {/* Save failures surface HERE, next to the button that failed —
+                not at the page bottom where a scrolled admin never sees them. */}
+            {error && (
+              <div
+                role="alert"
+                style={{
+                  flexBasis: '100%',
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  background: COLOR.dangerSoft,
+                  color: COLOR.danger,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                }}
+              >
+                {error}
+              </div>
             )}
-            <button onClick={save} disabled={saving} style={btnPrimary}>
-              {saving ? 'Saving…' : 'Save'}
-            </button>
           </div>
-        </div>
+        </Glass>
 
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.2fr) 380px',
+            gridTemplateColumns: stacked ? 'minmax(0, 1fr)' : 'minmax(0, 1.2fr) 380px',
             gap: 16,
             alignItems: 'start',
           }}
@@ -589,14 +812,38 @@ function Builder({
           {/* Left: editor */}
           <Glass padding={20} radius={20}>
             {tab === 'visual' ? (
-              <VisualEditor draft={draft} patch={patch} baseDescriptor={baseDescriptor} />
+              <VisualEditor
+                draft={draft}
+                patch={patch}
+                baseDescriptor={baseDescriptor}
+                sparsify={sparsify}
+              />
             ) : (
               <ScenarioWizard draft={draft} patch={patch} />
             )}
           </Glass>
 
-          {/* Right: preview + test */}
-          <div style={{ display: 'grid', gap: 12 }}>
+          {/*
+            Right: preview + test. Sticky so the card stays in view while the
+            admin works through the steps; it caps its own height and scrolls
+            internally, otherwise an open test iframe would push its own bottom
+            past the viewport where sticky can never bring it back.
+          */}
+          <div
+            style={{
+              display: 'grid',
+              gap: 12,
+              alignContent: 'start',
+              ...(stacked
+                ? null
+                : {
+                    position: 'sticky',
+                    top: stickyTop,
+                    maxHeight: `calc(100vh - ${stickyTop + 24}px)`,
+                    overflowY: 'auto',
+                  }),
+            }}
+          >
             <Glass padding={16} radius={18}>
               <Eyebrow>Live card preview</Eyebrow>
               <div style={{ marginTop: 12 }}>
@@ -610,162 +857,270 @@ function Builder({
             )}
           </div>
         </div>
-        {error && (
-          <div
-            style={{
-              marginTop: 16,
-              padding: '10px 14px',
-              borderRadius: 12,
-              background: COLOR.dangerSoft,
-              color: COLOR.danger,
-              fontSize: 13,
-            }}
-          >
-            {error}
-          </div>
-        )}
       </ScreenShell>
     </>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// Visual editor — every editable field
+// Visual editor — every editable field, grouped into four steps
 // ─────────────────────────────────────────────────────────────
 
 function VisualEditor({
   draft,
   patch,
   baseDescriptor,
+  sparsify,
 }: {
   draft: Partial<ScenarioOverrideRow>;
   patch: (p: Partial<ScenarioOverrideRow>) => void;
   baseDescriptor: BaseDescriptor | null;
+  /** Same sparsifier the save path uses — drives the "has overrides" dots. */
+  sparsify: (d: Partial<ScenarioOverrideRow>) => Partial<ScenarioOverrideRow>;
+}) {
+  const isAdminScenario = (draft.scenario_id ?? '').startsWith('admin:');
+  const [step, setStep] = useState<BuilderStepKey>('scenario');
+
+  const states = useMemo(
+    () =>
+      computeStepStates({
+        sparse: sparsify(draft),
+        draft,
+        // Library and user scenarios are live in the app already; only an
+        // admin-authored one starts hidden.
+        baseVisible: !isAdminScenario,
+        requireCoreFields: isAdminScenario,
+      }),
+    [draft, sparsify, isAdminScenario],
+  );
+
+  const index = Math.max(
+    0,
+    BUILDER_STEPS.findIndex((s) => s.key === step),
+  );
+  const def = BUILDER_STEPS[index];
+
+  return (
+    <div style={{ display: 'grid', gap: 18 }}>
+      <StepNav active={step} states={states} onStep={setStep} />
+      <div>
+        <Eyebrow>{`Step ${index + 1} of ${BUILDER_STEPS.length} · ${def.label}`}</Eyebrow>
+        <div style={{ fontSize: 13, color: COLOR.inkMute, marginTop: 4 }}>{def.hint}</div>
+      </div>
+
+      <div style={{ display: 'grid', gap: 18 }}>
+        {step === 'scenario' && (
+          <ScenarioStep
+            draft={draft}
+            patch={patch}
+            baseDescriptor={baseDescriptor}
+            missing={states.scenario.missing}
+          />
+        )}
+        {step === 'knowledge' && <KnowledgeSection draft={draft} patch={patch} />}
+        {step === 'ai' && <AiInstructionsStep draft={draft} patch={patch} />}
+        {step === 'card' && <CardStep draft={draft} patch={patch} baseDescriptor={baseDescriptor} />}
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          paddingTop: 14,
+          borderTop: `1px solid ${COLOR.border}`,
+        }}
+      >
+        <button
+          onClick={() => setStep(BUILDER_STEPS[index - 1].key)}
+          disabled={index === 0}
+          style={{
+            ...btnSecondary,
+            ...(index === 0 ? { opacity: 0.45, cursor: 'default' } : null),
+          }}
+        >
+          ← Back
+        </button>
+        <span
+          style={{
+            fontFamily: 'var(--pbt-mono)',
+            fontSize: 11,
+            color: COLOR.inkMute,
+            letterSpacing: '0.10em',
+            textTransform: 'uppercase',
+          }}
+        >
+          {`${index + 1} / ${BUILDER_STEPS.length}`}
+        </span>
+        <button
+          onClick={() => setStep(BUILDER_STEPS[index + 1].key)}
+          disabled={index === BUILDER_STEPS.length - 1}
+          style={{
+            ...btnSecondary,
+            marginLeft: 'auto',
+            ...(index === BUILDER_STEPS.length - 1
+              ? { opacity: 0.45, cursor: 'default' }
+              : null),
+          }}
+        >
+          Next →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Horizontal stepper. These are edit views, not a wizard — every pill is
+ * clickable in any order. A dot marks a step that carries overrides; a ⚠
+ * marks the Scenario step when an admin-authored scenario is missing a
+ * required field.
+ */
+function StepNav({
+  active,
+  states,
+  onStep,
+}: {
+  active: BuilderStepKey;
+  states: Record<BuilderStepKey, BuilderStepState>;
+  onStep: (k: BuilderStepKey) => void;
+}) {
+  return (
+    <div aria-label="Editor steps" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {BUILDER_STEPS.map((s, i) => {
+        const on = s.key === active;
+        const state = states[s.key];
+        const warn = state.missing.length > 0;
+        const notes = [
+          state.overrides > 0
+            ? `${state.overrides} field${state.overrides === 1 ? '' : 's'} overridden`
+            : null,
+          warn ? `missing ${state.missing.join(', ')}` : null,
+        ].filter(Boolean);
+        return (
+          <button
+            key={s.key}
+            aria-current={on ? 'step' : undefined}
+            onClick={() => onStep(s.key)}
+            title={notes.length ? `${s.label} — ${notes.join('; ')}` : s.label}
+            aria-label={notes.length ? `${s.label}, ${notes.join(', ')}` : s.label}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 14px 6px 6px',
+              borderRadius: 9999,
+              border: 'none',
+              cursor: 'pointer',
+              background: on ? COLOR.brand : 'rgba(60,20,15,0.06)',
+              color: on ? '#fff' : COLOR.ink,
+              fontFamily: 'var(--pbt-font)',
+              fontSize: 12.5,
+              fontWeight: 700,
+              transition: 'background 0.14s ease, color 0.14s ease',
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 9999,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: on ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.85)',
+                color: on ? '#fff' : COLOR.inkMute,
+                fontFamily: 'var(--pbt-mono)',
+                fontSize: 11,
+                fontWeight: 800,
+                flexShrink: 0,
+              }}
+            >
+              {i + 1}
+            </span>
+            <span>{s.label}</span>
+            {warn && (
+              <span aria-hidden style={{ fontSize: 11, color: on ? '#fff' : COLOR.warn }}>
+                ⚠
+              </span>
+            )}
+            {state.overrides > 0 && (
+              <span
+                aria-hidden
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 9999,
+                  background: on ? '#fff' : COLOR.brand,
+                  flexShrink: 0,
+                }}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+// ── Step 1 · Scenario ─────────────────────────────────────────
+
+function ScenarioStep({
+  draft,
+  patch,
+  baseDescriptor,
+  missing,
+}: {
+  draft: Partial<ScenarioOverrideRow>;
+  patch: (p: Partial<ScenarioOverrideRow>) => void;
+  baseDescriptor: BaseDescriptor | null;
+  /** Required-field labels still empty (admin-authored scenarios only). */
+  missing: string[];
 }) {
   const isAdminScenario = (draft.scenario_id ?? '').startsWith('admin:');
   return (
-    <div style={{ display: 'grid', gap: 18 }}>
-      {/* Visibility / sort / driver tint */}
-      <Section
-        label="Card display"
-        defaultOpen
-        help="How the scenario looks on the Home screen. None of this changes how the AI customer behaves."
-        tip={{
-          title: 'Card display & visibility',
-          body: (
-            <>
-              <p style={{ marginTop: 0 }}>
-                These settings only affect the <strong>card</strong> the trainee taps on the Home
-                screen — its position, its accent colour, and whether it appears at all. The AI
-                customer never sees any of it.
-              </p>
-              <p>
-                <strong>Visible</strong> is the live switch: unchecked, the scenario disappears from
-                the consumer app for everyone. Library and user-built scenarios open here already
-                ticked because they are live today — untick it only if you actually want to pull the
-                scenario.
-              </p>
-              <p style={{ marginBottom: 0 }}>
-                <strong>Card accent driver</strong> tints the card. Leave it empty and the card
-                follows the scenario's suggested driver.
-              </p>
-            </>
-          ),
-        }}
-      >
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-          <Field label="Visible" help="Unticked = removed from the app for everyone.">
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                type="checkbox"
-                checked={draft.visible ?? false}
-                onChange={(e) => patch({ visible: e.target.checked })}
-              />
-              {draft.visible ? 'Shown in app' : 'Hidden from app'}
-            </label>
-          </Field>
-          <Field label="Sort order" help="Lower first. Empty = default.">
-            <input
-              type="number"
-              value={draft.sort_order ?? ''}
-              onChange={(e) =>
-                patch({ sort_order: e.target.value === '' ? null : Number(e.target.value) })
-              }
-              style={inputStyle}
-              placeholder="—"
-            />
-          </Field>
-          <Field label="Card accent driver" help="Tint only — does not affect AI behaviour.">
-            <DriverSelect
-              value={draft.card_driver_override ?? null}
-              onChange={(v) => patch({ card_driver_override: v })}
-              allowEmpty
-            />
-          </Field>
+    <>
+      {missing.length > 0 && (
+        <div
+          style={{
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: COLOR.warnSoft,
+            color: COLOR.ink,
+            fontSize: 12.5,
+          }}
+        >
+          <strong>Still needed:</strong> {missing.join(', ')}. Admin-authored scenarios
+          need these before they read correctly in the app.
         </div>
-      </Section>
-
-      <Section label="Card text" defaultOpen>
-        <div style={{ display: 'grid', gap: 14 }}>
-          <Field label={`Card title (${(draft.card_title_override ?? '').length}/120)`}>
-            <input
-              maxLength={120}
-              value={draft.card_title_override ?? ''}
-              onChange={(e) => patch({ card_title_override: e.target.value })}
-              placeholder={baseDescriptor?.title ?? '—'}
-              style={inputStyle}
-            />
-          </Field>
-          <Field label={`Card subtitle (${(draft.card_subtitle_override ?? '').length}/240)`}>
-            <input
-              maxLength={240}
-              value={draft.card_subtitle_override ?? ''}
-              onChange={(e) => patch({ card_subtitle_override: e.target.value })}
-              placeholder={
-                baseDescriptor
-                  ? `${baseDescriptor.breed}. Driver: ${baseDescriptor.driver}.`
-                  : '—'
-              }
-              style={inputStyle}
-            />
-          </Field>
-          <Field label={`Start button label (${(draft.start_button_label ?? '').length}/40)`}>
-            <input
-              maxLength={40}
-              value={draft.start_button_label ?? ''}
-              onChange={(e) => patch({ start_button_label: e.target.value })}
-              placeholder="Start scenario"
-              style={inputStyle}
-            />
-          </Field>
-        </div>
-      </Section>
-
-      <Section label="Per-scenario info modal" defaultOpen>
-        <div style={{ display: 'grid', gap: 14 }}>
-          <Field label="Modal title (optional)">
-            <input
-              value={draft.info_modal_title ?? ''}
-              onChange={(e) => patch({ info_modal_title: e.target.value })}
-              placeholder="Defaults to card title"
-              style={inputStyle}
-            />
-          </Field>
-          <Field
-            label={`Modal body (${(draft.info_modal_body ?? '').length}/4000)`}
-            help="Plain text. Empty = info icon shows the global scoring modal instead."
+      )}
+      {/* Legacy column: no control writes it and the app never reads it, but a
+          value saved by an older client still counts as an override — surface
+          it with a way to clear, or the step badge points at nothing. */}
+      {(draft.title_override ?? '').trim() !== '' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: 'rgba(60,20,15,0.05)',
+            fontSize: 12.5,
+            color: COLOR.inkSoft,
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            Legacy title override: “{draft.title_override}” — no longer used by the app.
+          </span>
+          <button
+            onClick={() => patch({ title_override: null })}
+            style={{ ...btnSecondary, padding: '6px 12px', fontSize: 12 }}
           >
-            <textarea
-              maxLength={4000}
-              rows={5}
-              value={draft.info_modal_body ?? ''}
-              onChange={(e) => patch({ info_modal_body: e.target.value })}
-              style={textareaStyle}
-            />
-          </Field>
+            Clear
+          </button>
         </div>
-      </Section>
-
+      )}
       <Section
         label="Scenario fields"
         help={
@@ -953,52 +1308,200 @@ function VisualEditor({
           />
         </Field>
       </Section>
-
-      <KnowledgeSection draft={draft} patch={patch} />
-
-      <Section
-        label="Extra AI instructions"
-        help="Optional notes handed to the AI customer alongside its normal briefing. Scoring is unaffected."
-        defaultOpen
-      >
-        <TipField
-          label={`Opening notes — read before the briefing (${(draft.prompt_prefix ?? '').length}/${PROMPT_MAX})`}
-          help="Optional. Added to the top of the AI customer's briefing as admin notes. Use it to shape attitude or emphasis — e.g. “Be noticeably more impatient than usual.”"
-          tip={{
-            title: 'Opening notes (prompt prefix)',
-            body: <PromptWrapExplainer highlight="prefix" />,
-          }}
-        >
-          <textarea
-            maxLength={PROMPT_MAX}
-            rows={4}
-            value={draft.prompt_prefix ?? ''}
-            onChange={(e) => patch({ prompt_prefix: e.target.value })}
-            style={textareaStyle}
-            placeholder="Be noticeably more impatient than usual — you are late for work."
-          />
-        </TipField>
-        <TipField
-          label={`Final reminders — read after the briefing (${(draft.prompt_suffix ?? '').length}/${PROMPT_MAX})`}
-          help="Optional. Added at the very end, so it lands last. Use it for hard rules the customer must keep — e.g. “Never agree to the diet before asking about price.”"
-          tip={{
-            title: 'Final reminders (prompt suffix)',
-            body: <PromptWrapExplainer highlight="suffix" />,
-          }}
-        >
-          <textarea
-            maxLength={PROMPT_MAX}
-            rows={4}
-            value={draft.prompt_suffix ?? ''}
-            onChange={(e) => patch({ prompt_suffix: e.target.value })}
-            style={textareaStyle}
-            placeholder="Never agree to the diet before asking about price."
-          />
-        </TipField>
-      </Section>
-    </div>
+    </>
   );
 }
+
+// ── Step 3 · AI instructions ──────────────────────────────────
+
+function AiInstructionsStep({
+  draft,
+  patch,
+}: {
+  draft: Partial<ScenarioOverrideRow>;
+  patch: (p: Partial<ScenarioOverrideRow>) => void;
+}) {
+  return (
+    <Section
+      label="Extra AI instructions"
+      help="Optional notes handed to the AI customer alongside its normal briefing. Scoring is unaffected."
+      defaultOpen
+    >
+      <TipField
+        label={`Opening notes — read before the briefing (${(draft.prompt_prefix ?? '').length}/${PROMPT_MAX})`}
+        help="Optional. Added to the top of the AI customer's briefing as admin notes. Use it to shape attitude or emphasis — e.g. “Be noticeably more impatient than usual.”"
+        tip={{
+          title: 'Opening notes (prompt prefix)',
+          body: <PromptWrapExplainer highlight="prefix" />,
+        }}
+      >
+        <textarea
+          maxLength={PROMPT_MAX}
+          rows={4}
+          value={draft.prompt_prefix ?? ''}
+          onChange={(e) => patch({ prompt_prefix: e.target.value })}
+          style={textareaStyle}
+          placeholder="Be noticeably more impatient than usual — you are late for work."
+        />
+      </TipField>
+      <TipField
+        label={`Final reminders — read after the briefing (${(draft.prompt_suffix ?? '').length}/${PROMPT_MAX})`}
+        help="Optional. Added at the very end, so it lands last. Use it for hard rules the customer must keep — e.g. “Never agree to the diet before asking about price.”"
+        tip={{
+          title: 'Final reminders (prompt suffix)',
+          body: <PromptWrapExplainer highlight="suffix" />,
+        }}
+      >
+        <textarea
+          maxLength={PROMPT_MAX}
+          rows={4}
+          value={draft.prompt_suffix ?? ''}
+          onChange={(e) => patch({ prompt_suffix: e.target.value })}
+          style={textareaStyle}
+          placeholder="Never agree to the diet before asking about price."
+        />
+      </TipField>
+    </Section>
+  );
+}
+
+// ── Step 4 · Card & visibility ────────────────────────────────
+
+function CardStep({
+  draft,
+  patch,
+  baseDescriptor,
+}: {
+  draft: Partial<ScenarioOverrideRow>;
+  patch: (p: Partial<ScenarioOverrideRow>) => void;
+  baseDescriptor: BaseDescriptor | null;
+}) {
+  return (
+    <>
+      {/* Visibility / sort / driver tint */}
+      <Section
+        label="Card display"
+        defaultOpen
+        help="How the scenario looks on the Home screen. None of this changes how the AI customer behaves."
+        tip={{
+          title: 'Card display & visibility',
+          body: (
+            <>
+              <p style={{ marginTop: 0 }}>
+                These settings only affect the <strong>card</strong> the trainee taps on the Home
+                screen — its position, its accent colour, and whether it appears at all. The AI
+                customer never sees any of it.
+              </p>
+              <p>
+                <strong>Visible</strong> is the live switch: unchecked, the scenario disappears from
+                the consumer app for everyone. Library and user-built scenarios open here already
+                ticked because they are live today — untick it only if you actually want to pull the
+                scenario.
+              </p>
+              <p style={{ marginBottom: 0 }}>
+                <strong>Card accent driver</strong> tints the card. Leave it empty and the card
+                follows the scenario's suggested driver.
+              </p>
+            </>
+          ),
+        }}
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+          <Field label="Visible" help="Unticked = removed from the app for everyone.">
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={draft.visible ?? false}
+                onChange={(e) => patch({ visible: e.target.checked })}
+              />
+              {draft.visible ? 'Shown in app' : 'Hidden from app'}
+            </label>
+          </Field>
+          <Field label="Sort order" help="Lower first. Empty = default.">
+            <input
+              type="number"
+              value={draft.sort_order ?? ''}
+              onChange={(e) =>
+                patch({ sort_order: e.target.value === '' ? null : Number(e.target.value) })
+              }
+              style={inputStyle}
+              placeholder="—"
+            />
+          </Field>
+          <Field label="Card accent driver" help="Tint only — does not affect AI behaviour.">
+            <DriverSelect
+              value={draft.card_driver_override ?? null}
+              onChange={(v) => patch({ card_driver_override: v })}
+              allowEmpty
+            />
+          </Field>
+        </div>
+      </Section>
+
+      <Section label="Card text" defaultOpen>
+        <div style={{ display: 'grid', gap: 14 }}>
+          <Field label={`Card title (${(draft.card_title_override ?? '').length}/120)`}>
+            <input
+              maxLength={120}
+              value={draft.card_title_override ?? ''}
+              onChange={(e) => patch({ card_title_override: e.target.value })}
+              placeholder={baseDescriptor?.title ?? '—'}
+              style={inputStyle}
+            />
+          </Field>
+          <Field label={`Card subtitle (${(draft.card_subtitle_override ?? '').length}/240)`}>
+            <input
+              maxLength={240}
+              value={draft.card_subtitle_override ?? ''}
+              onChange={(e) => patch({ card_subtitle_override: e.target.value })}
+              placeholder={
+                baseDescriptor
+                  ? `${baseDescriptor.breed}. Driver: ${baseDescriptor.driver}.`
+                  : '—'
+              }
+              style={inputStyle}
+            />
+          </Field>
+          <Field label={`Start button label (${(draft.start_button_label ?? '').length}/40)`}>
+            <input
+              maxLength={40}
+              value={draft.start_button_label ?? ''}
+              onChange={(e) => patch({ start_button_label: e.target.value })}
+              placeholder="Start scenario"
+              style={inputStyle}
+            />
+          </Field>
+        </div>
+      </Section>
+
+      <Section label="Per-scenario info modal" defaultOpen>
+        <div style={{ display: 'grid', gap: 14 }}>
+          <Field label="Modal title (optional)">
+            <input
+              value={draft.info_modal_title ?? ''}
+              onChange={(e) => patch({ info_modal_title: e.target.value })}
+              placeholder="Defaults to card title"
+              style={inputStyle}
+            />
+          </Field>
+          <Field
+            label={`Modal body (${(draft.info_modal_body ?? '').length}/4000)`}
+            help="Plain text. Empty = info icon shows the global scoring modal instead."
+          >
+            <textarea
+              maxLength={4000}
+              rows={5}
+              value={draft.info_modal_body ?? ''}
+              onChange={(e) => patch({ info_modal_body: e.target.value })}
+              style={textareaStyle}
+            />
+          </Field>
+        </div>
+      </Section>
+    </>
+  );
+}
+
 
 /**
  * Shared explainer for the two prompt-wrap fields — shows where the text
@@ -1059,7 +1562,7 @@ function PromptWrapExplainer({ highlight }: { highlight: 'prefix' | 'suffix' }) 
 }
 
 // ─────────────────────────────────────────────────────────────
-// Knowledge & focus — what research the AI is allowed to draw on
+// Step 2 · Knowledge & focus — what research the AI is allowed to draw on
 // ─────────────────────────────────────────────────────────────
 
 function KnowledgeSection({

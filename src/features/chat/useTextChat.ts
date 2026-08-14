@@ -27,6 +27,7 @@ import { resolveRag } from '../../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from '../../services/ragShared';
 import { logEvent } from '../../lib/analytics';
 import { useLanguage } from '../../app/providers/LanguageProvider';
+import { translate } from '../../i18n/translate';
 
 const MAX_SESSIONS = 50;
 
@@ -350,9 +351,12 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     } catch (err) {
       console.error('[useTextChat] open failed', err);
       const msg = err instanceof Error ? err.message : '';
-      const friendly = msg.toLowerCase().includes('api key')
-        ? 'Gemini API key is not configured. Please add GEMINI_API_KEY to your environment.'
-        : 'Could not reach the AI — check your network and tap "Try again".';
+      const friendly = translate(
+        locale,
+        msg.toLowerCase().includes('api key')
+          ? 'chat.error.notConfigured'
+          : 'chat.error.openFailed',
+      );
       setTransientError(friendly);
       setStatus('error');
     }
@@ -426,7 +430,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         // works without duplicating it.
         const errMsg: ChatMessage = {
           role: 'ai',
-          text: 'Connection issue — your message was saved. Tap send to try again.',
+          text: translate(locale, 'chat.error.sendFailed'),
           timestamp: Date.now(),
           _transientError: true,
         };
@@ -437,7 +441,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           ...current.filter((x) => !x._transientError),
           errMsg,
         ]);
-        setTransientError('Tap send again to retry.');
+        setTransientError(translate(locale, 'chat.error.sendRetry'));
         setStatus('awaitingUser');
       }
     },

@@ -5,6 +5,7 @@ import {
 } from '../../services/petVisionService';
 import { logEvent } from '../../lib/analytics';
 import { useLanguage } from '../../app/providers/LanguageProvider';
+import { translate } from '../../i18n/translate';
 
 export type VisionStatus = 'idle' | 'analyzing' | 'done' | 'error';
 
@@ -79,12 +80,12 @@ export function usePetVision(): UsePetVision {
 
   const analyzeFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
-      setError('Please choose an image file.');
+      setError(translate(locale, 'analyzer.vision.error.notImage'));
       setStatus('error');
       return null;
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      setError('That image is over 5 MB — try a smaller photo.');
+      setError(translate(locale, 'analyzer.vision.error.tooLarge'));
       setStatus('error');
       return null;
     }
@@ -101,7 +102,7 @@ export function usePetVision(): UsePetVision {
       parts = await readFileParts(file);
     } catch {
       if (isCurrent()) {
-        setError('Could not read that image. Try another photo.');
+        setError(translate(locale, 'analyzer.vision.error.unreadable'));
         setStatus('error');
       }
       return null;
@@ -140,9 +141,12 @@ export function usePetVision(): UsePetVision {
       if (!isCurrent()) return null;
       const msg = err instanceof Error ? err.message : '';
       setError(
-        msg.toLowerCase().includes('api key')
-          ? 'Vision is not configured — the Gemini API key is missing.'
-          : 'Could not analyze the photo. Check your connection and try again.',
+        translate(
+          locale,
+          msg.toLowerCase().includes('api key')
+            ? 'analyzer.vision.error.notConfigured'
+            : 'analyzer.vision.error.failed',
+        ),
       );
       setStatus('error');
       return null;

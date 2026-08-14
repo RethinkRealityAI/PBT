@@ -9,7 +9,7 @@ import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useChat } from '../app/providers/ChatProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
-import { DIMENSIONS, bandFor } from '../data/knowledge/scoringRubric';
+import { bandFor } from '../data/knowledge/scoringRubric';
 import { isScoreUnavailable, normalizeScoreReport } from '../services/types';
 import { SessionFeedbackCard } from '../features/feedback/SessionFeedbackCard';
 import {
@@ -23,6 +23,11 @@ import { readStorage } from '../lib/storage';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
 import { setSelectedSessionId } from '../lib/selectedSession';
 import { useT } from '../i18n/useT';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import {
+  localizedDimension,
+  localizedDimensions,
+} from '../i18n/dataL10n/rubric';
 
 const easeOut = [0.22, 1, 0.36, 1] as const;
 
@@ -63,6 +68,7 @@ function MonoLabel({
 export function StatsScreen() {
   const { go } = useNavigation();
   const t = useT();
+  const { locale } = useLanguage();
   const chat = useChat();
   const { scenario } = useScenario();
   const reduceMotion = useReducedMotion();
@@ -148,7 +154,9 @@ export function StatsScreen() {
     );
   }
 
-  const focus = weakestDimension(report);
+  // `weakestDimension` picks from the canonical rubric (score + weight are
+  // language-independent); localize only what gets rendered.
+  const focus = localizedDimension(weakestDimension(report), locale);
   const bandColor = COLORS.score[report.band];
   // `focus.label` comes from the (admin-configurable) scoring rubric and is
   // interpolated as data — the surrounding sentence is what gets localized.
@@ -320,7 +328,7 @@ export function StatsScreen() {
         <MonoLabel>{t('stats.breakdown')}</MonoLabel>
         {/* Two-up on desktop so the dimensions don't form a tall narrow stack. */}
         <div className="lg:grid lg:grid-cols-2 lg:gap-3">
-          {DIMENSIONS.map((dim, idx) => {
+          {localizedDimensions(locale).map((dim, idx) => {
             const score = report[dim.key];
             const band = bandFor(score);
             const color = COLORS.score[band];

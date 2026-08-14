@@ -10,6 +10,7 @@ import { resolveRag } from '../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from './ragShared';
 import { uuid } from '../lib/id';
 import { DEFAULT_LOCALE, LOCALE_BCP47, type Locale } from '../i18n/locales';
+import { translate } from '../i18n/translate';
 
 export type EmotionColor = 'red' | 'yellow' | 'green';
 export type VoiceStatus =
@@ -492,7 +493,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       processor.connect(recordingCtx.destination);
     } catch (err) {
       console.error('[voiceSession] mic wiring error', err);
-      setError('Microphone could not be started. Please check your microphone and try again.');
+      setError(translate(localeRef.current, 'chat.voice.error.micStart'));
       setStatusSync('error');
     }
   }, [setError, setStatusSync]);
@@ -591,7 +592,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         await acquireMic();
       } catch (micErr) {
         console.error('[voiceSession] mic permission error', micErr);
-        setError('Microphone access denied or unavailable. Please allow microphone access and try again.');
+        setError(translate(localeRef.current, 'chat.voice.error.micDenied'));
         setStatusSync('error');
         cleanup();
         return;
@@ -869,7 +870,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
               code: errAny?.code,
               raw: e,
             });
-            setError('Voice connection error. Check your microphone and network, then try again.');
+            setError(translate(localeRef.current, 'chat.voice.error.connection'));
             setStatusSync('error');
             cleanup();
           },
@@ -885,7 +886,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
               statusRef.current === 'aiSpeaking' ||
               statusRef.current === 'connecting';
             if (active) {
-              setError('Voice connection lost. Check your network and tap Begin simulation to restart.');
+              setError(translate(localeRef.current, 'chat.voice.error.lost'));
               setStatusSync('error');
               cleanup();
             } else if (statusRef.current !== 'ended' && statusRef.current !== 'error') {
@@ -919,7 +920,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         raw: err,
       });
       const msg = err instanceof Error ? err.message : String(err);
-      setError(msg.toLowerCase().includes('api key') ? msg : `Voice could not start: ${msg || 'unknown error'}`);
+      setError(
+        msg.toLowerCase().includes('api key')
+          ? msg
+          : translate(localeRef.current, 'chat.voice.error.startFailed', {
+              reason:
+                msg || translate(localeRef.current, 'chat.voice.error.unknown'),
+            }),
+      );
       setStatusSync('error');
       cleanup();
     }

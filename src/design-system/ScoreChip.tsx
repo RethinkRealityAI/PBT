@@ -1,4 +1,5 @@
 import { scoreBandColor } from './tokens';
+import { useLanguage } from '../app/providers/LanguageProvider';
 
 export interface ScoreChipProps {
   score: number;
@@ -9,6 +10,7 @@ export interface ScoreChipProps {
  * 44×44 circle (default) showing a score number, color-coded by band.
  */
 export function ScoreChip({ score, size = 44 }: ScoreChipProps) {
+  const { t } = useLanguage();
   const clamped = Math.max(0, Math.min(100, Math.round(score)));
   const color = scoreBandColor(clamped);
   return (
@@ -28,7 +30,7 @@ export function ScoreChip({ score, size = 44 }: ScoreChipProps) {
         fontSize: size * 0.32,
       }}
       role="img"
-      aria-label={`Score ${clamped}`}
+      aria-label={t('chrome.score.chipAria', { score: clamped })}
     >
       {clamped}
     </div>

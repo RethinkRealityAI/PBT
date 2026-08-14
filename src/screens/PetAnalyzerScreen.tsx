@@ -13,7 +13,10 @@ import {
   type VisionSaveMeta,
 } from '../features/pet-analyzer/useSavedPets';
 import { usePetVision } from '../features/pet-analyzer/usePetVision';
-import { PetVisionCard } from '../features/pet-analyzer/PetVisionCard';
+import {
+  DERM_SEVERITY_KEY,
+  PetVisionCard,
+} from '../features/pet-analyzer/PetVisionCard';
 import { BreedSearch } from '../features/pet-analyzer/BreedSearch';
 import { isWeightPlausibleFor, resolveBreed } from '../data/breeds';
 import { BCS_LEVELS } from '../data/bcsLevels';
@@ -24,6 +27,8 @@ import { useScenario } from '../app/providers/ScenarioProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useT, type TFunction } from '../i18n/useT';
 import { useLanguage } from '../app/providers/LanguageProvider';
+import { translate } from '../i18n/translate';
+import type { Locale } from '../i18n/locales';
 import { localizedBcsLevel, localizedMcsLevel } from '../i18n/dataL10n/clinical';
 import { PUSHBACK_CATEGORIES, type Scenario } from '../data/scenarios';
 import {
@@ -37,6 +42,7 @@ function scenarioFromVision(
   breed: string,
   weightKg: number,
   result: PetVisionResult,
+  locale: Locale,
 ): Scenario {
   const pushbackId =
     result.bcs >= 7
@@ -46,15 +52,27 @@ function scenarioFromVision(
         : 'cost';
   const pushback =
     PUSHBACK_CATEGORIES.find((p) => p.id === pushbackId) ?? PUSHBACK_CATEGORIES[0];
+  // The context brief is read by the trainee (chat scenario panel) as well as
+  // the roleplay model, so it follows the app locale like every other visible
+  // string. Breed names stay canonical (glossary), and `ageEstimate` is
+  // already produced in the app locale by the vision service.
   const contextBits = [
-    `${breed || result.breed}, ${result.ageEstimate}.`,
-    `Estimated body condition score ${result.bcs}/9.`,
+    translate(locale, 'analyzer.vision.context.pet', {
+      breed: breed || result.breed,
+      age: result.ageEstimate,
+    }),
+    translate(locale, 'analyzer.vision.context.bcs', { score: result.bcs }),
   ];
   if (result.dermatitis.severity !== 'none') {
     contextBits.push(
-      `Visible skin/coat signs (${result.dermatitis.severity}): ${
-        result.dermatitis.indicators.join(', ') || result.dermatitis.note
-      }.`,
+      translate(locale, 'analyzer.vision.context.skin', {
+        severity: translate(
+          locale,
+          DERM_SEVERITY_KEY[result.dermatitis.severity] ?? DERM_SEVERITY_KEY.none,
+        ),
+        details:
+          result.dermatitis.indicators.join(', ') || result.dermatitis.note,
+      }),
     );
   }
   return {
@@ -645,7 +663,12 @@ export function PetAnalyzerScreen() {
             onClick={() => {
               if (!canSave || !vision.result) return;
               setScenario(
-                scenarioFromVision(state.breed, state.weightKg, vision.result),
+                scenarioFromVision(
+                  state.breed,
+                  state.weightKg,
+                  vision.result,
+                  locale,
+                ),
               );
               go('chat');
             }}

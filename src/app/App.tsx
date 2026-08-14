@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { ThemeProvider } from './providers/ThemeProvider';
-import { LanguageProvider } from './providers/LanguageProvider';
+import { LanguageProvider, useLanguage } from './providers/LanguageProvider';
 import { ProfileProvider, useProfile } from './providers/ProfileProvider';
 import {
   NavigationProvider,
@@ -319,6 +319,7 @@ function PreviewRunner() {
  * placeholder would flash.
  */
 function ScreenFallback() {
+  const { t } = useLanguage();
   return (
     <div
       className="flex min-h-0 flex-1 items-center justify-center"
@@ -326,7 +327,7 @@ function ScreenFallback() {
       aria-live="polite"
       aria-busy="true"
     >
-      <span className="sr-only">Loading</span>
+      <span className="sr-only">{t('chrome.loading')}</span>
       <span
         aria-hidden
         style={{

@@ -22,4 +22,10 @@ export const chrome: Record<keyof typeof enChrome, string> = {
   'chrome.nav.profile': 'Profil',
   'chrome.theme.dark': 'Thème sombre',
   'chrome.theme.light': 'Thème clair',
+
+  // ── Primitives partagées ──────────────────────────────────
+  'chrome.loading': 'Chargement',
+  'chrome.score.ringAria': 'Résultat de {score} sur 100',
+  'chrome.score.ringAriaLabelled': 'Résultat de {score} sur 100 — {label}',
+  'chrome.score.chipAria': 'Résultat de {score}',
 };

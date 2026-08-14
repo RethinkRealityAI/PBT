@@ -6,7 +6,8 @@ import { Segmented } from '../design-system/Segmented';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
-import { DIMENSIONS, bandFor } from '../data/knowledge/scoringRubric';
+import { bandFor } from '../data/knowledge/scoringRubric';
+import { localizedDimensions } from '../i18n/dataL10n/rubric';
 import { COLORS } from '../design-system/tokens';
 import { readStorage } from '../lib/storage';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
@@ -126,6 +127,7 @@ export function HistoryDetailScreen() {
 
 function ScorecardView({ session }: { session: SessionRecord }) {
   const t = useT();
+  const { locale } = useLanguage();
   // Rate-a-past-session: offer the form only for sessions the user hasn't
   // rated yet. Read once per session id so submitting (which only re-renders
   // the card) can't yank the card's "thanks" state. Evaluated before the
@@ -203,7 +205,7 @@ function ScorecardView({ session }: { session: SessionRecord }) {
       <div>
         <div style={{ height: 14 }} className="lg:hidden" />
         <SectionLabel>{t('history.detail.breakdown')}</SectionLabel>
-        {DIMENSIONS.map((dim) => {
+        {localizedDimensions(locale).map((dim) => {
           const score = report[dim.key];
           const band = bandFor(score);
           const color =
