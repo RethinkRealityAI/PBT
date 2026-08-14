@@ -145,13 +145,30 @@ function buildSeedDocs(): SeedDoc[] {
 
 async function seed(ctx: AdminCtx): Promise<Response> {
   const docs = buildSeedDocs();
+
+  // Re-seeding rebuilds these documents from code, but an admin's cataloguing
+  // (focus area) is NOT in the code — carry it across so "Load built-in
+  // knowledge" doesn't silently untag everything they filed.
+  const keptFocus = new Map<string, string>();
+  const { data: existing } = await ctx.sb
+    .from('knowledge_documents')
+    .select('slug, metadata')
+    .eq('source', 'code-seed');
+  for (const row of existing ?? []) {
+    const meta = (row.metadata ?? {}) as Bag;
+    const focus = readFocus(meta.tags);
+    if (focus) keptFocus.set(row.slug, focus);
+  }
+
   const { error } = await ctx.sb.from('knowledge_documents').upsert(
     docs.map((d) => ({
       slug: d.slug,
       title: d.title,
       category: d.category,
       content: d.content,
-      metadata: d.metadata,
+      metadata: keptFocus.has(d.slug)
+        ? { ...d.metadata, tags: { focus: keptFocus.get(d.slug) } }
+        : d.metadata,
       source: 'code-seed',
       updated_by: ctx.user.id,
       updated_at: new Date().toISOString(),
@@ -191,6 +208,107 @@ async function seed(ctx: AdminCtx): Promise<Response> {
     }
   }
   return jsonResponse({ ok: true, seeded: docs.length, failures });
+}
+
+/**
+ * Edit a document's cataloguing (title / category / focus area / citation).
+ *
+ * Deliberately does NOT touch `content` or embeddings — this is the cheap
+ * "file it correctly" path, distinct from re-ingesting. It DOES rewrite the
+ * document's chunk tags, because retrieval filters on chunk tags: a focus
+ * change that stopped at the document row would be invisible at query time.
+ */
+async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Response> {
+  const slug = String(body.slug ?? '').trim();
+  if (!slug) return errorResponse(400, 'slug required');
+
+  const hasFocus = Object.prototype.hasOwnProperty.call(body, 'focus');
+  const focusInput = body.focus == null ? null : String(body.focus).trim() || null;
+  if (hasFocus && focusInput !== null && !isFocusAreaKey(focusInput)) {
+    return errorResponse(400, `Unknown focus area: ${focusInput}`);
+  }
+
+  const { data: doc, error: readErr } = await ctx.sb
+    .from('knowledge_documents')
+    .select('id, slug, title, category, source, metadata')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (readErr) return errorResponse(500, readErr.message);
+  if (!doc) return errorResponse(404, 'Document not found');
+
+  const title = typeof body.title === 'string' ? body.title.trim() : null;
+  const category = typeof body.category === 'string' ? body.category.trim() : null;
+  if (title !== null && !title) return errorResponse(400, 'title cannot be empty');
+  if (category !== null && !CATEGORIES.includes(category)) {
+    return errorResponse(400, 'invalid category');
+  }
+  // Built-in documents are regenerated from code on every seed, so editing
+  // their title/type here would silently revert. Focus + citation survive a
+  // re-seed only in the chunk tags we write below… so we allow those, and
+  // block the two fields the seeder owns.
+  const retitles = (title !== null && title !== doc.title) || (category !== null && category !== doc.category);
+  if (retitles && doc.source !== 'admin') {
+    return errorResponse(
+      400,
+      'Built-in documents are rebuilt from code — re-run “Load built-in knowledge” to change their title or type. Focus area and citation can still be edited.',
+    );
+  }
+
+  const meta: Bag = doc.metadata && typeof doc.metadata === 'object' ? { ...(doc.metadata as Bag) } : {};
+  const nextFocus = hasFocus ? focusInput : readFocus(meta.tags);
+  meta.tags = applyFocus(meta.tags, nextFocus);
+
+  const hasCitation = Object.prototype.hasOwnProperty.call(body, 'citation');
+  let citation: string | null = typeof meta.citation === 'string' ? meta.citation : null;
+  if (hasCitation) {
+    citation = body.citation == null ? null : String(body.citation).trim() || null;
+    if (citation) meta.citation = citation;
+    else delete meta.citation;
+  }
+
+  const patch: Record<string, unknown> = {
+    metadata: meta,
+    updated_by: ctx.user.id,
+    updated_at: new Date().toISOString(),
+  };
+  if (title !== null) patch.title = title;
+  if (category !== null) patch.category = category;
+
+  const { error: writeErr } = await ctx.sb
+    .from('knowledge_documents')
+    .update(patch)
+    .eq('id', doc.id);
+  if (writeErr) return errorResponse(500, writeErr.message);
+
+  // Sync the chunk tag bags (focus + category + citation) without going
+  // anywhere near `embedding` — re-embedding is a separate, expensive op.
+  const nextCategory = category ?? doc.category;
+  const { data: chunkRows, error: chunkErr } = await ctx.sb
+    .from('knowledge_chunks')
+    .select('id, tags')
+    .eq('doc_id', doc.id);
+  if (chunkErr) return errorResponse(500, chunkErr.message);
+
+  let chunksUpdated = 0;
+  const chunkFailures: string[] = [];
+  for (const row of chunkRows ?? []) {
+    const tags = applyFocus(row.tags, nextFocus);
+    tags.category = nextCategory;
+    const rowPatch: Record<string, unknown> = { tags };
+    if (hasCitation) rowPatch.citation = citation;
+    const { error } = await ctx.sb.from('knowledge_chunks').update(rowPatch).eq('id', row.id);
+    if (error) chunkFailures.push(error.message);
+    else chunksUpdated++;
+  }
+
+  return jsonResponse({
+    ok: true,
+    slug,
+    focus: nextFocus,
+    citation,
+    chunks_updated: chunksUpdated,
+    chunk_failures: chunkFailures,
+  });
 }
 
 export default async (req: Request): Promise<Response> => {

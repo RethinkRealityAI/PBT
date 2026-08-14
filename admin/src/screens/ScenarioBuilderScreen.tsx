@@ -929,31 +929,299 @@ function VisualEditor({
         </Field>
       </Section>
 
+      <KnowledgeSection draft={draft} patch={patch} />
+
       <Section
-        label="AI prompt overrides"
-        help="Wraps the canonical customer prompt. The 7-dim scoring rubric is preserved regardless."
+        label="Extra AI instructions"
+        help="Optional notes handed to the AI customer alongside its normal briefing. Scoring is unaffected."
         defaultOpen
       >
-        <Field label={`Prompt prefix (${(draft.prompt_prefix ?? '').length}/${PROMPT_MAX})`}>
+        <TipField
+          label={`Opening notes — read before the briefing (${(draft.prompt_prefix ?? '').length}/${PROMPT_MAX})`}
+          help="Optional. Added to the top of the AI customer's briefing as admin notes. Use it to shape attitude or emphasis — e.g. “Be noticeably more impatient than usual.”"
+          tip={{
+            title: 'Opening notes (prompt prefix)',
+            body: <PromptWrapExplainer highlight="prefix" />,
+          }}
+        >
           <textarea
             maxLength={PROMPT_MAX}
             rows={4}
             value={draft.prompt_prefix ?? ''}
             onChange={(e) => patch({ prompt_prefix: e.target.value })}
             style={textareaStyle}
+            placeholder="Be noticeably more impatient than usual — you are late for work."
           />
-        </Field>
-        <Field label={`Prompt suffix (${(draft.prompt_suffix ?? '').length}/${PROMPT_MAX})`}>
+        </TipField>
+        <TipField
+          label={`Final reminders — read after the briefing (${(draft.prompt_suffix ?? '').length}/${PROMPT_MAX})`}
+          help="Optional. Added at the very end, so it lands last. Use it for hard rules the customer must keep — e.g. “Never agree to the diet before asking about price.”"
+          tip={{
+            title: 'Final reminders (prompt suffix)',
+            body: <PromptWrapExplainer highlight="suffix" />,
+          }}
+        >
           <textarea
             maxLength={PROMPT_MAX}
             rows={4}
             value={draft.prompt_suffix ?? ''}
             onChange={(e) => patch({ prompt_suffix: e.target.value })}
             style={textareaStyle}
+            placeholder="Never agree to the diet before asking about price."
           />
-        </Field>
+        </TipField>
       </Section>
     </div>
+  );
+}
+
+/**
+ * Shared explainer for the two prompt-wrap fields — shows where the text
+ * actually lands in the assembled system prompt (see
+ * `buildCustomerSystemPrompt` in src/data/knowledge/promptBuilders.ts).
+ */
+function PromptWrapExplainer({ highlight }: { highlight: 'prefix' | 'suffix' }) {
+  const line = (text: string, on: boolean) => (
+    <div
+      style={{
+        padding: '3px 8px',
+        borderRadius: 6,
+        background: on ? COLOR.brandSoft : 'transparent',
+        fontWeight: on ? 700 : 400,
+        color: on ? COLOR.ink : COLOR.inkMute,
+      }}
+    >
+      {text}
+    </div>
+  );
+  return (
+    <>
+      <p style={{ marginTop: 0 }}>
+        Both boxes are optional. Whatever you type is wrapped around the canonical customer briefing
+        — it never replaces it, and it never touches scoring. Each box is capped at {PROMPT_MAX}{' '}
+        characters and is trimmed before use.
+      </p>
+      <p style={{ marginBottom: 6 }}>The AI customer receives, in this order:</p>
+      <div
+        style={{
+          fontFamily: 'var(--pbt-mono)',
+          fontSize: 11.5,
+          lineHeight: 1.7,
+          border: `1px solid ${COLOR.border}`,
+          borderRadius: 10,
+          padding: 10,
+          background: 'rgba(255,255,255,0.6)',
+        }}
+      >
+        {line('# ADMIN NOTES (apply on top of the canonical brief below)', highlight === 'prefix')}
+        {line('  ‹global opening notes from the Simulation screen›', false)}
+        {line('  ‹your opening notes›', highlight === 'prefix')}
+        {line('You are roleplaying a Royal Canin customer…', false)}
+        {line('# DOG · # PUSHBACK · # YOUR PERSONALITY · # REFERENCE', false)}
+        {line('# ADMIN ADDENDUM', highlight === 'suffix')}
+        {line('  ‹your final reminders›', highlight === 'suffix')}
+        {line('  ‹global final reminders from the Simulation screen›', false)}
+      </div>
+      <p style={{ marginBottom: 0, marginTop: 10 }}>
+        {highlight === 'prefix'
+          ? 'Opening notes are read first, so they colour how the customer reads everything after them — good for attitude, mood, and emphasis.'
+          : 'Final reminders land last, right before the customer speaks, so they are the hardest to forget — good for absolute rules ("never…", "always…").'}{' '}
+        The global notes from the <strong>Simulation</strong> screen wrap outside yours and apply to
+        every scenario.
+      </p>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Knowledge & focus — what research the AI is allowed to draw on
+// ─────────────────────────────────────────────────────────────
+
+function KnowledgeSection({
+  draft,
+  patch,
+}: {
+  draft: Partial<ScenarioOverrideRow>;
+  patch: (p: Partial<ScenarioOverrideRow>) => void;
+}) {
+  const docs = useKnowledgeDocuments();
+  const selected = draft.knowledge_slugs ?? [];
+  const focus = draft.focus_area ?? null;
+  const focusMeta = FOCUS_AREAS.find((f) => f.key === focus) ?? null;
+
+  function toggleDoc(slug: string) {
+    const next = selected.includes(slug)
+      ? selected.filter((s) => s !== slug)
+      : [...selected, slug];
+    patch({ knowledge_slugs: next.length ? next : null });
+  }
+
+  return (
+    <Section
+      label="Knowledge & focus"
+      defaultOpen
+      help="Controls which supporting research the AI can pull in for this scenario."
+      tip={{
+        title: 'How scenario knowledge is used',
+        body: (
+          <>
+            <p style={{ marginTop: 0 }}>
+              Once per session the app searches the knowledge base for the few passages most
+              relevant to this scenario and hands them to the AI: the customer uses them as grounding
+              (it embodies the findings, it never quotes them), and the scorecard uses them as
+              evidence when it explains what the trainee should have said. Nothing here is shown to
+              the trainee directly.
+            </p>
+            <p style={{ marginBottom: 0 }}>
+              <strong>Focus area</strong> narrows that search to one clinical topic.{' '}
+              <strong>Attached documents</strong> are stricter still — when any are attached the
+              search only looks inside them and the focus area is ignored. Leave both empty and the
+              whole knowledge base is searched.
+            </p>
+          </>
+        ),
+      }}
+    >
+      <Field
+        label="Focus area"
+        help="Restricts the supporting research the AI draws on to one topic — e.g. a GI scenario stops pulling obesity studies. Leave off to search all knowledge."
+      >
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <PillToggle label="None" on={focus == null} onClick={() => patch({ focus_area: null })} />
+          {FOCUS_AREAS.map((f) => (
+            <PillToggle
+              key={f.key}
+              label={f.label}
+              title={f.description}
+              on={focus === f.key}
+              onClick={() => patch({ focus_area: focus === f.key ? null : f.key })}
+            />
+          ))}
+        </div>
+        {focusMeta && (
+          <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 8 }}>
+            {focusMeta.description}
+          </div>
+        )}
+      </Field>
+
+      <Field
+        label={`Attached documents${selected.length ? ` (${selected.length})` : ''}`}
+        help="Pin the exact documents this scenario reads from. When any are attached, the focus-area filter is ignored."
+      >
+        {docs.loading ? (
+          <LoadingShimmer height={80} />
+        ) : docs.data.length === 0 ? (
+          <div style={{ fontSize: 12, color: COLOR.inkMute }}>
+            No knowledge documents yet — add them in Library → Knowledge.
+          </div>
+        ) : (
+          <div
+            style={{
+              maxHeight: 260,
+              overflowY: 'auto',
+              display: 'grid',
+              gap: 6,
+              border: `1px solid ${COLOR.border}`,
+              borderRadius: 12,
+              padding: 8,
+              background: 'rgba(255,255,255,0.5)',
+            }}
+          >
+            {docs.data.map((d) => {
+              const hint = [d.category, focusHintOf(d.metadata)].filter(Boolean).join(' · ');
+              return (
+                <label
+                  key={d.slug}
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'flex-start',
+                    padding: '6px 8px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    background: selected.includes(d.slug) ? COLOR.brandSoft : 'transparent',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(d.slug)}
+                    onChange={() => toggleDoc(d.slug)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13, color: COLOR.ink }}>
+                      {d.title}
+                    </span>
+                    {hint && (
+                      <span
+                        style={{
+                          display: 'block',
+                          fontFamily: 'var(--pbt-mono)',
+                          fontSize: 10.5,
+                          color: COLOR.inkMute,
+                          marginTop: 1,
+                        }}
+                      >
+                        {hint}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        {selected.length > 0 && (
+          <button
+            onClick={() => patch({ knowledge_slugs: null })}
+            style={{ ...btnSecondary, marginTop: 8 }}
+          >
+            Clear attachments
+          </button>
+        )}
+      </Field>
+    </Section>
+  );
+}
+
+/** Best-effort focus tag off a knowledge document's metadata blob. */
+function focusHintOf(metadata: Record<string, unknown> | null): string | null {
+  const focus = metadata?.focus;
+  if (typeof focus !== 'string') return null;
+  return FOCUS_AREAS.find((f) => f.key === focus)?.label ?? focus;
+}
+
+function PillToggle({
+  label,
+  title,
+  on,
+  onClick,
+}: {
+  label: string;
+  title?: string;
+  on: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      aria-pressed={on}
+      style={{
+        padding: '6px 12px',
+        borderRadius: 9999,
+        border: 'none',
+        cursor: 'pointer',
+        background: on ? COLOR.brand : 'rgba(60,20,15,0.06)',
+        color: on ? '#fff' : COLOR.ink,
+        fontSize: 12,
+        fontWeight: 700,
+        fontFamily: 'var(--pbt-font)',
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
