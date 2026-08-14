@@ -1112,6 +1112,10 @@ function KnowledgeSection({
       >
         {docs.loading ? (
           <LoadingShimmer height={80} />
+        ) : docs.error ? (
+          <div style={{ fontSize: 12, color: COLOR.danger }}>
+            Couldn't load knowledge documents: {docs.error}
+          </div>
         ) : docs.data.length === 0 ? (
           <div style={{ fontSize: 12, color: COLOR.inkMute }}>
             No knowledge documents yet — add them in Library → Knowledge.
