@@ -14,6 +14,7 @@ import {
   stripServerManaged,
 } from '../../admin/src/data/scenarioManifest';
 import type { ScenarioOverrideRow, UserScenario } from '../../admin/src/data/types';
+import { LIBRARY_SCENARIOS } from '../data/scenarios';
 
 const seed = LIBRARY_MANIFEST[0];
 
@@ -210,12 +211,25 @@ describe('stripServerManaged', () => {
 });
 
 describe('LIBRARY_MANIFEST', () => {
-  it('carries the full scenario body for every entry', () => {
-    for (const s of LIBRARY_MANIFEST) {
-      expect(s.lifeStage).toBeTruthy();
-      expect(s.persona).toBeTruthy();
-      expect(s.context).toBeTruthy();
-      expect(s.openingLine).toBeTruthy();
-    }
+  // The manifest is a hand-maintained mirror of src/data/scenarios.ts (the
+  // admin app is a separate entry and does not import consumer data modules).
+  // This is the guard that keeps the mirror honest.
+  it('matches LIBRARY_SCENARIOS entry for entry', () => {
+    expect(LIBRARY_MANIFEST).toHaveLength(LIBRARY_SCENARIOS.length);
+    LIBRARY_SCENARIOS.forEach((s, i) => {
+      const m = LIBRARY_MANIFEST[i];
+      expect(m.id).toBe(`seed:${i}`);
+      expect(m.title).toBe(s.pushback.title);
+      expect(m.breed).toBe(s.breed);
+      expect(m.pushback).toBe(s.pushback.id);
+      expect(m.driver).toBe(s.suggestedDriver);
+      expect(m.defaultDifficulty).toBe(s.difficulty);
+      expect(m.lifeStage).toBe(s.age);
+      expect(m.persona).toBe(s.persona);
+      expect(m.pushbackNotes).toBe(s.pushbackNotes ?? null);
+      expect(m.context).toBe(s.context ?? null);
+      expect(m.openingLine).toBe(s.openingLine ?? null);
+      expect(m.weightKg).toBe(s.weightKg == null ? null : Number(s.weightKg));
+    });
   });
 });
