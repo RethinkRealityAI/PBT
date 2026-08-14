@@ -636,12 +636,7 @@ export function SimulationScreen() {
   // Initialise the draft from the loaded config exactly once it arrives.
   useEffect(() => {
     if (snapshot.loading || draft) return;
-    const d = buildDraft(snapshot.data);
-    setDraft(d);
-    baselineRef.current = JSON.stringify(d);
-    if (Object.keys(d.pushbacks).length) {
-      setSelectedPushback((prev) => prev ?? Object.keys(d.pushbacks)[0]);
-    }
+    applyConfig(snapshot.data);
   }, [snapshot.loading, snapshot.data, draft]);
 
   const dirty = useMemo(

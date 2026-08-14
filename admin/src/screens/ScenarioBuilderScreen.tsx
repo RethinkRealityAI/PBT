@@ -29,9 +29,11 @@ import {
   useUserScenarios,
 } from '../data/queries';
 import type { ScenarioOverrideRow, UserScenario } from '../data/types';
+import { resolveDocFocus } from '../data/knowledgeActions';
 import {
   LIBRARY_MANIFEST,
   buildInitialDraft,
+  diffAgainstBase,
   stripServerManaged,
 } from '../data/scenarioManifest';
 import { FOCUS_AREAS } from '../../../src/shared/knowledge/focusAreas';
@@ -199,6 +201,20 @@ export function ScenarioBuilderScreen({
         scenarioId={scenarioId}
         initial={initial}
         hasOverride={Boolean(active?.override)}
+        sparsify={(d) =>
+          seedDraft && seedDraft.scenario_id === activeId
+            ? d
+            : diffAgainstBase(
+                d,
+                {
+                  id: scenarioId,
+                  source: active?.source ?? 'admin',
+                  override: active?.override ?? null,
+                },
+                baseManifest,
+                active?.userScenario ?? null,
+              )
+        }
         baseDescriptor={
           baseManifest
             ? {
@@ -355,6 +371,7 @@ function Builder({
   scenarioId,
   initial,
   hasOverride,
+  sparsify,
   baseDescriptor,
   onClose,
   onSaved,
@@ -364,6 +381,12 @@ function Builder({
   initial: Partial<ScenarioOverrideRow>;
   /** True when a scenario_overrides row already exists for this scenario. */
   hasOverride: boolean;
+  /**
+   * Turns the hydrated draft back into a sparse override before saving —
+   * fields still equal to the base scenario go out as null ("inherit"), so
+   * saving doesn't freeze a copy of the base against future seed updates.
+   */
+  sparsify: (d: Partial<ScenarioOverrideRow>) => Partial<ScenarioOverrideRow>;
   baseDescriptor: BaseDescriptor | null;
   onClose: () => void;
   onSaved: () => void;
@@ -417,10 +440,11 @@ function Builder({
         throw new Error(`Prompt overrides must be ≤ ${PROMPT_MAX} chars.`);
       }
       // Trim empties → null so they don't accidentally override defaults.
-      // `stripServerManaged` drops updated_at / created_at / created_by /
-      // updated_by / deleted_at — they ride along on the hydrated draft but
-      // are the server's to set.
-      const trimmed: Partial<ScenarioOverrideRow> = stripServerManaged(draft);
+      // `sparsify` nulls out fields still equal to the base scenario (so
+      // saving never pins base values); `stripServerManaged` drops
+      // updated_at / created_at / created_by / updated_by / deleted_at —
+      // they ride along on the hydrated draft but are the server's to set.
+      const trimmed: Partial<ScenarioOverrideRow> = stripServerManaged(sparsify(draft));
       const stringFields: Array<keyof ScenarioOverrideRow> = [
         'title_override',
         'context_override',
@@ -1192,8 +1216,8 @@ function KnowledgeSection({
 
 /** Best-effort focus tag off a knowledge document's metadata blob. */
 function focusHintOf(metadata: Record<string, unknown> | null): string | null {
-  const focus = metadata?.focus;
-  if (typeof focus !== 'string') return null;
+  const focus = resolveDocFocus(metadata);
+  if (!focus) return null;
   return FOCUS_AREAS.find((f) => f.key === focus)?.label ?? focus;
 }
 

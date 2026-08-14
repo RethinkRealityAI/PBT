@@ -127,6 +127,29 @@ export function buildInitialDraft(
   manifest: SeedScenarioManifest | null,
   userScenario: UserScenario | null,
 ): Partial<ScenarioOverrideRow> {
+  const draft = buildBaseLayer(entry, manifest, userScenario);
+
+  const row = entry.override;
+  if (!row) return draft;
+
+  const server = new Set<string>(SERVER_MANAGED_COLUMNS);
+  for (const [key, value] of Object.entries(row)) {
+    if (server.has(key)) continue;
+    // null = "no override for this field" → keep the base value.
+    if (value === null || value === undefined) continue;
+    (draft as Record<string, unknown>)[key] = value;
+  }
+  draft.scenario_id = entry.id;
+  draft.visible = row.visible;
+  return draft;
+}
+
+/** The base layer only: what the scenario looks like with NO override row. */
+export function buildBaseLayer(
+  entry: ScenarioDraftEntry,
+  manifest: SeedScenarioManifest | null,
+  userScenario: UserScenario | null,
+): Partial<ScenarioOverrideRow> {
   const draft: Partial<ScenarioOverrideRow> = {
     scenario_id: entry.id,
     // Seed + user scenarios are live in the consumer app right now; only a
@@ -158,19 +181,34 @@ export function buildInitialDraft(
     draft.opening_line_override = userScenario.opening_line;
   }
 
-  const row = entry.override;
-  if (!row) return draft;
-
-  const server = new Set<string>(SERVER_MANAGED_COLUMNS);
-  for (const [key, value] of Object.entries(row)) {
-    if (server.has(key)) continue;
-    // null = "no override for this field" → keep the base value.
-    if (value === null || value === undefined) continue;
-    (draft as Record<string, unknown>)[key] = value;
-  }
-  draft.scenario_id = entry.id;
-  draft.visible = row.visible;
   return draft;
+}
+
+/**
+ * Turn an edited draft back into a SPARSE override before saving: any field
+ * whose value still equals the base layer is sent as null ("inherit"), so
+ * opening the editor and saving does not freeze a copy of the base scenario —
+ * later updates to the seed copy in src/data/scenarios.ts (or to the user's
+ * own scenario) keep flowing through. Admin-authored scenarios have no base,
+ * so their draft passes through unchanged.
+ */
+export function diffAgainstBase(
+  draft: Partial<ScenarioOverrideRow>,
+  entry: ScenarioDraftEntry,
+  manifest: SeedScenarioManifest | null,
+  userScenario: UserScenario | null,
+): Partial<ScenarioOverrideRow> {
+  if (entry.source === 'admin') return { ...draft };
+  const base = buildBaseLayer(entry, manifest, userScenario) as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...draft };
+  for (const [key, value] of Object.entries(out)) {
+    if (key === 'scenario_id' || key === 'visible') continue;
+    const norm = typeof value === 'string' ? value.trim() || null : value;
+    const baseVal = base[key];
+    const baseNorm = typeof baseVal === 'string' ? baseVal.trim() || null : (baseVal ?? null);
+    out[key] = norm !== null && norm !== baseNorm ? norm : null;
+  }
+  return out as Partial<ScenarioOverrideRow>;
 }
 
 /** Drop server-managed columns before POSTing a draft. */

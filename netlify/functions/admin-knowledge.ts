@@ -147,9 +147,10 @@ async function seed(ctx: AdminCtx): Promise<Response> {
   const docs = buildSeedDocs();
 
   // Re-seeding rebuilds these documents from code, but an admin's cataloguing
-  // (focus area) is NOT in the code — carry it across so "Load built-in
-  // knowledge" doesn't silently untag everything they filed.
+  // (focus area, citation) is NOT in the code — carry it across so "Load
+  // built-in knowledge" doesn't silently untag everything they filed.
   const keptFocus = new Map<string, string>();
+  const keptCitation = new Map<string, string>();
   const { data: existing } = await ctx.sb
     .from('knowledge_documents')
     .select('slug, metadata')
@@ -158,6 +159,9 @@ async function seed(ctx: AdminCtx): Promise<Response> {
     const meta = (row.metadata ?? {}) as Bag;
     const focus = readFocus(meta.tags);
     if (focus) keptFocus.set(row.slug, focus);
+    if (typeof meta.citation === 'string' && meta.citation) {
+      keptCitation.set(row.slug, meta.citation);
+    }
   }
 
   const { error } = await ctx.sb.from('knowledge_documents').upsert(
@@ -166,9 +170,11 @@ async function seed(ctx: AdminCtx): Promise<Response> {
       title: d.title,
       category: d.category,
       content: d.content,
-      metadata: keptFocus.has(d.slug)
-        ? { ...d.metadata, tags: { focus: keptFocus.get(d.slug) } }
-        : d.metadata,
+      metadata: {
+        ...d.metadata,
+        ...(keptFocus.has(d.slug) ? { tags: { focus: keptFocus.get(d.slug) } } : {}),
+        ...(keptCitation.has(d.slug) ? { citation: keptCitation.get(d.slug) } : {}),
+      },
       source: 'code-seed',
       updated_by: ctx.user.id,
       updated_at: new Date().toISOString(),
@@ -203,7 +209,7 @@ async function seed(ctx: AdminCtx): Promise<Response> {
             ...d.metadata,
             ...(keptFocus.has(d.slug) ? { focus: keptFocus.get(d.slug) } : {}),
           },
-          citation: null,
+          citation: keptCitation.get(d.slug) ?? null,
           embedding: `[${embeddings[i].join(',')}]`,
         })),
       );
@@ -293,16 +299,28 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
     .eq('doc_id', doc.id);
   if (chunkErr) return errorResponse(500, chunkErr.message);
 
+  // Batched with bounded concurrency — a large PDF can hold hundreds of
+  // chunks, and one awaited round-trip per row would run past the function
+  // timeout, leaving retrieval tags half-updated.
   let chunksUpdated = 0;
   const chunkFailures: string[] = [];
-  for (const row of chunkRows ?? []) {
-    const tags = applyFocus(row.tags, nextFocus);
-    tags.category = nextCategory;
-    const rowPatch: Record<string, unknown> = { tags };
-    if (hasCitation) rowPatch.citation = citation;
-    const { error } = await ctx.sb.from('knowledge_chunks').update(rowPatch).eq('id', row.id);
-    if (error) chunkFailures.push(error.message);
-    else chunksUpdated++;
+  const rows = chunkRows ?? [];
+  const BATCH = 25;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const results = await Promise.all(
+      rows.slice(i, i + BATCH).map(async (row) => {
+        const tags = applyFocus(row.tags, nextFocus);
+        tags.category = nextCategory;
+        const rowPatch: Record<string, unknown> = { tags };
+        if (hasCitation) rowPatch.citation = citation;
+        const { error } = await ctx.sb.from('knowledge_chunks').update(rowPatch).eq('id', row.id);
+        return error?.message ?? null;
+      }),
+    );
+    for (const err of results) {
+      if (err) chunkFailures.push(err);
+      else chunksUpdated++;
+    }
   }
 
   return jsonResponse({

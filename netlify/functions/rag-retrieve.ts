@@ -116,11 +116,17 @@ export default async (req: Request): Promise<Response> => {
 
     let { data, error } = await sb.rpc('match_knowledge_chunks', args);
 
-    // Fail-open on the FILTER, not just on the service: a targeted query that
-    // errors (e.g. the doc_slugs migration hasn't been applied yet) or that
-    // matches nothing falls back to un-targeted retrieval so grounding never
-    // gets worse than it was before scenarios carried knowledge links.
-    if (filtered && (error || !(data as Row[] | null)?.length)) {
+    // Fallback semantics differ by filter kind:
+    // • RPC ERROR (e.g. the doc_slugs migration hasn't been applied yet):
+    //   retry unfiltered for BOTH kinds — grounding must never get worse than
+    //   it was before scenarios carried knowledge links.
+    // • ZERO ROWS with a focus filter: retry unfiltered — a topic nobody has
+    //   tagged yet shouldn't strip the session of all grounding.
+    // • ZERO ROWS with explicit doc attachments: honest empty result. The
+    //   admin UI promises "the search only looks inside them", so pulling
+    //   from the whole corpus here would silently break that contract.
+    const zeroRows = !(data as Row[] | null)?.length;
+    if (filtered && (error || (zeroRows && !filters.docSlugs))) {
       if (error) console.warn('[rag-retrieve] filtered rpc failed', error.message);
       ({ data, error } = await sb.rpc('match_knowledge_chunks', {
         query_embedding: literal,

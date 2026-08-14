@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LIBRARY_MANIFEST,
   buildInitialDraft,
+  diffAgainstBase,
   stripServerManaged,
 } from '../../admin/src/data/scenarioManifest';
 import type { ScenarioOverrideRow, UserScenario } from '../../admin/src/data/types';
@@ -199,6 +200,61 @@ describe('buildInitialDraft', () => {
     expect(draft.breed).toBe('GSD');
     expect(draft.card_title_override).toBe('Breeder said raw');
     expect(draft.visible).toBe(true);
+  });
+});
+
+describe('diffAgainstBase', () => {
+  const entry = { id: 'seed:0', source: 'library' as const, override: null };
+
+  it('nulls out fields still equal to the base so saving never pins a copy', () => {
+    const draft = buildInitialDraft(entry, seed, null);
+    const sparse = diffAgainstBase(draft, entry, seed, null);
+    expect(sparse.breed).toBeNull();
+    expect(sparse.context_override).toBeNull();
+    expect(sparse.opening_line_override).toBeNull();
+    expect(sparse.difficulty_override).toBeNull();
+    // Identity + visibility always ride along.
+    expect(sparse.scenario_id).toBe('seed:0');
+    expect(sparse.visible).toBe(true);
+  });
+
+  it('keeps only the fields the admin actually changed', () => {
+    const draft = buildInitialDraft(entry, seed, null);
+    draft.breed = 'Malinois';
+    draft.prompt_prefix = 'Be extra impatient.';
+    const sparse = diffAgainstBase(draft, entry, seed, null);
+    expect(sparse.breed).toBe('Malinois');
+    expect(sparse.prompt_prefix).toBe('Be extra impatient.');
+    expect(sparse.persona_override).toBeNull();
+  });
+
+  it('treats a cleared string as inherit, and trims before comparing', () => {
+    const draft = buildInitialDraft(entry, seed, null);
+    draft.context_override = '';
+    draft.breed = ` ${seed.breed} `;
+    const sparse = diffAgainstBase(draft, entry, seed, null);
+    expect(sparse.context_override).toBeNull();
+    expect(sparse.breed).toBeNull();
+  });
+
+  it('passes admin-authored drafts through unchanged (no base to diff)', () => {
+    const adminEntry = { id: 'admin:abc', source: 'admin' as const, override: null };
+    const draft: Partial<ScenarioOverrideRow> = {
+      scenario_id: 'admin:abc',
+      visible: false,
+      breed: 'Corgi',
+      focus_area: 'gi',
+    };
+    expect(diffAgainstBase(draft, adminEntry, null, null)).toEqual(draft);
+  });
+
+  it('keeps knowledge links (arrays have no base value)', () => {
+    const draft = buildInitialDraft(entry, seed, null);
+    draft.knowledge_slugs = ['clinical:reference'];
+    draft.focus_area = 'weight';
+    const sparse = diffAgainstBase(draft, entry, seed, null);
+    expect(sparse.knowledge_slugs).toEqual(['clinical:reference']);
+    expect(sparse.focus_area).toBe('weight');
   });
 });
 
