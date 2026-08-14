@@ -13,7 +13,7 @@
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 
-interface OverrideUpsert {
+export interface OverrideUpsert {
   scenario_id: string;
   visible?: boolean;
   sort_order?: number | null;
@@ -75,7 +75,7 @@ const WRITABLE_COLUMNS = [
   'knowledge_slugs',
 ] as const satisfies readonly (keyof OverrideUpsert)[];
 
-function pickWritable(body: OverrideUpsert): Record<string, unknown> {
+export function pickWritable(body: OverrideUpsert): Record<string, unknown> {
   const src = body as unknown as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const key of WRITABLE_COLUMNS) {
@@ -93,7 +93,7 @@ const MAX_INFO_BODY_LEN = 4000;
 const MAX_START_BTN_LEN = 40;
 const DRIVERS = ['Activator', 'Energizer', 'Analyzer', 'Harmonizer'];
 
-function validateOverride(o: OverrideUpsert): string | null {
+export function validateOverride(o: OverrideUpsert): string | null {
   if (!o.scenario_id || typeof o.scenario_id !== 'string') return 'scenario_id required';
   if (o.prompt_prefix && o.prompt_prefix.length > MAX_PROMPT_LEN)
     return `prompt_prefix too long (max ${MAX_PROMPT_LEN})`;

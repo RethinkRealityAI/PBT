@@ -15,6 +15,11 @@ import {
 } from '../../admin/src/data/scenarioManifest';
 import type { ScenarioOverrideRow, UserScenario } from '../../admin/src/data/types';
 import { LIBRARY_SCENARIOS } from '../data/scenarios';
+import {
+  pickWritable,
+  validateOverride,
+  type OverrideUpsert,
+} from '../../netlify/functions/admin-scenario-overrides';
 
 const seed = LIBRARY_MANIFEST[0];
 
@@ -231,5 +236,65 @@ describe('LIBRARY_MANIFEST', () => {
       expect(m.openingLine).toBe(s.openingLine ?? null);
       expect(m.weightKg).toBe(s.weightKg == null ? null : Number(s.weightKg));
     });
+  });
+});
+
+describe('admin-scenario-overrides validation', () => {
+  const base: OverrideUpsert = { scenario_id: 'seed:0' };
+
+  it('accepts a known focus area and rejects an unknown one', () => {
+    expect(validateOverride({ ...base, focus_area: 'gi' })).toBeNull();
+    expect(validateOverride({ ...base, focus_area: null })).toBeNull();
+    expect(validateOverride({ ...base, focus_area: 'nonsense' })).toBe(
+      'focus_area must be a known focus area key',
+    );
+  });
+
+  it('validates knowledge_slugs shape, count, and entry length', () => {
+    expect(validateOverride({ ...base, knowledge_slugs: ['a', 'b'] })).toBeNull();
+    expect(validateOverride({ ...base, knowledge_slugs: null })).toBeNull();
+    expect(
+      validateOverride({
+        ...base,
+        knowledge_slugs: 'not-an-array' as unknown as string[],
+      }),
+    ).toBe('knowledge_slugs must be an array');
+    expect(
+      validateOverride({
+        ...base,
+        knowledge_slugs: Array.from({ length: 41 }, (_, i) => `doc-${i}`),
+      }),
+    ).toBe('knowledge_slugs too long (max 40)');
+    expect(
+      validateOverride({ ...base, knowledge_slugs: ['x'.repeat(201)] }),
+    ).toMatch(/knowledge_slugs entries/);
+    expect(
+      validateOverride({ ...base, knowledge_slugs: [42 as unknown as string] }),
+    ).toMatch(/knowledge_slugs entries/);
+  });
+
+  it('keeps only writable columns out of the request body', () => {
+    const out = pickWritable({
+      scenario_id: 'seed:0',
+      breed: 'Lab',
+      focus_area: 'weight',
+      knowledge_slugs: ['a'],
+      // Server-owned / unknown fields must not survive.
+      created_by: 'attacker',
+      updated_by: 'attacker',
+      deleted_at: '2026-01-01',
+      updated_at: '2026-01-01',
+      bogus: true,
+    } as unknown as OverrideUpsert);
+    expect(out).toEqual({
+      scenario_id: 'seed:0',
+      breed: 'Lab',
+      focus_area: 'weight',
+      knowledge_slugs: ['a'],
+    });
+  });
+
+  it('does not add keys the client omitted', () => {
+    expect(pickWritable({ scenario_id: 'admin:1' })).toEqual({ scenario_id: 'admin:1' });
   });
 });
