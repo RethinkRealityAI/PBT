@@ -226,7 +226,7 @@ export function ScenarioBuilderScreen({
     <>
       <ContextBar
         title="Scenario builder"
-        subtitle="Edit overrides on library + user scenarios, or build new ones from scratch with the AI wizard."
+        subtitle="Edit any scenario the app ships with, tune one a user built, or write a new one from scratch. Saved changes go live immediately."
         query={query}
         onQuery={onQuery}
       />
@@ -261,7 +261,9 @@ export function ScenarioBuilderScreen({
                   onOpen={() => setActiveId(it.id)}
                   onDuplicate={async () => {
                     if (!it.override) {
-                      alert('Add an override first, then duplicate.');
+                      alert(
+                        'Open this scenario and save it once — duplicating copies a saved scenario.',
+                      );
                       return;
                     }
                     await duplicateScenario(it.id);

@@ -5,7 +5,7 @@ import { EmptyState, LoadingShimmer, SectionTitle, StatusPill } from '../primiti
 import { COLOR } from '../lib/tokens';
 import { revertAuditEntry, useAuditLog } from '../data/queries';
 import { fmtAgo } from '../lib/format';
-import type { AuditLogRow } from '../data/types';
+import { REVERTABLE_ENTITY_TYPES, type AuditLogRow } from '../data/types';
 
 const ACTION_TONE: Record<string, 'success' | 'info' | 'warn' | 'danger' | 'neutral'> = {
   create: 'success',
@@ -34,7 +34,7 @@ export function AuditLogScreen() {
     <>
       <ContextBar
         title="Audit log"
-        subtitle="Every flag, rule, and scenario-override change. Click revert to roll back."
+        subtitle="Every admin change — flags, rules, scenario overrides, simulation config, people, and email. Revert rolls back the ones that can be rolled back."
       />
       <ScreenShell>
         <Glass padding={20} radius={20}>
@@ -71,6 +71,9 @@ function AuditRow({
   reverting: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // The server can only roll back entity types it has a restore branch for;
+  // anything else 400s. Don't offer an action that cannot succeed.
+  const revertable = REVERTABLE_ENTITY_TYPES.has(row.entity_type) && row.action !== 'revert';
   return (
     <div
       style={{
@@ -109,16 +112,24 @@ function AuditRow({
         </button>
         <button
           onClick={onRevert}
-          disabled={reverting || row.action === 'revert'}
+          disabled={reverting || !revertable}
+          title={
+            revertable
+              ? undefined
+              : row.action === 'revert'
+                ? 'Already a revert'
+                : `Revert is not supported for ${row.entity_type}`
+          }
           style={{
             padding: '4px 10px',
             borderRadius: 8,
             border: 'none',
-            cursor: 'pointer',
+            cursor: revertable && !reverting ? 'pointer' : 'not-allowed',
             background: reverting ? 'rgba(60,20,15,0.06)' : COLOR.brandSoft,
             color: COLOR.brand,
             fontWeight: 700,
             fontSize: 11,
+            opacity: revertable ? 1 : 0.45,
           }}
         >
           {reverting ? '…' : 'Revert'}

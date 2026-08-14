@@ -4,9 +4,9 @@
  * Guards the bug where opening a never-overridden scenario showed a blank
  * form: the editor must open on the scenario's CURRENT EFFECTIVE VALUES.
  *
- * Lives under src/tests (not admin/) because vitest's `include` is
- * `src/**` — the admin app is a second Vite entry of this same project and
- * has no runner of its own.
+ * Lives under src/tests because it spans all three layers of the change:
+ * the admin manifest/hydration helpers, the consumer scenario data it
+ * mirrors (src/data/scenarios.ts), and the Netlify function's validation.
  */
 import { describe, expect, it } from 'vitest';
 import {
