@@ -8,6 +8,7 @@
  * `src/**` — the admin app is a second Vite entry of this same project and
  * has no runner of its own.
  */
+import { describe, expect, it } from 'vitest';
 import {
   LIBRARY_MANIFEST,
   buildInitialDraft,
