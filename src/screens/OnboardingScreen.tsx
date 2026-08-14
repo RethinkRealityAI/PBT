@@ -3,7 +3,10 @@ import { motion } from 'motion/react';
 import { Orb } from '../design-system/Orb';
 import { PillButton } from '../design-system/PillButton';
 import { Icon } from '../design-system/Icon';
+import { Glass } from '../design-system/Glass';
 import { useNavigation } from '../app/providers/NavigationProvider';
+import { useTheme } from '../app/providers/ThemeProvider';
+import { LocaleToggle } from '../shell/LocaleToggle';
 import { AccountUpgradeModal } from '../features/auth/AccountUpgradeModal';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
@@ -32,6 +35,7 @@ const SLIDES: { eyebrow: CatalogKey; title: CatalogKey; body: CatalogKey }[] = [
 export function OnboardingScreen() {
   const { go } = useNavigation();
   const t = useT();
+  const { resolvedTheme, toggle } = useTheme();
   const [slide, setSlide] = useState(0);
   // The "Sign in" link on the landing page now opens this modal instead of
   // jumping straight to the quiz — that previous behaviour bypassed the
@@ -51,8 +55,40 @@ export function OnboardingScreen() {
   return (
     <div
       className="flex h-full flex-col items-center justify-between px-6 pb-8"
-      style={{ paddingTop: 'clamp(20px, 6vh, 48px)', overflowY: 'auto' }}
+      style={{ paddingTop: 0, overflowY: 'auto' }}
     >
+      {/*
+       * Chromeless screen — no TopBar/Sidebar here, so the language + theme
+       * toggles ride at the top of the page itself. The row owns the
+       * safe-area inset (the outer container no longer pads the top) so the
+       * pills clear a notch. No z-index wrapper: a stacking context here
+       * would kill Glass's backdrop-filter (see AppFrame's rail comment).
+       */}
+      <div
+        className="flex w-full shrink-0 items-center justify-end gap-2"
+        style={{
+          paddingTop: 'max(env(safe-area-inset-top), 22px)',
+          paddingBottom: 'clamp(8px, 2.5vw, 14px)',
+        }}
+      >
+        <LocaleToggle />
+        <Glass
+          radius={9999}
+          padding={0}
+          tint={0.3}
+          shine={false}
+          onClick={toggle}
+          ariaLabel={
+            resolvedTheme === 'dark'
+              ? t('chrome.themeToggle.toLight')
+              : t('chrome.themeToggle.toDark')
+          }
+          className="flex h-9 w-9 items-center justify-center"
+        >
+          {resolvedTheme === 'dark' ? <Icon.sun /> : <Icon.moon />}
+        </Glass>
+      </div>
+
       {/* Eyebrow — label only, no orb */}
       <div className="flex flex-col items-center">
         <div

@@ -22,7 +22,7 @@ import { uuid } from '../../lib/id';
 import { getSupabase } from '../auth/supabaseClient';
 import { recordTurns } from '../../services/aiTelemetry';
 import { persistRagDocument } from '../../services/ragDocument';
-import { retrieveContext } from '../../services/ragClient';
+import { retrieveContext, scenarioRetrievalFilters } from '../../services/ragClient';
 import { resolveRag } from '../../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from '../../services/ragShared';
 import { logEvent } from '../../lib/analytics';
@@ -330,7 +330,11 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       retrievedRef.current = ragCfg.enabled
         ? await retrieveContext(
             `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
-            { k: ragCfg.k, cacheKey: scenario._overrideId ?? scenarioSummaryLine(scenario) },
+            {
+              k: ragCfg.k,
+              cacheKey: scenario._overrideId ?? scenarioSummaryLine(scenario),
+              filters: scenarioRetrievalFilters(scenario),
+            },
           )
         : [];
 

@@ -23,11 +23,30 @@ import type { DriverKnowledge } from '../../../src/data/knowledge/driverProfiles
 import type { PushbackKnowledge } from '../../../src/data/knowledge/pushbackTaxonomy';
 import type { DriverKey } from '../../../src/design-system/tokens';
 import { DRIVER_KEYS } from '../../../src/design-system/tokens';
-import { useAdminSimulationConfig, saveSimulationConfig } from '../data/queries';
+import { useAdminSimulationConfig } from '../data/queries';
+import {
+  configEquals,
+  fetchSimulationHistory,
+  restoreSimulationVersion,
+  saveSimulationConfigWithNote,
+  summarizeConfigDelta,
+  type SimulationVersion,
+} from '../data/simulationHistory';
 import { Glass } from '../primitives/Glass';
-import { Collapsible, LoadingShimmer, PillButton, SectionTitle } from '../primitives';
+import {
+  Collapsible,
+  Eyebrow,
+  InfoTip,
+  LoadingShimmer,
+  Modal,
+  ModalCloseButton,
+  PillButton,
+  SectionTitle,
+  StatusPill,
+} from '../primitives';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { COLOR } from '../lib/tokens';
+import { fmtAgo } from '../lib/format';
 import { Field, inputStyle, textareaStyle, btnPrimary, btnSecondary } from './FlagsScreen';
 
 // ─── Draft state (everything fully populated so the UI never guards undefined) ─

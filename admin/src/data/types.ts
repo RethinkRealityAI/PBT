@@ -199,6 +199,10 @@ export interface ScenarioOverrideRow {
   pushback_notes: string | null;
   suggested_driver: DriverKey | null;
   weight_kg: number | null;
+  /** Clinical focus area key (see src/shared/knowledge/focusAreas.ts). */
+  focus_area: string | null;
+  /** knowledge_documents.slug values explicitly attached to this scenario. */
+  knowledge_slugs: string[] | null;
   deleted_at: string | null;
   created_by: string | null;
   updated_by: string | null;
@@ -218,10 +222,30 @@ export interface KnowledgeDocument {
   chunk_count: number;
 }
 
+/** Entity kinds `writeAuditLog` can stamp. Keep in sync with `_shared/admin.ts`. */
+export type AuditEntityType =
+  | 'flag'
+  | 'flag_rule'
+  | 'scenario_override'
+  | 'simulation_config'
+  | 'user'
+  | 'role'
+  | 'invite'
+  | 'email_settings'
+  | 'email_template';
+
+/** Entity kinds the revert endpoint can actually roll back. */
+export const REVERTABLE_ENTITY_TYPES: ReadonlySet<AuditEntityType> = new Set<AuditEntityType>([
+  'flag',
+  'flag_rule',
+  'scenario_override',
+  'simulation_config',
+]);
+
 export interface AuditLogRow {
   id: string;
   actor_id: string | null;
-  entity_type: 'flag' | 'flag_rule' | 'scenario_override';
+  entity_type: AuditEntityType;
   entity_id: string;
   action: 'create' | 'update' | 'delete' | 'revert';
   before: Record<string, unknown> | null;

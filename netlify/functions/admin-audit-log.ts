@@ -1,16 +1,29 @@
 /**
  * Admin: paginated audit log + revert endpoint.
  *
- *   GET  /admin-audit-log               → recent entries (most recent first)
- *   POST /admin-audit-log?op=revert     → restore an entity to its `before`
- *                                          state from a specific log row
+ *   GET  /admin-audit-log                        → recent entries (most recent first)
+ *   GET  /admin-audit-log?entity_type=&entity_id=&limit=
+ *   POST /admin-audit-log?op=revert              → restore an entity to its `before`
+ *                                                   state from a specific log row
  */
-import { errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
+import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
+import type { Permission } from '../../src/shared/access/permissions';
+
+type AuditEntityType =
+  | 'flag'
+  | 'flag_rule'
+  | 'scenario_override'
+  | 'simulation_config'
+  | 'user'
+  | 'role'
+  | 'invite'
+  | 'email_settings'
+  | 'email_template';
 
 interface AuditRow {
   id: string;
   actor_id: string | null;
-  entity_type: 'flag' | 'flag_rule' | 'scenario_override';
+  entity_type: AuditEntityType;
   entity_id: string;
   action: string;
   before: Record<string, unknown> | null;
@@ -18,6 +31,20 @@ interface AuditRow {
   note: string | null;
   created_at: string;
 }
+
+/**
+ * Reverting is a WRITE to the target entity, so `audit.read` alone is not the
+ * right bar — the caller must also hold whatever permission the original
+ * mutation required. An entity type absent from this map cannot be reverted at
+ * all (see the 400 below): silently doing nothing while reporting `{ok:true}`
+ * is worse than refusing.
+ */
+const REVERT_PERMISSION: Partial<Record<AuditEntityType, Permission>> = {
+  flag: 'flags.write',
+  flag_rule: 'flags.write',
+  scenario_override: 'scenarios.write',
+  simulation_config: 'simulation.write',
+};
 
 export default async (req: Request): Promise<Response> => {
   const ctx = await requireAdmin(req, 'audit.read');
@@ -27,12 +54,14 @@ export default async (req: Request): Promise<Response> => {
     const params = new URL(req.url).searchParams;
     const limit = Math.min(500, Number(params.get('limit') ?? 100));
     const entityType = params.get('entity_type');
+    const entityId = params.get('entity_id');
     let q = ctx.sb
       .from('admin_audit_log')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(limit);
     if (entityType) q = q.eq('entity_type', entityType);
+    if (entityId) q = q.eq('entity_id', entityId);
     const { data, error } = await q;
     if (error) return errorResponse(500, error.message);
     return jsonResponse(data ?? []);
@@ -60,6 +89,13 @@ export default async (req: Request): Promise<Response> => {
   if (!entry) return errorResponse(404, 'Audit entry not found');
 
   const row = entry as AuditRow;
+
+  const needed = REVERT_PERMISSION[row.entity_type];
+  if (!needed) {
+    return errorResponse(400, `Revert not supported for ${row.entity_type}`);
+  }
+  if (!can(ctx, needed)) return errorResponse(403, `Missing permission: ${needed}`);
+
   // Restore strategy: write `before` back. If the original action was
   // 'create', reverting means deleting the current row.
   //
@@ -84,6 +120,19 @@ export default async (req: Request): Promise<Response> => {
     } else if (row.before) {
       mutErr = (await ctx.sb.from('scenario_overrides').upsert(row.before)).error;
     }
+  } else if (row.entity_type === 'simulation_config') {
+    // `before`/`after` here are the FULL config JSON, not a table row — so the
+    // revert writes it back into the singleton's `config` column. A null
+    // `before` means "no config existed yet", which reverts to the empty
+    // config (i.e. pure code defaults), not a no-op.
+    mutErr = (
+      await ctx.sb.from('simulation_config').upsert({
+        id: 'global',
+        config: row.before ?? {},
+        updated_by: ctx.user.id,
+        updated_at: new Date().toISOString(),
+      })
+    ).error;
   }
   if (mutErr) return errorResponse(500, `Revert failed: ${mutErr.message}`);
 

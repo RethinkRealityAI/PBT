@@ -5,7 +5,7 @@ import type { ChatMessage, ScoreReport } from './types';
 import { buildVoiceSystemPrompt } from '../data/knowledge/promptBuilders';
 import { evaluateConversation, MODEL_LIVE } from './geminiService';
 import { useSimulationConfig } from '../app/providers/FlagProvider';
-import { retrieveContext } from './ragClient';
+import { retrieveContext, scenarioRetrievalFilters } from './ragClient';
 import { resolveRag } from '../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from './ragShared';
 import { uuid } from '../lib/id';
@@ -613,7 +613,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         retrievedRef.current = ragCfg.enabled
           ? await retrieveContext(
               `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
-              { k: ragCfg.k, cacheKey: scenario._overrideId ?? scenario.pushback.id + scenario.breed },
+              {
+                k: ragCfg.k,
+                cacheKey: scenario._overrideId ?? scenario.pushback.id + scenario.breed,
+                filters: scenarioRetrievalFilters(scenario),
+              },
             )
           : [];
       } catch {

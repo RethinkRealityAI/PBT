@@ -139,6 +139,18 @@ export interface Scenario {
   /** Dog weight in kg, as a string (e.g. "32.5"). Optional — absent means not specified. */
   weightKg?: string;
   /**
+   * Retrieval targeting — clinical focus area key (see
+   * `src/shared/knowledge/focusAreas.ts`). When set, RAG retrieval for this
+   * scenario is filtered to knowledge chunks tagged with the same focus.
+   */
+  focusArea?: string;
+  /**
+   * Retrieval targeting — `knowledge_documents.slug`s explicitly attached to
+   * this scenario. Takes precedence over `focusArea`: retrieval is restricted
+   * to these documents when the list is non-empty.
+   */
+  knowledgeSlugs?: string[];
+  /**
    * Stable id for admin overrides (`seed:<i>` for library scenarios,
    * `user:<uuid>` for user-built ones). Set when the scenario is selected
    * for play so AI prompt overrides can be looked up at runtime.

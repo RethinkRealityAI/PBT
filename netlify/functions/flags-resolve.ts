@@ -98,7 +98,7 @@ async function loadSnapshot(): Promise<{
     sb
       .from('scenario_overrides')
       .select(
-        'scenario_id, visible, sort_order, title_override, context_override, opening_line_override, difficulty_override, persona_override, prompt_prefix, prompt_suffix, card_title_override, card_subtitle_override, info_modal_title, info_modal_body, start_button_label, card_driver_override, breed, life_stage, pushback_id, pushback_notes, suggested_driver, weight_kg',
+        'scenario_id, visible, sort_order, title_override, context_override, opening_line_override, difficulty_override, persona_override, prompt_prefix, prompt_suffix, card_title_override, card_subtitle_override, info_modal_title, info_modal_body, start_button_label, card_driver_override, breed, life_stage, pushback_id, pushback_notes, suggested_driver, weight_kg, focus_area, knowledge_slugs',
       )
       .is('deleted_at', null),
     sb.from('simulation_config').select('config').eq('id', 'global').maybeSingle(),

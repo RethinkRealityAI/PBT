@@ -14,6 +14,7 @@ import {
   Collapsible,
   EmptyState,
   Eyebrow,
+  InfoTip,
   LoadingShimmer,
   SectionTitle,
   StatusPill,
@@ -23,11 +24,18 @@ import {
   deleteScenarioOverride,
   duplicateScenario,
   upsertScenarioOverride,
+  useKnowledgeDocuments,
   useScenarioOverrides,
   useUserScenarios,
 } from '../data/queries';
-import type { ScenarioOverrideRow } from '../data/types';
-import { LIBRARY_MANIFEST } from '../data/scenarioManifest';
+import type { ScenarioOverrideRow, UserScenario } from '../data/types';
+import {
+  LIBRARY_MANIFEST,
+  buildInitialDraft,
+  stripServerManaged,
+  type SeedScenarioManifest,
+} from '../data/scenarioManifest';
+import { FOCUS_AREAS } from '../../../src/shared/knowledge/focusAreas';
 import {
   Field,
   btnPrimary,
@@ -56,6 +64,8 @@ interface ListEntry {
   title: string;
   subtitle: string;
   override: ScenarioOverrideRow | null;
+  /** Base row for `user:` scenarios — hydrates the editor when no override exists. */
+  userScenario?: UserScenario | null;
 }
 
 function emptyDraftForNewAdmin(): Partial<ScenarioOverrideRow> {
@@ -82,6 +92,8 @@ function emptyDraftForNewAdmin(): Partial<ScenarioOverrideRow> {
     pushback_notes: null,
     suggested_driver: null,
     weight_kg: null,
+    focus_area: null,
+    knowledge_slugs: null,
   };
 }
 
@@ -134,6 +146,7 @@ export function ScenarioBuilderScreen({
         title: o?.card_title_override?.trim() || s.title,
         subtitle: `${s.breed ?? '—'} · ${s.life_stage ?? '—'}`,
         override: o,
+        userScenario: s,
       });
     }
     if (!query) return out;
@@ -165,14 +178,28 @@ export function ScenarioBuilderScreen({
   const [seedDraft, setSeedDraft] = useState<Partial<ScenarioOverrideRow> | null>(null);
 
   if (active || seedDraft) {
+    const scenarioId = activeId ?? seedDraft?.scenario_id ?? '';
+    // Hydrate with the scenario's CURRENT EFFECTIVE VALUES: base data (seed
+    // manifest / user_scenarios row) overlaid by the override row's set
+    // columns. A never-overridden scenario used to open a blank form.
     const initial =
       seedDraft && seedDraft.scenario_id === activeId
-        ? (seedDraft as ScenarioOverrideRow)
-        : (active?.override as ScenarioOverrideRow | null) ?? null;
+        ? seedDraft
+        : buildInitialDraft(
+            {
+              id: scenarioId,
+              source: active?.source ?? 'admin',
+              override: active?.override ?? null,
+            },
+            baseManifest,
+            active?.userScenario ?? null,
+          );
     return (
       <Builder
-        scenarioId={activeId ?? seedDraft?.scenario_id ?? ''}
+        key={scenarioId}
+        scenarioId={scenarioId}
         initial={initial}
+        hasOverride={Boolean(active?.override)}
         baseDescriptor={
           baseManifest
             ? {
@@ -326,21 +353,26 @@ type Tab = 'visual' | 'wizard';
 function Builder({
   scenarioId,
   initial,
+  hasOverride,
   baseDescriptor,
   onClose,
   onSaved,
 }: {
   scenarioId: string;
-  initial: ScenarioOverrideRow | null;
+  /** Fully hydrated draft (base values overlaid by any override row). */
+  initial: Partial<ScenarioOverrideRow>;
+  /** True when a scenario_overrides row already exists for this scenario. */
+  hasOverride: boolean;
   baseDescriptor: BaseDescriptor | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('visual');
-  const [draft, setDraft] = useState<Partial<ScenarioOverrideRow>>(() =>
-    initial ?? { scenario_id: scenarioId, visible: false },
-  );
-  const baselineRef = useRef<string>(JSON.stringify(draft));
+  const [draft, setDraft] = useState<Partial<ScenarioOverrideRow>>(initial);
+  // Baseline = the hydrated draft, so an untouched form is never "dirty".
+  // Builder is mounted with key={scenarioId}, so this is re-captured whenever
+  // the admin switches scenarios.
+  const baselineRef = useRef<string>(JSON.stringify(initial));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testOpen, setTestOpen] = useState(false);
@@ -384,7 +416,10 @@ function Builder({
         throw new Error(`Prompt overrides must be ≤ ${PROMPT_MAX} chars.`);
       }
       // Trim empties → null so they don't accidentally override defaults.
-      const trimmed: Partial<ScenarioOverrideRow> = { ...draft };
+      // `stripServerManaged` drops updated_at / created_at / created_by /
+      // updated_by / deleted_at — they ride along on the hydrated draft but
+      // are the server's to set.
+      const trimmed: Partial<ScenarioOverrideRow> = stripServerManaged(draft);
       const stringFields: Array<keyof ScenarioOverrideRow> = [
         'title_override',
         'context_override',
@@ -422,7 +457,7 @@ function Builder({
   }
 
   async function clearAndClose() {
-    if (!initial) {
+    if (!hasOverride) {
       if (!confirmDiscardIfDirty()) return;
       onClose();
       return;
@@ -484,8 +519,11 @@ function Builder({
               {testOpen ? 'Hide test' : 'Test in app'}
             </button>
             <button onClick={clearAndClose} style={{ ...btnSecondary, color: COLOR.danger }}>
-              {initial ? 'Remove overrides' : 'Discard'}
+              {hasOverride ? 'Remove overrides' : 'Discard'}
             </button>
+            <StatusPill tone={draft.visible ? 'success' : 'warn'}>
+              {draft.visible ? 'Visible in app' : 'Hidden'}
+            </StatusPill>
             {dirty && (
               <span
                 style={{
@@ -583,16 +621,42 @@ function VisualEditor({
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       {/* Visibility / sort / driver tint */}
-      <Section label="Card display">
+      <Section
+        label="Card display"
+        defaultOpen
+        help="How the scenario looks on the Home screen. None of this changes how the AI customer behaves."
+        tip={{
+          title: 'Card display & visibility',
+          body: (
+            <>
+              <p style={{ marginTop: 0 }}>
+                These settings only affect the <strong>card</strong> the trainee taps on the Home
+                screen — its position, its accent colour, and whether it appears at all. The AI
+                customer never sees any of it.
+              </p>
+              <p>
+                <strong>Visible</strong> is the live switch: unchecked, the scenario disappears from
+                the consumer app for everyone. Library and user-built scenarios open here already
+                ticked because they are live today — untick it only if you actually want to pull the
+                scenario.
+              </p>
+              <p style={{ marginBottom: 0 }}>
+                <strong>Card accent driver</strong> tints the card. Leave it empty and the card
+                follows the scenario's suggested driver.
+              </p>
+            </>
+          ),
+        }}
+      >
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-          <Field label="Visible">
+          <Field label="Visible" help="Unticked = removed from the app for everyone.">
             <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 type="checkbox"
                 checked={draft.visible ?? false}
                 onChange={(e) => patch({ visible: e.target.checked })}
               />
-              {draft.visible ? 'Shown' : 'Hidden'}
+              {draft.visible ? 'Shown in app' : 'Hidden from app'}
             </label>
           </Field>
           <Field label="Sort order" help="Lower first. Empty = default.">
@@ -616,7 +680,7 @@ function VisualEditor({
         </div>
       </Section>
 
-      <Section label="Card text">
+      <Section label="Card text" defaultOpen>
         <div style={{ display: 'grid', gap: 14 }}>
           <Field label={`Card title (${(draft.card_title_override ?? '').length}/120)`}>
             <input
@@ -652,7 +716,7 @@ function VisualEditor({
         </div>
       </Section>
 
-      <Section label="Per-scenario info modal">
+      <Section label="Per-scenario info modal" defaultOpen>
         <div style={{ display: 'grid', gap: 14 }}>
           <Field label="Modal title (optional)">
             <input
@@ -681,8 +745,8 @@ function VisualEditor({
         label="Scenario fields"
         help={
           isAdminScenario
-            ? 'These define the scenario. All required for admin-authored scenarios.'
-            : 'These overlay the base scenario from code. Empty = use base value.'
+            ? 'These define the scenario. Breed, life stage, pushback and driver are required for admin-authored scenarios.'
+            : 'The scenario as it runs today. Edit a field to change it; clear a field to fall back to the built-in value.'
         }
         defaultOpen
       >
@@ -709,21 +773,111 @@ function VisualEditor({
               options={PUSHBACK_IDS}
             />
           </Field>
-          <Field label="Suggested driver">
+          <TipField
+            label="Suggested driver"
+            help="The customer's ECHO personality — this one really does change the AI."
+            tip={{
+              title: 'Suggested driver (ECHO personality)',
+              body: (
+                <>
+                  <p style={{ marginTop: 0 }}>
+                    The driver is the customer's personality profile, and it is fed straight into the
+                    AI's briefing: their motivation, how they talk, how they behave under stress, and
+                    a set of sample phrasings they draw on.
+                  </p>
+                  <ul style={{ paddingLeft: 18, margin: '8px 0' }}>
+                    <li>
+                      <strong>Activator</strong> — blunt, results-first, interrupts, wants the bottom
+                      line.
+                    </li>
+                    <li>
+                      <strong>Energizer</strong> — chatty, emotional, story-driven, easily distracted.
+                    </li>
+                    <li>
+                      <strong>Analyzer</strong> — wants evidence, numbers, and studies before moving.
+                    </li>
+                    <li>
+                      <strong>Harmonizer</strong> — conflict-averse, agrees out loud and resists
+                      quietly.
+                    </li>
+                  </ul>
+                  <p style={{ marginBottom: 0 }}>
+                    It changes <em>how</em> the customer pushes back, not <em>what</em> they push back
+                    on — the pushback field does that.
+                  </p>
+                </>
+              ),
+            }}
+          >
             <DriverSelect
               value={draft.suggested_driver ?? null}
               onChange={(v) => patch({ suggested_driver: v })}
               allowEmpty={!isAdminScenario}
             />
-          </Field>
-          <Field label="Persona">
+          </TipField>
+          <TipField
+            label="Persona"
+            help="The owner's situation — layered on top of the driver."
+            tip={{
+              title: 'Persona',
+              body: (
+                <>
+                  <p style={{ marginTop: 0 }}>
+                    The persona is the owner's circumstance rather than their personality:
+                    <strong> Skeptical</strong>, <strong>Anxious</strong>, <strong>Busy</strong>,
+                    <strong> Bargain-hunter</strong>, or <strong>Devoted</strong>.
+                  </p>
+                  <p style={{ marginBottom: 0 }}>
+                    It rides in the AI's briefing alongside the driver, so an "Analyzer /
+                    Bargain-hunter" asks for evidence <em>and</em> keeps returning to price, while an
+                    "Analyzer / Devoted" asks for evidence because they are frightened of getting it
+                    wrong.
+                  </p>
+                </>
+              ),
+            }}
+          >
             <SelectInput
               value={draft.persona_override ?? ''}
               onChange={(v) => patch({ persona_override: v || null })}
               options={PERSONAS}
             />
-          </Field>
-          <Field label="Difficulty (1–4)">
+          </TipField>
+          <TipField
+            label="Difficulty (1–4)"
+            help="1 Coachable · 2 Skeptical · 3 Hostile · 4 Combative"
+            tip={{
+              title: 'Difficulty',
+              body: (
+                <>
+                  <p style={{ marginTop: 0 }}>
+                    Difficulty sets how long the customer holds their ground before they can be moved:
+                  </p>
+                  <ul style={{ paddingLeft: 18, margin: '8px 0' }}>
+                    <li>
+                      <strong>1 — Coachable:</strong> pushes back once, yields to genuine listening.
+                    </li>
+                    <li>
+                      <strong>2 — Skeptical:</strong> pushes back twice, softens visibly on solid ACT.
+                    </li>
+                    <li>
+                      <strong>3 — Hostile:</strong> holds pressure for at least three turns.
+                    </li>
+                    <li>
+                      <strong>4 — Combative:</strong> stays difficult; only multiple strong,
+                      evidence-backed turns move them.
+                    </li>
+                  </ul>
+                  <p style={{ marginBottom: 0 }}>
+                    At every level the customer <em>does</em> soften when the trainee earns it — higher
+                    difficulty means they have to earn it more times, not that the scenario is
+                    unwinnable. Scoring is unaffected: a level 4 is graded on the same rubric as a
+                    level 1.
+                  </p>
+                </>
+              ),
+            }}
+          >
             <input
               type="number"
               min={1}
@@ -737,7 +891,7 @@ function VisualEditor({
               }
               style={inputStyle}
             />
-          </Field>
+          </TipField>
           <Field label="Weight (kg)">
             <input
               type="number"

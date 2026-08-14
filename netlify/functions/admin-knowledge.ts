@@ -6,13 +6,19 @@
  *        (driver personas, pushback taxonomy, ACT guide, clinical reference)
  *        as 'code-seed' documents, upserted by slug — re-running refreshes
  *        them after a code change without duplicating.
- *   POST { op: 'upsert', doc: { slug?, title, category, content, metadata? } }
+ *   POST { op: 'update', slug, title?, category?, focus?, citation? }
+ *        → edit a stored document's cataloguing WITHOUT re-embedding it.
+ *          `title`/`category` are only editable on source='admin' documents
+ *          (code-seeded ones are rebuilt by re-seeding); `focus`/`citation`
+ *          are editable on every document — tagging built-in knowledge is the
+ *          whole point of the focus vocabulary.
  *   POST { op: 'delete', slug }
  *
  * This is the SOW "ingestion of the current working knowledge base": one row
  * per document with structured metadata, ready to feed an embedder in Phase 3.
  */
 import { can, errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
+import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import { embedTexts } from './_shared/gemini';
 import { chunkMarkdown } from '../../src/services/ragShared';
 import { estimateTokens } from '../../src/services/aiTelemetry';
@@ -26,6 +32,34 @@ import {
   NON_SHAMING_FRAMING,
   PRODUCT_ANCHORS,
 } from '../../src/data/knowledge/clinicalReference';
+
+const CATEGORIES = ['driver', 'pushback', 'act', 'clinical', 'custom'];
+
+type Bag = Record<string, unknown>;
+
+/**
+ * Read the focus area out of a document/chunk tag bag.
+ *
+ * Legacy fallback: the first bundled-study pass tagged the two communication
+ * papers `{ topic: 'communication' }`, which predates `communication` becoming
+ * a real focus area. Treat it as a focus so those documents aren't invisible
+ * to focus-filtered retrieval before they're re-ingested.
+ */
+function readFocus(tags: unknown): string | null {
+  if (!tags || typeof tags !== 'object') return null;
+  const bag = tags as Bag;
+  if (typeof bag.focus === 'string' && bag.focus) return bag.focus;
+  return bag.topic === 'communication' ? 'communication' : null;
+}
+
+/** Set (or clear) the focus key on a tag bag, dropping the legacy `topic` key. */
+function applyFocus(tags: unknown, focus: string | null): Bag {
+  const next: Bag = tags && typeof tags === 'object' ? { ...(tags as Bag) } : {};
+  if (focus) next.focus = focus;
+  else delete next.focus;
+  if (next.topic === 'communication') delete next.topic;
+  return next;
+}
 
 interface SeedDoc {
   slug: string;
@@ -195,36 +229,7 @@ export default async (req: Request): Promise<Response> => {
 
   if (body.op === 'seed') return seed(ctx);
 
-  if (body.op === 'upsert') {
-    const doc = (body.doc ?? {}) as Record<string, unknown>;
-    const title = String(doc.title ?? '').trim();
-    const content = String(doc.content ?? '').trim();
-    const category = String(doc.category ?? 'custom');
-    if (!title || !content) return errorResponse(400, 'title and content required');
-    if (!['driver', 'pushback', 'act', 'clinical', 'custom'].includes(category)) {
-      return errorResponse(400, 'invalid category');
-    }
-    const slug = String(doc.slug ?? '').trim() || `custom:${crypto.randomUUID()}`;
-    const { data, error } = await ctx.sb
-      .from('knowledge_documents')
-      .upsert(
-        {
-          slug,
-          title,
-          category,
-          content,
-          metadata: (doc.metadata as Record<string, unknown>) ?? null,
-          source: 'admin',
-          updated_by: ctx.user.id,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'slug' },
-      )
-      .select('slug')
-      .maybeSingle();
-    if (error) return errorResponse(500, error.message);
-    return jsonResponse({ ok: true, slug: data?.slug ?? slug });
-  }
+  if (body.op === 'update') return update(ctx, body);
 
   if (body.op === 'delete') {
     const slug = String(body.slug ?? '');

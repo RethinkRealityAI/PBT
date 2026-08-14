@@ -129,6 +129,72 @@ describe('scenarioOverrides', () => {
     expect(scenario?.pushback.id).toBe('cost');
   });
 
+  it('maps retrieval targeting (focus_area / knowledge_slugs) onto seed overlays', () => {
+    const merged = applyScenarioOverride(
+      base,
+      {
+        ...NULL_OVERRIDE,
+        focus_area: 'weight',
+        knowledge_slugs: ['royal-canin-satiety', 'bcs-primer'],
+      },
+      'seed:0',
+    );
+    expect(merged.focusArea).toBe('weight');
+    expect(merged.knowledgeSlugs).toEqual(['royal-canin-satiety', 'bcs-primer']);
+  });
+
+  it('leaves retrieval targeting undefined when the override carries none', () => {
+    const merged = applyScenarioOverride(base, { ...NULL_OVERRIDE }, 'seed:0');
+    expect(merged.focusArea).toBeUndefined();
+    expect(merged.knowledgeSlugs).toBeUndefined();
+  });
+
+  it('drops malformed knowledge_slugs rather than leaking jsonb junk', () => {
+    const merged = applyScenarioOverride(
+      base,
+      {
+        ...NULL_OVERRIDE,
+        // jsonb — the DB will hand back whatever was written
+        knowledge_slugs: ['ok', 42, null, '  '] as unknown as string[],
+      },
+      'seed:0',
+    );
+    expect(merged.knowledgeSlugs).toEqual(['ok']);
+
+    const empty = applyScenarioOverride(
+      base,
+      { ...NULL_OVERRIDE, knowledge_slugs: [] },
+      'seed:0',
+    );
+    expect(empty.knowledgeSlugs).toBeUndefined();
+  });
+
+  it('adminOverrideToScenario carries retrieval targeting through', () => {
+    const scenario = adminOverrideToScenario({
+      ...NULL_OVERRIDE,
+      scenario_id: 'admin:abc',
+      breed: 'Mixed',
+      life_stage: 'Adult (3-7)',
+      pushback_id: 'cost',
+      suggested_driver: 'Analyzer',
+      focus_area: 'gi',
+      knowledge_slugs: ['gi-diet-evidence'],
+    });
+    expect(scenario?.focusArea).toBe('gi');
+    expect(scenario?.knowledgeSlugs).toEqual(['gi-diet-evidence']);
+
+    const untargeted = adminOverrideToScenario({
+      ...NULL_OVERRIDE,
+      scenario_id: 'admin:def',
+      breed: 'Mixed',
+      life_stage: 'Adult (3-7)',
+      pushback_id: 'cost',
+      suggested_driver: 'Analyzer',
+    });
+    expect(untargeted?.focusArea).toBeUndefined();
+    expect(untargeted?.knowledgeSlugs).toBeUndefined();
+  });
+
   it('adminOverrideToScenario rejects unknown driver', () => {
     const bad: ScenarioOverride = {
       ...NULL_OVERRIDE,
