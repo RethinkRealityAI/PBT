@@ -577,8 +577,9 @@ function DocumentModal({
   const [note, setNote] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Re-seed the editor whenever a different document is opened (or the list
-  // refreshes underneath it after a save).
+  // Seed the editor when a document is opened. Keyed on slug only, NOT on
+  // updated_at: saving refreshes the list, and re-seeding from the refreshed
+  // row would wipe the "Saved" confirmation the admin just earned.
   useEffect(() => {
     if (!doc) return;
     setTitle(doc.title);
@@ -588,7 +589,7 @@ function DocumentModal({
     setError(null);
     setNote(null);
     setConfirmDelete(false);
-  }, [doc?.slug, doc?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [doc?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!doc) return null;
 
