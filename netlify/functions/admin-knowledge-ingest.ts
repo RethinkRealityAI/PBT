@@ -106,6 +106,10 @@ async function storeDoc(
     content: string;
     citation: string;
     tags: Record<string, unknown>;
+    /** Preserve 'code-seed' when re-indexing a built-in doc (default 'admin'). */
+    source?: string;
+    /** Full metadata object to write (defaults to `{ citation, tags }`). */
+    metadata?: Record<string, unknown>;
   },
 ): Promise<number> {
   const { data: doc, error: docErr } = await ctx.sb
@@ -116,8 +120,8 @@ async function storeDoc(
         title: args.title,
         category: args.category,
         content: args.content,
-        metadata: { citation: args.citation, tags: args.tags },
-        source: 'admin',
+        metadata: args.metadata ?? { citation: args.citation, tags: args.tags },
+        source: args.source ?? 'admin',
         updated_by: ctx.user.id,
         updated_at: new Date().toISOString(),
       },
@@ -200,23 +204,38 @@ export default async (req: Request): Promise<Response> => {
       const slug = String(body.slug ?? '');
       const { data: doc, error } = await ctx.sb
         .from('knowledge_documents')
-        .select('id, slug, title, category, content, metadata')
+        .select('id, slug, title, category, content, source, metadata')
         .eq('slug', slug)
         .maybeSingle();
       if (error || !doc) return errorResponse(404, 'Document not found');
-      const meta = (doc.metadata ?? {}) as { citation?: string; tags?: Record<string, unknown> };
+      const rawMeta = (doc.metadata ?? {}) as Record<string, unknown>;
+      const nested =
+        rawMeta.tags && typeof rawMeta.tags === 'object'
+          ? (rawMeta.tags as Record<string, unknown>)
+          : null;
+      // Code-seeded docs keep their tag bag flat on metadata (`{ driver: … }`);
+      // ingested ones nest it under `tags`. Support both so re-indexing a
+      // built-in doesn't strip the tags its chunks were filtered by.
+      const flat = nested
+        ? {}
+        : Object.fromEntries(Object.entries(rawMeta).filter(([k]) => k !== 'citation'));
+      const tags: Record<string, unknown> = { ...flat, ...(nested ?? {}) };
       // Legacy migration: the first bundled-study pass tagged the two
       // communication papers `{ topic: 'communication' }`, which retrieval's
       // focus filter can't see. Promote it on the way through.
-      const tags = { ...(meta.tags ?? {}) };
       if (tags.focus == null && tags.topic === 'communication') tags.focus = 'communication';
+      const citation = typeof rawMeta.citation === 'string' ? rawMeta.citation : '';
       const chunkCount = await storeDoc(ctx, {
         slug: doc.slug,
         title: doc.title,
         category: doc.category,
         content: doc.content,
-        citation: meta.citation ?? '',
+        citation,
         tags,
+        // Re-indexing must not reclassify a built-in document as uploaded —
+        // that would hand the UI a delete/edit affordance the seeder undoes.
+        source: doc.source,
+        metadata: { ...rawMeta, ...(citation ? { citation } : {}), tags },
       });
       return jsonResponse({ ok: true, chunks: chunkCount });
     }

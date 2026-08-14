@@ -76,7 +76,7 @@ const WRITABLE_COLUMNS = [
 ] as const satisfies readonly (keyof OverrideUpsert)[];
 
 function pickWritable(body: OverrideUpsert): Record<string, unknown> {
-  const src = body as Record<string, unknown>;
+  const src = body as unknown as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const key of WRITABLE_COLUMNS) {
     if (key in src) out[key] = src[key];

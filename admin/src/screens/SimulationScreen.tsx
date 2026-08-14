@@ -884,7 +884,12 @@ function ScoringTab({
                 <Field label="Label">
                   <input value={dim.label} onChange={(e) => patchDim(idx, { label: e.target.value })} style={inputStyle} />
                 </Field>
-                <Field label="Weight" help="Relative; auto-normalised across dimensions.">
+                <FieldWithInfo
+                  label="Weight"
+                  infoTitle="Dimension weight"
+                  info={WEIGHT_INFO}
+                  help="Relative importance — auto-balanced, so only the ratios matter."
+                >
                   <input
                     type="number"
                     min={0}
@@ -893,7 +898,7 @@ function ScoringTab({
                     onChange={(e) => patchDim(idx, { weight: parseFloat(e.target.value) || 0 })}
                     style={inputStyle}
                   />
-                </Field>
+                </FieldWithInfo>
               </div>
               <Field label="Description">
                 <textarea value={dim.description} rows={2} onChange={(e) => patchDim(idx, { description: e.target.value })} style={proseArea} />
@@ -911,14 +916,32 @@ function ScoringTab({
         );
       })}
 
-      <Collapsible title="Scoring prompt injections" badge={<span style={{ fontSize: 11, color: COLOR.inkMute }}>optional</span>}>
+      <Collapsible
+        title="Extra instructions for the AI scorer"
+        badge={<span style={{ fontSize: 11, color: COLOR.inkMute }}>optional</span>}
+      >
         <div style={{ display: 'grid', gap: 12 }}>
-          <Field label="Prompt prefix" help="Injected at the top of the scoring system prompt.">
+          <p style={{ margin: 0, fontSize: 12.5, color: COLOR.inkMute, lineHeight: 1.55 }}>
+            These two notes are wrapped around the evaluator&apos;s instructions —
+            the AI that writes the scorecard <em>after</em> a session. They do not
+            change how the simulated customer behaves.
+          </p>
+          <FieldWithInfo
+            label="Opening notes for the AI scorer"
+            infoTitle="Opening notes for the AI scorer"
+            info={SCORING_PREFIX_INFO}
+            help="Placed above everything else the evaluator reads, before the rubric. Sets its stance."
+          >
             <textarea value={draft.scoringPrefix} rows={4} onChange={(e) => onPatch({ scoringPrefix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-          </Field>
-          <Field label="Prompt suffix" help="Appended to the scoring system prompt.">
+          </FieldWithInfo>
+          <FieldWithInfo
+            label="Closing notes for the AI scorer"
+            infoTitle="Closing notes for the AI scorer"
+            info={SCORING_SUFFIX_INFO}
+            help="Added after the rubric and band examples — the evaluator's last instruction."
+          >
             <textarea value={draft.scoringSuffix} rows={4} onChange={(e) => onPatch({ scoringSuffix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-          </Field>
+          </FieldWithInfo>
         </div>
       </Collapsible>
     </div>
@@ -1099,19 +1122,32 @@ function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draf
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <Glass padding={18} radius={16}>
-        <SectionTitle title="Global customer prompt" subtitle="Applied to every simulation, on top of any per-scenario prompt wraps." />
+        <SectionTitle
+          title="Notes for every AI customer"
+          subtitle="Wrapped around the briefing of every simulated customer, outside any per-scenario notes."
+        />
         <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
-          <Field label="Customer prompt prefix" help="Injected at the top of the customer system prompt.">
+          <FieldWithInfo
+            label="Opening notes for every AI customer"
+            infoTitle="Opening notes for every AI customer"
+            info={CUSTOMER_PREFIX_INFO}
+            help="Added at the very top of every simulated customer's briefing, before any per-scenario notes. Use it for platform-wide behaviour — e.g. “Never use emoji.”"
+          >
             <textarea value={draft.customerPrefix} rows={5} onChange={(e) => onPatch({ customerPrefix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-          </Field>
-          <Field label="Customer prompt suffix" help="Appended to the customer system prompt.">
+          </FieldWithInfo>
+          <FieldWithInfo
+            label="Closing notes for every AI customer"
+            infoTitle="Closing notes for every AI customer"
+            info={CUSTOMER_SUFFIX_INFO}
+            help="Added at the very end of the briefing, after any per-scenario notes — the last thing the customer reads."
+          >
             <textarea value={draft.customerSuffix} rows={5} onChange={(e) => onPatch({ customerSuffix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-          </Field>
+          </FieldWithInfo>
         </div>
       </Glass>
 
       <Glass padding={18} radius={16}>
-        <SectionTitle title="Retrieval (RAG)" subtitle="Pull relevant knowledge-base chunks into the customer + scoring prompts." />
+        <SectionTitle title="Retrieval (RAG)" subtitle="Pull relevant knowledge-base chunks into the customer + scoring prompts, once at the start of each session." />
         <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
           <Field label="Enabled">
             <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1123,7 +1159,12 @@ function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draf
               {draft.rag.enabled ? 'On' : 'Off'}
             </label>
           </Field>
-          <Field label="k" help="Chunks retrieved per turn (1–8).">
+          <FieldWithInfo
+            label="k"
+            infoTitle="Retrieval (RAG)"
+            info={RETRIEVAL_INFO}
+            help="Knowledge chunks pulled in once per session (1–8) — not per turn."
+          >
             <input
               type="number"
               min={1}
@@ -1135,7 +1176,7 @@ function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draf
               }}
               style={{ ...inputStyle, maxWidth: 100 }}
             />
-          </Field>
+          </FieldWithInfo>
         </div>
       </Glass>
     </div>
