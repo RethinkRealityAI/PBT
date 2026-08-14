@@ -33,7 +33,6 @@ import {
   LIBRARY_MANIFEST,
   buildInitialDraft,
   stripServerManaged,
-  type SeedScenarioManifest,
 } from '../data/scenarioManifest';
 import { FOCUS_AREAS } from '../../../src/shared/knowledge/focusAreas';
 import {
@@ -1225,26 +1224,92 @@ function PillToggle({
   );
 }
 
+interface Tip {
+  title: string;
+  body: React.ReactNode;
+}
+
 function Section({
   label,
   help,
+  tip,
   defaultOpen = false,
   children,
 }: {
   label: string;
   help?: string;
+  tip?: Tip;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <Collapsible title={label} defaultOpen={defaultOpen}>
-      {help && (
-        <div style={{ fontSize: 12, color: COLOR.inkMute, marginBottom: 10 }}>
-          {help}
+      {(help || tip) && (
+        <div
+          style={{
+            fontSize: 12,
+            color: COLOR.inkMute,
+            marginBottom: 10,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          {help && <span>{help}</span>}
+          {/* InfoTip lives in the body, not the header — Collapsible's header
+              is itself a <button> and must not nest one. */}
+          {tip && <InfoTip title={tip.title}>{tip.body}</InfoTip>}
         </div>
       )}
       <div style={{ display: 'grid', gap: 14 }}>{children}</div>
     </Collapsible>
+  );
+}
+
+/**
+ * `Field` with an InfoTip beside the label. `Field`'s label is typed `string`,
+ * so the label row is re-created here rather than forked in FlagsScreen.
+ */
+function TipField({
+  label,
+  help,
+  tip,
+  children,
+}: {
+  label: string;
+  help?: string;
+  tip: Tip;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          marginBottom: 6,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 800,
+            textTransform: 'uppercase',
+            letterSpacing: '0.10em',
+            color: COLOR.inkMute,
+            fontFamily: 'var(--pbt-mono)',
+          }}
+        >
+          {label}
+        </span>
+        <InfoTip title={tip.title}>{tip.body}</InfoTip>
+      </div>
+      {children}
+      {help && (
+        <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 4 }}>{help}</div>
+      )}
+    </div>
   );
 }
 

@@ -198,7 +198,11 @@ async function seed(ctx: AdminCtx): Promise<Response> {
           chunk_idx: i,
           content,
           token_estimate: estimateTokens(content),
-          tags: { category: d.category, ...d.metadata },
+          tags: {
+            category: d.category,
+            ...d.metadata,
+            ...(keptFocus.has(d.slug) ? { focus: keptFocus.get(d.slug) } : {}),
+          },
           citation: null,
           embedding: `[${embeddings[i].join(',')}]`,
         })),

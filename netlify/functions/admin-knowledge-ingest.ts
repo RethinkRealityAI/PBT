@@ -14,6 +14,7 @@
  * PDF cap: 4MB raw (Netlify body limit ~6MB; base64 inflates ~33%).
  */
 import { errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
+import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import { embedTexts, getGeminiClient } from './_shared/gemini';
 import { chunkMarkdown } from '../../src/services/ragShared';
 import { estimateTokens } from '../../src/services/aiTelemetry';
@@ -21,13 +22,29 @@ import { estimateTokens } from '../../src/services/aiTelemetry';
 const EXTRACT_MODEL = 'gemini-3-flash-preview';
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
 
-/** The Dr. Coe studies shipped in public/studies/ (served at /studies/*). */
+/**
+ * The Dr. Coe studies shipped in public/studies/ (served at /studies/*).
+ *
+ * Every entry carries a `focus` from the shared vocabulary — retrieval filters
+ * chunks on `tags @> { focus }`, so a study tagged only `topic` (as the two
+ * communication papers were) can never be reached by a focus-targeted
+ * scenario. `topic` is kept alongside for back-compat with anything that read
+ * the old shape.
+ */
 const BUNDLED_STUDIES: Array<{ file: string; slug: string; tags: Record<string, unknown> }> = [
   { file: 'davies-2024-dog-owner-preferences-obesity.pdf', slug: 'study:davies-2024', tags: { focus: 'weight' } },
   { file: 'sutherland-2024-cat-owner-preferences-obesity.pdf', slug: 'study:sutherland-2024-cat', tags: { focus: 'weight' } },
   { file: 'sutherland-2024-client-obesity-communication.pdf', slug: 'study:sutherland-2024-client', tags: { focus: 'weight' } },
-  { file: 'macmartin-2015-nutritional-history-question-design.pdf', slug: 'study:macmartin-2015', tags: { topic: 'communication' } },
-  { file: 'macmartin-2023-client-resistance-conversation-analysis.pdf', slug: 'study:macmartin-2023', tags: { topic: 'communication' } },
+  {
+    file: 'macmartin-2015-nutritional-history-question-design.pdf',
+    slug: 'study:macmartin-2015',
+    tags: { focus: 'communication', topic: 'communication' },
+  },
+  {
+    file: 'macmartin-2023-client-resistance-conversation-analysis.pdf',
+    slug: 'study:macmartin-2023',
+    tags: { focus: 'communication', topic: 'communication' },
+  },
 ];
 
 interface Extracted {
@@ -145,6 +162,11 @@ export default async (req: Request): Promise<Response> => {
   try {
     if (body.op === 'ingest') {
       const tags = (body.tags as Record<string, unknown>) ?? {};
+      // A typo'd focus key would tag the document into a bucket no scenario
+      // can ever select — reject rather than silently mis-file it.
+      if (tags.focus != null && !isFocusAreaKey(tags.focus)) {
+        return errorResponse(400, `Unknown focus area: ${String(tags.focus)}`);
+      }
       const category = ['clinical', 'custom'].includes(String(body.category))
         ? String(body.category)
         : 'custom';
@@ -183,13 +205,18 @@ export default async (req: Request): Promise<Response> => {
         .maybeSingle();
       if (error || !doc) return errorResponse(404, 'Document not found');
       const meta = (doc.metadata ?? {}) as { citation?: string; tags?: Record<string, unknown> };
+      // Legacy migration: the first bundled-study pass tagged the two
+      // communication papers `{ topic: 'communication' }`, which retrieval's
+      // focus filter can't see. Promote it on the way through.
+      const tags = { ...(meta.tags ?? {}) };
+      if (tags.focus == null && tags.topic === 'communication') tags.focus = 'communication';
       const chunkCount = await storeDoc(ctx, {
         slug: doc.slug,
         title: doc.title,
         category: doc.category,
         content: doc.content,
         citation: meta.citation ?? '',
-        tags: meta.tags ?? {},
+        tags,
       });
       return jsonResponse({ ok: true, chunks: chunkCount });
     }
