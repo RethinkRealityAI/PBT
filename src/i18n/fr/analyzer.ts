@@ -13,10 +13,66 @@ export const analyzer = {
   // ── Chrome de l'écran ─────────────────────────────────────
   'analyzer.title': "Analyseur d'animaux",
 
+  // ── Carte 0 : analyse photo (Pet Vision) ──────────────────
+  'analyzer.vision.eyebrow': 'Analyse photo · IA',
+  'analyzer.vision.estimateTag': 'Estimation · à vérifier et modifier',
+  'analyzer.vision.uploadAria': 'Téléverser une photo de chien à analyser',
+  'analyzer.vision.replaceAria': 'Remplacer la photo',
+  'analyzer.vision.photoAlt': 'Chien sélectionné',
+  'analyzer.vision.uploadTitle': 'Téléversez ou prenez une photo',
+  'analyzer.vision.uploadBody':
+    'Nous estimons la race, le stade de vie, l’état corporel et les signes cutanés visibles. La photo n’est jamais conservée.',
+  'analyzer.vision.analyzing': 'Analyse de la photo…',
+  'analyzer.vision.tryAgain': 'Réessayer',
+  'analyzer.vision.notADog':
+    'On ne dirait pas un chien — essayez une photo nette et bien éclairée du chien, vu de côté.',
+  'analyzer.vision.confidence': '{pct} de confiance',
+  'analyzer.vision.alsoPossible': 'Aussi possible : {breeds}',
+  'analyzer.vision.bcsLead': 'BCS {score}/9.',
+  'analyzer.vision.skinLabel': 'Peau / pelage · {severity}',
+  'analyzer.vision.skinNone':
+    'Aucune anomalie évidente de la peau ou du pelage.',
+  'analyzer.vision.notVisible': 'Impossible à juger sur photo : {items}.',
+
+  // Gravité de l'atteinte cutanée — les clés (none/mild/moderate/marked)
+  // restent des valeurs machine; seuls ces libellés sont traduits. Accord au
+  // féminin : sous-entendu « atteinte ».
+  'analyzer.vision.severity.none': 'aucune',
+  'analyzer.vision.severity.mild': 'légère',
+  'analyzer.vision.severity.moderate': 'modérée',
+  'analyzer.vision.severity.marked': 'marquée',
+
+  // Échecs de l'analyse photo (`usePetVision`)
+  'analyzer.vision.error.notImage': 'Veuillez choisir un fichier image.',
+  'analyzer.vision.error.tooLarge':
+    'Cette image dépasse 5 Mo — essayez une photo plus petite.',
+  'analyzer.vision.error.unreadable':
+    'Impossible de lire cette image. Essayez une autre photo.',
+  'analyzer.vision.error.notConfigured':
+    'L’analyse photo n’est pas configurée — la clé API Gemini est manquante.',
+  'analyzer.vision.error.failed':
+    'Impossible d’analyser la photo. Vérifiez votre connexion et réessayez.',
+
+  // Passage de l'analyse au scénario : le « contexte » remis au jeu de rôle.
+  'analyzer.vision.context.pet': '{breed}, {age}.',
+  'analyzer.vision.context.bcs': 'Cote d’état corporel estimée à {score}/9.',
+  'analyzer.vision.context.skin':
+    'Signes cutanés ou de pelage visibles ({severity}) : {details}.',
+
   // ── Carte 1 : identité ────────────────────────────────────
   'analyzer.petName': "Nom de l'animal",
   'analyzer.breed.label': 'Race',
   'analyzer.breed.typical': 'Groupe {group} · adulte typique {min} à {max} kg',
+
+  // Autocomplétion de race (`BreedSearch`)
+  'analyzer.breedSearch.placeholder':
+    'Chercher une race (ex. lab, frenchie, gsd)',
+  'analyzer.breedSearch.clearAria': 'Effacer la race',
+  'analyzer.breedSearch.change': 'Modifier',
+  'analyzer.breedSearch.popular': 'Populaires',
+  'analyzer.breedSearch.noMatches': 'Aucun résultat.',
+  'analyzer.breedSearch.useAnyway': 'Utiliser « {value} » quand même',
+  'analyzer.breedSearch.sizeRange': '{group} · {min} à {max} kg',
 
   // ── Carte 2 : poids et activité ───────────────────────────
   'analyzer.weight.label': 'Poids et activité',

@@ -16,7 +16,10 @@ export const stats: Record<keyof typeof enStats, string> = {
   'stats.none.body': 'Faites d’abord une séance.',
 
   'stats.headline.good': 'Belle séance.\nGardez cette approche.',
-  'stats.headline.ok': 'Bonne base.\nAffinez {focus} la prochaine fois.',
+  // {focus} est le libellé (minusculé) de la dimension la plus faible — souvent
+  // un verbe à l'infinitif (« reconnaître », « clarifier »). La tournure
+  // nominale « prochaine cible : … » l'accueille sans faute d'accord.
+  'stats.headline.ok': 'Bonne base.\nProchaine cible : {focus}.',
   'stats.headline.poor': 'Beaucoup à apprendre ici —\net c’est tout l’intérêt.',
   'stats.overall': 'Global',
   'stats.turns': '{count} tours',

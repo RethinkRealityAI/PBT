@@ -625,6 +625,62 @@ export function Collapsible({
   );
 }
 
+// ── InfoTip (inline "?" that opens an explainer modal) ────────
+// Drop next to a field label or section title when a one-line help string
+// isn't enough. `title` names the setting; `children` is the long-form
+// explanation (what changing it does, with examples).
+export function InfoTip({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        aria-label={`What does “${title}” do?`}
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 9999,
+          border: `1px solid ${COLOR.border}`,
+          background: 'transparent',
+          color: COLOR.inkMute,
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 11,
+          fontWeight: 700,
+          lineHeight: 1,
+          padding: 0,
+          verticalAlign: 'middle',
+          fontFamily: 'var(--pbt-font)',
+        }}
+      >
+        ?
+      </button>
+      <Modal open={open} onClose={() => setOpen(false)} width={560} ariaLabel={title}>
+        <div style={{ padding: 26 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Eyebrow>How this works</Eyebrow>
+              <h2 style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 800, color: COLOR.ink }}>
+                {title}
+              </h2>
+            </div>
+            <ModalCloseButton onClose={() => setOpen(false)} />
+          </div>
+          <div style={{ marginTop: 14, fontSize: 13.5, lineHeight: 1.6, color: COLOR.ink }}>
+            {children}
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 export function ModalCloseButton({ onClose }: { onClose: () => void }) {
   return (
     <button

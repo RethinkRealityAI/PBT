@@ -1,6 +1,9 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Orb } from '../../design-system/Orb';
 import { useTheme } from '../../app/providers/ThemeProvider';
+import { useLanguage } from '../../app/providers/LanguageProvider';
+import type { TranslateParams } from '../../i18n/translate';
+import type { CatalogKey } from '../../i18n/catalog';
 import type { DriverKey } from '../../design-system/tokens';
 
 /**
@@ -33,33 +36,46 @@ export interface SessionEndingOverlayProps {
   scenarioTitle?: string;
 }
 
-const DEFAULT_TITLE = 'pushback';
+/**
+ * Copy for each phase, keyed so every locale carries the whole overlay.
+ * `{title}` is the (already localized) pushback title — see ChatScreen, which
+ * passes `localizedScenario(...).pushback.title`.
+ */
+const PHASE_KEYS: Record<
+  SessionEndingOverlayProps['phase'],
+  { eyebrow: CatalogKey; title: CatalogKey; sub: CatalogKey }
+> = {
+  closing: {
+    eyebrow: 'chat.ending.closing.eyebrow',
+    title: 'chat.ending.closing.title',
+    sub: 'chat.ending.closing.sub',
+  },
+  analyzing: {
+    eyebrow: 'chat.ending.analyzing.eyebrow',
+    title: 'chat.ending.analyzing.title',
+    sub: 'chat.ending.analyzing.sub',
+  },
+  ready: {
+    eyebrow: 'chat.ending.ready.eyebrow',
+    title: 'chat.ending.ready.title',
+    sub: 'chat.ending.ready.sub',
+  },
+};
 
 function copyFor(
   phase: SessionEndingOverlayProps['phase'],
   scenarioTitle: string | undefined,
+  t: (key: CatalogKey, params?: TranslateParams) => string,
 ): { eyebrow: string; title: string; sub: string } {
-  const title = scenarioTitle?.trim() || DEFAULT_TITLE;
-  switch (phase) {
-    case 'closing':
-      return {
-        eyebrow: 'Session complete',
-        title: `Great work finishing the\n${title} training.`,
-        sub: 'Holding for a beat so the closing line lands…',
-      };
-    case 'analyzing':
-      return {
-        eyebrow: 'Analyzing your performance',
-        title: 'Building your scorecard',
-        sub: 'Scoring how you Acknowledged, Clarified, and Transformed the pushback — plus empathy and rapport.',
-      };
-    case 'ready':
-      return {
-        eyebrow: 'Done',
-        title: 'Your scorecard is ready',
-        sub: 'Opening it now…',
-      };
-  }
+  const title = scenarioTitle?.trim() || t('chat.ending.defaultTitle');
+  const keys = PHASE_KEYS[phase];
+  return {
+    eyebrow: t(keys.eyebrow),
+    // Only the 'closing' headline interpolates a title; passing the param to
+    // the others is harmless (translate ignores unknown params).
+    title: t(keys.title, { title }),
+    sub: t(keys.sub),
+  };
 }
 
 export function SessionEndingOverlay({
@@ -70,8 +86,9 @@ export function SessionEndingOverlay({
 }: SessionEndingOverlayProps) {
   const reduceMotion = useReducedMotion();
   const { resolvedTheme } = useTheme();
+  const { t } = useLanguage();
   const dark = resolvedTheme === 'dark';
-  const copy = copyFor(phase, scenarioTitle);
+  const copy = copyFor(phase, scenarioTitle, t);
 
   return (
     <AnimatePresence>

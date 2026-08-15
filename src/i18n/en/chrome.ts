@@ -27,4 +27,14 @@ export const chrome = {
   'chrome.nav.profile': 'Profile',
   'chrome.theme.dark': 'Dark mode',
   'chrome.theme.light': 'Light mode',
+
+  // ── Shared primitives ─────────────────────────────────────
+  /** Screen-reader text for the lazy-screen loading fallback. */
+  'chrome.loading': 'Loading',
+  /** `ScoreRing` accessible name, without a band label. */
+  'chrome.score.ringAria': 'Score {score} out of 100',
+  /** `ScoreRing` accessible name when a band label is shown. */
+  'chrome.score.ringAriaLabelled': 'Score {score} out of 100 — {label}',
+  /** `ScoreChip` accessible name. */
+  'chrome.score.chipAria': 'Score {score}',
 } as const;

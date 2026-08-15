@@ -11,8 +11,9 @@
  * turn only.
  */
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
+import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 
-interface OverrideUpsert {
+export interface OverrideUpsert {
   scenario_id: string;
   visible?: boolean;
   sort_order?: number | null;
@@ -37,16 +38,62 @@ interface OverrideUpsert {
   pushback_notes?: string | null;
   suggested_driver?: string | null;
   weight_kg?: number | null;
+  // Knowledge & focus — restrict what RAG retrieval may draw on.
+  focus_area?: string | null;
+  knowledge_slugs?: string[] | null;
+}
+
+/**
+ * Columns a client may write. Everything else on the row (created_by,
+ * updated_by, deleted_at, timestamps) is server-owned — the upsert used to
+ * spread the whole request body, which let a crafted payload clobber them.
+ */
+const WRITABLE_COLUMNS = [
+  'scenario_id',
+  'visible',
+  'sort_order',
+  'title_override',
+  'context_override',
+  'opening_line_override',
+  'difficulty_override',
+  'persona_override',
+  'prompt_prefix',
+  'prompt_suffix',
+  'card_title_override',
+  'card_subtitle_override',
+  'info_modal_title',
+  'info_modal_body',
+  'start_button_label',
+  'card_driver_override',
+  'breed',
+  'life_stage',
+  'pushback_id',
+  'pushback_notes',
+  'suggested_driver',
+  'weight_kg',
+  'focus_area',
+  'knowledge_slugs',
+] as const satisfies readonly (keyof OverrideUpsert)[];
+
+export function pickWritable(body: OverrideUpsert): Record<string, unknown> {
+  const src = body as unknown as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of WRITABLE_COLUMNS) {
+    if (key in src) out[key] = src[key];
+  }
+  return out;
 }
 
 const MAX_PROMPT_LEN = 1500;
+const MAX_KNOWLEDGE_SLUGS = 40;
+const MAX_SLUG_LEN = 200;
 const MAX_CARD_TITLE_LEN = 120;
 const MAX_CARD_SUBTITLE_LEN = 240;
 const MAX_INFO_BODY_LEN = 4000;
 const MAX_START_BTN_LEN = 40;
 const DRIVERS = ['Activator', 'Energizer', 'Analyzer', 'Harmonizer'];
 
-function validateOverride(o: OverrideUpsert): string | null {
+export function validateOverride(o: OverrideUpsert): string | null {
   if (!o.scenario_id || typeof o.scenario_id !== 'string') return 'scenario_id required';
   if (o.prompt_prefix && o.prompt_prefix.length > MAX_PROMPT_LEN)
     return `prompt_prefix too long (max ${MAX_PROMPT_LEN})`;
@@ -69,6 +116,17 @@ function validateOverride(o: OverrideUpsert): string | null {
     (o.difficulty_override < 1 || o.difficulty_override > 4)
   )
     return 'difficulty_override must be 1–4';
+  if (o.focus_area != null && !isFocusAreaKey(o.focus_area))
+    return 'focus_area must be a known focus area key';
+  if (o.knowledge_slugs != null) {
+    if (!Array.isArray(o.knowledge_slugs)) return 'knowledge_slugs must be an array';
+    if (o.knowledge_slugs.length > MAX_KNOWLEDGE_SLUGS)
+      return `knowledge_slugs too long (max ${MAX_KNOWLEDGE_SLUGS})`;
+    for (const slug of o.knowledge_slugs) {
+      if (typeof slug !== 'string' || slug.length > MAX_SLUG_LEN)
+        return `knowledge_slugs entries must be strings of ≤ ${MAX_SLUG_LEN} chars`;
+    }
+  }
   // For admin-authored scenarios we require enough fields to actually run
   // the AI customer prompt — otherwise the consumer would render a broken
   // scenario.
@@ -209,7 +267,7 @@ export default async (req: Request): Promise<Response> => {
   const { data, error } = await ctx.sb
     .from('scenario_overrides')
     .upsert({
-      ...body,
+      ...pickWritable(body),
       updated_by: ctx.user.id,
       ...(isNewAdmin ? { created_by: ctx.user.id } : {}),
     })

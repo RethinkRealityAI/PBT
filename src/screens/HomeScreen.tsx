@@ -28,6 +28,8 @@ import { computeStreak } from '../lib/streak';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
 import { useT } from '../i18n/useT';
 import { useLanguage } from '../app/providers/LanguageProvider';
+import { formatPercent } from '../i18n/format';
+import { localizedResolvedDimension } from '../i18n/dataL10n/rubric';
 import { localizedScenario, localizedLifeStage } from '../i18n/dataL10n/scenarios';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
@@ -1283,6 +1285,7 @@ function dimensionAccentBorder(key: DimensionKey): CSSProperties {
 
 function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT();
+  const { locale } = useLanguage();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   // Live ACT-first rubric (admin re-weights/labels included) — this modal
@@ -1295,12 +1298,16 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
     t('home.dim.clarify'),
     t('home.dim.transform'),
   ].join(' → ');
-  const scoringDimensions = resolveDimensions(simulationConfig ?? {}).map((d) => ({
-    key: d.key,
-    label: d.label,
-    weight: `${Math.round(d.weight * 100)}%`,
-    description: d.description,
-  }));
+  const scoringDimensions = resolveDimensions(simulationConfig ?? {})
+    // Code-default labels/descriptions are translated; anything an admin typed
+    // in the Simulation screen is shown verbatim (see dataL10n/rubric.ts).
+    .map((d) => localizedResolvedDimension(d, locale))
+    .map((d) => ({
+      key: d.key,
+      label: d.label,
+      weight: formatPercent(Math.round(d.weight * 100), locale),
+      description: d.description,
+    }));
 
   return (
     <AnimatePresence>

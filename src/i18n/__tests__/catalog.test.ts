@@ -46,6 +46,8 @@ const IDENTICAL_ALLOWED = new Set<string>([
   'auth.field.emailPlaceholder', // 'you@clinic.com' — sample address
   'report.kind.suggestion', // 'Suggestion' — same word in fr-CA
   'resources.sources.label', // 'Sources' — same word in fr-CA
+  'analyzer.vision.bcsLead', // 'BCS {score}/9.' — clinical initialism + token
+  'analyzer.vision.context.pet', // '{breed}, {age}.' — two tokens + punctuation
 ]);
 
 const CATALOGS = { en, fr } as const;

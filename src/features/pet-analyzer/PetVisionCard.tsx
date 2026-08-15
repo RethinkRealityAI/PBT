@@ -3,8 +3,25 @@ import { Glass } from '../../design-system/Glass';
 import { Icon } from '../../design-system/Icon';
 import { COLORS } from '../../design-system/tokens';
 import { useTheme } from '../../app/providers/ThemeProvider';
-import type { PetVisionResult } from '../../services/petVisionService';
+import { useLanguage } from '../../app/providers/LanguageProvider';
+import { formatPercent } from '../../i18n/format';
+import type { CatalogKey } from '../../i18n/catalog';
+import type {
+  DermatitisSeverity,
+  PetVisionResult,
+} from '../../services/petVisionService';
 import type { UsePetVision } from './usePetVision';
+
+/**
+ * Dermatitis severity → catalog key. The enum values themselves are machine
+ * values sent to / returned by the model and are never translated.
+ */
+export const DERM_SEVERITY_KEY: Record<DermatitisSeverity, CatalogKey> = {
+  none: 'analyzer.vision.severity.none',
+  mild: 'analyzer.vision.severity.mild',
+  moderate: 'analyzer.vision.severity.moderate',
+  marked: 'analyzer.vision.severity.marked',
+};
 
 /**
  * Colour-tinted info chip surface. In light mode the accent is blended into
@@ -64,12 +81,13 @@ export function PetVisionCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const { status, result, previewUrl, error } = vision;
   const { resolvedTheme } = useTheme();
+  const { t } = useLanguage();
   const dark = resolvedTheme === 'dark';
 
   return (
     <Glass radius={22} padding={18} style={{ marginBottom: 14 }} glow={null}>
       <div className="flex items-center justify-between gap-2" style={{ marginBottom: 8 }}>
-        <Eyebrow>Photo analysis · AI</Eyebrow>
+        <Eyebrow>{t('analyzer.vision.eyebrow')}</Eyebrow>
         <span
           style={{
             fontFamily: 'var(--pbt-font-mono)',
@@ -80,7 +98,7 @@ export function PetVisionCard({
             opacity: 0.8,
           }}
         >
-          Estimate · review &amp; edit
+          {t('analyzer.vision.estimateTag')}
         </span>
       </div>
 
@@ -119,23 +137,26 @@ export function PetVisionCard({
           overflow: 'hidden',
           color: 'var(--pbt-text)',
         }}
-        aria-label={previewUrl ? 'Replace photo' : 'Upload a dog photo to analyze'}
+        aria-label={
+          previewUrl
+            ? t('analyzer.vision.replaceAria')
+            : t('analyzer.vision.uploadAria')
+        }
       >
         {previewUrl ? (
           <img
             src={previewUrl}
-            alt="Selected dog"
+            alt={t('analyzer.vision.photoAlt')}
             style={{ width: '100%', maxHeight: 260, objectFit: 'cover', display: 'block' }}
           />
         ) : (
           <>
             <Icon.paw />
             <div style={{ fontSize: 14, fontWeight: 600 }}>
-              Upload or take a photo
+              {t('analyzer.vision.uploadTitle')}
             </div>
             <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', textAlign: 'center' }}>
-              We estimate breed, life stage, body condition and visible skin
-              signs. The photo is never stored.
+              {t('analyzer.vision.uploadBody')}
             </div>
           </>
         )}
@@ -167,7 +188,7 @@ export function PetVisionCard({
               animation: 'pbtSpin 0.8s linear infinite',
             }}
           />
-          Analyzing photo…
+          {t('analyzer.vision.analyzing')}
         </div>
       )}
 
@@ -196,7 +217,7 @@ export function PetVisionCard({
               textDecoration: 'underline',
             }}
           >
-            Try again
+            {t('analyzer.vision.tryAgain')}
           </button>
         </div>
       )}
@@ -208,6 +229,7 @@ export function PetVisionCard({
 
 function VisionFindings({ result }: { result: PetVisionResult }) {
   const { resolvedTheme } = useTheme();
+  const { t, locale } = useLanguage();
   const dark = resolvedTheme === 'dark';
   if (!result.isDog) {
     return (
@@ -221,8 +243,7 @@ function VisionFindings({ result }: { result: PetVisionResult }) {
           ...tintedChip(COLORS.score.ok, dark),
         }}
       >
-        That doesn't look like a dog — try a clear, well-lit photo of the dog
-        from the side.
+        {t('analyzer.vision.notADog')}
       </div>
     );
   }
@@ -250,20 +271,25 @@ function VisionFindings({ result }: { result: PetVisionResult }) {
             color: 'var(--pbt-text-muted)',
           }}
         >
-          {confPct}% confident
+          {t('analyzer.vision.confidence', {
+            pct: formatPercent(confPct, locale),
+          })}
         </span>
       </div>
 
       {result.alternativeBreeds.length > 0 && (
         <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)' }}>
-          Also possible: {result.alternativeBreeds.join(', ')}
+          {t('analyzer.vision.alsoPossible', {
+            breeds: result.alternativeBreeds.join(', '),
+          })}
         </div>
       )}
 
       {/* BCS rationale */}
       {result.bcsRationale && (
         <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--pbt-text)' }}>
-          <strong>BCS {result.bcs}/9.</strong> {result.bcsRationale}
+          <strong>{t('analyzer.vision.bcsLead', { score: result.bcs })}</strong>{' '}
+          {result.bcsRationale}
         </div>
       )}
 
@@ -285,11 +311,16 @@ function VisionFindings({ result }: { result: PetVisionResult }) {
             marginBottom: 4,
           }}
         >
-          Skin / coat · {result.dermatitis.severity}
+          {t('analyzer.vision.skinLabel', {
+            severity: t(
+              DERM_SEVERITY_KEY[result.dermatitis.severity] ??
+                DERM_SEVERITY_KEY.none,
+            ),
+          })}
         </div>
         <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--pbt-text)' }}>
           {result.dermatitis.severity === 'none'
-            ? 'No obvious skin or coat anomalies visible.'
+            ? t('analyzer.vision.skinNone')
             : (result.dermatitis.indicators.join('; ') || result.dermatitis.note)}
         </div>
       </div>
@@ -303,7 +334,9 @@ function VisionFindings({ result }: { result: PetVisionResult }) {
 
       {result.notVisible.length > 0 && (
         <div style={{ fontSize: 11, color: 'var(--pbt-text-muted)' }}>
-          Can't judge from a photo: {result.notVisible.join(', ')}.
+          {t('analyzer.vision.notVisible', {
+            items: result.notVisible.join(', '),
+          })}
         </div>
       )}
     </div>

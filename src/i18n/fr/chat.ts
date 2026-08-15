@@ -41,6 +41,13 @@ export const chat: Record<keyof typeof enChat, string> = {
   'chat.status.scoring': 'Évaluation de la conversation…',
   'chat.error.connect': 'Connexion impossible — vérifiez votre réseau.',
   'chat.error.retry': 'Réessayer',
+  'chat.error.notConfigured':
+    'La clé API Gemini n’est pas configurée. Ajoutez GEMINI_API_KEY à votre environnement.',
+  'chat.error.openFailed':
+    'Impossible de joindre l’IA — vérifiez votre réseau et touchez « Réessayer ».',
+  'chat.error.sendFailed':
+    'Problème de connexion — votre message a été conservé. Touchez envoyer pour réessayer.',
+  'chat.error.sendRetry': 'Touchez envoyer de nouveau pour réessayer.',
 
   'chat.voice.status.idle': 'Initialisation…',
   'chat.voice.status.connecting': 'Connexion…',
@@ -56,6 +63,33 @@ export const chat: Record<keyof typeof enChat, string> = {
   'chat.voice.analyzeFailed':
     'Échec de l’analyse de la séance — vérifiez votre réseau et réessayez.',
   'chat.voice.retryVoice': 'Réessayer le mode vocal',
+
+  // Pannes de transport du mode vocal (`src/services/voiceSession.ts`)
+  'chat.voice.error.micStart':
+    'Impossible de démarrer le microphone. Vérifiez votre microphone et réessayez.',
+  'chat.voice.error.micDenied':
+    'Accès au microphone refusé ou indisponible. Autorisez l’accès au microphone et réessayez.',
+  'chat.voice.error.connection':
+    'Erreur de connexion vocale. Vérifiez votre microphone et votre réseau, puis réessayez.',
+  'chat.voice.error.lost':
+    'Connexion vocale perdue. Vérifiez votre réseau et touchez « Commencer la simulation » pour redémarrer.',
+  'chat.voice.error.startFailed':
+    'Le mode vocal n’a pas pu démarrer : {reason}',
+  'chat.voice.error.unknown': 'erreur inconnue',
+
+  // Écran de fin de séance (`src/features/chat/SessionEndingOverlay.tsx`)
+  'chat.ending.defaultTitle': 'objection',
+  'chat.ending.closing.eyebrow': 'Séance terminée',
+  'chat.ending.closing.title': 'Bravo d’avoir terminé\nl’entraînement {title}.',
+  'chat.ending.closing.sub':
+    'On marque une pause pour laisser la dernière réplique résonner…',
+  'chat.ending.analyzing.eyebrow': 'Analyse de votre performance',
+  'chat.ending.analyzing.title': 'Création de votre fiche de résultats',
+  'chat.ending.analyzing.sub':
+    'On évalue votre façon de Reconnaître, Clarifier et Transformer l’objection — plus l’empathie et le lien de confiance.',
+  'chat.ending.ready.eyebrow': 'Terminé',
+  'chat.ending.ready.title': 'Votre fiche de résultats est prête',
+  'chat.ending.ready.sub': 'Ouverture en cours…',
 
   'chat.modal.close': 'Fermer',
   'chat.endModal.title': 'Terminer cette séance ?',

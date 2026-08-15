@@ -65,6 +65,17 @@ function asDifficulty(n: number | null | undefined): Difficulty | null {
   return null;
 }
 
+/**
+ * `knowledge_slugs` is jsonb — trust nothing about its shape. Returns
+ * undefined (not []) when there is nothing usable, so callers can treat
+ * "no explicit attachment" as a single falsy check.
+ */
+function asKnowledgeSlugs(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const slugs = v.filter((s): s is string => typeof s === 'string' && s.trim() !== '');
+  return slugs.length ? slugs : undefined;
+}
+
 export function applyScenarioOverride(
   base: Scenario,
   override: ScenarioOverride | null,
@@ -78,6 +89,8 @@ export function applyScenarioOverride(
     context: override.context_override?.trim() || base.context,
     openingLine: override.opening_line_override?.trim() || base.openingLine,
     pushbackNotes: override.pushback_notes?.trim() || base.pushbackNotes,
+    focusArea: override.focus_area?.trim() || base.focusArea,
+    knowledgeSlugs: asKnowledgeSlugs(override.knowledge_slugs) ?? base.knowledgeSlugs,
     _overrideId: scenarioId ?? base._overrideId,
   };
 }
@@ -110,6 +123,8 @@ export function adminOverrideToScenario(
     openingLine: override.opening_line_override?.trim() || undefined,
     weightKg:
       override.weight_kg != null ? String(override.weight_kg) : undefined,
+    focusArea: override.focus_area?.trim() || undefined,
+    knowledgeSlugs: asKnowledgeSlugs(override.knowledge_slugs),
     _overrideId: override.scenario_id,
   };
 }

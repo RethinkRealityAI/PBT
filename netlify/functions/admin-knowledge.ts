@@ -6,13 +6,19 @@
  *        (driver personas, pushback taxonomy, ACT guide, clinical reference)
  *        as 'code-seed' documents, upserted by slug — re-running refreshes
  *        them after a code change without duplicating.
- *   POST { op: 'upsert', doc: { slug?, title, category, content, metadata? } }
+ *   POST { op: 'update', slug, title?, category?, focus?, citation? }
+ *        → edit a stored document's cataloguing WITHOUT re-embedding it.
+ *          `title`/`category` are only editable on source='admin' documents
+ *          (code-seeded ones are rebuilt by re-seeding); `focus`/`citation`
+ *          are editable on every document — tagging built-in knowledge is the
+ *          whole point of the focus vocabulary.
  *   POST { op: 'delete', slug }
  *
  * This is the SOW "ingestion of the current working knowledge base": one row
  * per document with structured metadata, ready to feed an embedder in Phase 3.
  */
 import { can, errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
+import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import { embedTexts } from './_shared/gemini';
 import { chunkMarkdown } from '../../src/services/ragShared';
 import { estimateTokens } from '../../src/services/aiTelemetry';
@@ -26,6 +32,34 @@ import {
   NON_SHAMING_FRAMING,
   PRODUCT_ANCHORS,
 } from '../../src/data/knowledge/clinicalReference';
+
+const CATEGORIES = ['driver', 'pushback', 'act', 'clinical', 'custom'];
+
+type Bag = Record<string, unknown>;
+
+/**
+ * Read the focus area out of a document/chunk tag bag.
+ *
+ * Legacy fallback: the first bundled-study pass tagged the two communication
+ * papers `{ topic: 'communication' }`, which predates `communication` becoming
+ * a real focus area. Treat it as a focus so those documents aren't invisible
+ * to focus-filtered retrieval before they're re-ingested.
+ */
+function readFocus(tags: unknown): string | null {
+  if (!tags || typeof tags !== 'object') return null;
+  const bag = tags as Bag;
+  if (typeof bag.focus === 'string' && bag.focus) return bag.focus;
+  return bag.topic === 'communication' ? 'communication' : null;
+}
+
+/** Set (or clear) the focus key on a tag bag, dropping the legacy `topic` key. */
+function applyFocus(tags: unknown, focus: string | null): Bag {
+  const next: Bag = tags && typeof tags === 'object' ? { ...(tags as Bag) } : {};
+  if (focus) next.focus = focus;
+  else delete next.focus;
+  if (next.topic === 'communication') delete next.topic;
+  return next;
+}
 
 interface SeedDoc {
   slug: string;
@@ -111,13 +145,36 @@ function buildSeedDocs(): SeedDoc[] {
 
 async function seed(ctx: AdminCtx): Promise<Response> {
   const docs = buildSeedDocs();
+
+  // Re-seeding rebuilds these documents from code, but an admin's cataloguing
+  // (focus area, citation) is NOT in the code — carry it across so "Load
+  // built-in knowledge" doesn't silently untag everything they filed.
+  const keptFocus = new Map<string, string>();
+  const keptCitation = new Map<string, string>();
+  const { data: existing } = await ctx.sb
+    .from('knowledge_documents')
+    .select('slug, metadata')
+    .eq('source', 'code-seed');
+  for (const row of existing ?? []) {
+    const meta = (row.metadata ?? {}) as Bag;
+    const focus = readFocus(meta.tags);
+    if (focus) keptFocus.set(row.slug, focus);
+    if (typeof meta.citation === 'string' && meta.citation) {
+      keptCitation.set(row.slug, meta.citation);
+    }
+  }
+
   const { error } = await ctx.sb.from('knowledge_documents').upsert(
     docs.map((d) => ({
       slug: d.slug,
       title: d.title,
       category: d.category,
       content: d.content,
-      metadata: d.metadata,
+      metadata: {
+        ...d.metadata,
+        ...(keptFocus.has(d.slug) ? { tags: { focus: keptFocus.get(d.slug) } } : {}),
+        ...(keptCitation.has(d.slug) ? { citation: keptCitation.get(d.slug) } : {}),
+      },
       source: 'code-seed',
       updated_by: ctx.user.id,
       updated_at: new Date().toISOString(),
@@ -147,8 +204,12 @@ async function seed(ctx: AdminCtx): Promise<Response> {
           chunk_idx: i,
           content,
           token_estimate: estimateTokens(content),
-          tags: { category: d.category, ...d.metadata },
-          citation: null,
+          tags: {
+            category: d.category,
+            ...d.metadata,
+            ...(keptFocus.has(d.slug) ? { focus: keptFocus.get(d.slug) } : {}),
+          },
+          citation: keptCitation.get(d.slug) ?? null,
           embedding: `[${embeddings[i].join(',')}]`,
         })),
       );
@@ -157,6 +218,119 @@ async function seed(ctx: AdminCtx): Promise<Response> {
     }
   }
   return jsonResponse({ ok: true, seeded: docs.length, failures });
+}
+
+/**
+ * Edit a document's cataloguing (title / category / focus area / citation).
+ *
+ * Deliberately does NOT touch `content` or embeddings — this is the cheap
+ * "file it correctly" path, distinct from re-ingesting. It DOES rewrite the
+ * document's chunk tags, because retrieval filters on chunk tags: a focus
+ * change that stopped at the document row would be invisible at query time.
+ */
+async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Response> {
+  const slug = String(body.slug ?? '').trim();
+  if (!slug) return errorResponse(400, 'slug required');
+
+  const hasFocus = Object.prototype.hasOwnProperty.call(body, 'focus');
+  const focusInput = body.focus == null ? null : String(body.focus).trim() || null;
+  if (hasFocus && focusInput !== null && !isFocusAreaKey(focusInput)) {
+    return errorResponse(400, `Unknown focus area: ${focusInput}`);
+  }
+
+  const { data: doc, error: readErr } = await ctx.sb
+    .from('knowledge_documents')
+    .select('id, slug, title, category, source, metadata')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (readErr) return errorResponse(500, readErr.message);
+  if (!doc) return errorResponse(404, 'Document not found');
+
+  const title = typeof body.title === 'string' ? body.title.trim() : null;
+  const category = typeof body.category === 'string' ? body.category.trim() : null;
+  if (title !== null && !title) return errorResponse(400, 'title cannot be empty');
+  if (category !== null && !CATEGORIES.includes(category)) {
+    return errorResponse(400, 'invalid category');
+  }
+  // Built-in documents are regenerated from code on every seed, so editing
+  // their title/type here would silently revert. Focus + citation survive a
+  // re-seed only in the chunk tags we write below… so we allow those, and
+  // block the two fields the seeder owns.
+  const retitles = (title !== null && title !== doc.title) || (category !== null && category !== doc.category);
+  if (retitles && doc.source !== 'admin') {
+    return errorResponse(
+      400,
+      'Built-in documents are rebuilt from code — re-run “Load built-in knowledge” to change their title or type. Focus area and citation can still be edited.',
+    );
+  }
+
+  const meta: Bag = doc.metadata && typeof doc.metadata === 'object' ? { ...(doc.metadata as Bag) } : {};
+  const nextFocus = hasFocus ? focusInput : readFocus(meta.tags);
+  meta.tags = applyFocus(meta.tags, nextFocus);
+
+  const hasCitation = Object.prototype.hasOwnProperty.call(body, 'citation');
+  let citation: string | null = typeof meta.citation === 'string' ? meta.citation : null;
+  if (hasCitation) {
+    citation = body.citation == null ? null : String(body.citation).trim() || null;
+    if (citation) meta.citation = citation;
+    else delete meta.citation;
+  }
+
+  const patch: Record<string, unknown> = {
+    metadata: meta,
+    updated_by: ctx.user.id,
+    updated_at: new Date().toISOString(),
+  };
+  if (title !== null) patch.title = title;
+  if (category !== null) patch.category = category;
+
+  const { error: writeErr } = await ctx.sb
+    .from('knowledge_documents')
+    .update(patch)
+    .eq('id', doc.id);
+  if (writeErr) return errorResponse(500, writeErr.message);
+
+  // Sync the chunk tag bags (focus + category + citation) without going
+  // anywhere near `embedding` — re-embedding is a separate, expensive op.
+  const nextCategory = category ?? doc.category;
+  const { data: chunkRows, error: chunkErr } = await ctx.sb
+    .from('knowledge_chunks')
+    .select('id, tags')
+    .eq('doc_id', doc.id);
+  if (chunkErr) return errorResponse(500, chunkErr.message);
+
+  // Batched with bounded concurrency — a large PDF can hold hundreds of
+  // chunks, and one awaited round-trip per row would run past the function
+  // timeout, leaving retrieval tags half-updated.
+  let chunksUpdated = 0;
+  const chunkFailures: string[] = [];
+  const rows = chunkRows ?? [];
+  const BATCH = 25;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const results = await Promise.all(
+      rows.slice(i, i + BATCH).map(async (row) => {
+        const tags = applyFocus(row.tags, nextFocus);
+        tags.category = nextCategory;
+        const rowPatch: Record<string, unknown> = { tags };
+        if (hasCitation) rowPatch.citation = citation;
+        const { error } = await ctx.sb.from('knowledge_chunks').update(rowPatch).eq('id', row.id);
+        return error?.message ?? null;
+      }),
+    );
+    for (const err of results) {
+      if (err) chunkFailures.push(err);
+      else chunksUpdated++;
+    }
+  }
+
+  return jsonResponse({
+    ok: true,
+    slug,
+    focus: nextFocus,
+    citation,
+    chunks_updated: chunksUpdated,
+    chunk_failures: chunkFailures,
+  });
 }
 
 export default async (req: Request): Promise<Response> => {
@@ -195,36 +369,7 @@ export default async (req: Request): Promise<Response> => {
 
   if (body.op === 'seed') return seed(ctx);
 
-  if (body.op === 'upsert') {
-    const doc = (body.doc ?? {}) as Record<string, unknown>;
-    const title = String(doc.title ?? '').trim();
-    const content = String(doc.content ?? '').trim();
-    const category = String(doc.category ?? 'custom');
-    if (!title || !content) return errorResponse(400, 'title and content required');
-    if (!['driver', 'pushback', 'act', 'clinical', 'custom'].includes(category)) {
-      return errorResponse(400, 'invalid category');
-    }
-    const slug = String(doc.slug ?? '').trim() || `custom:${crypto.randomUUID()}`;
-    const { data, error } = await ctx.sb
-      .from('knowledge_documents')
-      .upsert(
-        {
-          slug,
-          title,
-          category,
-          content,
-          metadata: (doc.metadata as Record<string, unknown>) ?? null,
-          source: 'admin',
-          updated_by: ctx.user.id,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'slug' },
-      )
-      .select('slug')
-      .maybeSingle();
-    if (error) return errorResponse(500, error.message);
-    return jsonResponse({ ok: true, slug: data?.slug ?? slug });
-  }
+  if (body.op === 'update') return update(ctx, body);
 
   if (body.op === 'delete') {
     const slug = String(body.slug ?? '');

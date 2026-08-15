@@ -57,6 +57,13 @@ export const chat = {
   'chat.status.scoring': 'Scoring conversation…',
   'chat.error.connect': 'Could not connect — check your network.',
   'chat.error.retry': 'Try again',
+  'chat.error.notConfigured':
+    'Gemini API key is not configured. Please add GEMINI_API_KEY to your environment.',
+  'chat.error.openFailed':
+    'Could not reach the AI — check your network and tap "Try again".',
+  'chat.error.sendFailed':
+    'Connection issue — your message was saved. Tap send to try again.',
+  'chat.error.sendRetry': 'Tap send again to retry.',
 
   // Voice mode
   'chat.voice.status.idle': 'Initializing…',
@@ -72,6 +79,33 @@ export const chat = {
   'chat.voice.scorecardReady': 'Your scorecard is ready',
   'chat.voice.analyzeFailed': 'Failed to analyze session — check your network and try again.',
   'chat.voice.retryVoice': 'Try voice again',
+
+  // Live-voice transport failures (`src/services/voiceSession.ts`)
+  'chat.voice.error.micStart':
+    'Microphone could not be started. Please check your microphone and try again.',
+  'chat.voice.error.micDenied':
+    'Microphone access denied or unavailable. Please allow microphone access and try again.',
+  'chat.voice.error.connection':
+    'Voice connection error. Check your microphone and network, then try again.',
+  'chat.voice.error.lost':
+    'Voice connection lost. Check your network and tap Begin simulation to restart.',
+  /** {reason} is the raw transport error — never translated. */
+  'chat.voice.error.startFailed': 'Voice could not start: {reason}',
+  'chat.voice.error.unknown': 'unknown error',
+
+  // Session-ending overlay (`src/features/chat/SessionEndingOverlay.tsx`)
+  /** Stand-in when a scenario has no pushback title to celebrate by name. */
+  'chat.ending.defaultTitle': 'pushback',
+  'chat.ending.closing.eyebrow': 'Session complete',
+  'chat.ending.closing.title': 'Great work finishing the\n{title} training.',
+  'chat.ending.closing.sub': 'Holding for a beat so the closing line lands…',
+  'chat.ending.analyzing.eyebrow': 'Analyzing your performance',
+  'chat.ending.analyzing.title': 'Building your scorecard',
+  'chat.ending.analyzing.sub':
+    'Scoring how you Acknowledged, Clarified, and Transformed the pushback — plus empathy and rapport.',
+  'chat.ending.ready.eyebrow': 'Done',
+  'chat.ending.ready.title': 'Your scorecard is ready',
+  'chat.ending.ready.sub': 'Opening it now…',
 
   // End-session + exit modals
   'chat.modal.close': 'Close',

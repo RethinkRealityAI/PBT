@@ -23,11 +23,30 @@ import type { DriverKnowledge } from '../../../src/data/knowledge/driverProfiles
 import type { PushbackKnowledge } from '../../../src/data/knowledge/pushbackTaxonomy';
 import type { DriverKey } from '../../../src/design-system/tokens';
 import { DRIVER_KEYS } from '../../../src/design-system/tokens';
-import { useAdminSimulationConfig, saveSimulationConfig } from '../data/queries';
+import { useAdminSimulationConfig } from '../data/queries';
+import {
+  configEquals,
+  fetchSimulationHistory,
+  restoreSimulationVersion,
+  saveSimulationConfigWithNote,
+  summarizeConfigDelta,
+  type SimulationVersion,
+} from '../data/simulationHistory';
 import { Glass } from '../primitives/Glass';
-import { Collapsible, LoadingShimmer, PillButton, SectionTitle } from '../primitives';
+import {
+  Collapsible,
+  Eyebrow,
+  InfoTip,
+  LoadingShimmer,
+  Modal,
+  ModalCloseButton,
+  PillButton,
+  SectionTitle,
+  StatusPill,
+} from '../primitives';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { COLOR } from '../lib/tokens';
+import { fmtAgo } from '../lib/format';
 import { Field, inputStyle, textareaStyle, btnPrimary, btnSecondary } from './FlagsScreen';
 
 // ─── Draft state (everything fully populated so the UI never guards undefined) ─
@@ -356,6 +375,226 @@ const TWO_COL: React.CSSProperties = {
 };
 const proseArea: React.CSSProperties = { ...textareaStyle, fontFamily: 'var(--pbt-font)' };
 
+// ─── Labelled field with an "explain this" modal ────────────────────────────────
+//
+// `Field` (FlagsScreen) takes a plain string label, so a field that needs the
+// "?" affordance next to its label renders the label row itself. Same type
+// treatment as Field so the two sit together without looking different.
+
+const monoLabel: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 800,
+  textTransform: 'uppercase',
+  letterSpacing: '0.10em',
+  color: COLOR.inkMute,
+  fontFamily: 'var(--pbt-mono)',
+};
+
+function FieldWithInfo({
+  label,
+  help,
+  infoTitle,
+  info,
+  children,
+}: {
+  label: string;
+  help?: string;
+  infoTitle?: string;
+  info: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <span style={monoLabel}>{label}</span>
+        <InfoTip title={infoTitle ?? label}>{info}</InfoTip>
+      </div>
+      {children}
+      {help && (
+        <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 4 }}>{help}</div>
+      )}
+    </div>
+  );
+}
+
+/** Ordered read-out of how a system prompt is assembled, admin-owned parts lit up. */
+function PromptStack({ lines }: { lines: Array<{ text: string; admin?: boolean }> }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gap: 4,
+        marginTop: 10,
+        padding: 12,
+        borderRadius: 12,
+        background: 'rgba(60,20,15,0.04)',
+        fontFamily: 'var(--pbt-mono)',
+        fontSize: 11.5,
+      }}
+    >
+      {lines.map((l) => (
+        <div
+          key={l.text}
+          style={{
+            color: l.admin ? COLOR.brand : COLOR.inkMute,
+            fontWeight: l.admin ? 800 : 600,
+          }}
+        >
+          {l.admin ? '▸ ' : '  '}
+          {l.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const CAP_NOTE = (
+  <p style={{ margin: '12px 0 0', color: COLOR.inkMute, fontSize: 12.5 }}>
+    Whitespace is trimmed and the text is capped at 1,500 characters, so a long
+    note can never bury the canonical briefing underneath it. Leave it empty to
+    inject nothing at all.
+  </p>
+);
+
+const CUSTOMER_PREFIX_INFO = (
+  <>
+    <p style={{ margin: 0 }}>
+      This text is placed at the very top of every simulated customer&apos;s
+      system prompt, under an <strong>ADMIN NOTES</strong> heading, before the
+      canonical briefing that defines the pet, the pushback, and the driver
+      persona. Scenario-level opening notes are appended just after it, so this
+      global note is the outermost one and applies platform-wide.
+    </p>
+    <PromptStack
+      lines={[
+        { text: '# ADMIN NOTES', admin: true },
+        { text: '  ← this field (global)', admin: true },
+        { text: '  ← the scenario’s own opening note' },
+        { text: 'Canonical customer briefing (dog, pushback, driver, difficulty)' },
+        { text: '# ADMIN ADDENDUM' },
+        { text: '  ← the scenario’s own closing note' },
+        { text: '  ← the global closing note' },
+      ]}
+    />
+    <p style={{ margin: '12px 0 0' }}>
+      Use it for behaviour that should hold in every simulation — for example
+      “Never use emoji.” or “Speak as a first-time dog owner unless told
+      otherwise.”
+    </p>
+    {CAP_NOTE}
+  </>
+);
+
+const CUSTOMER_SUFFIX_INFO = (
+  <>
+    <p style={{ margin: 0 }}>
+      This text is the last thing the simulated customer reads, appended under
+      an <strong>ADMIN ADDENDUM</strong> heading after the canonical briefing
+      <em>and</em> after any scenario-level closing note — so it wraps outermost
+      and gets the final word.
+    </p>
+    <PromptStack
+      lines={[
+        { text: '# ADMIN NOTES' },
+        { text: '  ← the global opening note' },
+        { text: '  ← the scenario’s own opening note' },
+        { text: 'Canonical customer briefing (dog, pushback, driver, difficulty)' },
+        { text: '# ADMIN ADDENDUM', admin: true },
+        { text: '  ← the scenario’s own closing note' },
+        { text: '  ← this field (global)', admin: true },
+      ]}
+    />
+    <p style={{ margin: '12px 0 0' }}>
+      Good for reminders that must not be forgotten mid-conversation — for
+      example “Stay in character even if the trainee asks you to break it.”
+    </p>
+    {CAP_NOTE}
+  </>
+);
+
+const SCORING_PREFIX_INFO = (
+  <>
+    <p style={{ margin: 0 }}>
+      This shapes the <strong>AI evaluator</strong> that writes the scorecard
+      after a session — not the customer the trainee talks to. It is prepended
+      raw, ahead of the coach framing and the rubric, so it is the first
+      instruction the scorer sees.
+    </p>
+    <PromptStack
+      lines={[
+        { text: '← this field (raw, no heading)', admin: true },
+        { text: 'ACT coach framing + “be precise, actionable, non-shaming”' },
+        { text: 'Scenario recap + the 5-dimension rubric with weights' },
+        { text: '# ADMIN SCORING ADDENDUM' },
+        { text: '  ← the scoring closing note' },
+      ]}
+    />
+    <p style={{ margin: '12px 0 0' }}>
+      Use it to set the evaluator&apos;s stance — for example “Assume the
+      trainee is in their first month on the floor.” Editing it changes how
+      future sessions are scored; it never rewrites past scorecards.
+    </p>
+    {CAP_NOTE}
+  </>
+);
+
+const SCORING_SUFFIX_INFO = (
+  <>
+    <p style={{ margin: 0 }}>
+      Appended to the end of the <strong>AI evaluator&apos;s</strong>{' '}
+      instructions under an <strong>ADMIN SCORING ADDENDUM</strong> heading —
+      after the rubric and the band examples. It affects the scorecard, not the
+      simulated customer.
+    </p>
+    <PromptStack
+      lines={[
+        { text: '← the scoring opening note' },
+        { text: 'ACT coach framing + “be precise, actionable, non-shaming”' },
+        { text: 'Scenario recap + the 5-dimension rubric with weights' },
+        { text: '# ADMIN SCORING ADDENDUM', admin: true },
+        { text: '  ← this field', admin: true },
+      ]}
+    />
+    <p style={{ margin: '12px 0 0' }}>
+      Good for output-shaping rules — for example “Always name one concrete
+      phrase the trainee could have used instead.”
+    </p>
+    {CAP_NOTE}
+  </>
+);
+
+const WEIGHT_INFO = (
+  <>
+    <p style={{ margin: 0 }}>
+      Relative importance — the five weights are auto-balanced to 100%, so only
+      their ratios matter. Doubling every weight changes nothing; doubling one
+      of them doubles its share.
+    </p>
+    <p style={{ margin: '12px 0 0' }}>
+      Changing weights changes how the <strong>overall</strong> score is
+      computed from here on. Sessions already scored keep the overall they were
+      given — old scorecards are never silently rewritten.
+    </p>
+  </>
+);
+
+const RETRIEVAL_INFO = (
+  <>
+    <p style={{ margin: 0 }}>
+      When retrieval is on, the app looks up the most relevant chunks of the
+      knowledge base <strong>once per session</strong> — at the moment the
+      simulation opens — and threads them into both the customer prompt and the
+      scoring prompt for the whole conversation. It is not re-run on every turn.
+    </p>
+    <p style={{ margin: '12px 0 0' }}>
+      <strong>k</strong> is how many chunks that single lookup pulls in. Higher
+      k means richer grounding but a longer prompt (and a slightly slower, more
+      expensive call). Retrieval fails open: if the lookup errors, the session
+      still runs on the built-in knowledge.
+    </p>
+  </>
+);
+
 // ─── Main screen ───────────────────────────────────────────────────────────────
 
 type Tab = 'scoring' | 'drivers' | 'pushbacks' | 'global';
@@ -381,16 +620,23 @@ export function SimulationScreen() {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
 
-  // Initialise the draft from the loaded config exactly once it arrives.
-  useEffect(() => {
-    if (snapshot.loading || draft) return;
-    const d = buildDraft(snapshot.data);
+  /** Rebuild the draft + its dirty-baseline from a config object. */
+  function applyConfig(config: Record<string, unknown>) {
+    const d = buildDraft(config);
     setDraft(d);
     baselineRef.current = JSON.stringify(d);
     if (Object.keys(d.pushbacks).length) {
       setSelectedPushback((prev) => prev ?? Object.keys(d.pushbacks)[0]);
     }
+  }
+
+  // Initialise the draft from the loaded config exactly once it arrives.
+  useEffect(() => {
+    if (snapshot.loading || draft) return;
+    applyConfig(snapshot.data);
   }, [snapshot.loading, snapshot.data, draft]);
 
   const dirty = useMemo(
@@ -414,8 +660,12 @@ export function SimulationScreen() {
     setSaveError(null);
     try {
       const minimal = buildMinimalConfig(draft);
-      await saveSimulationConfig(minimal as unknown as Record<string, unknown>);
+      await saveSimulationConfigWithNote(
+        minimal as unknown as Record<string, unknown>,
+        note,
+      );
       baselineRef.current = JSON.stringify(draft);
+      setNote('');
       setSaveStatus('saved');
       setRefreshKey((k) => k + 1);
       setTimeout(() => setSaveStatus('idle'), 3000);
@@ -427,6 +677,15 @@ export function SimulationScreen() {
     }
   }
 
+  async function handleRestore(version: SimulationVersion) {
+    const { config } = await restoreSimulationVersion(version.id);
+    applyConfig(config);
+    setHistoryOpen(false);
+    setSaveStatus('saved');
+    setRefreshKey((k) => k + 1);
+    setTimeout(() => setSaveStatus('idle'), 3000);
+  }
+
   const totalWeight = draft
     ? draft.dims.reduce((s, d) => s + (d.weight > 0 ? d.weight : 0), 0)
     : 0;
@@ -436,6 +695,20 @@ export function SimulationScreen() {
       <ContextBar
         title="Simulation config"
         subtitle="Tune AI customer personas, the scoring rubric, and prompt injections — no deploy needed. Changes go live within a minute."
+        actions={
+          <button
+            onClick={() => setHistoryOpen(true)}
+            style={{ ...btnSecondary, height: 40 }}
+          >
+            ↺ History
+          </button>
+        }
+      />
+      <HistoryModal
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        currentConfig={snapshot.data}
+        onRestore={handleRestore}
       />
       <ScreenShell>
         {snapshot.loading || !draft ? (
@@ -516,6 +789,13 @@ export function SimulationScreen() {
                   <button onClick={handleSave} disabled={saving || !dirty} style={{ ...btnPrimary, opacity: saving || !dirty ? 0.5 : 1 }}>
                     {saving ? 'Saving…' : 'Save changes'}
                   </button>
+                  <input
+                    value={note}
+                    onChange={(e) => setNote(e.target.value.slice(0, 200))}
+                    placeholder="What changed? (optional — shows in history)"
+                    aria-label="Version description (optional)"
+                    style={{ ...inputStyle, width: 300, maxWidth: '100%' }}
+                  />
                   <button onClick={resetAll} style={btnSecondary}>
                     Reset all to defaults
                   </button>
@@ -599,7 +879,12 @@ function ScoringTab({
                 <Field label="Label">
                   <input value={dim.label} onChange={(e) => patchDim(idx, { label: e.target.value })} style={inputStyle} />
                 </Field>
-                <Field label="Weight" help="Relative; auto-normalised across dimensions.">
+                <FieldWithInfo
+                  label="Weight"
+                  infoTitle="Dimension weight"
+                  info={WEIGHT_INFO}
+                  help="Relative importance — auto-balanced, so only the ratios matter."
+                >
                   <input
                     type="number"
                     min={0}
@@ -608,7 +893,7 @@ function ScoringTab({
                     onChange={(e) => patchDim(idx, { weight: parseFloat(e.target.value) || 0 })}
                     style={inputStyle}
                   />
-                </Field>
+                </FieldWithInfo>
               </div>
               <Field label="Description">
                 <textarea value={dim.description} rows={2} onChange={(e) => patchDim(idx, { description: e.target.value })} style={proseArea} />
@@ -626,14 +911,32 @@ function ScoringTab({
         );
       })}
 
-      <Collapsible title="Scoring prompt injections" badge={<span style={{ fontSize: 11, color: COLOR.inkMute }}>optional</span>}>
+      <Collapsible
+        title="Extra instructions for the AI scorer"
+        badge={<span style={{ fontSize: 11, color: COLOR.inkMute }}>optional</span>}
+      >
         <div style={{ display: 'grid', gap: 12 }}>
-          <Field label="Prompt prefix" help="Injected at the top of the scoring system prompt.">
+          <p style={{ margin: 0, fontSize: 12.5, color: COLOR.inkMute, lineHeight: 1.55 }}>
+            These two notes are wrapped around the evaluator&apos;s instructions —
+            the AI that writes the scorecard <em>after</em> a session. They do not
+            change how the simulated customer behaves.
+          </p>
+          <FieldWithInfo
+            label="Opening notes for the AI scorer"
+            infoTitle="Opening notes for the AI scorer"
+            info={SCORING_PREFIX_INFO}
+            help="Placed above everything else the evaluator reads, before the rubric. Sets its stance."
+          >
             <textarea value={draft.scoringPrefix} rows={4} onChange={(e) => onPatch({ scoringPrefix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-          </Field>
-          <Field label="Prompt suffix" help="Appended to the scoring system prompt.">
+          </FieldWithInfo>
+          <FieldWithInfo
+            label="Closing notes for the AI scorer"
+            infoTitle="Closing notes for the AI scorer"
+            info={SCORING_SUFFIX_INFO}
+            help="Added after the rubric and band examples — the evaluator's last instruction."
+          >
             <textarea value={draft.scoringSuffix} rows={4} onChange={(e) => onPatch({ scoringSuffix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-          </Field>
+          </FieldWithInfo>
         </div>
       </Collapsible>
     </div>
@@ -814,19 +1117,32 @@ function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draf
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <Glass padding={18} radius={16}>
-        <SectionTitle title="Global customer prompt" subtitle="Applied to every simulation, on top of any per-scenario prompt wraps." />
+        <SectionTitle
+          title="Notes for every AI customer"
+          subtitle="Wrapped around the briefing of every simulated customer, outside any per-scenario notes."
+        />
         <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
-          <Field label="Customer prompt prefix" help="Injected at the top of the customer system prompt.">
+          <FieldWithInfo
+            label="Opening notes for every AI customer"
+            infoTitle="Opening notes for every AI customer"
+            info={CUSTOMER_PREFIX_INFO}
+            help="Added at the very top of every simulated customer's briefing, before any per-scenario notes. Use it for platform-wide behaviour — e.g. “Never use emoji.”"
+          >
             <textarea value={draft.customerPrefix} rows={5} onChange={(e) => onPatch({ customerPrefix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-          </Field>
-          <Field label="Customer prompt suffix" help="Appended to the customer system prompt.">
+          </FieldWithInfo>
+          <FieldWithInfo
+            label="Closing notes for every AI customer"
+            infoTitle="Closing notes for every AI customer"
+            info={CUSTOMER_SUFFIX_INFO}
+            help="Added at the very end of the briefing, after any per-scenario notes — the last thing the customer reads."
+          >
             <textarea value={draft.customerSuffix} rows={5} onChange={(e) => onPatch({ customerSuffix: e.target.value })} style={textareaStyle} placeholder="(none)" />
-          </Field>
+          </FieldWithInfo>
         </div>
       </Glass>
 
       <Glass padding={18} radius={16}>
-        <SectionTitle title="Retrieval (RAG)" subtitle="Pull relevant knowledge-base chunks into the customer + scoring prompts." />
+        <SectionTitle title="Retrieval (RAG)" subtitle="Pull relevant knowledge-base chunks into the customer + scoring prompts, once at the start of each session." />
         <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
           <Field label="Enabled">
             <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -838,7 +1154,12 @@ function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draf
               {draft.rag.enabled ? 'On' : 'Off'}
             </label>
           </Field>
-          <Field label="k" help="Chunks retrieved per turn (1–8).">
+          <FieldWithInfo
+            label="k"
+            infoTitle="Retrieval (RAG)"
+            info={RETRIEVAL_INFO}
+            help="Knowledge chunks pulled in once per session (1–8) — not per turn."
+          >
             <input
               type="number"
               min={1}
@@ -850,9 +1171,286 @@ function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draf
               }}
               style={{ ...inputStyle, maxWidth: 100 }}
             />
-          </Field>
+          </FieldWithInfo>
         </div>
       </Glass>
+    </div>
+  );
+}
+
+// ─── Version history ────────────────────────────────────────────────────────────
+//
+// There is no version table: every save already writes an admin_audit_log row
+// carrying the FULL before/after config, so the audit log IS the history. The
+// panel lists the last 30 days of those rows and can re-apply any of them.
+
+function fmtAbsolute(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Who saved it — email when the Auth lookup worked, else a shortened id. */
+function actorLabel(v: SimulationVersion): string {
+  if (v.actor_email) return v.actor_email;
+  if (v.actor_id) return `user ${v.actor_id.slice(0, 8)}`;
+  return 'system';
+}
+
+function HistoryModal({
+  open,
+  onClose,
+  currentConfig,
+  onRestore,
+}: {
+  open: boolean;
+  onClose: () => void;
+  currentConfig: Record<string, unknown>;
+  onRestore: (v: SimulationVersion) => Promise<void>;
+}) {
+  const [versions, setVersions] = useState<SimulationVersion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetchSimulationHistory()
+      .then((rows) => {
+        if (!cancelled) setVersions(rows);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load history');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  return (
+    <Modal open={open} onClose={onClose} width={880} ariaLabel="Simulation config history">
+      <div style={{ padding: '24px 26px 8px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Eyebrow>Last 30 days</Eyebrow>
+          <h2 style={{ margin: '6px 0 0', fontSize: 20, fontWeight: 800, color: COLOR.ink }}>
+            Version history
+          </h2>
+          <div style={{ fontSize: 12.5, color: COLOR.inkMute, marginTop: 4 }}>
+            Every save is a version. Restoring re-applies that version&apos;s settings — the
+            current ones are written to history first, so a restore is itself undoable.
+          </div>
+        </div>
+        <ModalCloseButton onClose={onClose} />
+      </div>
+      <div style={{ padding: '12px 26px 26px', overflow: 'auto', display: 'grid', gap: 8 }}>
+        {loading ? (
+          <LoadingShimmer height={180} />
+        ) : error ? (
+          <div style={{ fontSize: 13, color: COLOR.danger, fontWeight: 700 }}>{error}</div>
+        ) : versions.length === 0 ? (
+          <div style={{ padding: '36px 12px', textAlign: 'center', color: COLOR.inkMute, fontSize: 13 }}>
+            No saved versions in the last 30 days.
+          </div>
+        ) : (
+          versions.map((v) => (
+            <VersionRow
+              key={v.id}
+              version={v}
+              isCurrent={configEquals(v.after, currentConfig)}
+              onRestore={() => onRestore(v)}
+            />
+          ))
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function VersionRow({
+  version,
+  isCurrent,
+  onRestore,
+}: {
+  version: SimulationVersion;
+  isCurrent: boolean;
+  onRestore: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const changed = useMemo(
+    () => summarizeConfigDelta(version.before, version.after),
+    [version.before, version.after],
+  );
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onRestore();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Restore failed');
+      setBusy(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        padding: '12px 14px',
+        borderRadius: 12,
+        background: 'rgba(255,255,255,0.6)',
+        border: '0.5px solid rgba(255,255,255,0.9)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: COLOR.ink }}>
+          {fmtAgo(new Date(version.created_at).getTime())}
+        </span>
+        <span style={{ fontSize: 11.5, color: COLOR.inkMute, fontFamily: 'var(--pbt-mono)' }}>
+          {fmtAbsolute(version.created_at)}
+        </span>
+        <span style={{ fontSize: 12, color: COLOR.inkSoft }}>{actorLabel(version)}</span>
+        {isCurrent && <StatusPill tone="success">Current</StatusPill>}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            onClick={() => setOpen((o) => !o)}
+            style={{
+              padding: '4px 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(60,20,15,0.12)',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 700,
+              fontFamily: 'var(--pbt-font)',
+              color: COLOR.ink,
+            }}
+          >
+            {open ? 'Hide' : 'Diff'}
+          </button>
+          {!isCurrent && !confirming && (
+            <button
+              onClick={() => setConfirming(true)}
+              disabled={busy}
+              style={{ ...btnSecondary, padding: '4px 10px', fontSize: 11 }}
+            >
+              Restore
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
+        {changed.length === 0 ? (
+          <StatusPill tone="neutral" dot={false}>No detected change</StatusPill>
+        ) : (
+          changed.map((c) => (
+            <StatusPill key={c} tone="info" dot={false}>
+              {c}
+            </StatusPill>
+          ))
+        )}
+        <span style={{ fontSize: 12, color: COLOR.inkMute, marginLeft: 4 }}>
+          {version.note ? version.note : <em>No description</em>}
+        </span>
+      </div>
+
+      {confirming && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: '10px 12px',
+            borderRadius: 10,
+            background: COLOR.warnSoft,
+            display: 'flex',
+            gap: 10,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: 12.5, color: COLOR.ink, fontWeight: 700 }}>
+            Restore this version? Current settings will be saved to history first.
+          </span>
+          <button
+            onClick={() => void run()}
+            disabled={busy}
+            style={{ ...btnPrimary, padding: '5px 12px', fontSize: 12, opacity: busy ? 0.6 : 1 }}
+          >
+            {busy ? 'Restoring…' : 'Yes, restore'}
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            disabled={busy}
+            style={{ ...btnSecondary, padding: '5px 12px', fontSize: 12 }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {error && (
+        <div style={{ fontSize: 12, color: COLOR.danger, fontWeight: 700, marginTop: 8 }}>
+          {error}
+        </div>
+      )}
+
+      {open && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: 10,
+            marginTop: 10,
+            fontFamily: 'var(--pbt-mono)',
+            fontSize: 11,
+          }}
+        >
+          <ConfigPane label="Before" value={version.before} />
+          <ConfigPane label="After" value={version.after} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConfigPane({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div
+      style={{
+        padding: 10,
+        borderRadius: 8,
+        background: 'rgba(60,20,15,0.04)',
+        maxHeight: 260,
+        overflow: 'auto',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          fontWeight: 800,
+          letterSpacing: '0.10em',
+          color: COLOR.inkMute,
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </div>
+      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        {value ? JSON.stringify(value, null, 2) : '—'}
+      </pre>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { scoreBandColor } from './tokens';
+import { useLanguage } from '../app/providers/LanguageProvider';
 
 export interface ScoreRingProps {
   score: number;
@@ -36,6 +37,7 @@ export function ScoreRing({
   label,
   animate = false,
 }: ScoreRingProps) {
+  const { t } = useLanguage();
   const clamped = Math.max(0, Math.min(100, Math.round(score)));
   const revealing = animate && !prefersReducedMotion();
   const [shown, setShown] = useState(revealing ? 0 : clamped);
@@ -69,7 +71,11 @@ export function ScoreRing({
     <div
       style={{ position: 'relative', width: size, height: size }}
       role="img"
-      aria-label={`Score ${clamped} out of 100${label ? ` — ${label}` : ''}`}
+      aria-label={
+        label
+          ? t('chrome.score.ringAriaLabelled', { score: clamped, label })
+          : t('chrome.score.ringAria', { score: clamped })
+      }
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <circle
