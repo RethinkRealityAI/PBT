@@ -972,7 +972,7 @@ function Builder({
           : 'The admin override row is deleted; the scenario goes back to exactly what the app ships.',
       consequences: [
         ...(fields.length > 0
-          ? fields.map((f) => `${f} loses its override.`)
+          ? fields.map((f) => `“${f}” goes back to the built-in value.`)
           : ['No fields currently carry an override — this just clears the row.']),
         'Recoverable from Audit → Revert.',
       ],
