@@ -8,7 +8,7 @@
  *     "Used by scenarios" section, which reads as "safe to delete".
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 const state = {
   docs: {
@@ -88,6 +88,14 @@ describe('KnowledgeScreen read errors', () => {
     // "No documents yet" would be a lie the admin might act on.
     expect(screen.queryByText('No documents yet')).not.toBeInTheDocument();
     expect(screen.queryByText('+ Add document')).not.toBeInTheDocument();
+  });
+
+  it('says usage is unknown — not empty — when the scenario read fails', () => {
+    state.docs = { data: [doc()], loading: false, error: null };
+    state.overrides = { data: [], loading: false, error: 'Request failed (500)' };
+    renderScreen();
+    fireEvent.click(screen.getByText('Dog owner preferences'));
+    expect(screen.getByText('Couldn’t check usage')).toBeInTheDocument();
   });
 
   it('hides the write controls without knowledge.write', () => {
