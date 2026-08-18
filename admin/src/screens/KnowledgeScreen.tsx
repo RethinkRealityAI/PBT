@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Glass } from '../primitives/Glass';
 import {
+  Collapsible,
   EmptyState,
   InfoTip,
   Kpi,
@@ -22,6 +23,11 @@ import {
   ModalCloseButton,
   StatusPill,
 } from '../primitives';
+import { FirstRunCard } from '../primitives/FirstRunCard';
+import { InlineAlert } from '../primitives/form';
+import { ReadOnlyBanner, useCan } from '../primitives/access';
+import { useConfirm } from '../primitives/Confirm';
+import { useToast } from '../primitives/Toast';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import {
   deleteKnowledge,
@@ -31,17 +37,23 @@ import {
   seedKnowledge,
   useKnowledgeDocuments,
   useScenarioOverrides,
+  type IngestResult,
 } from '../data/queries';
 import {
   UPLOAD_CATEGORIES,
+  batchOutcomeMessage,
   categoryLabel,
+  deleteConsequences,
   docCitation,
+  fetchDeletedKnowledge,
   filterKnowledgeDocs,
   isBuiltIn,
   resolveDocFocus,
+  restoreKnowledgeDocument,
   scenariosUsingDoc,
   sourceLabel,
   updateKnowledgeDocument,
+  type DeletedKnowledgeDocument,
 } from '../data/knowledgeActions';
 import { LIBRARY_MANIFEST } from '../data/scenarioManifest';
 import { FOCUS_AREAS, focusAreaLabel } from '../../../src/shared/knowledge/focusAreas';
@@ -146,58 +158,44 @@ const FOCUS_HELP = (
 
 // ─── Bulk-action button (busy state + transient "✓ Done (n)" / error) ──────
 
-type ActionState =
-  | { kind: 'idle' }
-  | { kind: 'busy' }
-  | { kind: 'done'; n: number }
-  | { kind: 'error'; message: string };
-
+/**
+ * Runs a bulk job and reports through the toast channel. The outcome copy is
+ * built by `batchOutcomeMessage`, so a partial failure ("11 of 13 indexed — 2
+ * failed") can never render as a clean success — which is exactly how a
+ * half-indexed corpus used to slip through.
+ */
 function BulkActionButton({
   label,
   busyLabel,
-  doneNoun,
   onRun,
   info,
 }: {
   label: string;
   busyLabel: string;
-  doneNoun: string;
-  onRun: () => Promise<number>;
+  onRun: () => Promise<void>;
   info: { title: string; body: ReactNode };
 }) {
-  const [state, setState] = useState<ActionState>({ kind: 'idle' });
+  const [busy, setBusy] = useState(false);
 
   async function run() {
-    setState({ kind: 'busy' });
+    setBusy(true);
     try {
-      const n = await onRun();
-      setState({ kind: 'done', n });
-      setTimeout(() => setState({ kind: 'idle' }), 4000);
-    } catch (err) {
-      setState({
-        kind: 'error',
-        message: err instanceof Error ? err.message : 'Action failed',
-      });
+      await onRun();
+    } finally {
+      setBusy(false);
     }
   }
 
-  const busy = state.kind === 'busy';
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-      <button onClick={run} disabled={busy} style={{ ...btnSecondary, opacity: busy ? 0.6 : 1 }}>
+      <button
+        onClick={() => void run()}
+        disabled={busy}
+        style={{ ...btnSecondary, opacity: busy ? 0.6 : 1 }}
+      >
         {busy ? busyLabel : label}
       </button>
       <InfoTip title={info.title}>{info.body}</InfoTip>
-      {state.kind === 'done' && (
-        <span style={{ fontSize: 12.5, color: COLOR.success, fontWeight: 700 }}>
-          ✓ {state.n} {doneNoun} ready
-        </span>
-      )}
-      {state.kind === 'error' && (
-        <span style={{ fontSize: 12.5, color: COLOR.danger, fontWeight: 700 }}>
-          {state.message}
-        </span>
-      )}
     </div>
   );
 }
@@ -214,13 +212,51 @@ export function KnowledgeScreen({
   const [refreshKey, setRefreshKey] = useState(0);
   const docs = useKnowledgeDocuments(refreshKey);
   const overrides = useScenarioOverrides();
+  const toast = useToast();
+  const canWrite = useCan()('knowledge.write');
   const [adding, setAdding] = useState(false);
   const [openSlug, setOpenSlug] = useState<string | null>(null);
   const [focusFilter, setFocusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  /** Failure lines from the last bulk run, listed under the action bar. */
+  const [bulkFailures, setBulkFailures] = useState<{ title: string; lines: string[] } | null>(
+    null,
+  );
 
   function refresh() {
     setRefreshKey((k) => k + 1);
+  }
+
+  /** Undo a soft delete straight from the toast that announced it. */
+  async function undoDelete(slug: string, title: string) {
+    try {
+      await restoreKnowledgeDocument(slug);
+      refresh();
+      toast({ message: `“${title}” restored.`, tone: 'success' });
+    } catch (err) {
+      toast({
+        message: `Couldn’t restore “${title}” — ${err instanceof Error ? err.message : 'unknown error'}`,
+        tone: 'error',
+      });
+    }
+  }
+
+  function handleDeleted(res: { slug: string; title: string; pruned: string[] }) {
+    setOpenSlug(null);
+    refresh();
+    toast({
+      message: `“${res.title}” moved to Recently deleted.`,
+      tone: 'success',
+      action: { label: 'Undo', onClick: () => void undoDelete(res.slug, res.title) },
+    });
+    if (res.pruned.length > 0) {
+      toast({
+        message: `Also detached from ${res.pruned.length} scenario${res.pruned.length === 1 ? '' : 's'}: ${res.pruned
+          .map(scenarioTitle)
+          .join(', ')}. Restoring the document does not re-attach them.`,
+        tone: 'info',
+      });
+    }
   }
 
   const stats = useMemo(() => {
@@ -265,6 +301,32 @@ export function KnowledgeScreen({
         onQuery={onQuery}
       />
       <ScreenShell>
+        <ReadOnlyBanner permission="knowledge.write" />
+        <FirstRunCard id="knowledge" title="What this library is for">
+          Everything here is source material the AI can draw on mid-roleplay: file a
+          document under a <strong>focus area</strong> and every scenario set to that
+          area can pull from it. For tighter control, attach specific documents to a
+          scenario in <strong>Library → Builder</strong> — attachments win, and the
+          focus filter is then ignored.
+        </FirstRunCard>
+        {docs.error ? (
+          /*
+            Blocking. With no document list the KPIs read "0 documents", the
+            filters offer nothing, and the Builder's attachment picker would
+            look like an empty corpus rather than a failed request.
+          */
+          <InlineAlert tone="error" title="Couldn’t load the knowledge library">
+            <div>{docs.error}</div>
+            <div style={{ marginTop: 6 }}>
+              The list below is hidden on purpose — an empty table here would read as
+              “no documents”, which is a different and much more alarming thing.
+            </div>
+            <button onClick={refresh} style={{ ...btnSecondary, marginTop: 10 }}>
+              Retry
+            </button>
+          </InlineAlert>
+        ) : (
+          <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           {docs.loading ? (
             Array.from({ length: 4 }).map((_, i) => <LoadingShimmer key={i} height={140} />)
@@ -278,12 +340,12 @@ export function KnowledgeScreen({
           )}
         </div>
 
+        {canWrite && (
         <Glass padding={18} radius={20}>
           <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
             <BulkActionButton
               label="Load built-in knowledge"
               busyLabel="Loading…"
-              doneNoun="documents"
               info={{
                 title: 'Load built-in knowledge',
                 body: (
@@ -305,15 +367,32 @@ export function KnowledgeScreen({
                 ),
               }}
               onRun={async () => {
-                const res = await seedKnowledge();
-                refresh();
-                return res.seeded;
+                try {
+                  const res = await seedKnowledge();
+                  refresh();
+                  const outcome = batchOutcomeMessage({
+                    attempted: res.seeded,
+                    failures: res.failures,
+                    skippedDeleted: res.skipped_deleted,
+                    noun: 'built-in documents',
+                  });
+                  toast(outcome);
+                  setBulkFailures(
+                    res.failures?.length
+                      ? { title: 'Built-in knowledge — documents that failed to index', lines: res.failures }
+                      : null,
+                  );
+                } catch (err) {
+                  toast({
+                    message: `Couldn’t load built-in knowledge — ${err instanceof Error ? err.message : 'unknown error'}`,
+                    tone: 'error',
+                  });
+                }
               }}
             />
             <BulkActionButton
               label="Load bundled studies"
               busyLabel="Loading…"
-              doneNoun="studies"
               info={{
                 title: 'Load bundled studies',
                 body: (
@@ -333,9 +412,27 @@ export function KnowledgeScreen({
                 ),
               }}
               onRun={async () => {
-                const res = await ingestBundledStudies();
-                refresh();
-                return res.ingested;
+                try {
+                  const res = await ingestBundledStudies();
+                  refresh();
+                  const failures = res.failures ?? [];
+                  const outcome = batchOutcomeMessage({
+                    attempted: res.ingested + failures.length,
+                    failures,
+                    noun: 'studies',
+                  });
+                  toast(outcome);
+                  setBulkFailures(
+                    failures.length
+                      ? { title: 'Bundled studies that could not be read', lines: failures }
+                      : null,
+                  );
+                } catch (err) {
+                  toast({
+                    message: `Couldn’t load bundled studies — ${err instanceof Error ? err.message : 'unknown error'}`,
+                    tone: 'error',
+                  });
+                }
               }}
             />
             <span style={{ marginLeft: 'auto' }}>
@@ -344,7 +441,23 @@ export function KnowledgeScreen({
               </button>
             </span>
           </div>
+          {bulkFailures && (
+            <InlineAlert tone="warn" title={bulkFailures.title} style={{ marginTop: 12 }}>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, display: 'grid', gap: 3 }}>
+                {bulkFailures.lines.map((line) => (
+                  <li key={line} style={{ fontFamily: 'var(--pbt-mono)', fontSize: 11.5 }}>
+                    {line}
+                  </li>
+                ))}
+              </ul>
+              <div style={{ marginTop: 6 }}>
+                These documents are saved but not searchable — open one and press
+                “Rebuild search index”, or run the load again.
+              </div>
+            </InlineAlert>
+          )}
         </Glass>
+        )}
 
         <Glass padding={16} radius={20}>
           <div style={{ display: 'grid', gap: 10 }}>
@@ -419,28 +532,174 @@ export function KnowledgeScreen({
             />
           )}
         </Glass>
+
+        <RecentlyDeleted
+          refreshKey={refreshKey}
+          canWrite={canWrite}
+          onRestored={(title) => {
+            refresh();
+            toast({ message: `“${title}” restored to the library.`, tone: 'success' });
+          }}
+          onError={(message) => toast({ message, tone: 'error' })}
+        />
+          </>
+        )}
       </ScreenShell>
 
       <AddDocumentModal
         open={adding}
         onClose={() => setAdding(false)}
-        onIngested={() => {
+        onIngested={(res) => {
           setAdding(false);
           refresh();
+          const failures = res.failures ?? [];
+          if (failures.length > 0) {
+            toast({
+              message: `Added, but ${failures.length} section${failures.length === 1 ? '' : 's'} failed to index — open the document and rebuild its search index.`,
+              tone: 'info',
+            });
+            setBulkFailures({ title: 'Sections that failed to index', lines: failures });
+          } else {
+            toast({
+              message: `Document added — ${res.chunks} section${res.chunks === 1 ? '' : 's'} indexed.`,
+              tone: 'success',
+            });
+          }
         }}
       />
 
       <DocumentModal
         doc={openDoc}
         overrides={overrides.data}
+        overridesError={overrides.error}
+        canWrite={canWrite}
         onClose={() => setOpenSlug(null)}
         onChanged={refresh}
-        onDeleted={() => {
-          setOpenSlug(null);
-          refresh();
-        }}
+        onDeleted={handleDeleted}
+        onToast={toast}
       />
     </>
+  );
+}
+
+// ─── Recently deleted ───────────────────────────────────────────────────────
+
+/**
+ * Soft-deleted documents, newest first. This drawer is what makes "Delete"
+ * honest: the server tombstones rather than destroys, so the only thing that
+ * made a delete feel irreversible was having nowhere to see the tombstones.
+ */
+function RecentlyDeleted({
+  refreshKey,
+  canWrite,
+  onRestored,
+  onError,
+}: {
+  refreshKey: number;
+  canWrite: boolean;
+  onRestored: (title: string) => void;
+  onError: (message: string) => void;
+}) {
+  const [rows, setRows] = useState<DeletedKnowledgeDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busySlug, setBusySlug] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchDeletedKnowledge()
+      .then((docs) => {
+        if (!cancelled) {
+          setRows(docs);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  async function restore(row: DeletedKnowledgeDocument) {
+    setBusySlug(row.slug);
+    try {
+      await restoreKnowledgeDocument(row.slug);
+      setRows((prev) => prev.filter((r) => r.slug !== row.slug));
+      onRestored(row.title);
+    } catch (err) {
+      onError(
+        `Couldn’t restore “${row.title}” — ${err instanceof Error ? err.message : 'unknown error'}`,
+      );
+    } finally {
+      setBusySlug(null);
+    }
+  }
+
+  // Nothing deleted and nothing broken: stay out of the way entirely.
+  if (loading || (!error && rows.length === 0)) return null;
+
+  return (
+    <Glass padding={16} radius={20}>
+      <Collapsible title={`Recently deleted${rows.length ? ` (${rows.length})` : ''}`}>
+        {error ? (
+          <InlineAlert tone="warn">Couldn’t load deleted documents: {error}</InlineAlert>
+        ) : (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ fontSize: 12, color: COLOR.inkMute }}>
+              Deleted documents are hidden from retrieval but not destroyed. Restoring
+              brings a document back — it does <strong>not</strong> re-attach it to the
+              scenarios it was detached from.
+            </div>
+            {rows.map((row) => (
+              <div
+                key={row.slug}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  background: 'rgba(255,255,255,0.55)',
+                  border: '0.5px solid rgba(255,255,255,0.9)',
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>
+                    {row.title}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: 'var(--pbt-mono)',
+                      fontSize: 11,
+                      color: COLOR.inkMute,
+                      marginTop: 2,
+                    }}
+                  >
+                    {categoryLabel(row.category)} · deleted{' '}
+                    {fmtAgo(new Date(row.deleted_at).getTime())}
+                  </div>
+                </div>
+                {canWrite && (
+                  <button
+                    onClick={() => void restore(row)}
+                    disabled={busySlug === row.slug}
+                    style={{ ...btnSecondary, opacity: busySlug === row.slug ? 0.6 : 1 }}
+                  >
+                    {busySlug === row.slug ? 'Restoring…' : 'Restore'}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Collapsible>
+    </Glass>
   );
 }
 
@@ -554,9 +813,12 @@ function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => vo
 function DocumentModal({
   doc,
   overrides,
+  overridesError,
+  canWrite,
   onClose,
   onChanged,
   onDeleted,
+  onToast,
 }: {
   doc: KnowledgeDocument | null;
   overrides: Array<{
@@ -564,10 +826,15 @@ function DocumentModal({
     focus_area: string | null;
     knowledge_slugs: string[] | null;
   }>;
+  /** Non-null when the scenario cross-read failed — usage is unknown, not empty. */
+  overridesError: string | null;
+  canWrite: boolean;
   onClose: () => void;
   onChanged: () => void;
-  onDeleted: () => void;
+  onDeleted: (res: { slug: string; title: string; pruned: string[] }) => void;
+  onToast: (opts: { message: string; tone?: 'success' | 'error' | 'info' }) => void;
 }) {
+  const confirm = useConfirm();
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('custom');
   const [focus, setFocus] = useState<string | null>(null);
@@ -575,7 +842,6 @@ function DocumentModal({
   const [busy, setBusy] = useState<null | 'save' | 'index' | 'delete'>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Seed the editor when a document is opened. Keyed on slug only, NOT on
   // updated_at: saving refreshes the list, and re-seeding from the refreshed
@@ -588,7 +854,6 @@ function DocumentModal({
     setCitation(docCitation(doc.metadata) ?? '');
     setError(null);
     setNote(null);
-    setConfirmDelete(false);
   }, [doc?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!doc) return null;
@@ -622,6 +887,17 @@ function DocumentModal({
           ? `Saved — ${res.chunks_updated} indexed section${res.chunks_updated === 1 ? '' : 's'} re-tagged.`
           : 'Saved.',
       );
+      const chunkFailures = res.chunk_failures ?? [];
+      if (chunkFailures.length > 0) {
+        // The document row saved but some chunks kept their old tags, so
+        // focus-filtered retrieval is now partly stale. Saving again retries.
+        onToast({
+          message: `Saved, but ${chunkFailures.length} indexed section${chunkFailures.length === 1 ? '' : 's'} kept the old focus tag — save again to retry.`,
+          tone: 'info',
+        });
+      } else {
+        onToast({ message: `“${title.trim() || doc.title}” saved.`, tone: 'success' });
+      }
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
@@ -648,13 +924,35 @@ function DocumentModal({
 
   async function remove() {
     if (!doc) return;
+    const ok = await confirm({
+      title: `Delete “${doc.title}”?`,
+      body: builtIn
+        ? 'This document ships with the app. While it sits in Recently deleted, “Load built-in knowledge” skips it rather than bringing it back — restore it from Recently deleted instead.'
+        : undefined,
+      consequences: overridesError
+        ? [
+            'Which scenarios use this document could not be checked, so this list may be incomplete.',
+            'Any scenario that attached it loses the attachment — restoring does not re-attach them.',
+            'Recoverable from “Recently deleted” at the bottom of this screen.',
+          ]
+        : deleteConsequences(links),
+      confirmLabel: 'Delete document',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setBusy('delete');
     setError(null);
     try {
-      await deleteKnowledge(doc.slug);
-      onDeleted();
+      const res = await deleteKnowledge(doc.slug);
+      onDeleted({
+        slug: doc.slug,
+        title: doc.title,
+        pruned: res.pruned_scenarios ?? [],
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
+      const message = err instanceof Error ? err.message : 'Delete failed';
+      setError(message);
+      onToast({ message: `Delete failed — ${message}`, tone: 'error' });
       setBusy(null);
     }
   }
@@ -694,15 +992,17 @@ function DocumentModal({
                 : 'Not indexed yet — scenarios can’t pull from this document'}
             </span>
             <InfoTip title="Search indexing">{INDEXING_HELP}</InfoTip>
-            <span style={{ marginLeft: 'auto' }}>
-              <button
-                onClick={rebuild}
-                disabled={busy !== null}
-                style={{ ...btnSecondary, padding: '6px 12px', fontSize: 12, opacity: busy ? 0.6 : 1 }}
-              >
-                {busy === 'index' ? 'Rebuilding…' : 'Rebuild search index'}
-              </button>
-            </span>
+            {canWrite && (
+              <span style={{ marginLeft: 'auto' }}>
+                <button
+                  onClick={() => void rebuild()}
+                  disabled={busy !== null}
+                  style={{ ...btnSecondary, padding: '6px 12px', fontSize: 12, opacity: busy ? 0.6 : 1 }}
+                >
+                  {busy === 'index' ? 'Rebuilding…' : 'Rebuild search index'}
+                </button>
+              </span>
+            )}
           </div>
 
           {/* Title + type */}
@@ -787,7 +1087,14 @@ function DocumentModal({
           </Field>
 
           {/* Used by scenarios */}
-          {links.length > 0 && (
+          {overridesError && (
+            <InlineAlert tone="warn" title="Couldn’t check usage">
+              The scenario list didn’t load ({overridesError}), so we can’t say which
+              scenarios draw on this document. Treat deleting it as riskier than it
+              looks until this loads.
+            </InlineAlert>
+          )}
+          {!overridesError && links.length > 0 && (
             <div>
               <div
                 style={{
@@ -863,45 +1170,29 @@ function DocumentModal({
 
           {/* Actions */}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              onClick={save}
-              disabled={busy !== null || !dirty}
-              style={{ ...btnPrimary, opacity: busy !== null || !dirty ? 0.5 : 1 }}
-            >
-              {busy === 'save' ? 'Saving…' : 'Save changes'}
-            </button>
+            {canWrite && (
+              <button
+                onClick={() => void save()}
+                disabled={busy !== null || !dirty}
+                style={{ ...btnPrimary, opacity: busy !== null || !dirty ? 0.5 : 1 }}
+              >
+                {busy === 'save' ? 'Saving…' : 'Save changes'}
+              </button>
+            )}
             <button onClick={onClose} disabled={busy !== null} style={btnSecondary}>
               Close
             </button>
-            <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-              {confirmDelete ? (
-                <>
-                  <span style={{ fontSize: 12, color: COLOR.inkMute, maxWidth: 320 }}>
-                    {builtIn
-                      ? 'Delete this built-in document? Loading built-in knowledge brings it back.'
-                      : 'Delete this document and its indexed sections? This can’t be undone.'}
-                  </span>
-                  <button
-                    onClick={remove}
-                    disabled={busy !== null}
-                    style={{ ...btnSecondary, color: COLOR.danger, fontWeight: 800 }}
-                  >
-                    {busy === 'delete' ? 'Deleting…' : 'Yes, delete'}
-                  </button>
-                  <button onClick={() => setConfirmDelete(false)} style={btnSecondary}>
-                    Keep
-                  </button>
-                </>
-              ) : (
+            {canWrite && (
+              <span style={{ marginLeft: 'auto' }}>
                 <button
-                  onClick={() => setConfirmDelete(true)}
+                  onClick={() => void remove()}
                   disabled={busy !== null}
                   style={{ ...btnSecondary, color: COLOR.danger }}
                 >
-                  Delete
+                  {busy === 'delete' ? 'Deleting…' : 'Delete'}
                 </button>
-              )}
-            </span>
+              </span>
+            )}
           </div>
 
           <div
@@ -941,7 +1232,7 @@ function AddDocumentModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onIngested: () => void;
+  onIngested: (res: IngestResult) => void;
 }) {
   const [mode, setMode] = useState<AddMode>('pdf');
   const [file, setFile] = useState<File | null>(null);
@@ -994,17 +1285,18 @@ function AddDocumentModal({
     setError(null);
     try {
       const tags = focus ? { focus } : undefined;
+      let res: IngestResult;
       if (mode === 'pdf') {
         if (!file) throw new Error('Choose a PDF file first.');
         const pdfBase64 = await readFileAsBase64(file);
-        await ingestKnowledge({
+        res = await ingestKnowledge({
           pdfBase64,
           title: title.trim() || undefined,
           category,
           tags,
         });
       } else {
-        await ingestKnowledge({
+        res = await ingestKnowledge({
           text: text.trim(),
           title: title.trim(),
           category,
@@ -1012,7 +1304,7 @@ function AddDocumentModal({
         });
       }
       reset();
-      onIngested();
+      onIngested(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ingest failed');
     } finally {

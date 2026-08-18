@@ -283,7 +283,10 @@ function seedBaseFor(scenarioId: string): Scenario | null {
 function PreviewRunner() {
   const { snapshot } = useFlags();
   const { setScenario } = useScenario();
-  const { go } = useNavigation();
+  // `replace`, not `go`: the iframe is driven entirely from the builder and
+  // has no back-navigation story, so repeated runs must not pile duplicate
+  // 'chat' entries onto the depth-8 back stack.
+  const { replace } = useNavigation();
   useEffect(() => {
     if (!isPreviewMode()) return;
 
@@ -351,7 +354,7 @@ function PreviewRunner() {
       // for its initial state, and a fresh runId is the signal that an
       // already-open chat must reset onto this new draft.
       startPreviewRun(data.mode === 'voice' || data.mode == null ? 'voice' : 'text');
-      go('chat');
+      replace('chat');
       postStatus(true);
     };
 
@@ -362,7 +365,7 @@ function PreviewRunner() {
       window.location.origin,
     );
     return () => window.removeEventListener('message', handler);
-  }, [snapshot, setScenario, go]);
+  }, [snapshot, setScenario, replace]);
   return null;
 }
 

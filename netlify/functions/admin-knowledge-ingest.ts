@@ -124,6 +124,10 @@ async function storeDoc(
         source: args.source ?? 'admin',
         updated_by: ctx.user.id,
         updated_at: new Date().toISOString(),
+        // Ingesting is an explicit (re-)add: if this slug was soft-deleted,
+        // bring it back — unlike seed(), which refreshes content and respects
+        // the admin's delete.
+        deleted_at: null,
       },
       { onConflict: 'slug' },
     )

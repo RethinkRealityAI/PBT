@@ -224,7 +224,12 @@ export async function deleteScenarioOverride(
       body: JSON.stringify({ scenario_id }),
     },
   );
-  if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+  if (!res.ok) {
+    // Surface the server's own explanation ("Cannot delete: …", a permission
+    // refusal). `Delete failed (400)` told the admin nothing actionable.
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Delete failed (${res.status})`);
+  }
   return (await res.json()) as { ok: true };
 }
 
@@ -255,14 +260,27 @@ export async function duplicateScenario(
 // Simulation config
 // ─────────────────────────────────────────────────────────────
 
+export interface SimulationConfigSnapshot {
+  config: Record<string, unknown>;
+  /**
+   * Optimistic-concurrency token. Sent back as `baseUpdatedAt` on save; the
+   * server 409s when it no longer matches (someone else saved meanwhile).
+   * Null when the singleton row has never been written.
+   */
+  updated_at: string | null;
+}
+
 export function useAdminSimulationConfig(refreshKey: number = 0) {
-  return useQuery<Record<string, unknown>>(
+  return useQuery<SimulationConfigSnapshot>(
     () =>
-      apiFetch<{ config: Record<string, unknown> }>('admin-simulation-config').then(
-        (res) => res.config ?? {},
-      ),
+      apiFetch<{ config?: Record<string, unknown>; updated_at?: string | null }>(
+        'admin-simulation-config',
+      ).then((res) => ({
+        config: res.config ?? {},
+        updated_at: res.updated_at ?? null,
+      })),
     [refreshKey],
-    {},
+    { config: {}, updated_at: null },
   );
 }
 
@@ -295,13 +313,16 @@ export interface IngestKnowledgeBody {
   tags?: Record<string, unknown>;
 }
 
-export function ingestKnowledge(
-  body: IngestKnowledgeBody,
-): Promise<{ ok: true; slug: string; chunks: number }> {
-  return postJson<{ ok: true; slug: string; chunks: number }>(
-    'admin-knowledge-ingest',
-    { op: 'ingest', ...body },
-  );
+export interface IngestResult {
+  ok: true;
+  slug: string;
+  chunks: number;
+  /** Per-chunk embedding failures — a document can land partially indexed. */
+  failures?: string[];
+}
+
+export function ingestKnowledge(body: IngestKnowledgeBody): Promise<IngestResult> {
+  return postJson<IngestResult>('admin-knowledge-ingest', { op: 'ingest', ...body });
 }
 
 export function reembedKnowledge(slug: string): Promise<{ ok: true; chunks: number }> {
@@ -311,18 +332,40 @@ export function reembedKnowledge(slug: string): Promise<{ ok: true; chunks: numb
   });
 }
 
-export function ingestBundledStudies(): Promise<{ ok: true; ingested: number }> {
-  return postJson<{ ok: true; ingested: number }>('admin-knowledge-ingest', {
+export interface BundledIngestResult {
+  ok: true;
+  ingested: number;
+  /** Studies that could not be read/indexed — `<file>: <reason>`. */
+  failures?: string[];
+}
+
+export function ingestBundledStudies(): Promise<BundledIngestResult> {
+  return postJson<BundledIngestResult>('admin-knowledge-ingest', {
     op: 'ingest-bundled',
   });
 }
 
-export function seedKnowledge(): Promise<{ ok: true; seeded: number }> {
-  return postJson<{ ok: true; seeded: number }>('admin-knowledge', { op: 'seed' });
+export interface SeedKnowledgeResult {
+  ok: true;
+  seeded: number;
+  /** Slugs left alone because they sit in Recently deleted. */
+  skipped_deleted?: string[];
+  /** Documents written but not indexed — `<slug>: <reason>`. */
+  failures?: string[];
 }
 
-export function deleteKnowledge(slug: string): Promise<{ ok: true }> {
-  return postJson<{ ok: true }>('admin-knowledge', { op: 'delete', slug });
+export function seedKnowledge(): Promise<SeedKnowledgeResult> {
+  return postJson<SeedKnowledgeResult>('admin-knowledge', { op: 'seed' });
+}
+
+export interface DeleteKnowledgeResult {
+  ok: true;
+  /** Scenario ids that lost this slug from their attachment list. */
+  pruned_scenarios?: string[];
+}
+
+export function deleteKnowledge(slug: string): Promise<DeleteKnowledgeResult> {
+  return postJson<DeleteKnowledgeResult>('admin-knowledge', { op: 'delete', slug });
 }
 
 // ─────────────────────────────────────────────────────────────

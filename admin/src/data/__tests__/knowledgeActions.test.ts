@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  batchOutcomeMessage,
   categoryLabel,
+  deleteConsequences,
   docCitation,
   filterKnowledgeDocs,
   resolveDocFocus,
@@ -171,5 +173,68 @@ describe('scenariosUsingDoc', () => {
         titleOf,
       ),
     ).toEqual([]);
+  });
+});
+
+describe('deleteConsequences', () => {
+  it('names every scenario that attached the document', () => {
+    const out = deleteConsequences([
+      { scenario_id: 'seed:0', label: 'Weight denial', via: 'attached' },
+      { scenario_id: 'admin:1', label: 'Raw food', via: 'attached' },
+    ]);
+    expect(out[0]).toContain('2 scenarios');
+    expect(out[0]).toContain('Weight denial');
+    expect(out[0]).toContain('Raw food');
+    // The delete prunes the links and a restore does not put them back — the
+    // reader has to be told that before they click, not after.
+    expect(out[0]).toMatch(/does not re-attach/);
+  });
+
+  it('separates focus-area users from explicit attachments', () => {
+    const out = deleteConsequences([
+      { scenario_id: 'seed:1', label: 'Cost', via: 'focus' },
+    ]);
+    expect(out.some((c) => c.includes('focus area') && c.includes('Cost'))).toBe(true);
+  });
+
+  it('says so plainly when nothing uses it, and always names the escape hatch', () => {
+    const out = deleteConsequences([]);
+    expect(out[0]).toMatch(/No scenario attaches/);
+    expect(out.at(-1)).toMatch(/Recently deleted/);
+  });
+});
+
+describe('batchOutcomeMessage', () => {
+  it('reads as a clean success only when nothing failed', () => {
+    expect(batchOutcomeMessage({ attempted: 13, noun: 'documents' })).toEqual({
+      message: '13 documents indexed.',
+      tone: 'success',
+    });
+  });
+
+  it('reports partial failure with both numbers', () => {
+    const out = batchOutcomeMessage({
+      attempted: 13,
+      failures: ['a: boom', 'b: boom'],
+      noun: 'documents',
+    });
+    expect(out.message).toBe('11 of 13 documents indexed — 2 failed.');
+    expect(out.tone).toBe('info');
+  });
+
+  it('is an error when everything failed', () => {
+    expect(
+      batchOutcomeMessage({ attempted: 2, failures: ['a', 'b'], noun: 'studies' }).tone,
+    ).toBe('error');
+  });
+
+  it('mentions documents skipped because they sit in Recently deleted', () => {
+    const out = batchOutcomeMessage({
+      attempted: 11,
+      skippedDeleted: ['driver-activator', 'act-guide'],
+      noun: 'documents',
+    });
+    expect(out.message).toContain('2 skipped');
+    expect(out.tone).toBe('success');
   });
 });

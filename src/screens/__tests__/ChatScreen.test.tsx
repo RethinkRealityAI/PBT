@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { ChatScreen } from '../ChatScreen';
 import { SEED_SCENARIOS } from '../../data/scenarios';
+import { __resetPreviewRuns, startPreviewRun } from '../../lib/previewMode';
 
 const go = vi.fn();
 const setScenario = vi.fn();
