@@ -7,8 +7,10 @@
  * (`LIBRARY_SCENARIOS`, which is a curated subset of `SEED_SCENARIOS`). The
  * admin app is a separate Vite entry and deliberately does not import consumer
  * data modules, so any edit to those scenarios (breed, life stage, persona,
- * difficulty, context, opening line, weight) must be copied here or the
- * builder will show stale values as the "current" scenario.
+ * difficulty, context, opening line, weight, focus area, knowledge links) must
+ * be copied here or the builder will show stale values as the "current"
+ * scenario. `src/tests/adminScenarioDraft.test.ts` asserts the mirror
+ * field-for-field against LIBRARY_SCENARIOS.
  *
  * Stable id format matches seedScenarioId(i) in src/data/scenarioOverrides.ts.
  */
@@ -33,6 +35,10 @@ export interface SeedScenarioManifest {
   context: string | null;
   openingLine: string | null;
   weightKg: number | null;
+  /** Clinical focus area used for retrieval targeting (`Scenario.focusArea`). */
+  focusArea: string | null;
+  /** Explicitly attached knowledge docs (`Scenario.knowledgeSlugs`). */
+  knowledgeSlugs: string[] | null;
 }
 
 export const LIBRARY_MANIFEST: SeedScenarioManifest[] = [
@@ -51,6 +57,8 @@ export const LIBRARY_MANIFEST: SeedScenarioManifest[] = [
     openingLine:
       "Look, Buddy's not fat — he's just a big Lab. All my friends' Labs look exactly the same.",
     weightKg: null,
+    focusArea: null,
+    knowledgeSlugs: null,
   },
   {
     id: 'seed:1',
@@ -67,6 +75,8 @@ export const LIBRARY_MANIFEST: SeedScenarioManifest[] = [
     openingLine:
       'I appreciate you seeing us, but honestly Royal Canin is just way too expensive. I can get similar food for half the price at the supermarket.',
     weightKg: null,
+    focusArea: null,
+    knowledgeSlugs: null,
   },
   {
     id: 'seed:2',
@@ -83,6 +93,8 @@ export const LIBRARY_MANIFEST: SeedScenarioManifest[] = [
     openingLine:
       "We've been using our current brand for over a year and she's perfectly healthy. I don't see why we'd need to change anything.",
     weightKg: null,
+    focusArea: null,
+    knowledgeSlugs: null,
   },
 ];
 
@@ -168,6 +180,11 @@ export function buildBaseLayer(
     draft.weight_kg = manifest.weightKg;
     draft.context_override = manifest.context;
     draft.opening_line_override = manifest.openingLine;
+    // Retrieval targeting is part of the shipped scenario too — omitting it
+    // made the editor open on a blank knowledge attachment for a seed that
+    // already had one, and diffAgainstBase then saved it as a "change".
+    draft.focus_area = manifest.focusArea;
+    draft.knowledge_slugs = manifest.knowledgeSlugs;
   } else if (entry.source === 'user' && userScenario) {
     draft.breed = userScenario.breed;
     draft.life_stage = userScenario.life_stage;

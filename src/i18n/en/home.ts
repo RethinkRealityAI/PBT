@@ -44,6 +44,9 @@ export const home = {
   'home.pick.nextAria': 'Next scenario',
   'home.pick.startHere': 'Start here →',
   'home.pick.scoringAria': 'How sessions are scored',
+  'home.pick.empty.title': 'No scenarios available right now',
+  'home.pick.empty.body':
+    'Every scenario is hidden at the moment. Build your own, or check back later.',
 
   // ── Quick actions ─────────────────────────────────────────
   'home.actions.build.title': 'Build a scenario',

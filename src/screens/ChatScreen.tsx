@@ -931,6 +931,29 @@ useThinkingSound(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Admin preview: each "Test in app" click publishes a new run id. Tear the
+  // current session down (text OR voice) and re-enter in the requested mode,
+  // so re-running with an edited draft starts clean instead of continuing the
+  // previous draft's conversation. The scenario itself was already swapped by
+  // PreviewRunner before the run was published.
+  useEffect(() => {
+    if (previewRunId == null) return;
+    const nextMode = getPreviewRun()?.mode ?? 'voice';
+    // Invalidate any in-flight voice finalize (same guard the mode toggle uses).
+    finalizeGenRef.current += 1;
+    voiceFinalizeBusyRef.current = false;
+    setVoiceAnalyzing(false);
+    setVoiceReady(false);
+    setVoiceAnalysisError(null);
+    voiceStopRef.current();
+    chatRef.current.reset();
+    setMode(nextMode);
+    // Voice re-opens on the details panel so the admin can hit Begin (the mic
+    // still needs a user gesture); text auto-opens via the effect below.
+    setScenarioDetailsOpen(nextMode === 'voice');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewRunId]);
+
   useEffect(() => {
     if (mode === 'text' && scenario && chat.status === 'idle') {
       void openRef.current();

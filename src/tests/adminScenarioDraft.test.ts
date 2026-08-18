@@ -11,12 +11,26 @@
 import { describe, expect, it } from 'vitest';
 import {
   LIBRARY_MANIFEST,
+  buildBaseLayer,
   buildInitialDraft,
   diffAgainstBase,
   stripServerManaged,
 } from '../../admin/src/data/scenarioManifest';
 import type { ScenarioOverrideRow, UserScenario } from '../../admin/src/data/types';
-import { LIBRARY_SCENARIOS } from '../data/scenarios';
+import {
+  LIBRARY_SCENARIOS,
+  OWNER_PERSONAS,
+  PUSHBACK_CATEGORIES,
+  LIFE_STAGES as CONSUMER_LIFE_STAGES,
+} from '../data/scenarios';
+import {
+  LIFE_STAGES,
+  PERSONAS,
+  PUSHBACK_IDS,
+  isLifeStage,
+  isPersona,
+  isPushbackId,
+} from '../shared/scenarios/enums';
 import {
   pickWritable,
   validateOverride,
@@ -292,7 +306,61 @@ describe('LIBRARY_MANIFEST', () => {
       expect(m.context).toBe(s.context ?? null);
       expect(m.openingLine).toBe(s.openingLine ?? null);
       expect(m.weightKg).toBe(s.weightKg == null ? null : Number(s.weightKg));
+      // Retrieval targeting is part of the shipped scenario too — a seed that
+      // links knowledge documents must open the editor with those links, not
+      // an empty field the admin then "changes" by saving.
+      expect(m.focusArea).toBe(s.focusArea ?? null);
+      expect(m.knowledgeSlugs).toEqual(s.knowledgeSlugs ?? null);
     });
+  });
+
+  it('hydrates the base layer with the manifest focus / knowledge links', () => {
+    const draft = buildBaseLayer(
+      { id: 'seed:0', source: 'library', override: null },
+      seed,
+      null,
+    );
+    expect(draft.focus_area).toBe(seed.focusArea);
+    expect(draft.knowledge_slugs).toEqual(seed.knowledgeSlugs);
+  });
+});
+
+/**
+ * `src/shared/scenarios/enums.ts` is imported by BOTH admin/src (the builder's
+ * pickers) and netlify/functions (server-side validation), and deliberately
+ * does NOT import the consumer data module — the admin bundle is a separate
+ * Vite entry. That makes it a hand-maintained mirror, exactly like
+ * LIBRARY_MANIFEST above, so it needs the same guard: a value the server
+ * accepts but `src/data/scenarios.ts` doesn't know is a scenario that saves
+ * cleanly and then degrades the roleplay silently.
+ */
+describe('shared scenario enums mirror the consumer source of truth', () => {
+  it('PUSHBACK_IDS matches PUSHBACK_CATEGORIES ids, in order', () => {
+    expect(PUSHBACK_IDS).toEqual(PUSHBACK_CATEGORIES.map((c) => c.id));
+  });
+
+  it('LIFE_STAGES matches the LifeStage union values, in order', () => {
+    expect(LIFE_STAGES).toEqual([...CONSUMER_LIFE_STAGES]);
+  });
+
+  it('PERSONAS matches the OwnerPersona values, in order', () => {
+    expect(PERSONAS).toEqual([...OWNER_PERSONAS]);
+  });
+
+  it('the type guards accept every consumer value and reject unknowns', () => {
+    for (const id of PUSHBACK_CATEGORIES.map((c) => c.id)) {
+      expect(isPushbackId(id)).toBe(true);
+    }
+    for (const stage of CONSUMER_LIFE_STAGES) expect(isLifeStage(stage)).toBe(true);
+    for (const persona of OWNER_PERSONAS) expect(isPersona(persona)).toBe(true);
+
+    expect(isPushbackId('no-such-pushback')).toBe(false);
+    expect(isLifeStage('Geriatric (99+)')).toBe(false);
+    // The deleted 6-type Echo vocabulary must not sneak back in as a persona.
+    expect(isPersona('Imaginer')).toBe(false);
+    expect(isPushbackId(null)).toBe(false);
+    expect(isLifeStage(42)).toBe(false);
+    expect(isPersona(undefined)).toBe(false);
   });
 });
 
