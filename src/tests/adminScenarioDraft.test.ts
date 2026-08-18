@@ -330,6 +330,57 @@ describe('admin-scenario-overrides validation', () => {
     ).toMatch(/knowledge_slugs entries/);
   });
 
+  it('accepts known scenario enums and rejects unknown ones', () => {
+    expect(validateOverride({ ...base, pushback_id: 'rx-diet' })).toBeNull();
+    expect(validateOverride({ ...base, pushback_id: null })).toBeNull();
+    expect(validateOverride({ ...base, pushback_id: 'made-up' })).toBe(
+      'pushback_id must be a known pushback category',
+    );
+    expect(validateOverride({ ...base, life_stage: 'Senior (7+)' })).toBeNull();
+    expect(validateOverride({ ...base, life_stage: 'Ancient' })).toBe(
+      'life_stage must be a known life stage',
+    );
+    expect(validateOverride({ ...base, persona_override: 'Bargain-hunter' })).toBeNull();
+    expect(validateOverride({ ...base, persona_override: 'Grumpy' })).toBe(
+      'persona_override must be a known persona',
+    );
+  });
+
+  it('bounds weight_kg and breed length', () => {
+    expect(validateOverride({ ...base, weight_kg: 12.5 })).toBeNull();
+    expect(validateOverride({ ...base, weight_kg: null })).toBeNull();
+    expect(validateOverride({ ...base, weight_kg: 0 })).toBe(
+      'weight_kg must be between 0 and 200',
+    );
+    expect(validateOverride({ ...base, weight_kg: -3 })).toBe(
+      'weight_kg must be between 0 and 200',
+    );
+    expect(validateOverride({ ...base, weight_kg: 201 })).toBe(
+      'weight_kg must be between 0 and 200',
+    );
+    expect(
+      validateOverride({ ...base, weight_kg: '12' as unknown as number }),
+    ).toBe('weight_kg must be a number');
+    expect(validateOverride({ ...base, breed: 'Lab' })).toBeNull();
+    expect(validateOverride({ ...base, breed: 'x'.repeat(81) })).toBe(
+      'breed too long (max 80)',
+    );
+  });
+
+  it('requires the scenario-defining fields on admin ids, unless duplicating', () => {
+    const admin: OverrideUpsert = { scenario_id: 'admin:abc' };
+    expect(validateOverride(admin)).toBe('admin scenarios require breed');
+    // A duplicate lands hidden and is completed in the editor, so the
+    // completeness rule is waived — but the value rules are not.
+    expect(validateOverride(admin, { requireAdminFields: false })).toBeNull();
+    expect(
+      validateOverride(
+        { ...admin, pushback_id: 'nope' },
+        { requireAdminFields: false },
+      ),
+    ).toBe('pushback_id must be a known pushback category');
+  });
+
   it('keeps only writable columns out of the request body', () => {
     const out = pickWritable({
       scenario_id: 'seed:0',

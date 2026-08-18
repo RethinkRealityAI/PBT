@@ -11,6 +11,7 @@
  */
 import { getSupabase } from '../features/auth/supabaseClient';
 import { isTrainingUseAllowed } from '../lib/privacy';
+import { isPreviewMode } from '../lib/previewMode';
 
 export type CallType = 'roleplay' | 'evaluate' | 'voice' | 'hint' | 'vision';
 
@@ -96,6 +97,10 @@ export async function recordCall(rec: AiCallRecord): Promise<void> {
   // applied to the user's own saved sessions, session_feedback, or
   // platform_reports — that is their own data, not training use.
   if (!isTrainingUseAllowed()) return;
+  // Admin preview: the call really happens (that's the point of testing), but
+  // it must not land in the latency / cost / failure-rate trends the AI
+  // Quality screen reports on.
+  if (isPreviewMode()) return;
   const sb = getSupabase();
   if (!sb) return;
   try {
@@ -125,6 +130,7 @@ export async function recordCall(rec: AiCallRecord): Promise<void> {
 export async function recordTurns(turns: AiTurnRecord[]): Promise<void> {
   // Privacy gate (spec §8.3) — same rationale as recordCall above.
   if (!isTrainingUseAllowed()) return;
+  if (isPreviewMode()) return;
   if (turns.length === 0) return;
   const sb = getSupabase();
   if (!sb) return;

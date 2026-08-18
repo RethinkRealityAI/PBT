@@ -6,6 +6,9 @@ import { COLOR } from './lib/tokens';
 import { Glass } from './primitives/Glass';
 import { SectionTabsProvider, type AdminScreen, type Range } from './primitives/Shell';
 import { Sidebar, SidebarTrigger, useSidebarState } from './primitives/Sidebar';
+import { AccessProvider } from './primitives/access';
+import { ConfirmProvider } from './primitives/Confirm';
+import { ToastProvider } from './primitives/Toast';
 import { defaultTab, findNavItem, visibleItems, visibleTabs } from './primitives/nav';
 import { useHashRoute } from './lib/route';
 import { OverviewScreen } from './screens/OverviewScreen';
@@ -228,8 +231,23 @@ export function App() {
 
   const contentOffset = sidebar.compact ? 0 : sidebar.width;
 
-  // Halos behind the canvas — same language as the consumer app.
+  /*
+   * Three cross-cutting providers wrap the authed app:
+   *
+   *   AccessProvider  — this admin's effective permissions, so screens ask
+   *                     `useCan('scenarios.write')` instead of receiving
+   *                     `myPermissions` through four layers of props.
+   *   ToastProvider   — transient feedback; its live regions must mount here,
+   *                     with the shell, so they exist before the first message.
+   *   ConfirmProvider — the destructive-action dialog, hosted once rather than
+   *                     re-implemented per screen.
+   *
+   * Halos behind the canvas — same language as the consumer app.
+   */
   return (
+    <AccessProvider permissions={perms} isOwner={me.is_owner}>
+    <ToastProvider>
+    <ConfirmProvider>
     <div style={{ position: 'relative', minHeight: '100vh' }}>
       <BackgroundHalos />
       <Sidebar
@@ -342,6 +360,9 @@ export function App() {
         </SectionTabsProvider>
       </div>
     </div>
+    </ConfirmProvider>
+    </ToastProvider>
+    </AccessProvider>
   );
 }
 

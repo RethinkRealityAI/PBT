@@ -14,6 +14,7 @@
 import { getSupabase } from '../features/auth/supabaseClient';
 import { getOrCreateSessionId } from './storage';
 import { isTrainingUseAllowed } from './privacy';
+import { isPreviewMode } from './previewMode';
 
 export type NavEventType =
   | 'screen_view'
@@ -143,6 +144,10 @@ export function logEvent(input: NavEventInput): void {
   // session_feedback, and platform_reports are NOT gated: that is the user's
   // own data / deliberate submissions, not "training use".
   if (!isTrainingUseAllowed()) return;
+  // Admin preview iframe: an admin exercising a scenario draft is not usage.
+  // Letting these through would inflate screen_view / session_open counts on
+  // the very dashboard the admin is looking at.
+  if (isPreviewMode()) return;
   const event: QueuedEvent = {
     ...input,
     ts: Date.now(),

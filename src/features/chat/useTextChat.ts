@@ -22,7 +22,13 @@ import { uuid } from '../../lib/id';
 import { getSupabase } from '../auth/supabaseClient';
 import { recordTurns } from '../../services/aiTelemetry';
 import { persistRagDocument } from '../../services/ragDocument';
-import { retrieveContext, scenarioRetrievalFilters } from '../../services/ragClient';
+import {
+  retrieveContext,
+  scenarioRetrievalCacheKey,
+  scenarioRetrievalFilters,
+} from '../../services/ragClient';
+import { scenarioSummaryLine } from '../../data/scenarioSummary';
+import { isPreviewMode } from '../../lib/previewMode';
 import { resolveRag } from '../../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from '../../services/ragShared';
 import { logEvent } from '../../lib/analytics';
@@ -53,14 +59,14 @@ const SCORE_UNAVAILABLE: ScoreReport = {
   scoreUnavailable: true,
 };
 
-function scenarioSummaryLine(scenario: Scenario): string {
-  const note = scenario.pushbackNotes?.trim();
-  const pb = scenario.pushback.title;
-  if (note) {
-    const short = note.length > 52 ? `${note.slice(0, 52)}…` : note;
-    return `${pb} (${short}) · ${scenario.breed}`;
-  }
-  return `${pb} · ${scenario.breed}`;
+/**
+ * Preview runs are real AI sessions driven from the admin Scenario Builder —
+ * they must produce no history, no cloud row and no RAG document. Checked at
+ * each write site rather than once at mount: the hook is mounted app-wide by
+ * ChatProvider, long before a preview run starts.
+ */
+function skipPersistence(): boolean {
+  return isPreviewMode();
 }
 
 // Token the AI appends to signal end of simulation.
@@ -166,6 +172,8 @@ interface PersistArgs {
  * up single-role so a future regression can't silently drop a side.
  */
 async function persistToSupabase(args: PersistArgs): Promise<void> {
+  // Admin preview: the conversation is a prompt test, not a training session.
+  if (skipPersistence()) return;
   const sb = getSupabase();
   if (!sb) return;
   // Sanity check — flag silently-broken transcripts before they reach DB.
@@ -333,7 +341,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
             `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
             {
               k: ragCfg.k,
-              cacheKey: scenario._overrideId ?? scenarioSummaryLine(scenario),
+              cacheKey: scenarioRetrievalCacheKey(scenario),
               filters: scenarioRetrievalFilters(scenario),
             },
           )
@@ -486,8 +494,12 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       transcript: msgs,
       createdAt: new Date().toISOString(),
     };
-    const existing = readStorage(SESSIONS_KEY);
-    writeStorage(SESSIONS_KEY, [record, ...existing].slice(0, MAX_SESSIONS));
+    // Admin preview never writes to the trainee's own history either — the
+    // scorecard still renders from in-memory state.
+    if (!skipPersistence()) {
+      const existing = readStorage(SESSIONS_KEY);
+      writeStorage(SESSIONS_KEY, [record, ...existing].slice(0, MAX_SESSIONS));
+    }
     persistedRef.current = true;
     void persistToSupabase({
       scenario,
@@ -716,8 +728,10 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         transcript: msgs,
         createdAt: new Date().toISOString(),
       };
-      const existing = readStorage(SESSIONS_KEY);
-      writeStorage(SESSIONS_KEY, [record, ...existing].slice(0, MAX_SESSIONS));
+      if (!skipPersistence()) {
+        const existing = readStorage(SESSIONS_KEY);
+        writeStorage(SESSIONS_KEY, [record, ...existing].slice(0, MAX_SESSIONS));
+      }
       persistedRef.current = true;
       void persistToSupabase({
         scenario,

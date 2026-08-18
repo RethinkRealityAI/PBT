@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { Glass } from '../primitives/Glass';
 import { EmptyState, LoadingShimmer, SectionTitle, StatusPill } from '../primitives';
+import { useConfirm } from '../primitives/Confirm';
+import { useToast } from '../primitives/Toast';
 import { COLOR } from '../lib/tokens';
 import { revertAuditEntry, useAuditLog } from '../data/queries';
 import { fmtAgo } from '../lib/format';
@@ -18,13 +20,44 @@ export function AuditLogScreen() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [reverting, setReverting] = useState<string | null>(null);
   const log = useAuditLog(200, refreshKey);
+  const confirm = useConfirm();
+  const toast = useToast();
 
-  async function revert(id: string) {
-    if (!confirm('Revert to the state recorded in this entry?')) return;
-    setReverting(id);
+  async function revert(row: AuditLogRow) {
+    const ok = await confirm({
+      title: 'Roll back this change?',
+      body: (
+        <>
+          Restores <code>{row.entity_type}</code>{' '}
+          <code>{row.entity_id}</code> to the “before” state recorded in this
+          entry.
+        </>
+      ),
+      consequences: [
+        'Any edits made to this entity since then are overwritten.',
+        'The rollback is itself audited, so it can be inspected — but not undone with one click.',
+        'It takes effect immediately for everyone.',
+      ],
+      confirmLabel: 'Revert',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setReverting(row.id);
     try {
-      await revertAuditEntry(id);
+      await revertAuditEntry(row.id);
       setRefreshKey((k) => k + 1);
+      toast({ message: `Reverted ${row.entity_type} ${row.entity_id}.`, tone: 'success' });
+    } catch (err) {
+      // Revert 400s on unsupported entity types and 409s when the entity has
+      // since been deleted. Swallowing that left the row looking unchanged and
+      // the reader believing the rollback landed.
+      toast({
+        message:
+          err instanceof Error
+            ? `Revert failed — ${err.message}`
+            : 'Revert failed. The change was not rolled back.',
+        tone: 'error',
+      });
     } finally {
       setReverting(null);
     }
@@ -49,7 +82,7 @@ export function AuditLogScreen() {
                 <AuditRow
                   key={row.id}
                   row={row}
-                  onRevert={() => void revert(row.id)}
+                  onRevert={() => void revert(row)}
                   reverting={reverting === row.id}
                 />
               ))}
@@ -97,7 +130,10 @@ function AuditRow({
           {fmtAgo(new Date(row.created_at).getTime())}
         </span>
         <button
+          type="button"
+          className="pbt-btn"
           onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
           style={{
             padding: '4px 10px',
             borderRadius: 8,
@@ -106,19 +142,22 @@ function AuditRow({
             cursor: 'pointer',
             fontSize: 11,
             fontWeight: 700,
+            fontFamily: 'var(--pbt-font)',
           }}
         >
           {open ? 'Hide' : 'Diff'}
         </button>
         <button
+          type="button"
+          className="pbt-btn"
           onClick={onRevert}
           disabled={reverting || !revertable}
           title={
             revertable
-              ? undefined
+              ? `Restore ${row.entity_type} ${row.entity_id} to its “before” state`
               : row.action === 'revert'
-                ? 'Already a revert'
-                : `Revert is not supported for ${row.entity_type}`
+                ? 'This entry is itself a revert — roll back the original change instead.'
+                : `Revert isn’t supported for ${row.entity_type}. Only flags, flag rules, scenario overrides, simulation config, and knowledge documents can be rolled back.`
           }
           style={{
             padding: '4px 10px',
@@ -129,6 +168,7 @@ function AuditRow({
             color: COLOR.brand,
             fontWeight: 700,
             fontSize: 11,
+            fontFamily: 'var(--pbt-font)',
             opacity: revertable ? 1 : 0.45,
           }}
         >

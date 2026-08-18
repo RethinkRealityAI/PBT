@@ -17,8 +17,9 @@ import {
   isAdminScenarioId,
   seedScenarioId,
 } from '../data/scenarioOverrides';
-import { LIBRARY_SCENARIOS } from '../data/scenarios';
+import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import type { ScenarioOverride } from '../services/flagsClient';
+import { isPreviewMode, startPreviewRun } from '../lib/previewMode';
 import type { Screen } from './routes';
 import { SCREENS_WITH_TAB_BAR } from './routes';
 
@@ -97,6 +98,11 @@ const ResetPasswordScreen = lazy(() =>
 import { readStorage, STORAGE_KEYS, getOrCreateSessionId } from '../lib/storage';
 
 function getInitialScreen(): Screen {
+  // Admin preview iframe: the builder drives this document by postMessage and
+  // there is no human behind it to accept terms or take the ECHO quiz. Boot
+  // straight into the shell — RouteResolver skips its quiz redirect for the
+  // same reason.
+  if (isPreviewMode()) return 'home';
   const terms = readStorage(STORAGE_KEYS.termsAcceptedAt);
   if (!terms) return 'onboarding';
   return 'home';
@@ -193,6 +199,10 @@ function RouteResolver({ children }: { children: ReactNode }) {
   const { profile } = useProfile();
   const { current, replace } = useNavigation();
   useEffect(() => {
+    // Admin preview: no profile is expected, and bouncing the iframe to the
+    // quiz would make "Test in app" untestable. ChatScreen already falls back
+    // to a default driver when `profile` is null.
+    if (isPreviewMode()) return;
     if (!profile && current !== 'onboarding' && current !== 'terms' && current !== 'quiz') {
       replace('quiz');
     }
@@ -237,6 +247,14 @@ function useScreenGate(current: Screen): boolean {
   return !blocked;
 }
 
+/** Seed ids are `seed:<index>` into LIBRARY_SCENARIOS. */
+function seedBaseFor(scenarioId: string): Scenario | null {
+  if (!scenarioId.startsWith('seed:')) return null;
+  const idx = Number(scenarioId.slice('seed:'.length));
+  if (!Number.isInteger(idx) || idx < 0) return null;
+  return LIBRARY_SCENARIOS[idx] ?? null;
+}
+
 /**
  * Preview-mode chat runner. When the consumer is rendered inside the admin
  * Scenario Builder iframe (URL has `?pbt_preview=1`), it accepts:
@@ -244,20 +262,40 @@ function useScreenGate(current: Screen): boolean {
  *   { type: 'pbt:preview-run-scenario',
  *     scenarioId?: string,
  *     draft?: ScenarioOverride,
- *     mode?: 'chat' | 'voice' }
+ *     mode?: 'text' | 'voice' }
  *
- * On receipt: resolve the scenario from the snapshot (or synthesize from
- * the draft override row), set it via ScenarioProvider, and navigate to the
- * chat screen. The Builder uses this to start a real chat/voice session
- * with the unsaved scenario draft so the admin can test before saving.
+ * On receipt: resolve the scenario (from the posted draft, else from the flag
+ * snapshot), set it via ScenarioProvider, publish the requested mode as a
+ * preview run so ChatScreen opens in text or voice, and navigate to chat.
+ *
+ * ── Status contract ──────────────────────────────────────────────
+ * Every message is answered exactly once with
+ *   { type: 'pbt:preview-status', ok: boolean, reason?: string }
+ * posted to `window.parent`. The admin builder renders it, so the reason
+ * strings are part of the interface and must stay verbatim:
+ *   • `invalid`     — a draft was posted but can't make a Scenario (missing
+ *                     breed / life stage / driver / pushback id).
+ *   • `unsupported` — nothing to run: no draft and no resolvable id (an
+ *                     unknown prefix, an out-of-range seed index, or a
+ *                     `user:` id the consumer has no copy of).
+ * A silent no-op was the old behaviour and left the builder spinning forever.
  */
 function PreviewRunner() {
   const { snapshot } = useFlags();
   const { setScenario } = useScenario();
   const { go } = useNavigation();
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!new URLSearchParams(window.location.search).has('pbt_preview')) return;
+    if (!isPreviewMode()) return;
+
+    const postStatus = (ok: boolean, reason?: string) => {
+      // '*' rather than the exact origin: the builder may be embedded from a
+      // sibling deploy/preview host, and the payload carries no secrets.
+      window.parent?.postMessage(
+        reason ? { type: 'pbt:preview-status', ok, reason } : { type: 'pbt:preview-status', ok },
+        '*',
+      );
+    };
+
     const handler = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
       const data = e.data as
@@ -265,39 +303,58 @@ function PreviewRunner() {
             type?: string;
             scenarioId?: string;
             draft?: ScenarioOverride;
-            mode?: 'chat' | 'voice';
+            mode?: 'text' | 'chat' | 'voice';
           }
         | null;
       if (!data || data.type !== 'pbt:preview-run-scenario') return;
 
-      let scenario = null as ReturnType<typeof applyScenarioOverride> | null;
+      let scenario: Scenario | null = null;
+      let reason: 'invalid' | 'unsupported' = 'unsupported';
+
       if (data.draft) {
-        if (isAdminScenarioId(data.draft.scenario_id)) {
-          scenario = adminOverrideToScenario(data.draft);
-        } else if (data.draft.scenario_id.startsWith('seed:')) {
-          const idx = Number(data.draft.scenario_id.slice('seed:'.length));
-          const base = LIBRARY_SCENARIOS[idx];
-          if (base) scenario = applyScenarioOverride(base, data.draft, data.draft.scenario_id);
+        // The builder posts the fully-hydrated editor draft whatever the id
+        // prefix is, so `user:` scenarios preview exactly like `admin:` ones:
+        // the row IS the scenario. (Previously only admin:/seed: drafts were
+        // handled and a user scenario silently did nothing.)
+        const draft = data.draft;
+        scenario = adminOverrideToScenario(draft);
+        if (!scenario) {
+          // A seed draft may legitimately omit columns it inherits from the
+          // shipped scenario — overlay it on the seed rather than rejecting.
+          const base = seedBaseFor(draft.scenario_id);
+          if (base) scenario = applyScenarioOverride(base, draft, draft.scenario_id);
         }
+        if (!scenario) reason = 'invalid';
       } else if (data.scenarioId) {
-        if (isAdminScenarioId(data.scenarioId)) {
-          const row = snapshot?.scenarioOverrides.find(
-            (o) => o.scenario_id === data.scenarioId,
-          );
-          if (row) scenario = adminOverrideToScenario(row);
-        } else if (data.scenarioId.startsWith('seed:')) {
-          const idx = Number(data.scenarioId.slice('seed:'.length));
-          const base = LIBRARY_SCENARIOS[idx];
-          const row = snapshot?.scenarioOverrides.find(
-            (o) => o.scenario_id === data.scenarioId,
-          );
-          if (base) scenario = applyScenarioOverride(base, row ?? null, data.scenarioId);
+        const id = data.scenarioId;
+        const row =
+          snapshot?.scenarioOverrides.find((o) => o.scenario_id === id) ?? null;
+        if (isAdminScenarioId(id)) {
+          scenario = row ? adminOverrideToScenario(row) : null;
+          // A saved admin row that won't build is malformed, not unsupported.
+          if (!scenario && row) reason = 'invalid';
+        } else {
+          const base = seedBaseFor(id);
+          if (base) scenario = applyScenarioOverride(base, row, id);
+          // `user:<uuid>` without a draft: the consumer bundle has no copy of
+          // another account's scenario, so only the builder can supply it.
         }
       }
-      if (!scenario) return;
+
+      if (!scenario) {
+        postStatus(false, reason);
+        return;
+      }
+
       setScenario(scenario);
+      // Publish the run BEFORE navigating: ChatScreen reads the requested mode
+      // for its initial state, and a fresh runId is the signal that an
+      // already-open chat must reset onto this new draft.
+      startPreviewRun(data.mode === 'voice' || data.mode == null ? 'voice' : 'text');
       go('chat');
+      postStatus(true);
     };
+
     window.addEventListener('message', handler);
     // Tell the admin we're ready to receive scenario-run commands too.
     window.parent?.postMessage(

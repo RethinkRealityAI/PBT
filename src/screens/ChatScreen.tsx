@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, useCallback, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Orb } from '../design-system/Orb';
@@ -26,7 +34,9 @@ import {
   CoachHintPanel,
   useCoachHint,
 } from '../features/chat/CoachHint';
-import { useSimulationConfig } from '../app/providers/FlagProvider';
+import { useScenarioOverride, useSimulationConfig } from '../app/providers/FlagProvider';
+import type { PromptOverrides } from '../data/knowledge/promptBuilders';
+import { getPreviewRun, subscribePreviewRun } from '../lib/previewMode';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
 import { useLanguage } from '../app/providers/LanguageProvider';
@@ -680,7 +690,17 @@ export function ChatScreen() {
   const { scenario, setScenario } = useScenario();
   const chat = useChat();
   const voice = useVoiceSession();
-  const [mode, setMode] = useState<'text' | 'voice'>('voice');
+  // Admin preview ("Test in app") names the mode it wants to exercise; a
+  // normal session still defaults to voice.
+  const previewRun = useSyncExternalStore(
+    subscribePreviewRun,
+    getPreviewRun,
+    () => null,
+  );
+  const previewRunId = previewRun?.runId ?? null;
+  const [mode, setMode] = useState<'text' | 'voice'>(
+    () => getPreviewRun()?.mode ?? 'voice',
+  );
   const [draft, setDraft] = useState('');
   const [voiceAnalyzing, setVoiceAnalyzing] = useState(false);
   const [voiceReady, setVoiceReady] = useState(false);
@@ -718,6 +738,22 @@ export function ChatScreen() {
   const finalizeGenRef = useRef(0);
   const scenarioIndex = scenario ? seedScenarioIndex(scenario) : -1;
   const scenarioCounterIndex = scenarioIndex >= 0 ? scenarioIndex : undefined;
+
+  // Per-scenario AI prompt wraps from the scenario's `scenario_overrides` row.
+  // `useTextChat` resolves the same row for text mode; voice used to build its
+  // system prompt without them, so an admin's per-scenario instructions
+  // applied in chat and silently vanished in voice. Held in a ref like the
+  // other voice handles so the start callbacks don't need re-creating.
+  const scenarioOverrideRow = useScenarioOverride(scenario?._overrideId ?? '');
+  const voicePromptOverrides = useMemo<PromptOverrides>(
+    () => ({
+      promptPrefix: scenarioOverrideRow?.prompt_prefix ?? null,
+      promptSuffix: scenarioOverrideRow?.prompt_suffix ?? null,
+    }),
+    [scenarioOverrideRow?.prompt_prefix, scenarioOverrideRow?.prompt_suffix],
+  );
+  const voiceOverridesRef = useRef(voicePromptOverrides);
+  voiceOverridesRef.current = voicePromptOverrides;
 
   // In-chat coach (text mode): capped ACT nudges from the live transcript.
   const simulationConfig = useSimulationConfig();
@@ -794,6 +830,7 @@ export function ChatScreen() {
     void voiceStartRef.current(scenario, {
       locale: localeRef.current,
       openingLine: getLocalizedOpeningLine(scenario, localeRef.current) || null,
+      overrides: voiceOverridesRef.current,
     });
   }, [scenario]);
 
@@ -852,9 +889,10 @@ export function ChatScreen() {
       setVoiceAnalyzing(false);
       setVoiceAnalysisError(null);
       void voiceStartRef.current(scenario, {
-      locale: localeRef.current,
-      openingLine: getLocalizedOpeningLine(scenario, localeRef.current) || null,
-    });
+        locale: localeRef.current,
+        openingLine: getLocalizedOpeningLine(scenario, localeRef.current) || null,
+        overrides: voiceOverridesRef.current,
+      });
     }
   }, [scenario]);
 

@@ -3,9 +3,14 @@ import { GoogleGenAI, Modality, Type } from '@google/genai';
 import type { Scenario } from '../data/scenarios';
 import type { ChatMessage, ScoreReport } from './types';
 import { buildVoiceSystemPrompt } from '../data/knowledge/promptBuilders';
+import type { PromptOverrides } from '../data/knowledge/promptBuilders';
 import { evaluateConversation, MODEL_LIVE } from './geminiService';
 import { useSimulationConfig } from '../app/providers/FlagProvider';
-import { retrieveContext, scenarioRetrievalFilters } from './ragClient';
+import {
+  retrieveContext,
+  scenarioRetrievalCacheKey,
+  scenarioRetrievalFilters,
+} from './ragClient';
 import { resolveRag } from '../data/knowledge/simulationConfig';
 import type { RetrievedChunk } from './ragShared';
 import { uuid } from '../lib/id';
@@ -49,6 +54,17 @@ export interface VoiceStartOptions {
    * Falls back to `scenario.openingLine` when omitted.
    */
   openingLine?: string | null;
+  /**
+   * Per-scenario AI prompt wraps from the scenario's `scenario_overrides` row
+   * (`prompt_prefix` / `prompt_suffix`).
+   *
+   * Text mode has always passed these (`useTextChat` → `promptOverrides`);
+   * voice did not, so an admin who tuned a scenario's customer instructions
+   * saw them apply in chat and vanish the moment the trainee switched to
+   * voice. The caller resolves them (it owns the FlagProvider lookup keyed by
+   * `scenario._overrideId`) and hands them over here.
+   */
+  overrides?: PromptOverrides;
 }
 
 export interface UseVoiceSessionReturn {
@@ -616,7 +632,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
               `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
               {
                 k: ragCfg.k,
-                cacheKey: scenario._overrideId ?? scenario.pushback.id + scenario.breed,
+                cacheKey: scenarioRetrievalCacheKey(scenario),
                 filters: scenarioRetrievalFilters(scenario),
               },
             )
@@ -642,6 +658,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             config: configRef.current ?? undefined,
             retrieved: retrievedRef.current,
             locale: localeRef.current,
+            // Per-scenario prompt wraps — same source text mode uses.
+            overrides: options.overrides,
           }),
           tools: [
             {

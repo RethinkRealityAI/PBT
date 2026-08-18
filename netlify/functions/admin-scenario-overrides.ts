@@ -12,6 +12,7 @@
  */
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
+import { isLifeStage, isPersona, isPushbackId } from '../../src/shared/scenarios/enums';
 
 export interface OverrideUpsert {
   scenario_id: string;
@@ -91,9 +92,22 @@ const MAX_CARD_TITLE_LEN = 120;
 const MAX_CARD_SUBTITLE_LEN = 240;
 const MAX_INFO_BODY_LEN = 4000;
 const MAX_START_BTN_LEN = 40;
+const MAX_BREED_LEN = 80;
+/** Body weight sanity window, kg. Open interval — 0 is not a weight. */
+const MAX_WEIGHT_KG = 200;
 const DRIVERS = ['Activator', 'Energizer', 'Analyzer', 'Harmonizer'];
 
-export function validateOverride(o: OverrideUpsert): string | null {
+/**
+ * @param options.requireAdminFields — admin-authored scenarios normally must
+ * carry enough fields to run the customer prompt. A duplicate is created
+ * hidden (`visible: false`) and is edited before it can go live, so the
+ * duplicate path validates everything EXCEPT that completeness rule.
+ */
+export function validateOverride(
+  o: OverrideUpsert,
+  options: { requireAdminFields?: boolean } = {},
+): string | null {
+  const { requireAdminFields = true } = options;
   if (!o.scenario_id || typeof o.scenario_id !== 'string') return 'scenario_id required';
   if (o.prompt_prefix && o.prompt_prefix.length > MAX_PROMPT_LEN)
     return `prompt_prefix too long (max ${MAX_PROMPT_LEN})`;
@@ -118,6 +132,23 @@ export function validateOverride(o: OverrideUpsert): string | null {
     return 'difficulty_override must be 1–4';
   if (o.focus_area != null && !isFocusAreaKey(o.focus_area))
     return 'focus_area must be a known focus area key';
+  // Scenario-defining enums. These are interpolated into the customer prompt
+  // (and pushback_id keys into the taxonomy), so an unrecognised value doesn't
+  // fail loudly — it quietly produces a degraded roleplay. Reject at the door.
+  if (o.pushback_id != null && !isPushbackId(o.pushback_id))
+    return 'pushback_id must be a known pushback category';
+  if (o.life_stage != null && !isLifeStage(o.life_stage))
+    return 'life_stage must be a known life stage';
+  if (o.persona_override != null && !isPersona(o.persona_override))
+    return 'persona_override must be a known persona';
+  if (o.weight_kg != null) {
+    if (typeof o.weight_kg !== 'number' || !Number.isFinite(o.weight_kg))
+      return 'weight_kg must be a number';
+    if (o.weight_kg <= 0 || o.weight_kg > MAX_WEIGHT_KG)
+      return `weight_kg must be between 0 and ${MAX_WEIGHT_KG}`;
+  }
+  if (o.breed != null && o.breed.length > MAX_BREED_LEN)
+    return `breed too long (max ${MAX_BREED_LEN})`;
   if (o.knowledge_slugs != null) {
     if (!Array.isArray(o.knowledge_slugs)) return 'knowledge_slugs must be an array';
     if (o.knowledge_slugs.length > MAX_KNOWLEDGE_SLUGS)
@@ -130,7 +161,7 @@ export function validateOverride(o: OverrideUpsert): string | null {
   // For admin-authored scenarios we require enough fields to actually run
   // the AI customer prompt — otherwise the consumer would render a broken
   // scenario.
-  if (o.scenario_id.startsWith('admin:')) {
+  if (requireAdminFields && o.scenario_id.startsWith('admin:')) {
     const required: Array<[keyof OverrideUpsert, string]> = [
       ['breed', 'breed'],
       ['life_stage', 'life_stage'],
@@ -211,6 +242,16 @@ export default async (req: Request): Promise<Response> => {
   }
 
   if (op === 'duplicate') {
+    // Only admin-authored rows are self-contained. A seed/user override row is
+    // a sparse overlay on a base scenario that lives in code (or in
+    // user_scenarios) — copying just the overlay would produce a hollow
+    // scenario missing everything the base supplied.
+    if (!body.scenario_id?.startsWith('admin:')) {
+      return errorResponse(
+        400,
+        'Duplicate library/user scenarios from the editor (it copies the full scenario)',
+      );
+    }
     const src = (
       await ctx.sb
         .from('scenario_overrides')
@@ -224,6 +265,10 @@ export default async (req: Request): Promise<Response> => {
       unknown
     >;
     const newId = `admin:${crypto.randomUUID()}`;
+    // `??` binds tighter than `?:`, so the old expression was
+    // `(x ?? null) ? … : …` — a truthiness test wearing a nullish-coalescing
+    // costume. Same result here, but it now says what it means.
+    const srcCardTitle = rest.card_title_override as string | null;
     const payload = {
       ...rest,
       scenario_id: newId,
@@ -231,11 +276,15 @@ export default async (req: Request): Promise<Response> => {
       created_by: ctx.user.id,
       updated_by: ctx.user.id,
       deleted_at: null,
-      card_title_override:
-        (rest.card_title_override as string | null) ?? null
-          ? `${rest.card_title_override} (copy)`
-          : 'Copy of scenario',
+      card_title_override: srcCardTitle ? `${srcCardTitle} (copy)` : 'Copy of scenario',
     };
+    // The copy is hidden, so the "admin scenarios need every field" rule
+    // doesn't apply — but its column VALUES must still be legal, or a bad row
+    // stored before this validation existed would clone itself forward.
+    const invalidCopy = validateOverride(payload as unknown as OverrideUpsert, {
+      requireAdminFields: false,
+    });
+    if (invalidCopy) return errorResponse(400, `Cannot duplicate: ${invalidCopy}`);
     const { data, error } = await ctx.sb
       .from('scenario_overrides')
       .upsert(payload)

@@ -41,3 +41,23 @@ export const COLOR = {
 } as const;
 
 export const RADIUS = { sm: 8, md: 12, lg: 16, xl: 20, hero: 24 } as const;
+
+/**
+ * Spacing scale.
+ *
+ * The admin screens were hand-spaced with literal pixel values, so gaps that
+ * mean the same thing ("between a label and its field") drifted between 4 and
+ * 8 across screens. New work should reach for these; adoption in existing
+ * files is incremental on purpose — a sweep would be a diff nobody can review.
+ */
+export const SPACE = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+  hero: 32,
+} as const;
+
+export type SpaceKey = keyof typeof SPACE;

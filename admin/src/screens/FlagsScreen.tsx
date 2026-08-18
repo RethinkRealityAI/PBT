@@ -8,6 +8,14 @@ import {
 } from '../primitives';
 import { Glass } from '../primitives/Glass';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
+import { useConfirm } from '../primitives/Confirm';
+import {
+  Field,
+  btnPrimary,
+  btnSecondary,
+  inputStyle,
+  textareaStyle,
+} from '../primitives/form';
 import { COLOR } from '../lib/tokens';
 import {
   deleteFlagRule,
@@ -177,6 +185,7 @@ function FlagRow({
   onAddRule: () => void;
   onDeleteRule: (id: string) => void;
 }) {
+  const confirm = useConfirm();
   return (
     <div
       style={{
@@ -259,10 +268,36 @@ function FlagRow({
                 <span style={{ marginLeft: 'auto', fontFamily: 'var(--pbt-mono)' }}>
                   → {JSON.stringify(r.value)}
                 </span>
+                {/*
+                  Reference usage of the confirmation ladder: rung 2 — the
+                  delete is destructive but scoped, so it gets a danger dialog
+                  that names what changes, and no type-to-confirm.
+                  `window.confirm` used to ask "Delete this rule?" without ever
+                  saying which audience stops being targeted.
+                */}
                 <button
+                  type="button"
+                  className="pbt-btn"
+                  aria-label={`Delete rule targeting ${summarizeAudience(r.audience)}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirm('Delete this rule?')) onDeleteRule(r.id);
+                    void confirm({
+                      title: 'Delete this targeting rule?',
+                      body: (
+                        <>
+                          Rule on <code>{flag.key}</code> at priority {r.priority}.
+                        </>
+                      ),
+                      consequences: [
+                        `${summarizeAudience(r.audience)} stops receiving ${JSON.stringify(r.value)}.`,
+                        `They fall back to the flag default (${JSON.stringify(flag.default_value)}) or a lower-priority rule.`,
+                        'Takes effect on the next flag resolve — no deploy needed.',
+                      ],
+                      confirmLabel: 'Delete rule',
+                      tone: 'danger',
+                    }).then((ok) => {
+                      if (ok) onDeleteRule(r.id);
+                    });
                   }}
                   style={{
                     padding: '2px 6px',
@@ -589,77 +624,13 @@ export function ModalShell({
   );
 }
 
-export function Field({
-  label,
-  help,
-  children,
-}: {
-  label: string;
-  help?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 800,
-          textTransform: 'uppercase',
-          letterSpacing: '0.10em',
-          color: COLOR.inkMute,
-          fontFamily: 'var(--pbt-mono)',
-          marginBottom: 6,
-        }}
-      >
-        {label}
-      </div>
-      {children}
-      {help && (
-        <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 4 }}>
-          {help}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 10px',
-  borderRadius: 10,
-  border: '1px solid rgba(60,20,15,0.12)',
-  background: 'rgba(255,255,255,0.7)',
-  fontSize: 13,
-  fontFamily: 'var(--pbt-font)',
-  color: COLOR.ink,
-};
-
-export const textareaStyle: React.CSSProperties = {
-  ...inputStyle,
-  fontFamily: 'var(--pbt-mono)',
-  resize: 'vertical',
-};
-
-export const btnPrimary: React.CSSProperties = {
-  padding: '8px 14px',
-  borderRadius: 10,
-  border: 'none',
-  background: COLOR.brand,
-  color: '#fff',
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'var(--pbt-font)',
-  fontSize: 13,
-};
-
-export const btnSecondary: React.CSSProperties = {
-  padding: '8px 14px',
-  borderRadius: 10,
-  border: '1px solid rgba(60,20,15,0.12)',
-  background: 'rgba(255,255,255,0.6)',
-  color: COLOR.ink,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'var(--pbt-font)',
-  fontSize: 13,
-};
+/*
+ * `Field` and the four style objects now live in `primitives/form.tsx` — they
+ * are the portal's form vocabulary, and half the admin screens were importing
+ * them from this file, which made a screen the design system.
+ *
+ * They stay re-exported here so those imports keep resolving. New code should
+ * import from `primitives/form` (and prefer `<Button>` over the style objects,
+ * since it carries hover / focus-visible / disabled states these cannot).
+ */
+export { Field, inputStyle, textareaStyle, btnPrimary, btnSecondary };

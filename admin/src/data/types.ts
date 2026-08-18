@@ -232,14 +232,22 @@ export type AuditEntityType =
   | 'role'
   | 'invite'
   | 'email_settings'
-  | 'email_template';
+  | 'email_template'
+  | 'knowledge_document';
 
-/** Entity kinds the revert endpoint can actually roll back. */
+/**
+ * Entity kinds the revert endpoint can actually roll back.
+ *
+ * Anything outside this set 400s server-side, so the Audit log disables its
+ * Revert button for them rather than offering an action that cannot succeed.
+ * Keep it in lockstep with the restore branches in `admin-audit-revert`.
+ */
 export const REVERTABLE_ENTITY_TYPES: ReadonlySet<AuditEntityType> = new Set<AuditEntityType>([
   'flag',
   'flag_rule',
   'scenario_override',
   'simulation_config',
+  'knowledge_document',
 ]);
 
 export interface AuditLogRow {

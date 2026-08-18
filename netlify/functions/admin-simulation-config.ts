@@ -1,10 +1,17 @@
 /**
  * Admin: read + write the global simulation config, with version history.
  *
- *   GET  /admin-simulation-config              → { config }
+ *   GET  /admin-simulation-config              → { config, updated_at }
  *   GET  /admin-simulation-config?op=history   → { versions: SimulationVersion[] }
- *   POST /admin-simulation-config              → body: { config, note? } → { config }
- *   POST /admin-simulation-config?op=restore   → body: { auditId }       → { config }
+ *   POST /admin-simulation-config              → body: { config, note?, baseUpdatedAt? }
+ *                                                → { config, updated_at }
+ *   POST /admin-simulation-config?op=restore   → body: { auditId, baseUpdatedAt? }
+ *                                                → { config, updated_at }
+ *
+ * `baseUpdatedAt` is the optimistic-concurrency token: pass the `updated_at`
+ * the editor loaded and a save that would clobber someone else's newer write
+ * returns 409 `{ error: 'conflict', updated_at }` instead. Omit it and the
+ * write is unconditional (last-write-wins), as before.
  *
  * The config is stored as opaque JSONB in public.simulation_config (id='global').
  * Every write is mirrored to admin_audit_log with entity_type 'simulation_config'
@@ -35,16 +42,55 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-async function readCurrentConfig(
-  sb: SupabaseClient,
-): Promise<{ config: Record<string, unknown> | null; error: string | null }> {
+interface CurrentConfig {
+  config: Record<string, unknown> | null;
+  /** Row timestamp, or null when no row exists yet. The concurrency token. */
+  updatedAt: string | null;
+  /** True when the singleton row exists (distinct from "config is empty"). */
+  exists: boolean;
+  error: string | null;
+}
+
+async function readCurrentConfig(sb: SupabaseClient): Promise<CurrentConfig> {
   const { data, error } = await sb
     .from('simulation_config')
-    .select('config')
+    .select('config, updated_at')
     .eq('id', 'global')
     .maybeSingle();
-  if (error) return { config: null, error: error.message as string };
-  return { config: (data?.config ?? null) as Record<string, unknown> | null, error: null };
+  if (error) {
+    return { config: null, updatedAt: null, exists: false, error: error.message as string };
+  }
+  return {
+    config: (data?.config ?? null) as Record<string, unknown> | null,
+    updatedAt: (data?.updated_at ?? null) as string | null,
+    exists: Boolean(data),
+    error: null,
+  };
+}
+
+/**
+ * Optimistic-concurrency check.
+ *
+ * The Simulation screen edits ONE global JSON blob, so two admins with the
+ * panel open will last-write-wins each other's tuning without noticing. A
+ * client that sends the `updated_at` it loaded gets a 409 instead, carrying
+ * the current timestamp so the UI can offer a reload. Omitting the field keeps
+ * the old unconditional behaviour (older clients still work).
+ */
+function conflictResponse(
+  body: { baseUpdatedAt?: unknown },
+  current: CurrentConfig,
+): Response | null {
+  const base = typeof body.baseUpdatedAt === 'string' ? body.baseUpdatedAt : null;
+  if (!base || !current.exists) return null;
+  if (current.updatedAt === base) return null;
+  return jsonResponse(
+    {
+      error: 'conflict',
+      updated_at: current.updatedAt,
+    },
+    { status: 409 },
+  );
 }
 
 export default async (req: Request): Promise<Response> => {
@@ -90,7 +136,7 @@ export default async (req: Request): Promise<Response> => {
 
     const current = await readCurrentConfig(ctx.sb);
     if (current.error) return errorResponse(500, current.error);
-    return jsonResponse({ config: current.config ?? {} });
+    return jsonResponse({ config: current.config ?? {}, updated_at: current.updatedAt });
   }
 
   if (req.method !== 'POST') {
@@ -98,9 +144,14 @@ export default async (req: Request): Promise<Response> => {
   }
   if (!can(ctx, 'simulation.write')) return errorResponse(403, 'Missing permission: simulation.write');
 
-  let body: { config?: unknown; note?: unknown; auditId?: unknown };
+  let body: { config?: unknown; note?: unknown; auditId?: unknown; baseUpdatedAt?: unknown };
   try {
-    body = (await req.json()) as { config?: unknown; note?: unknown; auditId?: unknown };
+    body = (await req.json()) as {
+      config?: unknown;
+      note?: unknown;
+      auditId?: unknown;
+      baseUpdatedAt?: unknown;
+    };
   } catch {
     return errorResponse(400, 'Invalid JSON');
   }
@@ -123,10 +174,17 @@ export default async (req: Request): Promise<Response> => {
 
     // Restoring a version means re-applying its "after" — the config as it
     // stood once that save landed.
+    // An `after` that isn't an object means the version being restored had no
+    // config at all (the empty/defaults state). That's a legitimate thing to
+    // restore, but it looks identical to a bug in the history panel — so the
+    // audit note says which one it was.
+    const emptyRestore = !isPlainObject(entry.after);
     const restored = isPlainObject(entry.after) ? (entry.after as Record<string, unknown>) : {};
 
     const current = await readCurrentConfig(ctx.sb);
     if (current.error) return errorResponse(500, current.error);
+    const conflict = conflictResponse(body, current);
+    if (conflict) return conflict;
 
     const { data, error } = await ctx.sb
       .from('simulation_config')
@@ -136,21 +194,22 @@ export default async (req: Request): Promise<Response> => {
         updated_by: ctx.user.id,
         updated_at: new Date().toISOString(),
       })
-      .select('config')
+      .select('config, updated_at')
       .maybeSingle();
     if (error) return errorResponse(500, error.message);
 
     const after = (data?.config ?? restored) as Record<string, unknown>;
+    const stamp = `Restored version from ${new Date(String(entry.created_at)).toISOString()}`;
     await writeAuditLog(ctx, {
       entity_type: 'simulation_config',
       entity_id: 'global',
       action: 'update',
       before: current.config,
       after,
-      note: `Restored version from ${new Date(String(entry.created_at)).toISOString()}`,
+      note: emptyRestore ? `${stamp} — Restored to defaults (empty version)` : stamp,
     });
 
-    return jsonResponse({ config: after });
+    return jsonResponse({ config: after, updated_at: (data?.updated_at ?? null) as string | null });
   }
 
   if (op) return errorResponse(400, `Unknown op: ${op}`);
@@ -163,9 +222,12 @@ export default async (req: Request): Promise<Response> => {
   const config = incoming;
   const note = cleanNote(body.note);
 
-  // Fetch current value for the audit log "before" snapshot.
+  // Fetch current value for the audit log "before" snapshot — and for the
+  // optimistic-concurrency check against the version the client loaded.
   const current = await readCurrentConfig(ctx.sb);
   if (current.error) return errorResponse(500, current.error);
+  const conflict = conflictResponse(body, current);
+  if (conflict) return conflict;
 
   // Upsert the global row.
   const { data, error } = await ctx.sb
@@ -176,7 +238,7 @@ export default async (req: Request): Promise<Response> => {
       updated_by: ctx.user.id,
       updated_at: new Date().toISOString(),
     })
-    .select('config')
+    .select('config, updated_at')
     .maybeSingle();
   if (error) return errorResponse(500, error.message);
 
@@ -191,5 +253,5 @@ export default async (req: Request): Promise<Response> => {
     note,
   });
 
-  return jsonResponse({ config: after });
+  return jsonResponse({ config: after, updated_at: (data?.updated_at ?? null) as string | null });
 };
