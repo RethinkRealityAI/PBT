@@ -16,6 +16,7 @@ import type { ChatMessage, ScoreReport } from './types';
 import { getSupabase } from '../features/auth/supabaseClient';
 import { estimateTokens } from './aiTelemetry';
 import { isTrainingUseAllowed } from '../lib/privacy';
+import { isPreviewMode } from '../lib/previewMode';
 import type { RetrievedChunk } from './ragShared';
 
 /**
@@ -156,6 +157,8 @@ export async function persistRagDocument(args: PersistArgs): Promise<void> {
   // NOT gated — that is their own data / deliberate submissions, not
   // "training use".
   if (!isTrainingUseAllowed()) return;
+  // Admin preview (spec: "Test in app") — a prompt smoke-test is not corpus.
+  if (isPreviewMode()) return;
   const sb = getSupabase();
   if (!sb) return;
   try {

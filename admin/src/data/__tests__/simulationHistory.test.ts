@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { configEquals, summarizeConfigDelta } from '../simulationHistory';
+import {
+  configEquals,
+  countCustomisations,
+  isDefaultConfig,
+  resetConsequences,
+  summarizeConfigDelta,
+} from '../simulationHistory';
 
 describe('summarizeConfigDelta', () => {
   it('returns nothing for identical configs', () => {
@@ -67,5 +73,75 @@ describe('configEquals', () => {
     expect(configEquals({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
     expect(configEquals(null, {})).toBe(true);
     expect(configEquals({ a: 1 }, { a: 2 })).toBe(false);
+  });
+});
+
+describe('countCustomisations', () => {
+  it('counts each layer of a minimal config', () => {
+    const n = countCustomisations({
+      scoring: {
+        dimensions: [{ key: 'acknowledge' }, { key: 'clarify' }],
+        promptPrefix: 'be kind',
+      },
+      drivers: { Activator: { motivation: 'x' } },
+      pushbacks: { cost: { id: 'cost' }, 'my-new-one': { id: 'my-new-one' } },
+      customerPromptSuffix: 'stay in character',
+      rag: { enabled: false, k: 4 },
+    });
+    expect(n).toEqual({
+      dimensions: 2,
+      drivers: 1,
+      pushbacks: 2,
+      prompts: 2,
+      retrieval: 1,
+    });
+  });
+
+  it('treats blank prompt strings as not customised', () => {
+    expect(countCustomisations({ customerPromptPrefix: '   ' }).prompts).toBe(0);
+  });
+
+  it('is zero for an empty or missing config', () => {
+    expect(countCustomisations({})).toEqual({
+      dimensions: 0,
+      drivers: 0,
+      pushbacks: 0,
+      prompts: 0,
+      retrieval: 0,
+    });
+    expect(countCustomisations(null).drivers).toBe(0);
+  });
+});
+
+describe('isDefaultConfig', () => {
+  it('treats an empty/absent config as the defaults — it carries only diffs', () => {
+    expect(isDefaultConfig({})).toBe(true);
+    expect(isDefaultConfig(null)).toBe(true);
+    expect(isDefaultConfig(undefined)).toBe(true);
+    expect(isDefaultConfig({ drivers: {} })).toBe(false);
+  });
+});
+
+describe('resetConsequences', () => {
+  it('names each thing that would be lost, with counts', () => {
+    const out = resetConsequences({
+      scoring: { dimensions: [{ key: 'acknowledge' }] },
+      drivers: { Activator: {}, Analyzer: {} },
+      pushbacks: { 'my-new-one': { id: 'my-new-one' } },
+    });
+    expect(out.some((c) => c.startsWith('1 scoring dimension '))).toBe(true);
+    expect(out.some((c) => c.startsWith('2 driver personas'))).toBe(true);
+    expect(out.some((c) => c.includes('category you added here disappears'))).toBe(true);
+  });
+
+  it('admits when nothing is customised rather than implying loss', () => {
+    const out = resetConsequences({});
+    expect(out[0]).toMatch(/Nothing is customised/);
+  });
+
+  it('always ends by saying the reset is not itself a save', () => {
+    expect(resetConsequences({ drivers: { Activator: {} } }).at(-1)).toMatch(
+      /Nothing is written until/,
+    );
   });
 });

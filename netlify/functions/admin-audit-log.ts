@@ -18,7 +18,8 @@ type AuditEntityType =
   | 'role'
   | 'invite'
   | 'email_settings'
-  | 'email_template';
+  | 'email_template'
+  | 'knowledge_document';
 
 interface AuditRow {
   id: string;
@@ -44,6 +45,7 @@ const REVERT_PERMISSION: Partial<Record<AuditEntityType, Permission>> = {
   flag_rule: 'flags.write',
   scenario_override: 'scenarios.write',
   simulation_config: 'simulation.write',
+  knowledge_document: 'knowledge.write',
 };
 
 export default async (req: Request): Promise<Response> => {
@@ -119,6 +121,44 @@ export default async (req: Request): Promise<Response> => {
       ).error;
     } else if (row.before) {
       mutErr = (await ctx.sb.from('scenario_overrides').upsert(row.before)).error;
+    }
+  } else if (row.entity_type === 'knowledge_document') {
+    // Knowledge deletes are soft, so `before` is the document as it stood and
+    // the row itself is usually still there — reverting means writing those
+    // fields back and clearing the tombstone. A `before` with no `content` is
+    // an oversized body the delete deliberately left out of the audit row; the
+    // stored text is still the right one, so keep it rather than nulling a
+    // NOT NULL column.
+    const before = row.before as Record<string, unknown> | null;
+    if (before) {
+      const slug = String(before.slug ?? row.entity_id);
+      const patch: Record<string, unknown> = {
+        ...before,
+        slug,
+        deleted_at: null,
+        updated_by: ctx.user.id,
+      };
+      const { data: existing } = await ctx.sb
+        .from('knowledge_documents')
+        .select('id')
+        .eq('slug', slug)
+        .maybeSingle();
+      if (existing) {
+        delete patch.id;
+        if (patch.content == null) delete patch.content;
+        mutErr = (
+          await ctx.sb.from('knowledge_documents').update(patch).eq('id', existing.id)
+        ).error;
+      } else if (patch.content == null) {
+        return errorResponse(
+          400,
+          'Cannot restore: this audit entry omitted the document body and the row no longer exists — re-ingest the document instead.',
+        );
+      } else {
+        mutErr = (
+          await ctx.sb.from('knowledge_documents').upsert(patch, { onConflict: 'slug' })
+        ).error;
+      }
     }
   } else if (row.entity_type === 'simulation_config') {
     // `before`/`after` here are the FULL config JSON, not a table row — so the

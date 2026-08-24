@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { ChatScreen } from '../ChatScreen';
 import { SEED_SCENARIOS } from '../../data/scenarios';
+import { __resetPreviewRuns, startPreviewRun } from '../../lib/previewMode';
 
 const go = vi.fn();
 const setScenario = vi.fn();
@@ -123,6 +124,9 @@ describe('ChatScreen voice-first flow', () => {
       locale: 'en',
       // en passes the canonical opening line through unchanged
       openingLine: SEED_SCENARIOS[0].openingLine ?? null,
+      // Per-scenario prompt wraps — voice now gets the same admin overrides
+      // text mode does; this seed has no override row, hence the null pair.
+      overrides: { promptPrefix: null, promptSuffix: null },
     });
   });
 
@@ -139,6 +143,9 @@ describe('ChatScreen voice-first flow', () => {
       locale: 'en',
       // en passes the canonical opening line through unchanged
       openingLine: SEED_SCENARIOS[0].openingLine ?? null,
+      // Per-scenario prompt wraps — voice now gets the same admin overrides
+      // text mode does; this seed has no override row, hence the null pair.
+      overrides: { promptPrefix: null, promptSuffix: null },
     });
   });
 
@@ -153,5 +160,65 @@ describe('ChatScreen voice-first flow', () => {
     expect(voiceStop).toHaveBeenCalled();
     expect(setScenario).toHaveBeenCalledWith(SEED_SCENARIOS[1]);
     expect(go).not.toHaveBeenCalledWith('create');
+  });
+});
+
+/**
+ * Admin "Test in app": the builder names the mode it wants to exercise.
+ * ChatScreen's own default is voice, so a text preview used to land the admin
+ * in the voice orb with no way to see the chat prompt they were editing.
+ */
+describe('ChatScreen preview runs', () => {
+  beforeEach(() => {
+    currentScenario = SEED_SCENARIOS[0];
+    voiceStatus = 'idle';
+    voiceError = null;
+    vi.clearAllMocks();
+    voiceEndSession.mockResolvedValue({ report: null, transcript: [] });
+    __resetPreviewRuns();
+  });
+
+  afterEach(() => {
+    __resetPreviewRuns();
+  });
+
+  it('opens in text mode when the builder asks for text', () => {
+    startPreviewRun('text');
+    render(<ChatScreen />);
+    expect(screen.getByRole('button', { name: 'Text' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // The text composer is live, not the voice orb's Begin CTA.
+    expect(screen.queryByRole('button', { name: /begin simulation/i })).toBeNull();
+  });
+
+  it('still opens in voice when the builder asks for voice', () => {
+    startPreviewRun('voice');
+    render(<ChatScreen />);
+    expect(screen.getByRole('button', { name: 'Voice' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('resets the open session and switches mode when a new run arrives', async () => {
+    startPreviewRun('voice');
+    render(<ChatScreen />);
+    chatReset.mockClear();
+    voiceStop.mockClear();
+
+    // The admin edits the draft and hits "Test in app" again, this time in text.
+    await act(async () => {
+      startPreviewRun('text');
+    });
+
+    // Re-running must not continue the previous draft's conversation.
+    expect(voiceStop).toHaveBeenCalled();
+    expect(chatReset).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Text' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 });

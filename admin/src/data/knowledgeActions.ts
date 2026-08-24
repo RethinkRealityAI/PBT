@@ -9,7 +9,7 @@
  * The focus-area vocabulary itself is shared with the scenario builder and the
  * Netlify functions: `src/shared/knowledge/focusAreas.ts`.
  */
-import { postJson } from '../lib/api';
+import { apiFetch, postJson } from '../lib/api';
 import { focusAreaLabel } from '../../../src/shared/knowledge/focusAreas';
 import type { KnowledgeDocument } from './types';
 
@@ -173,6 +173,12 @@ export interface UpdateKnowledgeResult {
   focus: string | null;
   citation: string | null;
   chunks_updated: number;
+  /**
+   * Chunks whose tag rewrite failed. The document row still saved, but those
+   * sections keep their old focus tag — i.e. focus-filtered retrieval is
+   * partially stale until the save is repeated.
+   */
+  chunk_failures?: string[];
 }
 
 /**
@@ -184,4 +190,101 @@ export function updateKnowledgeDocument(
   body: UpdateKnowledgeBody,
 ): Promise<UpdateKnowledgeResult> {
   return postJson<UpdateKnowledgeResult>('admin-knowledge', { op: 'update', ...body });
+}
+
+/** A soft-deleted document, as listed by `GET admin-knowledge?trash=1`. */
+export interface DeletedKnowledgeDocument {
+  slug: string;
+  title: string;
+  category: string;
+  deleted_at: string;
+}
+
+/** The "Recently deleted" drawer: soft-deleted documents, newest first. */
+export function fetchDeletedKnowledge(): Promise<DeletedKnowledgeDocument[]> {
+  return apiFetch<{ documents?: DeletedKnowledgeDocument[] }>('admin-knowledge', {
+    trash: 1,
+  }).then((res) => res.documents ?? []);
+}
+
+/** Undo a soft delete. Scenario links pruned at delete time do NOT come back. */
+export function restoreKnowledgeDocument(
+  slug: string,
+): Promise<{ ok: true; slug: string }> {
+  return postJson<{ ok: true; slug: string }>('admin-knowledge', {
+    op: 'restore',
+    slug,
+  });
+}
+
+// ─── Consequence + outcome copy (pure — unit-tested) ────────────────────────
+
+/**
+ * What deleting this document actually costs, one concrete bullet per effect.
+ *
+ * The scenario list is the part people don't expect: a delete silently prunes
+ * the slug out of every scenario that attached it, and restoring does not put
+ * those attachments back.
+ */
+export function deleteConsequences(links: ScenarioLink[]): string[] {
+  const out: string[] = [];
+  const attached = links.filter((l) => l.via === 'attached');
+  const viaFocus = links.filter((l) => l.via === 'focus');
+  if (attached.length > 0) {
+    out.push(
+      `Detaches it from ${attached.length} scenario${attached.length === 1 ? '' : 's'}: ${attached
+        .map((l) => l.label)
+        .join(', ')} — restoring does not re-attach them.`,
+    );
+  }
+  if (viaFocus.length > 0) {
+    out.push(
+      `${viaFocus.length} scenario${viaFocus.length === 1 ? '' : 's'} filtered to this focus area stop drawing on it: ${viaFocus
+        .map((l) => l.label)
+        .join(', ')}.`,
+    );
+  }
+  if (links.length === 0) {
+    out.push('No scenario attaches this document today.');
+  }
+  out.push('Recoverable from “Recently deleted” at the bottom of this screen.');
+  return out;
+}
+
+export interface BatchOutcome {
+  /** How many documents the run tried to index. */
+  attempted: number;
+  failures?: string[];
+  /** Slugs left alone because they are in Recently deleted. */
+  skippedDeleted?: string[];
+  /** "documents", "studies" — plural noun for the message. */
+  noun: string;
+}
+
+/**
+ * Honest one-liner for a bulk run. A partial failure used to render as a plain
+ * "✓ 13 documents ready", which is how a half-indexed corpus goes unnoticed.
+ */
+export function batchOutcomeMessage(o: BatchOutcome): {
+  message: string;
+  tone: 'success' | 'info' | 'error';
+} {
+  const failures = o.failures ?? [];
+  const skipped = o.skippedDeleted ?? [];
+  const ok = Math.max(0, o.attempted - failures.length);
+  const skippedNote =
+    skipped.length > 0
+      ? ` ${skipped.length} skipped — still in Recently deleted.`
+      : '';
+
+  if (failures.length === 0) {
+    return {
+      message: `${o.attempted} ${o.noun} indexed.${skippedNote}`,
+      tone: 'success',
+    };
+  }
+  return {
+    message: `${ok} of ${o.attempted} ${o.noun} indexed — ${failures.length} failed.${skippedNote}`,
+    tone: ok === 0 ? 'error' : 'info',
+  };
 }

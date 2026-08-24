@@ -81,6 +81,20 @@ interface ResolvedSnapshot {
 
 let snapshotCache: { value: ResolvedSnapshot; expiresAt: number } | null = null;
 
+/**
+ * Columns the snapshot wants, and the subset that predates the August
+ * scenario↔knowledge migration.
+ *
+ * A deploy can land before its migration is applied (they're hand-run — see
+ * CLAUDE.md). Selecting a column that doesn't exist yet fails the WHOLE
+ * select, which would take the public flag snapshot down for every consumer
+ * over two optional scenario fields. So: try the full list, and on any error
+ * retry once with the pre-migration list before giving up.
+ */
+const OVERRIDE_COLUMNS_BASE =
+  'scenario_id, visible, sort_order, title_override, context_override, opening_line_override, difficulty_override, persona_override, prompt_prefix, prompt_suffix, card_title_override, card_subtitle_override, info_modal_title, info_modal_body, start_button_label, card_driver_override, breed, life_stage, pushback_id, pushback_notes, suggested_driver, weight_kg';
+const OVERRIDE_COLUMNS_FULL = `${OVERRIDE_COLUMNS_BASE}, focus_area, knowledge_slugs`;
+
 async function loadSnapshot(): Promise<{
   flags: FlagRow[];
   rules: RuleRow[];
@@ -95,23 +109,34 @@ async function loadSnapshot(): Promise<{
       .select('id, flag_key, priority, audience, value, enabled')
       .eq('enabled', true)
       .order('priority', { ascending: false }),
-    sb
-      .from('scenario_overrides')
-      .select(
-        'scenario_id, visible, sort_order, title_override, context_override, opening_line_override, difficulty_override, persona_override, prompt_prefix, prompt_suffix, card_title_override, card_subtitle_override, info_modal_title, info_modal_body, start_button_label, card_driver_override, breed, life_stage, pushback_id, pushback_notes, suggested_driver, weight_kg, focus_area, knowledge_slugs',
-      )
-      .is('deleted_at', null),
+    sb.from('scenario_overrides').select(OVERRIDE_COLUMNS_FULL).is('deleted_at', null),
     sb.from('simulation_config').select('config').eq('id', 'global').maybeSingle(),
   ]);
   if (flagsRes.error) throw flagsRes.error;
   if (rulesRes.error) throw rulesRes.error;
-  if (overridesRes.error) throw overridesRes.error;
+
+  // `unknown` because the fallback select returns a narrower row shape (no
+  // focus_area/knowledge_slugs); both are coerced to OverrideRow[] below,
+  // where the missing fields simply read as undefined.
+  let overrideRows: unknown = overridesRes.data;
+  if (overridesRes.error) {
+    console.warn(
+      '[flags-resolve] scenario_overrides full select failed, retrying without focus_area/knowledge_slugs',
+      overridesRes.error,
+    );
+    const retry = await sb
+      .from('scenario_overrides')
+      .select(OVERRIDE_COLUMNS_BASE)
+      .is('deleted_at', null);
+    if (retry.error) throw overridesRes.error;
+    overrideRows = retry.data;
+  }
   // simCfgRes is best-effort — log but don't fail if the table doesn't exist yet.
   if (simCfgRes.error) console.warn('[flags-resolve] simulation_config fetch failed', simCfgRes.error);
   return {
     flags: (flagsRes.data ?? []) as FlagRow[],
     rules: (rulesRes.data ?? []) as RuleRow[],
-    overrides: (overridesRes.data ?? []) as OverrideRow[],
+    overrides: (overrideRows ?? []) as unknown as OverrideRow[],
     simulationConfig: (simCfgRes.data?.config ?? null) as Record<string, unknown> | null,
   };
 }

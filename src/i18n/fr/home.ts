@@ -51,6 +51,9 @@ export const home: Record<keyof typeof enHome, string> = {
   'home.pick.nextAria': 'Scénario suivant',
   'home.pick.startHere': 'Commencez ici →',
   'home.pick.scoringAria': 'Comment les séances sont évaluées',
+  'home.pick.empty.title': 'Aucun scénario disponible pour le moment',
+  'home.pick.empty.body':
+    'Tous les scénarios sont actuellement masqués. Créez le vôtre ou revenez plus tard.',
 
   // ── Actions rapides ───────────────────────────────────────
   'home.actions.build.title': 'Créer un scénario',

@@ -6,6 +6,7 @@ import { COLORS } from '../../design-system/tokens';
 import { useTheme } from '../../app/providers/ThemeProvider';
 import { isSessionRated, useSessionFeedback } from './useSessionFeedback';
 import { useT } from '../../i18n/useT';
+import { isPreviewMode } from '../../lib/previewMode';
 
 const MONO_LABEL: React.CSSProperties = {
   fontFamily: 'var(--pbt-font-mono)',
@@ -99,6 +100,10 @@ export function SessionFeedbackCard({
   const alreadyRated = useMemo(() => isSessionRated(sessionId), [sessionId]);
 
   const canSubmit = realism > 0 && aiQuality > 0 && comfort > 0 && status !== 'submitting';
+
+  // Admin preview: asking the admin to rate their own draft would write a
+  // `session_feedback` row against a session that was never really played.
+  if (isPreviewMode()) return null;
 
   if (status === 'done') {
     return (

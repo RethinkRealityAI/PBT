@@ -4,15 +4,35 @@
  * Calls the public rag-retrieve Netlify function once per session start.
  * FAIL-OPEN: any error, timeout, or non-2xx yields [] — retrieval must never
  * block or break the roleplay. Results are cached per cache key (scenario id
- * + retrieval filters) for the tab's lifetime.
+ * + `k` + retrieval filters) with a short TTL.
  */
 import type { RetrievedChunk } from './ragShared';
 import type { Scenario } from '../data/scenarios';
+import { scenarioSummaryLine } from '../data/scenarioSummary';
 
 const ENDPOINT = '/.netlify/functions/rag-retrieve';
 const TIMEOUT_MS = 2500;
 
-const cache = new Map<string, RetrievedChunk[]>();
+/**
+ * Cache lifetime. The corpus is admin-editable (knowledge documents, scenario
+ * ↔ knowledge links), so a tab left open all day must not keep serving the
+ * retrieval it made at 9am. Five minutes matches the flag-snapshot refresh
+ * interval — long enough that a session's own turns share one fetch, short
+ * enough that an admin edit shows up without a reload.
+ */
+const CACHE_TTL_MS = 5 * 60_000;
+
+interface CacheEntry {
+  results: RetrievedChunk[];
+  at: number;
+}
+
+const cache = new Map<string, CacheEntry>();
+
+/** Test hook — retrieval caching is module state. */
+export function __clearRetrievalCache(): void {
+  cache.clear();
+}
 
 /**
  * Scenario-derived retrieval targeting. `docSlugs` (explicit knowledge
@@ -49,20 +69,38 @@ function filterKey(filters: RetrievalFilters | undefined): string {
   return parts.length ? `|${parts.join('&')}` : '';
 }
 
+/**
+ * The per-scenario retrieval cache key, shared by text and voice mode.
+ *
+ * `_overrideId` is the stable admin/seed id when the scenario came from a
+ * flag-aware surface; otherwise the summary line distinguishes user-built
+ * scenarios from each other. (Voice used to key on `pushback.id + breed`,
+ * which every custom "cost pushback / Lab" build collided on.)
+ */
+export function scenarioRetrievalCacheKey(scenario: Scenario): string {
+  return scenario._overrideId ?? scenarioSummaryLine(scenario);
+}
+
 export async function retrieveContext(
   query: string,
   opts: { k?: number; filters?: RetrievalFilters; cacheKey?: string } = {},
 ): Promise<RetrievedChunk[]> {
-  const key = (opts.cacheKey ?? query) + filterKey(opts.filters);
+  const k = opts.k ?? 4;
+  // `k` is part of the key: the same scenario asked for 4 chunks and then 8
+  // (an admin raising the RAG budget) must not be served the shorter list.
+  const key = `${opts.cacheKey ?? query}|k=${k}${filterKey(opts.filters)}`;
   const hit = cache.get(key);
-  if (hit) return hit;
+  if (hit) {
+    if (Date.now() - hit.at < CACHE_TTL_MS) return hit.results;
+    cache.delete(key);
+  }
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         query,
-        k: opts.k ?? 4,
+        k,
         filters: opts.filters ?? {},
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -70,7 +108,10 @@ export async function retrieveContext(
     if (!res.ok) return [];
     const data = (await res.json()) as { results?: RetrievedChunk[] };
     const results = Array.isArray(data.results) ? data.results : [];
-    cache.set(key, results);
+    // Never cache an empty result: it is indistinguishable from "the corpus
+    // wasn't ready / the embedder was cold", and pinning it for five minutes
+    // would leave the whole session ungrounded over one bad round-trip.
+    if (results.length > 0) cache.set(key, { results, at: Date.now() });
     return results;
   } catch {
     return [];

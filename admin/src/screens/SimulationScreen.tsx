@@ -27,6 +27,9 @@ import { useAdminSimulationConfig } from '../data/queries';
 import {
   configEquals,
   fetchSimulationHistory,
+  isDefaultConfig,
+  isSimulationConflict,
+  resetConsequences,
   restoreSimulationVersion,
   saveSimulationConfigWithNote,
   summarizeConfigDelta,
@@ -44,6 +47,10 @@ import {
   SectionTitle,
   StatusPill,
 } from '../primitives';
+import { InlineAlert } from '../primitives/form';
+import { ReadOnlyBanner, useCan } from '../primitives/access';
+import { useConfirm } from '../primitives/Confirm';
+import { useToast } from '../primitives/Toast';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
@@ -608,9 +615,18 @@ const TAB_LABELS: Record<Tab, string> = {
 export function SimulationScreen() {
   const [refreshKey, setRefreshKey] = useState(0);
   const snapshot = useAdminSimulationConfig(refreshKey);
+  const toast = useToast();
+  const confirm = useConfirm();
+  const canWrite = useCan()('simulation.write');
   const [tab, setTab] = useState<Tab>('scoring');
   const [draft, setDraft] = useState<Draft | null>(null);
   const baselineRef = useRef<string>('');
+  /**
+   * The `updated_at` this editor loaded. Sent back as `baseUpdatedAt` so a save
+   * that would clobber someone else's newer save 409s instead.
+   */
+  const [baseUpdatedAt, setBaseUpdatedAt] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<{ updatedAt: string | null } | null>(null);
 
   const [selectedDriver, setSelectedDriver] = useState<DriverKey>('Activator');
   const [selectedPushback, setSelectedPushback] = useState<string | null>(null);
@@ -624,66 +640,159 @@ export function SimulationScreen() {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   /** Rebuild the draft + its dirty-baseline from a config object. */
-  function applyConfig(config: Record<string, unknown>) {
+  function applyConfig(config: Record<string, unknown>, updatedAt: string | null) {
     const d = buildDraft(config);
     setDraft(d);
     baselineRef.current = JSON.stringify(d);
+    setBaseUpdatedAt(updatedAt);
     if (Object.keys(d.pushbacks).length) {
       setSelectedPushback((prev) => prev ?? Object.keys(d.pushbacks)[0]);
     }
   }
 
   // Initialise the draft from the loaded config exactly once it arrives.
+  //
+  // The `error` guard is load-bearing: a failed GET used to leave `data` at the
+  // `{}` fallback, which built a pristine defaults draft indistinguishable from
+  // "nothing is customised" — and saving from there wiped every real setting.
   useEffect(() => {
-    if (snapshot.loading || draft) return;
-    applyConfig(snapshot.data);
-  }, [snapshot.loading, snapshot.data, draft]);
+    if (snapshot.loading || snapshot.error || draft) return;
+    applyConfig(snapshot.data.config, snapshot.data.updated_at);
+  }, [snapshot.loading, snapshot.error, snapshot.data, draft]);
 
   const dirty = useMemo(
     () => (draft ? JSON.stringify(draft) !== baselineRef.current : false),
     [draft],
   );
 
+  // Unsaved edits survive a stray ⌘W / tab close only if the browser asks.
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
   function patch(p: Partial<Draft>) {
     setDraft((prev) => (prev ? { ...prev, ...p } : prev));
   }
 
-  function resetAll() {
-    const d = buildDraft({});
-    setDraft(d);
+  async function handleReset() {
+    if (!draft) return;
+    const current = buildMinimalConfig(draft) as unknown as Record<string, unknown>;
+    const ok = await confirm({
+      title: 'Reset every simulation setting to its default?',
+      body: 'This clears the whole draft — scoring, drivers, pushbacks and prompt notes all go back to what the app ships with.',
+      consequences: resetConsequences(current),
+      confirmLabel: 'Reset everything',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setDraft(buildDraft({}));
   }
 
-  async function handleSave() {
+  /** @param force skip the concurrency token — "save anyway" after a conflict. */
+  async function handleSave(force = false) {
     if (!draft) return;
     setSaving(true);
     setSaveStatus('idle');
     setSaveError(null);
     try {
       const minimal = buildMinimalConfig(draft);
-      await saveSimulationConfigWithNote(
+      const res = await saveSimulationConfigWithNote(
         minimal as unknown as Record<string, unknown>,
         note,
+        force ? null : baseUpdatedAt,
       );
       baselineRef.current = JSON.stringify(draft);
+      setBaseUpdatedAt(res.updated_at);
+      setConflict(null);
       setNote('');
       setSaveStatus('saved');
       setRefreshKey((k) => k + 1);
+      toast({ message: 'Simulation settings saved — live within a minute.', tone: 'success' });
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (err) {
+      if (isSimulationConflict(err)) {
+        setConflict({ updatedAt: err.updatedAt });
+        setSaveStatus('idle');
+        toast({
+          message: 'Not saved — someone else changed these settings while you were editing.',
+          tone: 'error',
+        });
+        return;
+      }
+      const message = err instanceof Error ? err.message : 'Save failed';
       setSaveStatus('error');
-      setSaveError(err instanceof Error ? err.message : 'Save failed');
+      setSaveError(message);
+      toast({ message: `Save failed — ${message}`, tone: 'error' });
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleRestore(version: SimulationVersion) {
-    const { config } = await restoreSimulationVersion(version.id);
-    applyConfig(config);
-    setHistoryOpen(false);
-    setSaveStatus('saved');
+  /** Discard local edits and rebuild the draft from whatever is on the server. */
+  async function reloadTheirVersion() {
+    if (dirty) {
+      const ok = await confirm({
+        title: 'Discard your unsaved changes?',
+        body: 'Loading the version that is on the server replaces everything you have edited here.',
+        consequences: ['Your current edits are lost — they were never saved.'],
+        confirmLabel: 'Discard and reload',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    setConflict(null);
+    setDraft(null);
     setRefreshKey((k) => k + 1);
-    setTimeout(() => setSaveStatus('idle'), 3000);
+  }
+
+  async function saveAnyway() {
+    const ok = await confirm({
+      title: 'Overwrite the other admin’s save?',
+      body: 'Your version replaces theirs for the whole platform.',
+      consequences: [
+        'Their changes stop applying to new sessions immediately.',
+        'Their version stays in History, so it can be restored.',
+      ],
+      confirmLabel: 'Overwrite',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    await handleSave(true);
+  }
+
+  async function handleRestore(version: SimulationVersion) {
+    try {
+      const res = await restoreSimulationVersion(version.id, baseUpdatedAt);
+      applyConfig(res.config, res.updated_at);
+      setHistoryOpen(false);
+      setSaveStatus('saved');
+      setRefreshKey((k) => k + 1);
+      toast({ message: 'Version restored — the previous settings are still in History.', tone: 'success' });
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    } catch (err) {
+      if (isSimulationConflict(err)) {
+        setConflict({ updatedAt: err.updatedAt });
+        setHistoryOpen(false);
+        toast({
+          message: 'Not restored — someone else saved these settings in the meantime.',
+          tone: 'error',
+        });
+        return;
+      }
+      toast({
+        message: `Restore failed — ${err instanceof Error ? err.message : 'unknown error'}`,
+        tone: 'error',
+      });
+      // Re-thrown so the row that started it can drop its busy state and show
+      // the reason in place, for whoever is looking at the modal.
+      throw err;
+    }
   }
 
   const totalWeight = draft
@@ -707,11 +816,33 @@ export function SimulationScreen() {
       <HistoryModal
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        currentConfig={snapshot.data}
+        currentConfig={snapshot.data.config}
+        canRestore={canWrite}
         onRestore={handleRestore}
       />
       <ScreenShell>
-        {snapshot.loading || !draft ? (
+        <ReadOnlyBanner permission="simulation.write" />
+        {snapshot.error ? (
+          /*
+            Hard stop. Without the loaded config there is no honest draft to
+            edit: every field would show its code default, and saving would
+            write those defaults over whatever is actually live.
+          */
+          <InlineAlert tone="error" title="Couldn’t load the simulation settings">
+            <div>{snapshot.error}</div>
+            <div style={{ marginTop: 6 }}>
+              Nothing is editable until this loads — otherwise the editor would show
+              built-in defaults as though they were your settings, and saving would
+              overwrite the live config.
+            </div>
+            <button
+              onClick={() => setRefreshKey((k) => k + 1)}
+              style={{ ...btnSecondary, marginTop: 10 }}
+            >
+              Retry
+            </button>
+          </InlineAlert>
+        ) : snapshot.loading || !draft ? (
           <LoadingShimmer height={360} />
         ) : (
           <>
@@ -786,19 +917,32 @@ export function SimulationScreen() {
             >
               <Glass padding="12px 16px" radius={14}>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <button onClick={handleSave} disabled={saving || !dirty} style={{ ...btnPrimary, opacity: saving || !dirty ? 0.5 : 1 }}>
-                    {saving ? 'Saving…' : 'Save changes'}
-                  </button>
-                  <input
-                    value={note}
-                    onChange={(e) => setNote(e.target.value.slice(0, 200))}
-                    placeholder="What changed? (optional — shows in history)"
-                    aria-label="Version description (optional)"
-                    style={{ ...inputStyle, width: 300, maxWidth: '100%' }}
-                  />
-                  <button onClick={resetAll} style={btnSecondary}>
-                    Reset all to defaults
-                  </button>
+                  {canWrite && (
+                    <button
+                      onClick={() => void handleSave()}
+                      disabled={saving || !dirty}
+                      style={{ ...btnPrimary, opacity: saving || !dirty ? 0.5 : 1 }}
+                    >
+                      {saving ? 'Saving…' : 'Save changes'}
+                    </button>
+                  )}
+                  {canWrite && (
+                    <input
+                      value={note}
+                      onChange={(e) => setNote(e.target.value.slice(0, 200))}
+                      placeholder="What changed? (optional — shows in history)"
+                      aria-label="Version description (optional)"
+                      style={{ ...inputStyle, width: 300, maxWidth: '100%' }}
+                    />
+                  )}
+                  {canWrite && (
+                    <button
+                      onClick={() => void handleReset()}
+                      style={{ ...btnSecondary, color: COLOR.danger, borderColor: 'color-mix(in oklab, oklch(0.58 0.20 25) 30%, transparent)' }}
+                    >
+                      Reset all to defaults
+                    </button>
+                  )}
                   <span
                     style={{
                       fontSize: 12,
@@ -831,6 +975,34 @@ export function SimulationScreen() {
                   <span style={{ marginLeft: 'auto', fontSize: 11, color: COLOR.inkMute }}>
                     Only changed fields are saved — untouched items keep inheriting defaults.
                   </span>
+                  {conflict && (
+                    <InlineAlert
+                      tone="warn"
+                      title="Someone else saved these settings while you were editing."
+                      style={{ flexBasis: '100%' }}
+                    >
+                      <div>
+                        Your changes were not written.
+                        {conflict.updatedAt
+                          ? ` Their version was saved ${fmtAgo(new Date(conflict.updatedAt).getTime())}.`
+                          : ''}{' '}
+                        Load theirs and redo your edits on top, or overwrite them — their
+                        version stays in History either way.
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                        <button onClick={() => void reloadTheirVersion()} style={btnPrimary}>
+                          Reload their version
+                        </button>
+                        <button
+                          onClick={() => void saveAnyway()}
+                          disabled={saving}
+                          style={{ ...btnSecondary, color: COLOR.danger }}
+                        >
+                          Save anyway
+                        </button>
+                      </div>
+                    </InlineAlert>
+                  )}
                 </div>
               </Glass>
             </div>
@@ -1207,11 +1379,14 @@ function HistoryModal({
   open,
   onClose,
   currentConfig,
+  canRestore,
   onRestore,
 }: {
   open: boolean;
   onClose: () => void;
   currentConfig: Record<string, unknown>;
+  /** `simulation.write` — without it the list is readable but not actionable. */
+  canRestore: boolean;
   onRestore: (v: SimulationVersion) => Promise<void>;
 }) {
   const [versions, setVersions] = useState<SimulationVersion[]>([]);
@@ -1268,9 +1443,24 @@ function HistoryModal({
               key={v.id}
               version={v}
               isCurrent={configEquals(v.after, currentConfig)}
+              canRestore={canRestore}
               onRestore={() => onRestore(v)}
             />
           ))
+        )}
+        {!loading && !error && versions.length > 0 && (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: COLOR.inkMute,
+              borderTop: `1px solid ${COLOR.border}`,
+              paddingTop: 10,
+              marginTop: 4,
+            }}
+          >
+            Showing the 50 most recent saves from the last 30 days — older changes
+            live in Audit.
+          </div>
         )}
       </div>
     </Modal>
@@ -1280,10 +1470,12 @@ function HistoryModal({
 function VersionRow({
   version,
   isCurrent,
+  canRestore,
   onRestore,
 }: {
   version: SimulationVersion;
   isCurrent: boolean;
+  canRestore: boolean;
   onRestore: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -1294,6 +1486,13 @@ function VersionRow({
     () => summarizeConfigDelta(version.before, version.after),
     [version.before, version.after],
   );
+  /*
+    A version whose `after` is empty is not "a version with nothing in it" —
+    it IS the defaults, because the saved config only ever carries what differs
+    from them. Restoring it wipes every customisation, so it must not read as
+    the most harmless row in the list.
+  */
+  const restoresDefaults = isDefaultConfig(version.after);
 
   async function run() {
     setBusy(true);
@@ -1342,7 +1541,7 @@ function VersionRow({
           >
             {open ? 'Hide' : 'Diff'}
           </button>
-          {!isCurrent && !confirming && (
+          {canRestore && !isCurrent && !confirming && (
             <button
               onClick={() => setConfirming(true)}
               disabled={busy}
@@ -1355,7 +1554,9 @@ function VersionRow({
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
-        {changed.length === 0 ? (
+        {restoresDefaults ? (
+          <StatusPill tone="warn" dot={false}>Defaults (nothing customised)</StatusPill>
+        ) : changed.length === 0 ? (
           <StatusPill tone="neutral" dot={false}>No detected change</StatusPill>
         ) : (
           changed.map((c) => (
@@ -1382,8 +1583,10 @@ function VersionRow({
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontSize: 12.5, color: COLOR.ink, fontWeight: 700 }}>
-            Restore this version? Current settings will be saved to history first.
+          <span style={{ fontSize: 12.5, color: COLOR.ink, fontWeight: 700, flexBasis: '100%' }}>
+            {restoresDefaults
+              ? 'This version is the defaults — restoring it clears all current customisations. Undoable from History: the current settings are saved there first.'
+              : 'Restore this version? Current settings will be saved to history first.'}
           </span>
           <button
             onClick={() => void run()}

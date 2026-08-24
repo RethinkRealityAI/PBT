@@ -19,6 +19,11 @@ import {
   SectionTitle,
   StatusPill,
 } from '../primitives';
+import { FirstRunCard } from '../primitives/FirstRunCard';
+import { InlineAlert } from '../primitives/form';
+import { ReadOnlyBanner, useCan } from '../primitives/access';
+import { DangerZone, useConfirm } from '../primitives/Confirm';
+import { useToast } from '../primitives/Toast';
 import { COLOR, DRIVER_KEYS, DRIVERS, type DriverKey } from '../lib/tokens';
 import {
   deleteScenarioOverride,
@@ -38,6 +43,14 @@ import {
 } from '../data/scenarioManifest';
 import { FOCUS_AREAS } from '../../../src/shared/knowledge/focusAreas';
 import {
+  LIFE_STAGES,
+  PERSONAS,
+  PUSHBACK_IDS,
+  isLifeStage,
+  isPersona,
+  isPushbackId,
+} from '../../../src/shared/scenarios/enums';
+import {
   Field,
   btnPrimary,
   btnSecondary,
@@ -47,17 +60,6 @@ import {
 import { suggestField, type WizardField } from '../lib/scenarioAi';
 
 const PROMPT_MAX = 1500;
-const PUSHBACK_IDS = [
-  'cost',
-  'breeder-advice',
-  'raw-food',
-  'rx-diet',
-  'brand-switch',
-  'weight-denial',
-  'custom',
-];
-const LIFE_STAGES = ['Puppy (<1)', 'Junior (1-3)', 'Adult (3-7)', 'Senior (7+)'];
-const PERSONAS = ['Skeptical', 'Anxious', 'Busy', 'Bargain-hunter', 'Devoted'];
 
 // ─────────────────────────────────────────────────────────────
 // Stepped visual editor — model + pure state helpers
@@ -205,6 +207,137 @@ export function computeStepStates({
   return out;
 }
 
+/**
+ * Human names for the draft columns, used wherever a list of fields is shown
+ * to a person — the revert confirmation above all. "opening_line_override"
+ * in a destructive dialog is a column name, not a consequence.
+ */
+export const FIELD_LABELS: Partial<Record<keyof ScenarioOverrideRow, string>> = {
+  breed: 'Breed',
+  life_stage: 'Life stage',
+  pushback_id: 'Pushback',
+  pushback_notes: 'Pushback notes',
+  suggested_driver: 'Suggested driver',
+  persona_override: 'Persona',
+  difficulty_override: 'Difficulty',
+  weight_kg: 'Weight (kg)',
+  opening_line_override: 'Opening line',
+  context_override: 'Context',
+  title_override: 'Legacy title',
+  focus_area: 'Focus area',
+  knowledge_slugs: 'Attached documents',
+  prompt_prefix: 'AI opening notes',
+  prompt_suffix: 'AI final reminders',
+  visible: 'Visible in app',
+  sort_order: 'Sort order',
+  card_driver_override: 'Card accent driver',
+  card_title_override: 'Card title',
+  card_subtitle_override: 'Card subtitle',
+  start_button_label: 'Start button label',
+  info_modal_title: 'Info modal title',
+  info_modal_body: 'Info modal body',
+};
+
+/**
+ * Which fields a revert would actually give back to the built-in scenario.
+ *
+ * Takes the SPARSE row (what a save would write), so it names exactly the
+ * columns that carry an override today — no more, no less.
+ */
+export function overriddenFieldLabels(
+  sparse: Partial<ScenarioOverrideRow>,
+  opts: { baseVisible?: boolean } = {},
+): string[] {
+  const out: string[] = [];
+  for (const step of BUILDER_STEPS) {
+    for (const field of step.fields) {
+      if (field === 'visible') {
+        const baseVisible = opts.baseVisible ?? true;
+        if (sparse.visible !== undefined && sparse.visible !== baseVisible) {
+          out.push(
+            sparse.visible
+              ? 'Visible in app (currently forced on)'
+              : 'Visible in app (currently hidden)',
+          );
+        }
+        continue;
+      }
+      if (hasOverrideValue(sparse[field])) {
+        out.push(FIELD_LABELS[field] ?? String(field));
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Attached slugs with no live document behind them.
+ *
+ * A document can be deleted after a scenario attached it (the server prunes
+ * saved rows, but an in-flight draft or a stale snapshot can still hold one).
+ * Retrieval silently skips those, so they have to be visible in the editor.
+ */
+export function missingKnowledgeSlugs(
+  selected: string[] | null | undefined,
+  liveSlugs: readonly string[],
+): string[] {
+  if (!selected || selected.length === 0) return [];
+  const live = new Set(liveSlugs);
+  return selected.filter((slug) => !live.has(slug));
+}
+
+/**
+ * A client-side copy of a scenario, as an unsaved admin draft.
+ *
+ * Duplicating a library/user scenario server-side would copy its (possibly
+ * empty) override ROW, not the scenario — the copy would come out blank. The
+ * hydrated draft is the scenario, so the copy is made from that.
+ */
+export function buildDuplicateDraft(
+  draft: Partial<ScenarioOverrideRow>,
+  newId: string,
+  baseTitle?: string | null,
+): Partial<ScenarioOverrideRow> {
+  const title =
+    (draft.card_title_override ?? '').trim() || (baseTitle ?? '').trim() || 'scenario';
+  return {
+    ...draft,
+    scenario_id: newId,
+    card_title_override: `(copy) ${title}`.slice(0, 120),
+    // A copy is never live until someone looks at it and says so.
+    visible: false,
+    sort_order: null,
+  };
+}
+
+export interface VisibilityEntry {
+  id: string;
+  source: 'library' | 'admin' | 'user';
+  override: Pick<ScenarioOverrideRow, 'visible'> | null;
+}
+
+/**
+ * How many library + admin scenarios the consumer app would show.
+ *
+ * User-built scenarios are excluded on purpose: they belong to one account and
+ * are not what the Home screen offers everyone. A library scenario with no
+ * override row is live (that is how it ships); an admin one only exists as its
+ * row.
+ */
+export function visibleScenarioCount(
+  entries: readonly VisibilityEntry[],
+  excludeId?: string,
+): number {
+  let n = 0;
+  for (const e of entries) {
+    if (e.id === excludeId) continue;
+    if (e.source === 'user') continue;
+    const visible = e.override ? e.override.visible : e.source === 'library';
+    if (visible) n += 1;
+  }
+  return n;
+}
+
 /** Viewport-width watcher — mirrors the sidebar's resize listener pattern. */
 function useViewportBelow(px: number): boolean {
   const [below, setBelow] = useState(
@@ -272,7 +405,15 @@ export function ScenarioBuilderScreen({
   const [refreshKey, setRefreshKey] = useState(0);
   const overrides = useScenarioOverrides(refreshKey);
   const userScenarios = useUserScenarios(500);
+  const toast = useToast();
+  const canWrite = useCan()('scenarios.write');
   const [activeId, setActiveId] = useState<string | null>(null);
+  /**
+   * Either read failing means the list is a lie: the manifest still renders
+   * three library scenarios while the override rows are unknown, so the editor
+   * would open on "no overrides" and save that over real rows.
+   */
+  const readError = overrides.error ?? userScenarios.error;
 
   const list = useMemo<ListEntry[]>(() => {
     const out: ListEntry[] = [];
@@ -341,6 +482,80 @@ export function ScenarioBuilderScreen({
   // Used for "New scenario" — the row doesn't exist in the snapshot yet,
   // so the builder needs an in-memory seed to start from.
   const [seedDraft, setSeedDraft] = useState<Partial<ScenarioOverrideRow> | null>(null);
+  /** Set when the open draft is an unsaved client-side copy of another scenario. */
+  const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
+
+  /**
+   * Duplicate a library/user scenario entirely client-side.
+   *
+   * The server's `op=duplicate` copies an override ROW, which for a library
+   * scenario may be empty or absent — the copy would come out blank (and the
+   * endpoint now 400s for non-`admin:` ids saying exactly that). Copying the
+   * hydrated draft copies the scenario as it actually runs.
+   */
+  function duplicateLocally(entry: ListEntry) {
+    const manifest =
+      entry.source === 'library'
+        ? LIBRARY_MANIFEST.find((s) => s.id === entry.id) ?? null
+        : null;
+    const hydrated = buildInitialDraft(
+      { id: entry.id, source: entry.source, override: entry.override },
+      manifest,
+      entry.userScenario ?? null,
+    );
+    const copy = buildDuplicateDraft(
+      hydrated,
+      `admin:${crypto.randomUUID()}`,
+      manifest?.title ?? entry.title,
+    );
+    setSeedDraft(copy);
+    setActiveId(copy.scenario_id ?? null);
+    setCopiedFrom(entry.title);
+  }
+
+  async function duplicateSaved(entry: ListEntry) {
+    try {
+      await duplicateScenario(entry.id);
+      onSaved();
+      toast({ message: `“${entry.title}” duplicated — the copy starts hidden.`, tone: 'success' });
+    } catch (err) {
+      toast({
+        message: `Couldn’t duplicate — ${err instanceof Error ? err.message : 'unknown error'}`,
+        tone: 'error',
+      });
+    }
+  }
+
+  // A failed read must never reach the editor: `list` would be manifest-only
+  // and saving from it would overwrite override rows we never loaded.
+  if (readError) {
+    return (
+      <>
+        <ContextBar
+          title="Scenario builder"
+          subtitle="Edit any scenario the app ships with, tune one a user built, or write a new one from scratch."
+          query={query}
+          onQuery={onQuery}
+        />
+        <ScreenShell>
+          <InlineAlert tone="error" title="Couldn’t load the scenarios">
+            <div>{readError}</div>
+            <div style={{ marginTop: 6 }}>
+              The list is hidden rather than shown half-loaded: without the saved
+              overrides, every scenario would look untouched, and saving one would
+              wipe the changes that are actually live.
+            </div>
+            <button
+              onClick={() => setRefreshKey((k) => k + 1)}
+              style={{ ...btnSecondary, marginTop: 10 }}
+            >
+              Retry
+            </button>
+          </InlineAlert>
+        </ScreenShell>
+      </>
+    );
+  }
 
   if (active || seedDraft) {
     const scenarioId = activeId ?? seedDraft?.scenario_id ?? '';
@@ -364,6 +579,20 @@ export function ScenarioBuilderScreen({
         key={scenarioId}
         scenarioId={scenarioId}
         initial={initial}
+        source={active?.source ?? 'admin'}
+        canWrite={canWrite}
+        unsavedCopyOf={seedDraft && seedDraft.scenario_id === activeId ? copiedFrom : null}
+        /*
+          "Would unticking Visible empty the app?" — computed over every OTHER
+          library/admin scenario, so it stays true regardless of what the draft
+          currently says about this one.
+        */
+        isOnlyVisible={
+          visibleScenarioCount(
+            list.map((it) => ({ id: it.id, source: it.source, override: it.override })),
+            scenarioId,
+          ) === 0
+        }
         hasOverride={Boolean(active?.override)}
         sparsify={(d) =>
           seedDraft && seedDraft.scenario_id === activeId
@@ -393,10 +622,12 @@ export function ScenarioBuilderScreen({
         onClose={() => {
           setActiveId(null);
           setSeedDraft(null);
+          setCopiedFrom(null);
         }}
         onSaved={() => {
           onSaved();
           setSeedDraft(null);
+          setCopiedFrom(null);
         }}
       />
     );
@@ -411,6 +642,14 @@ export function ScenarioBuilderScreen({
         onQuery={onQuery}
       />
       <ScreenShell>
+        <ReadOnlyBanner permission="scenarios.write" />
+        <FirstRunCard id="builder" title="Three kinds of scenario live here">
+          <strong>Library</strong> scenarios ship with the app — editing one saves an
+          override on top, and only the fields you change. <strong>User</strong>{' '}
+          scenarios were built by a trainee. <strong>Admin</strong> scenarios are ones
+          you wrote here. Everything you do is recorded in <strong>Audit</strong>, and
+          every save can be reverted from there — including a deleted scenario.
+        </FirstRunCard>
         <Glass padding={20} radius={20}>
           <div
             style={{
@@ -424,9 +663,11 @@ export function ScenarioBuilderScreen({
               title="All scenarios"
               subtitle={`${list.filter((l) => l.override).length} of ${list.length} have overrides`}
             />
-            <button onClick={startNew} style={btnPrimary}>
-              + New scenario
-            </button>
+            {canWrite && (
+              <button onClick={startNew} style={btnPrimary}>
+                + New scenario
+              </button>
+            )}
           </div>
           {overrides.loading || userScenarios.loading ? (
             <LoadingShimmer height={180} />
@@ -438,16 +679,14 @@ export function ScenarioBuilderScreen({
                 <ListRow
                   key={it.id}
                   entry={it}
+                  canWrite={canWrite}
                   onOpen={() => setActiveId(it.id)}
-                  onDuplicate={async () => {
-                    if (!it.override) {
-                      alert(
-                        'Open this scenario and save it once — duplicating copies a saved scenario.',
-                      );
-                      return;
-                    }
-                    await duplicateScenario(it.id);
-                    onSaved();
+                  onDuplicate={() => {
+                    // `admin:` rows are the scenario, so the server copy is
+                    // complete; everything else is copied from the hydrated
+                    // draft instead (see duplicateLocally).
+                    if (it.source === 'admin') void duplicateSaved(it);
+                    else duplicateLocally(it);
                   }}
                 />
               ))}
@@ -461,10 +700,12 @@ export function ScenarioBuilderScreen({
 
 function ListRow({
   entry,
+  canWrite,
   onOpen,
   onDuplicate,
 }: {
   entry: ListEntry;
+  canWrite: boolean;
   onOpen: () => void;
   onDuplicate: () => void;
 }) {
@@ -508,11 +749,13 @@ function ListRow({
         <StatusPill tone="warn">hidden</StatusPill>
       )}
       <button onClick={onOpen} style={btnSecondary}>
-        Edit
+        {canWrite ? 'Edit' : 'View'}
       </button>
-      <button onClick={onDuplicate} style={btnSecondary}>
-        Duplicate
-      </button>
+      {canWrite && (
+        <button onClick={onDuplicate} style={btnSecondary}>
+          Duplicate
+        </button>
+      )}
     </div>
   );
 }
@@ -534,6 +777,10 @@ type Tab = 'visual' | 'wizard';
 function Builder({
   scenarioId,
   initial,
+  source,
+  canWrite,
+  unsavedCopyOf,
+  isOnlyVisible,
   hasOverride,
   sparsify,
   baseDescriptor,
@@ -543,6 +790,13 @@ function Builder({
   scenarioId: string;
   /** Fully hydrated draft (base values overlaid by any override row). */
   initial: Partial<ScenarioOverrideRow>;
+  /** Where the scenario comes from — drives revert vs. delete, and the notes. */
+  source: 'library' | 'admin' | 'user';
+  canWrite: boolean;
+  /** Title of the scenario this unsaved draft was copied from, if any. */
+  unsavedCopyOf: string | null;
+  /** True when every OTHER library/admin scenario is already hidden. */
+  isOnlyVisible: boolean;
   /** True when a scenario_overrides row already exists for this scenario. */
   hasOverride: boolean;
   /**
@@ -555,6 +809,8 @@ function Builder({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [tab, setTab] = useState<Tab>('visual');
   const [draft, setDraft] = useState<Partial<ScenarioOverrideRow>>(initial);
   // Baseline = the hydrated draft, so an untouched form is never "dirty".
@@ -609,8 +865,19 @@ function Builder({
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [dirty]);
 
-  function confirmDiscardIfDirty(): boolean {
-    return !dirty || confirm('Discard unsaved changes?');
+  /** Leaving with unsaved edits — the one confirm that is not destructive. */
+  async function closeWithDiscardGuard() {
+    if (dirty) {
+      const ok = await confirm({
+        title: 'Discard unsaved changes?',
+        body: 'Your edits to this scenario have not been saved.',
+        confirmLabel: 'Discard changes',
+        cancelLabel: 'Keep editing',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    onClose();
   }
 
   function patch(p: Partial<ScenarioOverrideRow>) {
@@ -657,27 +924,105 @@ function Builder({
       }
       await upsertScenarioOverride({ ...trimmed, scenario_id: scenarioId });
       baselineRef.current = JSON.stringify(draft);
+      toast({
+        message: `“${draft.card_title_override?.trim() || baseDescriptor?.title || scenarioId}” saved — live in the app now.`,
+        tone: 'success',
+      });
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
+      const message = err instanceof Error ? err.message : 'Save failed';
+      setError(message);
+      toast({ message: `Save failed — ${message}`, tone: 'error' });
     } finally {
       setSaving(false);
     }
   }
 
-  async function clearAndClose() {
-    if (!hasOverride) {
-      if (!confirmDiscardIfDirty()) return;
-      onClose();
-      return;
+  /** Ticking / unticking "Visible", with a guard on emptying the app. */
+  async function setVisible(next: boolean) {
+    if (!next && isOnlyVisible && (draft.visible ?? false)) {
+      const ok = await confirm({
+        title: 'Hide the last visible scenario?',
+        body: 'Every other library and admin scenario is already hidden.',
+        consequences: [
+          'The app will show “no scenarios available” to every user.',
+          'Trainees cannot start a session until something is visible again.',
+        ],
+        confirmLabel: 'Hide it anyway',
+        tone: 'danger',
+      });
+      if (!ok) return;
     }
-    if (!confirm('Remove all overrides for this scenario?')) return;
+    patch({ visible: next });
+  }
+
+  /**
+   * Library / user scenarios: throw the override row away and go back to what
+   * the app ships (or to what the user built).
+   */
+  async function revertToBuiltIn() {
+    const sparse = sparsify(draft);
+    const fields = overriddenFieldLabels(sparse, { baseVisible: true });
+    const ok = await confirm({
+      title: 'Revert this scenario to its built-in version?',
+      body:
+        source === 'user'
+          ? 'The admin override row is deleted; the scenario goes back to exactly what the user built.'
+          : 'The admin override row is deleted; the scenario goes back to exactly what the app ships.',
+      consequences: [
+        ...(fields.length > 0
+          ? fields.map((f) => `“${f}” goes back to the built-in value.`)
+          : ['No fields currently carry an override — this just clears the row.']),
+        'Recoverable from Audit → Revert.',
+      ],
+      confirmLabel: 'Revert to built-in',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       await deleteScenarioOverride(scenarioId);
+      toast({ message: 'Reverted to the built-in scenario.', tone: 'success' });
       onSaved();
       onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Revert failed';
+      setError(message);
+      toast({ message: `Revert failed — ${message}`, tone: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Admin-authored scenarios: the row IS the scenario, so this deletes it. */
+  async function deleteScenario() {
+    const title = draft.card_title_override?.trim() || '(untitled admin scenario)';
+    const ok = await confirm({
+      title: `Delete “${title}”?`,
+      body: 'This scenario was written here, so deleting the row deletes the scenario.',
+      consequences: [
+        'It disappears from the app immediately for everyone.',
+        'Its past training sessions and their scores are untouched.',
+        'Recoverable from Audit → Revert.',
+      ],
+      confirmLabel: 'Delete scenario',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      await deleteScenarioOverride(scenarioId);
+      toast({
+        message: `“${title}” deleted — restore it from Audit → Revert if that was a mistake.`,
+        tone: 'success',
+      });
+      onSaved();
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Delete failed';
+      setError(message);
+      toast({ message: `Delete failed — ${message}`, tone: 'error' });
     } finally {
       setSaving(false);
     }
@@ -714,12 +1059,7 @@ function Builder({
               flexWrap: 'wrap',
             }}
           >
-            <button
-              onClick={() => {
-                if (confirmDiscardIfDirty()) onClose();
-              }}
-              style={btnSecondary}
-            >
+            <button onClick={() => void closeWithDiscardGuard()} style={btnSecondary}>
               ← Back to list
             </button>
             <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
@@ -747,9 +1087,22 @@ function Builder({
               <button onClick={() => setTestOpen((v) => !v)} style={btnSecondary}>
                 {testOpen ? 'Hide test' : 'Test in app'}
               </button>
-              <button onClick={clearAndClose} style={{ ...btnSecondary, color: COLOR.danger }}>
-                {hasOverride ? 'Remove overrides' : 'Discard'}
-              </button>
+              {/*
+                Two very different actions used to share one "Remove overrides"
+                button: for a library scenario it reverts to the shipped
+                version, for an admin one it deletes the scenario outright.
+                They are split, and the delete lives in its own danger zone
+                at the foot of the editor.
+              */}
+              {canWrite && source !== 'admin' && hasOverride && (
+                <button
+                  onClick={() => void revertToBuiltIn()}
+                  disabled={saving}
+                  style={{ ...btnSecondary, color: COLOR.danger }}
+                >
+                  Revert to built-in
+                </button>
+              )}
               <StatusPill tone={draft.visible ? 'success' : 'warn'}>
                 {draft.visible ? 'Visible in app' : 'Hidden'}
               </StatusPill>
@@ -776,9 +1129,11 @@ function Builder({
                   Unsaved changes
                 </span>
               )}
-              <button onClick={save} disabled={saving} style={btnPrimary}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
+              {canWrite && (
+                <button onClick={() => void save()} disabled={saving} style={btnPrimary}>
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              )}
             </div>
             {/* Save failures surface HERE, next to the button that failed —
                 not at the page bottom where a scrolled admin never sees them. */}
@@ -810,18 +1165,51 @@ function Builder({
           }}
         >
           {/* Left: editor */}
-          <Glass padding={20} radius={20}>
-            {tab === 'visual' ? (
-              <VisualEditor
-                draft={draft}
-                patch={patch}
-                baseDescriptor={baseDescriptor}
-                sparsify={sparsify}
-              />
-            ) : (
-              <ScenarioWizard draft={draft} patch={patch} />
+          <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
+            <ReadOnlyBanner permission="scenarios.write" />
+            {unsavedCopyOf && (
+              <InlineAlert tone="info" title="This is an unsaved copy">
+                Copied from “{unsavedCopyOf}”. Nothing exists in the app yet — review
+                the fields and press <strong>Save</strong>. It starts hidden, so
+                publishing it is a second, deliberate step.
+              </InlineAlert>
             )}
-          </Glass>
+            {source === 'user' && (
+              <InlineAlert tone="warn" title="Edits here don’t reach that user yet">
+                The app doesn’t apply admin overrides to user-built scenarios, so
+                saving changes what you see here — not what the user who built it
+                sees. To publish your version, use <strong>Duplicate</strong> and save
+                it as an admin scenario.
+              </InlineAlert>
+            )}
+            <Glass padding={20} radius={20}>
+              {tab === 'visual' ? (
+                <VisualEditor
+                  draft={draft}
+                  patch={patch}
+                  onVisible={setVisible}
+                  baseDescriptor={baseDescriptor}
+                  sparsify={sparsify}
+                />
+              ) : (
+                <ScenarioWizard draft={draft} patch={patch} />
+              )}
+            </Glass>
+            {canWrite && source === 'admin' && hasOverride && (
+              <DangerZone
+                title="Delete this scenario"
+                description="It was written here, so there is no built-in version underneath to fall back to. Audit → Revert can bring it back."
+              >
+                <button
+                  onClick={() => void deleteScenario()}
+                  disabled={saving}
+                  style={{ ...btnSecondary, color: COLOR.danger, fontWeight: 800 }}
+                >
+                  Delete scenario
+                </button>
+              </DangerZone>
+            )}
+          </div>
 
           {/*
             Right: preview + test. Sticky so the card stays in view while the
@@ -869,11 +1257,14 @@ function Builder({
 function VisualEditor({
   draft,
   patch,
+  onVisible,
   baseDescriptor,
   sparsify,
 }: {
   draft: Partial<ScenarioOverrideRow>;
   patch: (p: Partial<ScenarioOverrideRow>) => void;
+  /** Guarded visibility setter — may ask before hiding the last scenario. */
+  onVisible: (next: boolean) => void;
   baseDescriptor: BaseDescriptor | null;
   /** Same sparsifier the save path uses — drives the "has overrides" dots. */
   sparsify: (d: Partial<ScenarioOverrideRow>) => Partial<ScenarioOverrideRow>;
@@ -919,7 +1310,14 @@ function VisualEditor({
         )}
         {step === 'knowledge' && <KnowledgeSection draft={draft} patch={patch} />}
         {step === 'ai' && <AiInstructionsStep draft={draft} patch={patch} />}
-        {step === 'card' && <CardStep draft={draft} patch={patch} baseDescriptor={baseDescriptor} />}
+        {step === 'card' && (
+          <CardStep
+            draft={draft}
+            patch={patch}
+            onVisible={onVisible}
+            baseDescriptor={baseDescriptor}
+          />
+        )}
       </div>
 
       <div
@@ -1370,10 +1768,12 @@ function AiInstructionsStep({
 function CardStep({
   draft,
   patch,
+  onVisible,
   baseDescriptor,
 }: {
   draft: Partial<ScenarioOverrideRow>;
   patch: (p: Partial<ScenarioOverrideRow>) => void;
+  onVisible: (next: boolean) => void;
   baseDescriptor: BaseDescriptor | null;
 }) {
   return (
@@ -1412,7 +1812,7 @@ function CardStep({
               <input
                 type="checkbox"
                 checked={draft.visible ?? false}
-                onChange={(e) => patch({ visible: e.target.checked })}
+                onChange={(e) => onVisible(e.target.checked)}
               />
               {draft.visible ? 'Shown in app' : 'Hidden from app'}
             </label>
@@ -1576,6 +1976,17 @@ function KnowledgeSection({
   const selected = draft.knowledge_slugs ?? [];
   const focus = draft.focus_area ?? null;
   const focusMeta = FOCUS_AREAS.find((f) => f.key === focus) ?? null;
+  /*
+    Slugs with no live document behind them. Retrieval silently skips these, so
+    without the chip the scenario looks correctly wired while pulling nothing.
+    Only computed once the list has actually loaded — mid-fetch every slug
+    would look missing.
+  */
+  const missing =
+    docs.loading || docs.error
+      ? []
+      : missingKnowledgeSlugs(selected, docs.data.map((d) => d.slug));
+  const resolved = selected.length - missing.length;
 
   function toggleDoc(slug: string) {
     const next = selected.includes(slug)
@@ -1634,9 +2045,61 @@ function KnowledgeSection({
       </Field>
 
       <Field
-        label={`Attached documents${selected.length ? ` (${selected.length})` : ''}`}
+        label={`Attached documents${
+          selected.length
+            ? ` (${resolved}${missing.length ? ` + ${missing.length} missing` : ''})`
+            : ''
+        }`}
         help="Pin the exact documents this scenario reads from. When any are attached, the focus-area filter is ignored."
       >
+        {missing.length > 0 && (
+          <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
+            <InlineAlert tone="warn" title="Attached to documents that no longer exist">
+              These were deleted from the knowledge library. The scenario retrieves
+              nothing from them — remove them, or restore the document from
+              Knowledge → Recently deleted.
+            </InlineAlert>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {missing.map((slug) => (
+                <span
+                  key={slug}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '5px 8px 5px 12px',
+                    borderRadius: 9999,
+                    background: COLOR.warnSoft,
+                    color: COLOR.ink,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    fontFamily: 'var(--pbt-mono)',
+                  }}
+                >
+                  missing document: {slug}
+                  <button
+                    aria-label={`Remove missing attachment ${slug}`}
+                    onClick={() => {
+                      const next = selected.filter((s) => s !== slug);
+                      patch({ knowledge_slugs: next.length ? next : null });
+                    }}
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      color: COLOR.inkMute,
+                      fontSize: 14,
+                      lineHeight: 1,
+                      padding: '0 2px',
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         {docs.loading ? (
           <LoadingShimmer height={80} />
         ) : docs.error ? (
@@ -1928,6 +2391,50 @@ const WIZARD_STEPS: WizardStep[] = [
   { field: 'info_modal_body', label: 'Info modal body', description: 'What guidance should the per-scenario info modal show?' },
 ];
 
+/**
+ * Wizard fields that are enums, not prose.
+ *
+ * The wizard used to render every field as a free-text box, so an AI
+ * suggestion of "Cost concerns" happily landed in `pushback_id` — where the
+ * server now rejects it, and where before it silently broke the customer
+ * prompt. Same pickers as the visual editor, same validators as the server.
+ */
+const WIZARD_ENUMS: Partial<
+  Record<WizardField, { options: string[]; isValid: (v: string) => boolean }>
+> = {
+  pushback_id: { options: PUSHBACK_IDS, isValid: (v) => isPushbackId(v) },
+  life_stage: { options: LIFE_STAGES, isValid: (v) => isLifeStage(v) },
+  persona_override: { options: PERSONAS, isValid: (v) => isPersona(v) },
+  suggested_driver: {
+    options: [...DRIVER_KEYS],
+    isValid: (v) => (DRIVER_KEYS as readonly string[]).includes(v),
+  },
+};
+
+/**
+ * Pull a valid enum value out of a free-form AI suggestion.
+ *
+ * Exact match first, then a case-insensitive one, then "the option this
+ * sentence names" — an answer like "Analyzer — wants the evidence" is a good
+ * suggestion wearing prose. Anything else is refused rather than written.
+ */
+export function matchEnumSuggestion(text: string, options: readonly string[]): string | null {
+  const raw = text.trim();
+  if (!raw) return null;
+  const exact = options.find((o) => o === raw);
+  if (exact) return exact;
+  const lower = raw.toLowerCase();
+  const ci = options.find((o) => o.toLowerCase() === lower);
+  if (ci) return ci;
+  // Whole-word only: a plain substring test maps "the customer is anxious" onto
+  // the `custom` pushback, which is exactly the silent mis-write this guards.
+  const named = options.filter((o) => {
+    const esc = o.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|[^a-z0-9])${esc}(?:[^a-z0-9]|$)`).test(lower);
+  });
+  return named.length === 1 ? named[0] : null;
+}
+
 function ScenarioWizard({
   draft,
   patch,
@@ -1939,9 +2446,12 @@ function ScenarioWizard({
   const [suggestions, setSuggestions] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  /** Suggestion text the enum picker refused to accept, shown as a hint. */
+  const [rejected, setRejected] = useState<string | null>(null);
 
   const step = WIZARD_STEPS[stepIdx];
   const fieldKey = step.field as keyof ScenarioOverrideRow;
+  const enumSpec = WIZARD_ENUMS[step.field];
   const currentValue =
     draft[fieldKey] === undefined || draft[fieldKey] === null
       ? ''
@@ -1962,12 +2472,27 @@ function ScenarioWizard({
   }
 
   function applySuggestion(text: string) {
+    setRejected(null);
     if (step.field === 'difficulty_override') {
       const n = Number(text.match(/\d/)?.[0] ?? '');
       if (n >= 1 && n <= 4) patch({ difficulty_override: n });
-    } else {
-      patch({ [fieldKey]: text } as Partial<ScenarioOverrideRow>);
+      else setRejected(text);
+      return;
     }
+    if (enumSpec) {
+      const match = matchEnumSuggestion(text, enumSpec.options);
+      // Second gate on the server's own validator, so the picker and the
+      // endpoint can never disagree about what this column accepts.
+      if (match && enumSpec.isValid(match)) {
+        patch({ [fieldKey]: match } as Partial<ScenarioOverrideRow>);
+      } else {
+        // Not a value this field can hold — keep it on screen as a hint
+        // instead of writing something the server will reject.
+        setRejected(text);
+      }
+      return;
+    }
+    patch({ [fieldKey]: text } as Partial<ScenarioOverrideRow>);
   }
 
   function setManually(v: string) {
@@ -1991,6 +2516,7 @@ function ScenarioWizard({
                 setStepIdx(i);
                 setSuggestions(null);
                 setAiError(null);
+                setRejected(null);
               }}
               style={{
                 width: 26,
@@ -2031,14 +2557,41 @@ function ScenarioWizard({
           {step.description}
         </div>
       </div>
-      <Field label="Current value">
-        <textarea
-          rows={3}
-          value={currentValue}
-          onChange={(e) => setManually(e.target.value)}
-          style={textareaStyle}
-        />
+      <Field
+        label="Current value"
+        help={
+          enumSpec
+            ? 'This field only accepts one of these values — the app looks it up, so free text would break the roleplay.'
+            : undefined
+        }
+      >
+        {step.field === 'suggested_driver' ? (
+          <DriverSelect
+            value={(draft.suggested_driver as DriverKey | null) ?? null}
+            onChange={(v) => patch({ suggested_driver: v })}
+            allowEmpty
+          />
+        ) : enumSpec ? (
+          <SelectInput
+            value={currentValue}
+            onChange={(v) => setManually(v)}
+            options={enumSpec.options}
+          />
+        ) : (
+          <textarea
+            rows={3}
+            value={currentValue}
+            onChange={(e) => setManually(e.target.value)}
+            style={textareaStyle}
+          />
+        )}
       </Field>
+      {rejected && (
+        <InlineAlert tone="warn" title="That suggestion isn’t a value this field accepts">
+          Kept as a note rather than written: “{rejected}”. Pick the closest option
+          above — or use it as wording for the pushback notes.
+        </InlineAlert>
+      )}
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={fetchSuggestions} disabled={loading} style={btnPrimary}>
           {loading ? 'Asking AI…' : 'Suggest 3 options'}
@@ -2194,6 +2747,21 @@ function CardPreview({
 // Iframe test panel — runs the consumer ChatScreen with the unsaved draft
 // ─────────────────────────────────────────────────────────────
 
+/** What the consumer said about the last run request. */
+type PreviewStatus =
+  | { kind: 'idle' }
+  | { kind: 'running'; mode: 'text' | 'voice' }
+  | { kind: 'ok'; mode: 'text' | 'voice' }
+  | { kind: 'failed'; reason: 'invalid' | 'unsupported' | 'unknown' };
+
+const PREVIEW_FAILURE_COPY: Record<'invalid' | 'unsupported' | 'unknown', string> = {
+  invalid:
+    'This scenario can’t run yet — check the required fields on step 1 (breed, life stage, pushback and driver).',
+  unsupported:
+    'The preview can’t run this scenario. It has nothing to build a customer from — save it once, or open it from the list rather than by id.',
+  unknown: 'The preview didn’t answer. Try “Restart test”.',
+};
+
 function TestIframe({
   scenarioId,
   draft,
@@ -2203,32 +2771,69 @@ function TestIframe({
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState<PreviewStatus>({ kind: 'idle' });
+  /** Bumped to remount the iframe — a hard restart of the preview session. */
+  const [reloadKey, setReloadKey] = useState(0);
+  // The mode of the in-flight request, read by the status listener without
+  // re-subscribing it on every state change.
+  const pendingModeRef = useRef<'text' | 'voice'>('text');
+
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
-      const data = e.data as { type?: string };
+      const data = e.data as { type?: string; ok?: boolean; reason?: string };
       if (
         data?.type === 'pbt:preview-runner-ready' ||
         data?.type === 'pbt:preview-ready'
       ) {
         setReady(true);
+        return;
+      }
+      if (data?.type !== 'pbt:preview-status') return;
+      // Every run is answered exactly once — silence used to leave the panel
+      // looking like it was still starting up, forever.
+      if (data.ok) {
+        setStatus({ kind: 'ok', mode: pendingModeRef.current });
+      } else {
+        const reason =
+          data.reason === 'invalid' || data.reason === 'unsupported'
+            ? data.reason
+            : 'unknown';
+        setStatus({ kind: 'failed', reason });
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  function start(mode: 'chat' | 'voice') {
-    if (!iframeRef.current?.contentWindow) return;
-    iframeRef.current.contentWindow.postMessage(
+  function start(mode: 'text' | 'voice') {
+    const frame = iframeRef.current?.contentWindow;
+    if (!frame) return;
+    pendingModeRef.current = mode;
+    setStatus({ kind: 'running', mode });
+    const row = { ...draft, scenario_id: scenarioId } as ScenarioOverrideRow;
+    // Push the UNSAVED draft into the preview's own override layer first, so
+    // anything the runner resolves by id (and the AI prompt notes on it) match
+    // what is on screen rather than what was last saved.
+    frame.postMessage(
+      { type: 'pbt:preview-flags', scenarioOverrides: [row] },
+      window.location.origin,
+    );
+    frame.postMessage(
       {
         type: 'pbt:preview-run-scenario',
         scenarioId,
-        draft: { ...draft, scenario_id: scenarioId },
+        draft: row,
         mode,
       },
       window.location.origin,
     );
+  }
+
+  function restart() {
+    setReady(false);
+    setStatus({ kind: 'idle' });
+    setReloadKey((k) => k + 1);
   }
 
   return (
@@ -2241,14 +2846,33 @@ function TestIframe({
           display: 'flex',
           alignItems: 'center',
           gap: 8,
+          flexWrap: 'wrap',
         }}
       >
         <Eyebrow>Test in app</Eyebrow>
-        <StatusPill tone={ready ? 'success' : 'neutral'}>
-          {ready ? 'iframe ready' : 'loading…'}
+        <StatusPill
+          tone={
+            status.kind === 'failed'
+              ? 'danger'
+              : status.kind === 'ok'
+                ? 'success'
+                : ready
+                  ? 'info'
+                  : 'neutral'
+          }
+        >
+          {status.kind === 'failed'
+            ? 'can’t run'
+            : status.kind === 'ok'
+              ? `running · ${status.mode}`
+              : status.kind === 'running'
+                ? 'starting…'
+                : ready
+                  ? 'ready'
+                  : 'loading…'}
         </StatusPill>
         <button
-          onClick={() => start('chat')}
+          onClick={() => start('text')}
           disabled={!ready}
           style={{ ...btnPrimary, marginLeft: 'auto' }}
         >
@@ -2257,8 +2881,17 @@ function TestIframe({
         <button onClick={() => start('voice')} disabled={!ready} style={btnSecondary}>
           Start voice
         </button>
+        <button onClick={restart} style={btnSecondary}>
+          Restart test
+        </button>
       </div>
+      {status.kind === 'failed' && (
+        <div style={{ padding: '10px 14px' }}>
+          <InlineAlert tone="error">{PREVIEW_FAILURE_COPY[status.reason]}</InlineAlert>
+        </div>
+      )}
       <iframe
+        key={reloadKey}
         ref={iframeRef}
         src="/?pbt_preview=1"
         title="Scenario test"

@@ -267,6 +267,55 @@ function AcTGuideCard({
   );
 }
 
+/**
+ * Hero card when the admin has hidden every library scenario.
+ *
+ * The previous behaviour fell back to `LIBRARY_SCENARIOS[0]` so the card
+ * stayed renderable — which un-hid a scenario an admin had deliberately
+ * turned off, and offered a Start button for it. An honest empty state is the
+ * only correct answer: no title, no counter, and deliberately NO start CTA.
+ */
+function EmptyScenarioHero({
+  driverColors,
+  dark,
+}: {
+  driverColors: DriverColors;
+  dark: boolean;
+}) {
+  const t = useT();
+  return (
+    <Glass
+      radius={RADII.xl}
+      padding={22}
+      tint={dark ? 0.38 : 0.08}
+      blur={dark ? 36 : 22}
+      style={{ minHeight: 160, marginBottom: 14 }}
+    >
+      <div className="flex items-start gap-3">
+        <div style={{ ...iconBadgeStyle(driverColors, dark), flexShrink: 0 }}>
+          <Icon.info />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <h2
+            style={{
+              margin: '0 0 6px',
+              fontSize: 20,
+              fontWeight: 400,
+              letterSpacing: '-0.02em',
+              color: 'var(--pbt-text)',
+            }}
+          >
+            {t('home.pick.empty.title')}
+          </h2>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--pbt-text-muted)' }}>
+            {t('home.pick.empty.body')}
+          </p>
+        </div>
+      </div>
+    </Glass>
+  );
+}
+
 const DASHBOARD_WELCOMED_KEY: StorageKeyDef<boolean> = {
   key: 'dashboard_welcomed',
   fallback: false,
@@ -341,8 +390,9 @@ export function HomeScreen() {
   });
   const dailyBase = pickBaseRef.current?.base ?? 0;
   const safeIndex = total === 0 ? 0 : (((dailyBase + pickIndex) % total) + total) % total;
-  // If an admin hides every scenario, fall back to the canonical first entry
-  // so the hero card stays renderable. The Start button still routes correctly.
+  // `total === 0` renders <EmptyScenarioHero /> instead of this card, so the
+  // LIBRARY_SCENARIOS[0] fallback below is only a type guard — it is never
+  // shown, and must not be: it would resurrect a scenario the admin hid.
   const resolvedSlot = resolvedLibrary[safeIndex];
   const todaysPick = resolvedSlot?.scenario ?? LIBRARY_SCENARIOS[0];
   const todaysOverride = resolvedSlot?.override ?? null;
@@ -665,7 +715,11 @@ export function HomeScreen() {
               <AcTGuideCard driverColors={driverColors} dark={dark} onClick={() => go('actGuide')} />
             )}
 
-            {/* Hero scenario card */}
+            {/* Hero scenario card — or an honest empty state when the admin
+                has hidden every scenario (never a hidden one un-hidden). */}
+            {total === 0 ? (
+              <EmptyScenarioHero driverColors={driverColors} dark={dark} />
+            ) : (
             <Glass
               radius={RADII.xl}
               padding={22}
@@ -927,6 +981,7 @@ export function HomeScreen() {
               </div>
               </div>
             </Glass>
+            )}
           </div>
 
           {/* ── Right column: quick actions + library + ACT guide + ECHO profile ── */}

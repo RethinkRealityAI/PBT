@@ -1,15 +1,23 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { retrieveContext, scenarioRetrievalFilters } from '../ragClient';
+import {
+  __clearRetrievalCache,
+  retrieveContext,
+  scenarioRetrievalCacheKey,
+  scenarioRetrievalFilters,
+} from '../ragClient';
+import { LIBRARY_SCENARIOS, type Scenario } from '../../data/scenarios';
 
 const realFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = realFetch;
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  __clearRetrievalCache();
 });
 
 describe('retrieveContext (fail-open)', () => {
@@ -48,12 +56,20 @@ describe('retrieveContext (fail-open)', () => {
 });
 
 describe('retrieveContext (scenario filters)', () => {
+  // Non-empty on purpose: an empty result is deliberately NOT cached (see the
+  // "does not cache an empty result" case below), so a cache-key test must
+  // return something cacheable or it would only ever measure that rule.
   function mockOk() {
     // Fresh Response per call — a Response body can only be read once.
     const fetchMock = vi
       .fn()
       .mockImplementation(async () =>
-        new Response(JSON.stringify({ results: [] }), { status: 200 }),
+        new Response(
+          JSON.stringify({
+            results: [{ content: 'c', citation: 'cite', tags: null, similarity: 0.5 }],
+          }),
+          { status: 200 },
+        ),
       );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     return fetchMock;
@@ -107,6 +123,72 @@ describe('retrieveContext (scenario filters)', () => {
     await retrieveContext('q', { cacheKey: 'f-legacy', filters: undefined });
     await retrieveContext('q', { cacheKey: 'f-legacy', filters: {} });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('retrieveContext (cache lifetime)', () => {
+  function mockOk(results = [{ content: 'c', citation: 'x', tags: null, similarity: 0.5 }]) {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () =>
+        new Response(JSON.stringify({ results }), { status: 200 }),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it('does not cache an empty result', async () => {
+    // An empty retrieval is indistinguishable from "the corpus wasn't ready".
+    // Pinning it would leave the whole session ungrounded over one bad
+    // round-trip, so the next call must try again.
+    const fetchMock = mockOk([]);
+    await retrieveContext('q', { cacheKey: 'empty-1' });
+    await retrieveContext('q', { cacheKey: 'empty-1' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('expires an entry after the TTL', async () => {
+    vi.useFakeTimers();
+    const fetchMock = mockOk();
+    await retrieveContext('q', { cacheKey: 'ttl-1' });
+    vi.advanceTimersByTime(4 * 60_000);
+    await retrieveContext('q', { cacheKey: 'ttl-1' });
+    expect(fetchMock).toHaveBeenCalledTimes(1); // still fresh
+
+    vi.advanceTimersByTime(2 * 60_000); // now past 5 minutes
+    await retrieveContext('q', { cacheKey: 'ttl-1' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keys on k, so raising the retrieval budget is not served the short list', async () => {
+    const fetchMock = mockOk();
+    await retrieveContext('q', { cacheKey: 'k-key', k: 4 });
+    await retrieveContext('q', { cacheKey: 'k-key', k: 4 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await retrieveContext('q', { cacheKey: 'k-key', k: 8 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string).k).toBe(8);
+  });
+});
+
+describe('scenarioRetrievalCacheKey', () => {
+  it('uses the stable override id when the scenario has one', () => {
+    expect(
+      scenarioRetrievalCacheKey({ ...LIBRARY_SCENARIOS[0], _overrideId: 'seed:0' }),
+    ).toBe('seed:0');
+  });
+
+  it('distinguishes custom scenarios that share a pushback + breed', () => {
+    // Voice mode used to key on `pushback.id + breed`, so every custom "cost
+    // pushback / Lab" build collided on one cache entry and inherited another
+    // scenario's retrieved knowledge.
+    const base = LIBRARY_SCENARIOS[1];
+    const a: Scenario = { ...base, _overrideId: undefined, pushbackNotes: 'Owner is on a fixed income.' };
+    const b: Scenario = { ...base, _overrideId: undefined, pushbackNotes: 'Owner compares to a raw supplier.' };
+    expect(scenarioRetrievalCacheKey(a)).not.toBe(scenarioRetrievalCacheKey(b));
+    // …and text mode derives the exact same key for the same scenario.
+    expect(scenarioRetrievalCacheKey(a)).toBe(scenarioRetrievalCacheKey({ ...a }));
   });
 });
 

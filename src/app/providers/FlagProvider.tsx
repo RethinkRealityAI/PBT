@@ -36,6 +36,7 @@ import {
   type ScenarioOverride,
 } from '../../services/flagsClient';
 import type { SimulationConfig } from '../../data/knowledge/simulationConfig';
+import { isPreviewMode } from '../../lib/previewMode';
 
 interface FlagContextValue {
   snapshot: FlagSnapshot | null;
@@ -51,13 +52,6 @@ interface FlagContextValue {
 }
 
 const FlagContext = createContext<FlagContextValue | null>(null);
-
-const PREVIEW_PARAM = 'pbt_preview';
-
-function isPreviewMode(): boolean {
-  if (typeof window === 'undefined') return false;
-  return new URLSearchParams(window.location.search).has(PREVIEW_PARAM);
-}
 
 interface PreviewMessage {
   type: 'pbt:preview-flags';
@@ -75,6 +69,8 @@ export function FlagProvider({ children }: { children: ReactNode }) {
   const [previewConfig, setPreviewConfig] = useState<SimulationConfig | null>(null);
   const [ready, setReady] = useState(false);
   const inFlightRef = useRef<Promise<void> | null>(null);
+  /** When the last fetch settled — drives the on-focus staleness check. */
+  const lastFetchRef = useRef(0);
 
   const audience = useMemo(
     () => ({
@@ -94,6 +90,7 @@ export function FlagProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         console.warn('[flags] fetch failed; falling back to defaults', err);
       } finally {
+        lastFetchRef.current = Date.now();
         setReady(true);
         inFlightRef.current = null;
       }
@@ -112,6 +109,21 @@ export function FlagProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const id = window.setInterval(() => void refresh(), 5 * 60_000);
     return () => window.clearInterval(id);
+  }, [refresh]);
+
+  // Re-check when the tab comes back to the foreground. Background tabs get
+  // their timers throttled (and are frozen outright on mobile), so the 5-minute
+  // interval alone leaves a phone that was pocketed mid-session showing flags
+  // and scenario overrides from whenever it was last awake. The 60s floor keeps
+  // ordinary tab-switching from hammering the endpoint.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastFetchRef.current < 60_000) return;
+      void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [refresh]);
 
   // Preview-mode postMessage listener.

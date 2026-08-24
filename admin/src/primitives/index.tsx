@@ -3,10 +3,29 @@
  * Adapted from the design-handoff JSX prototypes — typed, themed against
  * the main app's tokens, and trimmed of unused variants.
  */
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { COLOR, DRIVERS, RADIUS, type DriverKey } from '../lib/tokens';
 import { initialsOf } from '../lib/format';
 import { Glass } from './Glass';
+import {
+  focusableWithin,
+  isTopModal,
+  lockBodyScroll,
+  nextModalId,
+  pushModal,
+  removeModal,
+  trapTab,
+  unlockBodyScroll,
+} from './modalStack';
 
 export { Glass };
 
@@ -397,9 +416,16 @@ export function SectionTitle({
 export function EmptyState({
   title,
   subtitle,
+  action,
 }: {
   title: string;
   subtitle?: string;
+  /**
+   * Primary way out of the empty state — "Create the first scenario",
+   * "Clear filters". An empty screen that only says "nothing here" makes the
+   * reader guess whether it's a filter or a genuinely empty table.
+   */
+  action?: ReactNode;
 }) {
   return (
     <div
@@ -413,6 +439,18 @@ export function EmptyState({
         {title}
       </div>
       {subtitle && <div style={{ fontSize: 13, marginTop: 4 }}>{subtitle}</div>}
+      {action && (
+        <div
+          style={{
+            marginTop: 16,
+            display: 'flex',
+            justifyContent: 'center',
+            gap: 8,
+          }}
+        >
+          {action}
+        </div>
+      )}
     </div>
   );
 }
@@ -434,58 +472,169 @@ export function LoadingShimmer({ height = 120 }: { height?: number }) {
   );
 }
 
-// One-time keyframes injection for shimmer.
+/**
+ * One-time injected stylesheet.
+ *
+ * The admin app styles everything inline, which cannot express the states that
+ * make a control feel like a control — `:hover`, `:focus-visible`, `:disabled`
+ * — nor `prefers-reduced-motion`. This sheet is the escape hatch: a small,
+ * fixed set of classes that inline styles opt into (`className="pbt-btn"`),
+ * not a parallel styling system. Keep it short.
+ */
+export const ADMIN_STATE_STYLESHEET = `
+  @keyframes pbt-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @keyframes pbt-modal-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes pbt-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes pbt-toast-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+  .pbt-btn {
+    transition: transform 0.14s ease, filter 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+  }
+  .pbt-btn:hover:not(:disabled):not([aria-disabled='true']) {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+  }
+  .pbt-btn:active:not(:disabled):not([aria-disabled='true']) {
+    transform: translateY(0);
+    filter: brightness(0.96);
+  }
+  .pbt-btn:focus-visible {
+    outline: 2px solid ${COLOR.brand};
+    outline-offset: 2px;
+  }
+  .pbt-btn:disabled, .pbt-btn[aria-disabled='true'] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: none;
+    transform: none;
+  }
+
+  .pbt-focusable:focus-visible {
+    outline: 2px solid ${COLOR.brand};
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  .pbt-row-hover { transition: background 0.14s ease; }
+  .pbt-row-hover:hover { background: rgba(60,20,15,0.045); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pbt-btn,
+    .pbt-row-hover,
+    .pbt-toast,
+    .pbt-modal-panel,
+    .pbt-modal-scrim {
+      transition: none !important;
+      animation: none !important;
+    }
+    .pbt-btn:hover:not(:disabled),
+    .pbt-btn:active:not(:disabled) {
+      transform: none;
+    }
+  }
+`;
+
 if (typeof document !== 'undefined' && !document.getElementById('pbt-admin-kf')) {
   const s = document.createElement('style');
   s.id = 'pbt-admin-kf';
-  s.textContent = `
-    @keyframes pbt-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-    @keyframes pbt-modal-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-    @keyframes pbt-fade-in { from { opacity: 0; } to { opacity: 1; } }
-  `;
+  s.textContent = ADMIN_STATE_STYLESHEET;
   document.head.appendChild(s);
 }
 
 // ── Modal primitive ──────────────────────────────────────────
 //
-// Centered glass card on a frosted scrim. Clicking the scrim closes;
-// pressing Escape closes; body scroll is locked while open. Same visual
-// language as the consumer-app modals so the dashboard feels of a piece.
+// Centered glass card on a frosted scrim, following the APG dialog pattern:
+// focus moves into the panel on open, Tab is trapped inside it, and the
+// element that opened the dialog gets focus back on close.
+//
+// Escape and scrim clicks are routed through a module-level stack (see
+// ./modalStack.ts) so only the TOPMOST modal reacts. Before that, an InfoTip
+// opened from inside an editor closed both on one Escape press and threw away
+// the edits underneath.
+
+/**
+ * Close guard published by the enclosing Modal. `ModalCloseButton` consults it
+ * so an X press honours the same dirty-check as Escape and the scrim, without
+ * every screen having to wire the guard into two places.
+ */
+const ModalGuardContext = createContext<(() => boolean | void) | null>(null);
+
 export function Modal({
   open,
   onClose,
   children,
   width = 720,
   ariaLabel,
+  onRequestClose,
 }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   width?: number;
   ariaLabel?: string;
+  /**
+   * Optional close guard. Called for every user-initiated close attempt
+   * (Escape, scrim, and `ModalCloseButton`). Return `false` to block the
+   * close — e.g. to keep an unsaved editor open while you ask about it.
+   * Anything else (including `undefined`) allows it.
+   */
+  onRequestClose?: () => boolean | void;
 }) {
-  // Lock body scroll + Esc-to-close while the modal is mounted.
+  const idRef = useRef<string>('');
+  if (idRef.current === '') idRef.current = nextModalId();
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  // Held in a ref so the mount effect below can stay keyed on `open` alone.
+  // Re-running it on every parent render would re-push the stack entry and
+  // yank focus back to the top of the panel mid-typing.
+  const attemptCloseRef = useRef<() => void>(() => {});
+  attemptCloseRef.current = () => {
+    if (onRequestClose && onRequestClose() === false) return;
+    onClose();
+  };
+
   useEffect(() => {
     if (!open) return;
+    const id = idRef.current;
+    const opener = document.activeElement as HTMLElement | null;
+
+    pushModal(id);
+    lockBodyScroll();
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (!isTopModal(id)) return;
+      if (e.key === 'Escape') {
+        // Stop the press from also reaching a parent modal's handler or a
+        // screen-level shortcut listener.
+        e.stopPropagation();
+        attemptCloseRef.current();
+      } else if (e.key === 'Tab') {
+        trapTab(e, panelRef.current);
+      }
     };
-    document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // Capture phase: the dialog owns these keys before anything underneath.
+    document.addEventListener('keydown', onKey, true);
+
+    // Focus the first interactive control, falling back to the panel itself.
+    const panel = panelRef.current;
+    if (panel) (focusableWithin(panel)[0] ?? panel).focus();
+
     return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      document.removeEventListener('keydown', onKey, true);
+      removeModal(id);
+      unlockBodyScroll();
+      if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
+        opener.focus();
+      }
     };
-  }, [open, onClose]);
+  }, [open]);
+
   if (!open) return null;
   return (
     <div
-      role="dialog"
-      aria-modal
-      aria-label={ariaLabel}
+      className="pbt-modal-scrim"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) attemptCloseRef.current();
       }}
       style={{
         position: 'fixed',
@@ -502,6 +651,12 @@ export function Modal({
       }}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal
+        aria-label={ariaLabel}
+        tabIndex={-1}
+        className="pbt-modal-panel"
         style={{
           position: 'relative',
           width: '100%',
@@ -509,6 +664,7 @@ export function Modal({
           maxHeight: '88vh',
           borderRadius: 24,
           overflow: 'hidden',
+          outline: 'none',
           background:
             'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.82))',
           backdropFilter: 'blur(40px) saturate(200%)',
@@ -525,7 +681,9 @@ export function Modal({
           animation: 'pbt-modal-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)',
         }}
       >
-        {children}
+        <ModalGuardContext.Provider value={onRequestClose ?? null}>
+          {children}
+        </ModalGuardContext.Provider>
       </div>
     </div>
   );
@@ -682,9 +840,17 @@ export function InfoTip({ title, children }: { title: string; children: ReactNod
 }
 
 export function ModalCloseButton({ onClose }: { onClose: () => void }) {
+  // When rendered inside a Modal that declared `onRequestClose`, the X honours
+  // the same guard as Escape and the scrim.
+  const guard = useContext(ModalGuardContext);
   return (
     <button
-      onClick={onClose}
+      type="button"
+      className="pbt-btn"
+      onClick={() => {
+        if (guard && guard() === false) return;
+        onClose();
+      }}
       aria-label="Close"
       style={{
         width: 36,

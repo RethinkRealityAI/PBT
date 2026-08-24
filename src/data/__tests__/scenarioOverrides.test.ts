@@ -6,7 +6,7 @@ import {
   seedScenarioId,
 } from '../scenarioOverrides';
 import type { Scenario } from '../scenarios';
-import { LIBRARY_SCENARIOS } from '../scenarios';
+import { LIBRARY_SCENARIOS, PUSHBACK_CATEGORIES } from '../scenarios';
 import type { ScenarioOverride } from '../../services/flagsClient';
 
 const base: Scenario = LIBRARY_SCENARIOS[0];
@@ -67,6 +67,67 @@ describe('scenarioOverrides', () => {
     expect(merged.persona).toBe('Anxious');
     expect(merged.openingLine).toBe('Replacement opener.');
     expect(merged._overrideId).toBe('seed:0');
+  });
+
+  it('merges the scenario BODY fields, not just the prose ones', () => {
+    // Regression: the admin builder lets you retype a seed scenario's breed,
+    // life stage, pushback category, driver and weight. Those columns were
+    // saved and then dropped here, so the consumer kept playing the shipped
+    // seed while the dashboard showed the edit as live.
+    const merged = applyScenarioOverride(
+      base,
+      {
+        ...NULL_OVERRIDE,
+        breed: 'Mini Schnauzer',
+        life_stage: 'Senior (7+)',
+        pushback_id: 'rx-diet',
+        suggested_driver: 'Harmonizer',
+        weight_kg: 8.4,
+      },
+      'seed:0',
+    );
+    expect(merged.breed).toBe('Mini Schnauzer');
+    expect(merged.age).toBe('Senior (7+)');
+    expect(merged.pushback.id).toBe('rx-diet');
+    // Resolved through PUSHBACK_CATEGORIES — the whole category, not just the id.
+    expect(merged.pushback.title).toBe(
+      PUSHBACK_CATEGORIES.find((p) => p.id === 'rx-diet')!.title,
+    );
+    expect(merged.suggestedDriver).toBe('Harmonizer');
+    expect(merged.weightKg).toBe('8.4');
+    expect(merged._overrideId).toBe('seed:0');
+  });
+
+  it('keeps every base body field when the override columns are null', () => {
+    const merged = applyScenarioOverride(base, { ...NULL_OVERRIDE }, 'seed:0');
+    expect(merged.breed).toBe(base.breed);
+    expect(merged.age).toBe(base.age);
+    expect(merged.pushback).toBe(base.pushback);
+    expect(merged.suggestedDriver).toBe(base.suggestedDriver);
+    expect(merged.weightKg).toBe(base.weightKg);
+  });
+
+  it('falls back to the base per-field on unresolvable values, never dropping the scenario', () => {
+    const merged = applyScenarioOverride(
+      base,
+      {
+        ...NULL_OVERRIDE,
+        breed: '   ',
+        life_stage: 'Geriatric (99+)',
+        pushback_id: 'no-such-pushback',
+        suggested_driver: 'Imaginer', // deleted 6-type Echo value
+        weight_kg: -3,
+        // …while a VALID field on the same row still applies.
+        persona_override: 'Anxious',
+      },
+      'seed:0',
+    );
+    expect(merged.breed).toBe(base.breed);
+    expect(merged.age).toBe(base.age);
+    expect(merged.pushback).toBe(base.pushback);
+    expect(merged.suggestedDriver).toBe(base.suggestedDriver);
+    expect(merged.weightKg).toBe(base.weightKg);
+    expect(merged.persona).toBe('Anxious');
   });
 
   it('rejects invalid persona / difficulty values and keeps base', () => {
