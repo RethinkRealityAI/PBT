@@ -47,6 +47,7 @@ export const PERMISSIONS = [
   // Community
   'feedback.read',
   'reports.read',
+  'reports.write',
   'analyzer.read',
 
   // Communications
@@ -193,6 +194,12 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       { key: 'feedback.read', label: 'Session feedback', description: 'Post-session ratings and comments.' },
       { key: 'reports.read', label: 'Platform reports', description: 'Bug reports and suggestions from users.' },
+      {
+        key: 'reports.write',
+        label: 'Triage platform reports',
+        description: 'Move reports through open → triaged → resolved / dismissed.',
+        requires: ['reports.read'],
+      },
       { key: 'analyzer.read', label: 'Pet Analyzer data', description: 'Pet Vision analyses and saved pets.' },
     ],
   },
@@ -353,6 +360,7 @@ export const SYSTEM_ROLES: RoleDefinition[] = [
       'sessions.read',
       'feedback.read',
       'reports.read',
+      'reports.write',
       'analyzer.read',
       'preview.read',
     ],

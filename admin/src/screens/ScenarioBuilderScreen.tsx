@@ -58,6 +58,11 @@ import {
   textareaStyle,
 } from './FlagsScreen';
 import { suggestField, type WizardField } from '../lib/scenarioAi';
+import {
+  SCENARIO_TEMPLATES,
+  TEMPLATE_CATEGORIES,
+  type ScenarioTemplate,
+} from '../data/scenarioTemplates';
 
 const PROMPT_MAX = 1500;
 
@@ -479,6 +484,28 @@ export function ScenarioBuilderScreen({
     setSeedDraft(draft);
   }
 
+  /**
+   * Seed a draft from a library template (client-side, unsaved — exactly the
+   * `startNew` path with the fields pre-filled). The draft starts hidden, so
+   * a manager reviews and refines it in the builder, then publishes by
+   * flipping Visible — templates never go live on their own.
+   */
+  function startFromTemplate(tpl: ScenarioTemplate) {
+    const draft: Partial<ScenarioOverrideRow> = {
+      ...emptyDraftForNewAdmin(),
+      ...tpl.fields,
+      scenario_id: `admin:${crypto.randomUUID()}`,
+      visible: false,
+      sort_order: null,
+    };
+    setSeedDraft(draft);
+    setActiveId(draft.scenario_id ?? null);
+    setCopiedFrom(null);
+    setTemplatePickerOpen(false);
+  }
+
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+
   // Used for "New scenario" — the row doesn't exist in the snapshot yet,
   // so the builder needs an in-memory seed to start from.
   const [seedDraft, setSeedDraft] = useState<Partial<ScenarioOverrideRow> | null>(null);
@@ -664,11 +691,23 @@ export function ScenarioBuilderScreen({
               subtitle={`${list.filter((l) => l.override).length} of ${list.length} have overrides`}
             />
             {canWrite && (
-              <button onClick={startNew} style={btnPrimary}>
-                + New scenario
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setTemplatePickerOpen((v) => !v)}
+                  style={btnSecondary}
+                  aria-expanded={templatePickerOpen}
+                >
+                  {templatePickerOpen ? 'Hide templates' : 'New from template'}
+                </button>
+                <button onClick={startNew} style={btnPrimary}>
+                  + New scenario
+                </button>
+              </div>
             )}
           </div>
+          {canWrite && templatePickerOpen && (
+            <TemplatePicker onPick={startFromTemplate} />
+          )}
           {overrides.loading || userScenarios.loading ? (
             <LoadingShimmer height={180} />
           ) : list.length === 0 ? (
@@ -695,6 +734,80 @@ export function ScenarioBuilderScreen({
         </Glass>
       </ScreenShell>
     </>
+  );
+}
+
+/**
+ * Curated scenario library — the client's pushback bank (general + GI), each
+ * fully authored as a ready-to-refine draft. Grouped by category so managers
+ * can stage the next platform phase (GI) without touching what's live.
+ */
+function TemplatePicker({ onPick }: { onPick: (tpl: ScenarioTemplate) => void }) {
+  return (
+    <div style={{ marginTop: 14, display: 'grid', gap: 14 }}>
+      {TEMPLATE_CATEGORIES.map((cat) => {
+        const templates = SCENARIO_TEMPLATES.filter((t) => t.category === cat.key);
+        if (templates.length === 0) return null;
+        return (
+          <div key={cat.key}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: COLOR.ink }}>
+              {cat.label}
+              <span style={{ fontWeight: 500, color: COLOR.inkMute, marginLeft: 8, fontSize: 12 }}>
+                {templates.length} templates
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: COLOR.inkSoft, marginTop: 2 }}>{cat.description}</div>
+            <div
+              style={{
+                marginTop: 8,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                gap: 8,
+              }}
+            >
+              {templates.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  onClick={() => onPick(tpl)}
+                  style={{
+                    textAlign: 'left',
+                    padding: '12px 14px',
+                    borderRadius: 14,
+                    border: '0.5px solid rgba(60,20,15,0.10)',
+                    background: 'rgba(255,255,255,0.6)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>{tpl.name}</div>
+                  <div style={{ fontSize: 11.5, color: COLOR.inkSoft, lineHeight: 1.45 }}>
+                    {tpl.summary}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                    {tpl.fields.suggested_driver && (
+                      <StatusPill tone="info" dot={false}>
+                        {tpl.fields.suggested_driver}
+                      </StatusPill>
+                    )}
+                    {tpl.fields.difficulty_override != null && (
+                      <StatusPill tone="neutral" dot={false}>
+                        Level {tpl.fields.difficulty_override}
+                      </StatusPill>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 11.5, color: COLOR.inkMute }}>
+        Picking a template opens it as an unsaved draft — review, refine with the AI wizard, save,
+        then flip <strong>Visible</strong> when you're ready to push it live.
+      </div>
+    </div>
   );
 }
 

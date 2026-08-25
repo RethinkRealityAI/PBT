@@ -1,6 +1,6 @@
 # PBT — Pushback Training
 
-AI-driven training simulator for veterinary teams. Practice the awkward client conversations — cost objections, breeder advice, raw-food evangelism, prescription-diet skepticism — against an AI roleplay customer whose personality and difficulty you can dial in. Score yourself across seven dimensions; track improvement over time.
+AI-driven training simulator for veterinary teams. Practice the awkward client conversations — cost objections, breeder advice, raw-food evangelism, prescription-diet skepticism — against an AI roleplay customer whose personality and difficulty you can dial in. Score yourself on the five ACT dimensions (Acknowledge · Clarify · Transform · Empathy · Rapport); track improvement over time.
 
 Built for vets, vet techs, and front-of-house staff. Personality system based on the ECHO 4-driver model (Activator · Energizer · Analyzer · Harmonizer). Clinical references grounded in WSAVA and 2006 NRC. AI roleplay + scoring powered by Google Gemini.
 
@@ -46,7 +46,7 @@ src/
 │   ├── chat/                   # useTextChat hook
 │   ├── quiz/                   # useQuiz hook with 15-question + tie-breaker logic
 │   └── pet-analyzer/           # usePetAnalyzer hook (BCS / MCS / kcal verdict)
-├── services/                   # geminiService (text chat + 7-dim scoring) + types
+├── services/                   # geminiService (text chat + 5-dim ACT scoring) + types
 ├── data/
 │   ├── echoDrivers.ts          # 4 ECHO drivers with traits + growth-edge content
 │   ├── quizQuestions.ts        # 15 verbatim questions + tie-breaker
@@ -86,7 +86,7 @@ The user's primary driver becomes the canvas tint via CSS variables written by `
 Two functions in `src/services/geminiService.ts` consume `process.env.GEMINI_API_KEY`:
 
 - `generateRoleplayMessage(scenario, history, userMessage?)` — customer voice. `gemini-3.1-flash-preview`. System prompt composed by `buildCustomerSystemPrompt()` from the knowledge base.
-- `evaluateConversation(scenario, transcript)` — 7-dim scoring. Same model, JSON mode. System prompt composed by `buildScoringSystemPrompt()`.
+- `evaluateConversation(scenario, transcript)` — 5-dim ACT scoring. Same model, JSON mode. System prompt composed by `buildScoringSystemPrompt()`.
 
 Voice mode uses `gemini-3.1-flash-live-preview` via `ai.live.connect()`. The voice tab in ChatScreen is currently a stub; full extraction of the live-session pipeline (mic capture, tool calls, tension orb) is a follow-up task.
 
@@ -135,4 +135,4 @@ Netlify. `netlify.toml` build command is `npm run build`. Set `GEMINI_API_KEY`, 
 
 ## Status
 
-v1 — feature-complete except for full voice mode (text chat + 7-dim scoring + all 11 screens shipped). See `docs/superpowers/specs/2026-05-04-pbt-pushback-training-design.md` for the full spec.
+v1 — feature-complete except for full voice mode (text chat + ACT scoring + all 11 screens shipped). See `docs/superpowers/specs/2026-05-04-pbt-pushback-training-design.md` for the full spec.

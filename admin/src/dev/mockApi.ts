@@ -188,6 +188,154 @@ function logRow(template: string, to: string, subject: string, status: string, a
   };
 }
 
+// ── Analytics / community fixtures ──────────────────────────────────
+// Representative rather than exhaustive: enough rows that the Analytics
+// heatmap, Feature usage, Reports triage, and Analyzer vision columns all
+// render with real-looking data in review screenshots.
+
+const SCREEN_DWELL: [string, number, number][] = [
+  // [screen, total minutes, visits]
+  ['chat', 262, 41],
+  ['home', 118, 96],
+  ['stats', 74, 33],
+  ['analyzer', 51, 18],
+  ['history', 32, 21],
+  ['resources', 19, 9],
+  ['settings', 7, 11],
+];
+
+const NAV_EVENTS = (() => {
+  const rows: Record<string, unknown>[] = [];
+  let id = 1;
+  const anonFor = (i: number) => `anon-${(i % 9) + 1}`;
+  for (const [screen, totalMin, visits] of SCREEN_DWELL) {
+    for (let i = 0; i < visits; i++) {
+      rows.push({
+        id: id++,
+        user_id: null,
+        anon_session_id: anonFor(i),
+        event_type: 'dwell',
+        screen,
+        target: null,
+        meta: null,
+        dwell_ms: Math.round((totalMin * 60_000) / visits),
+        created_at: ago(((i * 37) % (27 * 24)) * HOUR),
+      });
+      rows.push({
+        id: id++,
+        user_id: null,
+        anon_session_id: anonFor(i),
+        event_type: 'screen_view',
+        screen,
+        target: null,
+        meta: null,
+        dwell_ms: null,
+        created_at: ago(((i * 41) % (27 * 24)) * HOUR),
+      });
+    }
+  }
+  const interactions: [string, string, string, number][] = [
+    // [event_type, screen, target, count]
+    ['cta_click', 'home', 'start_todays_pick', 64],
+    ['tab_change', 'home', 'history', 38],
+    ['tab_change', 'stats', 'home', 29],
+    ['card_click', 'create', 'library_scenario', 22],
+    ['cta_click', 'create', 'start_custom_scenario', 17],
+    ['custom', 'chat', 'session_open', 87],
+    ['custom', 'stats', 'session_feedback', 31],
+    ['custom', 'analyzer', 'vision_analyze', 24],
+    ['custom', 'analyzer', 'analyzer_save', 19],
+    ['custom', 'chat', 'coach_hint_request', 44],
+    ['custom', 'home', 'platform_report', 6],
+  ];
+  for (const [event_type, screen, target, count] of interactions) {
+    for (let i = 0; i < count; i++) {
+      rows.push({
+        id: id++,
+        user_id: null,
+        anon_session_id: anonFor(i),
+        event_type,
+        screen,
+        target,
+        meta: null,
+        dwell_ms: null,
+        created_at: ago(((i * 53) % (27 * 24)) * HOUR),
+      });
+    }
+  }
+  return rows;
+})();
+
+const REPORTS = [
+  report(1, 'bug', 'Voice mode drops the first word of every customer reply on Safari.', 'chat', 'open', 5 * HOUR),
+  report(2, 'suggestion', 'Let me favourite a scenario so the team can all run the same one.', 'home', 'open', 9 * HOUR),
+  report(3, 'bug', 'Score ring shows 0 for a second before the real score loads.', 'stats', 'triaged', 2 * DAY),
+  report(4, 'suggestion', 'A French voice option for fr-CA sessions would help our Québec clinics.', 'settings', 'triaged', 3 * DAY),
+  report(5, 'bug', 'Photo upload spinner never stops if I switch tabs mid-analysis.', 'analyzer', 'resolved', 6 * DAY),
+  report(6, 'suggestion', 'Print-friendly session summary for our lunch-and-learn reviews.', 'history', 'dismissed', 11 * DAY),
+];
+
+function report(
+  n: number,
+  kind: 'bug' | 'suggestion',
+  message: string,
+  screen: string,
+  status: 'open' | 'triaged' | 'resolved' | 'dismissed',
+  age: number,
+) {
+  return {
+    id: `00000000-0000-4000-9000-${String(n).padStart(12, '0')}`,
+    user_id: null,
+    anon_session_id: `anon-${n}`,
+    kind,
+    message,
+    screen,
+    user_agent: 'Mozilla/5.0 (Macintosh)',
+    status,
+    created_at: ago(age),
+  };
+}
+
+const ANALYZER_EVENTS = [
+  analyzerEvent(1, 'Labrador Retriever', 31, 7, 'vision', 'Adult, roughly 4–6 years', 0.92, 'mild', ['patchy redness at the left flank'], 'adjust', 3 * HOUR),
+  analyzerEvent(2, 'French Bulldog', 14, 6, 'vision', 'Junior, 1–2 years', 0.87, 'none', [], 'watch', 8 * HOUR),
+  analyzerEvent(3, 'German Shepherd', 38, 5, 'manual', null, null, null, null, 'on_track', 1 * DAY),
+  analyzerEvent(4, 'Golden Retriever', 36, 8, 'vision', 'Senior, 8+ years', 0.95, 'moderate', ['scaling along the dorsum', 'thinning coat'], 'concern', 2 * DAY),
+  analyzerEvent(5, 'Beagle', 13, 6, 'manual', null, null, null, null, 'on_track', 3 * DAY),
+  analyzerEvent(6, 'Shih Tzu', 7, 7, 'vision', 'Adult, 3–5 years', 0.78, 'marked', ['periocular irritation', 'patchy alopecia'], 'adjust', 5 * DAY),
+];
+
+function analyzerEvent(
+  n: number,
+  breed: string,
+  weight: number,
+  bcs: number,
+  source: 'manual' | 'vision',
+  ageEstimate: string | null,
+  breedConfidence: number | null,
+  dermSeverity: 'none' | 'mild' | 'moderate' | 'marked' | null,
+  indicators: string[],
+  verdict: 'on_track' | 'watch' | 'adjust' | 'concern',
+  age: number,
+) {
+  return {
+    id: `00000000-0000-4000-a000-${String(n).padStart(12, '0')}`,
+    user_id: n % 2 === 0 ? ME : null,
+    breed,
+    weight_kg: weight,
+    bcs,
+    mcs: 3,
+    activity: 'moderate',
+    kcal_target: 600 + n * 55,
+    verdict,
+    source,
+    age_estimate: ageEstimate,
+    breed_confidence: breedConfidence,
+    dermatitis: dermSeverity == null ? null : { severity: dermSeverity, indicators, note: '' },
+    created_at: ago(age),
+  };
+}
+
 const ROUTES: Record<string, unknown> = {
   'admin-whoami': {
     user_id: ME,
@@ -271,10 +419,10 @@ const ROUTES: Record<string, unknown> = {
   },
   'admin-sessions': [],
   'admin-ai-calls': [],
-  'admin-analyzer': [],
-  'admin-nav-events': [],
+  'admin-analyzer': ANALYZER_EVENTS,
+  'admin-nav-events': NAV_EVENTS,
   'admin-feedback': [],
-  'admin-reports': [],
+  'admin-reports': REPORTS,
   'admin-scenarios': [],
   'admin-audit-log': [],
   'admin-flags': { flags: [], rules: [] },

@@ -34,6 +34,12 @@ export const analyzer = {
     'Aucune anomalie évidente de la peau ou du pelage.',
   'analyzer.vision.notVisible': 'Impossible à juger sur photo : {items}.',
 
+  // Rangée d'ajustement — chaque champ capté est modifiable avant
+  // l'enregistrement.
+  'analyzer.vision.adjust.title': 'Ajustez l’estimation avant d’enregistrer',
+  'analyzer.vision.adjust.age': 'Âge estimé',
+  'analyzer.vision.adjust.severity': 'Gravité peau / pelage',
+
   // Gravité de l'atteinte cutanée — les clés (none/mild/moderate/marked)
   // restent des valeurs machine; seuls ces libellés sont traduits. Accord au
   // féminin : sous-entendu « atteinte ».

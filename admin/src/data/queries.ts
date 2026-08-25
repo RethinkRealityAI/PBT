@@ -192,6 +192,14 @@ export function upsertFlagDef(flag: Partial<FlagDef>): Promise<FlagDef> {
 
 // ─────────────────────────────────────────────────────────────
 // Scenario overrides
+/** Move a platform report through the triage workflow (audited server-side). */
+export function setReportStatus(
+  id: string,
+  status: PlatformReportRow['status'],
+): Promise<PlatformReportRow> {
+  return postJson<PlatformReportRow>('admin-reports?op=set_status', { id, status });
+}
+
 // ─────────────────────────────────────────────────────────────
 
 export function useScenarioOverrides(refreshKey: number = 0) {

@@ -28,6 +28,7 @@ import { AppFrame } from '../shell/AppFrame';
 import { TabBar } from '../shell/TabBar';
 import { useCloudSync } from '../features/auth/useCloudSync';
 import { logEvent, startAnalytics } from '../lib/analytics';
+import { createDwellTracker, type DwellTracker } from '../lib/dwell';
 
 /*
  * Screen loading strategy (spec §13.9 — main JS chunk < 500 kB gzip).
@@ -151,6 +152,7 @@ export function App() {
                     </RouteResolver>
                     <TabBarHost />
                     <ScreenViewLogger />
+                    <DwellLogger />
                     <ChatAbandonWatcher />
                     <PreviewRunner />
                   </AppFrame>
@@ -171,6 +173,41 @@ function ScreenViewLogger() {
   useEffect(() => {
     logEvent({ type: 'screen_view', screen: current });
   }, [current]);
+  return null;
+}
+
+/**
+ * Emits a `dwell` nav_event (time-on-screen) whenever the user leaves a
+ * screen — by navigating, hiding the tab, or closing the page. Feeds the
+ * admin Analytics "Where users spend time" heatmap. Timing pauses while the
+ * document is hidden so background tabs don't inflate dwell.
+ */
+function DwellLogger() {
+  const { current } = useNavigation();
+  const trackerRef = useRef<DwellTracker | null>(null);
+  if (trackerRef.current === null) {
+    trackerRef.current = createDwellTracker(current, {
+      emit: (screen, dwellMs) => logEvent({ type: 'dwell', screen, dwellMs }),
+    });
+  }
+  useEffect(() => {
+    trackerRef.current?.onScreenChange(current);
+  }, [current]);
+  useEffect(() => {
+    const tracker = trackerRef.current;
+    if (!tracker) return;
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') tracker.onHide();
+      else tracker.onShow();
+    };
+    const onPageHide = () => tracker.onHide();
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, []);
   return null;
 }
 

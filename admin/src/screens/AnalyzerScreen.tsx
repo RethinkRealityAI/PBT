@@ -11,7 +11,7 @@ import { ContextBar, ScreenShell, type Range } from '../primitives/Shell';
 import { useAnalyzerEvents } from '../data/queries';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
-import type { Verdict } from '../data/types';
+import type { AnalyzerEvent, Verdict } from '../data/types';
 
 const VERDICT_LABEL: Record<NonNullable<Verdict>, string> = {
   on_track: 'On track',
@@ -24,6 +24,15 @@ const VERDICT_TONE: Record<NonNullable<Verdict>, 'success' | 'warn' | 'danger'> 
   watch: 'warn',
   adjust: 'warn',
   concern: 'danger',
+};
+
+type DermSeverity = NonNullable<AnalyzerEvent['dermatitis']>['severity'];
+
+const DERM_TONE: Record<DermSeverity, 'success' | 'warn' | 'danger' | 'neutral'> = {
+  none: 'success',
+  mild: 'warn',
+  moderate: 'warn',
+  marked: 'danger',
 };
 
 export function AnalyzerScreen({
@@ -63,7 +72,11 @@ export function AnalyzerScreen({
       .slice(0, 6);
     const uniqueUsers = new Set(e.map((a) => a.user_id).filter(Boolean)).size;
     const total = e.length;
-    return { verdictDist, bcsBuckets, topBreeds, uniqueUsers, total };
+    const visionCount = e.filter((a) => a.source === 'vision').length;
+    const dermFlagged = e.filter(
+      (a) => a.dermatitis != null && a.dermatitis.severity !== 'none',
+    ).length;
+    return { verdictDist, bcsBuckets, topBreeds, uniqueUsers, total, visionCount, dermFlagged };
   }, [events.data]);
 
   const filtered = events.data.filter((a) =>
@@ -91,12 +104,12 @@ export function AnalyzerScreen({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: 'repeat(6, 1fr)',
             gap: 16,
           }}
         >
           {events.loading ? (
-            Array.from({ length: 4 }).map((_, i) => (
+            Array.from({ length: 6 }).map((_, i) => (
               <LoadingShimmer key={i} height={140} />
             ))
           ) : (
@@ -128,6 +141,20 @@ export function AnalyzerScreen({
                 icon="⚠"
                 accent={COLOR.dangerSoft}
                 sparkColor={COLOR.danger}
+              />
+              <Kpi
+                label="From photos"
+                value={stats.visionCount}
+                icon="◉"
+                accent={COLOR.infoSoft}
+                sparkColor={COLOR.info}
+              />
+              <Kpi
+                label="Skin flags"
+                value={stats.dermFlagged}
+                icon="✚"
+                accent={COLOR.warnSoft}
+                sparkColor={COLOR.warn}
               />
             </>
           )}
@@ -304,14 +331,14 @@ export function AnalyzerScreen({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1.4fr 80px 80px 90px 110px 90px',
+              gridTemplateColumns: '1.3fr 64px 64px 76px 86px 104px 104px 80px',
               padding: '14px 22px',
               gap: 12,
               background: 'rgba(255,255,255,0.5)',
               borderBottom: '0.5px solid rgba(60,20,15,0.06)',
             }}
           >
-            {['Breed', 'BCS', 'MCS', 'Weight', 'Verdict', 'Time'].map((h) => (
+            {['Breed', 'BCS', 'MCS', 'Weight', 'Source', 'Skin', 'Verdict', 'Time'].map((h) => (
               <div
                 key={h}
                 style={{
@@ -331,21 +358,31 @@ export function AnalyzerScreen({
               key={a.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1.4fr 80px 80px 90px 110px 90px',
+                gridTemplateColumns: '1.3fr 64px 64px 76px 86px 104px 104px 80px',
                 padding: '12px 22px',
                 gap: 12,
                 alignItems: 'center',
                 borderBottom: '0.5px solid rgba(60,20,15,0.04)',
               }}
             >
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: COLOR.ink,
-                }}
-              >
-                {a.breed ?? '—'}
+              <div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: COLOR.ink,
+                  }}
+                >
+                  {a.breed ?? '—'}
+                  {a.breed_confidence != null && (
+                    <span style={{ color: COLOR.inkMute, fontWeight: 500, fontSize: 11, marginLeft: 6 }}>
+                      {Math.round(a.breed_confidence * 100)}%
+                    </span>
+                  )}
+                </div>
+                {a.age_estimate && (
+                  <div style={{ fontSize: 11, color: COLOR.inkSoft }}>{a.age_estimate}</div>
+                )}
               </div>
               <div
                 style={{
@@ -369,6 +406,24 @@ export function AnalyzerScreen({
               <div style={{ fontSize: 12, color: COLOR.inkSoft }}>
                 {a.weight_kg ? `${a.weight_kg}kg` : '—'}
               </div>
+              <StatusPill tone={a.source === 'vision' ? 'info' : 'neutral'} dot={false}>
+                {a.source === 'vision' ? 'Vision' : 'Manual'}
+              </StatusPill>
+              {a.dermatitis ? (
+                <span
+                  title={
+                    a.dermatitis.indicators.length > 0
+                      ? a.dermatitis.indicators.join('; ')
+                      : a.dermatitis.note || undefined
+                  }
+                >
+                  <StatusPill tone={DERM_TONE[a.dermatitis.severity] ?? 'neutral'}>
+                    {a.dermatitis.severity}
+                  </StatusPill>
+                </span>
+              ) : (
+                <StatusPill tone="neutral">—</StatusPill>
+              )}
               {a.verdict ? (
                 <StatusPill tone={VERDICT_TONE[a.verdict]}>
                   {VERDICT_LABEL[a.verdict]}

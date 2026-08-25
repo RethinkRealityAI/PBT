@@ -42,7 +42,7 @@ function formatRetrievedBlock(
 /**
  * Bounded admin-side prompt overrides. The canonical customer prompt and
  * scoring rubric remain authoritative — these wrap the customer turn only.
- * Scoring is never overridden so clinical accuracy + 7-dim grading are
+ * Scoring is never overridden so clinical accuracy + the 5-dim ACT grading are
  * preserved regardless of admin tinkering.
  */
 export interface PromptOverrides {
@@ -402,7 +402,7 @@ ${lang.incorrectExamples}${suffixBlock}
 
 /**
  * Builds the system prompt for the scoring evaluator.
- * Returns a JSON-typed scorecard against the 7 dimensions.
+ * Returns a JSON-typed scorecard against the five ACT dimensions.
  */
 export function buildScoringSystemPrompt({
   scenario,
