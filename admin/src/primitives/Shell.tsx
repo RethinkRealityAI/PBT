@@ -91,7 +91,7 @@ function SectionTabStrip({ value }: { value: SectionTabsValue }) {
   );
 }
 
-export const RANGE_OPTIONS = ['24h', '7d', '28d', '90d'] as const;
+export const RANGE_OPTIONS = ['24h', '7d', '28d', '90d', 'all'] as const;
 export type Range = (typeof RANGE_OPTIONS)[number];
 
 export function ContextBar({

@@ -14,6 +14,7 @@ import {
 } from '../primitives/Shell';
 import {
   downloadRagExport,
+  rangeToSince,
   useAdminSessions,
   useAdminUsers,
 } from '../data/queries';
@@ -57,14 +58,7 @@ export function SessionsScreen({
 
   const exportCSV = () => {
     void downloadRagExport({
-      since: new Date(
-        Date.now() -
-          ({ '24h': 1, '7d': 7, '28d': 28, '90d': 90 }[range] ?? 28) *
-            24 *
-            60 *
-            60 *
-            1000,
-      ).toISOString(),
+      since: rangeToSince(range),
       completedOnly: filter === 'completed',
       limit: 5000,
     }).catch((err: unknown) => {
