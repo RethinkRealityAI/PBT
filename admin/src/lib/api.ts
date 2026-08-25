@@ -54,11 +54,18 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
 /** Range → days mapping shared with the queries layer. */
 const RANGE_DAYS: Record<string, number> = { '24h': 1, '7d': 7, '28d': 28, '90d': 90 };
 
+/**
+ * 'all' fetches from the epoch (rangeToSince) but charts a 1-year window
+ * (rangeToDays): trend buckets stay readable while lists and KPI counts
+ * include every row ever recorded.
+ */
 export function rangeToDays(range: string): number {
+  if (range === 'all') return 365;
   return RANGE_DAYS[range] ?? 28;
 }
 
 export function rangeToSince(range: string): string {
+  if (range === 'all') return new Date(0).toISOString();
   const days = rangeToDays(range);
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
