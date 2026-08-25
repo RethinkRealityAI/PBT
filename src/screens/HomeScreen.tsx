@@ -31,6 +31,7 @@ import { useLanguage } from '../app/providers/LanguageProvider';
 import { formatPercent } from '../i18n/format';
 import { localizedResolvedDimension } from '../i18n/dataL10n/rubric';
 import { localizedScenario, localizedLifeStage } from '../i18n/dataL10n/scenarios';
+import { logEvent } from '../lib/analytics';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -426,6 +427,12 @@ export function HomeScreen() {
   const hasScenarioInfo = infoModalBody.length > 0;
 
   const startTodaysPick = () => {
+    logEvent({
+      type: 'cta_click',
+      screen: 'home',
+      target: 'start_todays_pick',
+      meta: { pushback: todaysPick.pushback.id, breed: todaysPick.breed },
+    });
     setScenario(todaysPick);
     go('chat');
   };

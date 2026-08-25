@@ -124,6 +124,12 @@ export function CreateScreen() {
       suggestedDriver: driver,
       weightKg: weight.trim() || undefined,
     };
+    logEvent({
+      type: 'cta_click',
+      screen: 'create',
+      target: 'start_custom_scenario',
+      meta: { pushback: built.pushback.id, difficulty: built.difficulty },
+    });
     setScenario(built);
     void persistUserScenario(built);
     go('chat');

@@ -100,6 +100,12 @@ export interface AnalyzerEvent {
   activity: string | null;
   kcal_target: number | null;
   verdict: 'on_track' | 'watch' | 'adjust' | 'concern' | null;
+  /** 'manual' = typed by hand; 'vision' = AI photo estimate (possibly corrected). */
+  source: 'manual' | 'vision' | null;
+  age_estimate: string | null;
+  /** 0–1 model confidence in the breed call. */
+  breed_confidence: number | null;
+  dermatitis: { severity: 'none' | 'mild' | 'moderate' | 'marked'; indicators: string[]; note: string } | null;
   created_at: string;
 }
 
@@ -233,7 +239,8 @@ export type AuditEntityType =
   | 'invite'
   | 'email_settings'
   | 'email_template'
-  | 'knowledge_document';
+  | 'knowledge_document'
+  | 'platform_report';
 
 /**
  * Entity kinds the revert endpoint can actually roll back.

@@ -23,6 +23,18 @@ export const DERM_SEVERITY_KEY: Record<DermatitisSeverity, CatalogKey> = {
   marked: 'analyzer.vision.severity.marked',
 };
 
+const DERM_SEVERITIES: DermatitisSeverity[] = ['none', 'mild', 'moderate', 'marked'];
+
+/**
+ * User corrections to the AI estimate, applied before the analysis is saved
+ * or handed to a scenario. Owned by the parent screen (like the vision hook)
+ * so provenance and persistence see the corrected values.
+ */
+export interface VisionOverrides {
+  ageEstimate: string;
+  dermatitisSeverity: DermatitisSeverity;
+}
+
 /**
  * Colour-tinted info chip surface. In light mode the accent is blended into
  * white (pale pastel under dark ink). In dark mode it's blended into a near-
@@ -73,10 +85,16 @@ const DERM_COLOR: Record<string, string> = {
 export function PetVisionCard({
   vision,
   onPick,
+  overrides,
+  onOverridesChange,
 }: {
   vision: UsePetVision;
   /** Fired when the user chooses a file; parent kicks off analysis. */
   onPick: (file: File) => void;
+  /** Current user corrections to the estimate (parent-owned). */
+  overrides?: VisionOverrides | null;
+  /** When provided, the findings render an "adjust before saving" row. */
+  onOverridesChange?: (next: VisionOverrides) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { status, result, previewUrl, error } = vision;
@@ -222,12 +240,26 @@ export function PetVisionCard({
         </div>
       )}
 
-      {status === 'done' && result && <VisionFindings result={result} />}
+      {status === 'done' && result && (
+        <VisionFindings
+          result={result}
+          overrides={overrides ?? null}
+          onOverridesChange={onOverridesChange}
+        />
+      )}
     </Glass>
   );
 }
 
-function VisionFindings({ result }: { result: PetVisionResult }) {
+function VisionFindings({
+  result,
+  overrides,
+  onOverridesChange,
+}: {
+  result: PetVisionResult;
+  overrides: VisionOverrides | null;
+  onOverridesChange?: (next: VisionOverrides) => void;
+}) {
   const { resolvedTheme } = useTheme();
   const { t, locale } = useLanguage();
   const dark = resolvedTheme === 'dark';
@@ -248,7 +280,11 @@ function VisionFindings({ result }: { result: PetVisionResult }) {
     );
   }
 
-  const dermColor = DERM_COLOR[result.dermatitis.severity] ?? COLORS.score.ok;
+  // The chip reflects the user's correction (when one exists) so the findings
+  // never disagree with what will actually be saved.
+  const effectiveSeverity = overrides?.dermatitisSeverity ?? result.dermatitis.severity;
+  const effectiveAge = overrides?.ageEstimate?.trim() || result.ageEstimate;
+  const dermColor = DERM_COLOR[effectiveSeverity] ?? COLORS.score.ok;
   const confPct = Math.round(result.breedConfidence * 100);
 
   return (
@@ -260,7 +296,7 @@ function VisionFindings({ result }: { result: PetVisionResult }) {
             {result.breed}
           </div>
           <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)' }}>
-            {result.ageEstimate}
+            {effectiveAge}
           </div>
         </div>
         <span
@@ -313,17 +349,100 @@ function VisionFindings({ result }: { result: PetVisionResult }) {
         >
           {t('analyzer.vision.skinLabel', {
             severity: t(
-              DERM_SEVERITY_KEY[result.dermatitis.severity] ??
-                DERM_SEVERITY_KEY.none,
+              DERM_SEVERITY_KEY[effectiveSeverity] ?? DERM_SEVERITY_KEY.none,
             ),
           })}
         </div>
-        <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--pbt-text)' }}>
-          {result.dermatitis.severity === 'none'
-            ? t('analyzer.vision.skinNone')
-            : (result.dermatitis.indicators.join('; ') || result.dermatitis.note)}
-        </div>
+        {(() => {
+          // When the user raises severity above the AI's call there may be no
+          // AI-observed indicators to show — omit the body rather than render
+          // an empty (or contradictory) line.
+          const body =
+            effectiveSeverity === 'none'
+              ? t('analyzer.vision.skinNone')
+              : result.dermatitis.indicators.join('; ') || result.dermatitis.note;
+          return body ? (
+            <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--pbt-text)' }}>{body}</div>
+          ) : null;
+        })()}
       </div>
+
+      {/* Adjust-before-saving row — the user can correct any captured field */}
+      {onOverridesChange && overrides && (
+        <div
+          style={{
+            padding: '10px 12px',
+            borderRadius: 12,
+            border: '1px solid rgba(255,255,255,0.25)',
+            background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.28)',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: 'var(--pbt-font-mono)',
+              fontSize: 10,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: 'var(--pbt-text-muted)',
+              marginBottom: 8,
+            }}
+          >
+            {t('analyzer.vision.adjust.title')}
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <label style={{ flex: '1 1 140px', fontSize: 11, color: 'var(--pbt-text-muted)' }}>
+              {t('analyzer.vision.adjust.age')}
+              <input
+                type="text"
+                value={overrides.ageEstimate}
+                onChange={(e) =>
+                  onOverridesChange({ ...overrides, ageEstimate: e.target.value })
+                }
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(127,127,127,0.35)',
+                  background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.6)',
+                  color: 'var(--pbt-text)',
+                  fontSize: 13,
+                }}
+              />
+            </label>
+            <label style={{ flex: '1 1 140px', fontSize: 11, color: 'var(--pbt-text-muted)' }}>
+              {t('analyzer.vision.adjust.severity')}
+              <select
+                value={overrides.dermatitisSeverity}
+                onChange={(e) =>
+                  onOverridesChange({
+                    ...overrides,
+                    dermatitisSeverity: e.target.value as DermatitisSeverity,
+                  })
+                }
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(127,127,127,0.35)',
+                  background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.6)',
+                  color: 'var(--pbt-text)',
+                  fontSize: 13,
+                }}
+              >
+                {DERM_SEVERITIES.map((s) => (
+                  <option key={s} value={s}>
+                    {t(DERM_SEVERITY_KEY[s])}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* Guidance */}
       {result.guidance && (

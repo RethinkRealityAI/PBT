@@ -266,7 +266,8 @@ export async function writeAuditLog(
       | 'invite'
       | 'email_settings'
       | 'email_template'
-      | 'knowledge_document';
+      | 'knowledge_document'
+      | 'platform_report';
     entity_id: string;
     action: 'create' | 'update' | 'delete' | 'revert';
     before?: unknown;

@@ -9,6 +9,7 @@ import type { FlagKey } from '../services/flagsClient';
 import { DRIVER_COLORS } from '../design-system/tokens';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
+import { logEvent } from '../lib/analytics';
 
 const TAB_FLAG: Record<string, FlagKey> = {
   home: 'nav.tab.home.enabled',
@@ -69,7 +70,12 @@ export function TabBar() {
             return (
               <button
                 key={tab.screen}
-                onClick={() => go(tab.screen)}
+                onClick={() => {
+                  if (tab.screen !== current) {
+                    logEvent({ type: 'tab_change', screen: current, target: tab.screen });
+                  }
+                  go(tab.screen);
+                }}
                 aria-label={label}
                 aria-pressed={active}
                 style={{

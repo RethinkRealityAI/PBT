@@ -17,6 +17,9 @@
  *   5. Top interactions — table of the most frequent `target` values for
  *      event_type in ('card_click', 'cta_click', 'tab_change'), capped at
  *      15 rows.
+ *   6. Feature usage — same shape over `custom` events, with human labels,
+ *      so admins see what users do (sessions, photo analyses, ratings)
+ *      rather than just where they click.
  */
 import { useMemo } from 'react';
 import {
@@ -99,20 +102,31 @@ interface DwellRow {
   screen: string;
   ms: number;
   share: number; // % of total dwell across all screens
+  visits: number; // dwell events captured for this screen
+  avgMs: number | null; // average time per visit
 }
 
-function buildDwellHeatmap(events: NavEvent[]): { rows: DwellRow[]; total: number; hasData: boolean } {
-  const sums = new Map<string, number>();
+export function buildDwellHeatmap(events: NavEvent[]): { rows: DwellRow[]; total: number; hasData: boolean } {
+  const sums = new Map<string, { ms: number; visits: number }>();
   let total = 0;
   for (const e of events) {
     if (e.event_type !== 'dwell') continue;
     if (!e.screen) continue;
     if (e.dwell_ms == null || !Number.isFinite(e.dwell_ms) || e.dwell_ms <= 0) continue;
-    sums.set(e.screen, (sums.get(e.screen) ?? 0) + e.dwell_ms);
+    const agg = sums.get(e.screen) ?? { ms: 0, visits: 0 };
+    agg.ms += e.dwell_ms;
+    agg.visits += 1;
+    sums.set(e.screen, agg);
     total += e.dwell_ms;
   }
   const rows = Array.from(sums.entries())
-    .map(([screen, ms]) => ({ screen, ms, share: total > 0 ? (ms / total) * 100 : 0 }))
+    .map(([screen, { ms, visits }]) => ({
+      screen,
+      ms,
+      visits,
+      avgMs: visits > 0 ? ms / visits : null,
+      share: total > 0 ? (ms / total) * 100 : 0,
+    }))
     .sort((a, b) => b.ms - a.ms);
   return { rows, total, hasData: rows.length > 0 };
 }
@@ -182,7 +196,7 @@ interface InteractionRow {
   share: number;
 }
 
-function buildTopInteractions(events: NavEvent[]): { rows: InteractionRow[]; total: number; hasData: boolean } {
+export function buildTopInteractions(events: NavEvent[]): { rows: InteractionRow[]; total: number; hasData: boolean } {
   const counts = new Map<string, number>();
   let total = 0;
   for (const e of events) {
@@ -192,6 +206,44 @@ function buildTopInteractions(events: NavEvent[]): { rows: InteractionRow[]; tot
   }
   const rows = Array.from(counts.entries())
     .map(([target, count]) => ({ target, count, share: total > 0 ? (count / total) * 100 : 0 }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+  return { rows, total, hasData: rows.length > 0 };
+}
+
+/** Human labels for the feature-usage targets the consumer app emits as `custom` events. */
+const FEATURE_LABEL: Record<string, string> = {
+  session_open: 'Training session opened',
+  session_abandon: 'Session abandoned',
+  session_restart: 'Session restarted',
+  session_rescore: 'Session re-scored',
+  session_feedback: 'Session rated',
+  scenario_save: 'Custom scenario saved',
+  vision_analyze: 'Pet photo analyzed (vision)',
+  analyzer_save: 'Analyzer record saved',
+  platform_report: 'Bug / suggestion submitted',
+  coach_hint_request: 'Coach hint requested',
+};
+
+/**
+ * Feature usage — how often each product feature fires, from `custom`
+ * events. Complements "Top interactions" (which tracks navigation clicks)
+ * with what users actually *do*: run sessions, analyze photos, rate, report.
+ */
+export function buildFeatureUsage(events: NavEvent[]): { rows: InteractionRow[]; total: number; hasData: boolean } {
+  const counts = new Map<string, number>();
+  let total = 0;
+  for (const e of events) {
+    if (e.event_type !== 'custom' || !e.target) continue;
+    counts.set(e.target, (counts.get(e.target) ?? 0) + 1);
+    total++;
+  }
+  const rows = Array.from(counts.entries())
+    .map(([target, count]) => ({
+      target: FEATURE_LABEL[target] ?? target,
+      count,
+      share: total > 0 ? (count / total) * 100 : 0,
+    }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 15);
   return { rows, total, hasData: rows.length > 0 };
@@ -207,6 +259,7 @@ export function AnalyticsScreen({ range, onRange }: { range: Range; onRange: (r:
   const trafficTrend = useMemo(() => buildTrafficTrend(nav.data, range), [nav.data, range]);
   const screenViewCounts = useMemo(() => buildScreenViewCounts(nav.data), [nav.data]);
   const topInteractions = useMemo(() => buildTopInteractions(nav.data), [nav.data]);
+  const featureUsage = useMemo(() => buildFeatureUsage(nav.data), [nav.data]);
 
   const ready = !nav.loading;
   const maxDwellShare = dwellHeatmap.rows.length > 0 ? dwellHeatmap.rows[0].share : 0;
@@ -283,7 +336,8 @@ export function AnalyticsScreen({ range, onRange }: { range: Range; onRange: (r:
                       <span style={{ fontWeight: 700, color: COLOR.ink, fontFamily: 'var(--pbt-mono)' }}>
                         {fmtDuration(row.ms)}{' '}
                         <span style={{ color: COLOR.inkMute, fontWeight: 500, fontSize: 11 }}>
-                          ({row.share.toFixed(1)}%)
+                          ({row.share.toFixed(1)}%
+                          {row.avgMs != null ? ` · avg ${fmtDuration(row.avgMs)}/visit` : ''})
                         </span>
                       </span>
                     </div>
@@ -463,6 +517,52 @@ export function AnalyticsScreen({ range, onRange }: { range: Range; onRange: (r:
             )}
           </Glass>
         </div>
+
+        {/* ── Feature usage ── */}
+        <Glass padding={24} radius={20}>
+          <SectionTitle
+            title="Feature usage"
+            subtitle="What users actually do — sessions, photo analyses, ratings, reports"
+          />
+          {!ready ? (
+            <div style={{ marginTop: 16 }}>
+              <LoadingShimmer height={200} />
+            </div>
+          ) : featureUsage.hasData ? (
+            <div style={{ marginTop: 16, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 320 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(60,20,15,0.08)' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 8px 8px 0', color: COLOR.inkMute, fontWeight: 700 }}>
+                      Feature
+                    </th>
+                    <th style={{ textAlign: 'right', padding: '6px 0 8px', color: COLOR.inkMute, fontWeight: 700 }}>
+                      Count
+                    </th>
+                    <th style={{ textAlign: 'right', padding: '6px 0 8px 8px', color: COLOR.inkMute, fontWeight: 700 }}>
+                      Share
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {featureUsage.rows.map((row) => (
+                    <tr key={row.target} style={{ borderBottom: '1px solid rgba(60,20,15,0.04)' }}>
+                      <td style={{ padding: '7px 8px 7px 0', color: COLOR.ink, fontWeight: 600 }}>{row.target}</td>
+                      <td style={{ padding: '7px 0', textAlign: 'right', color: COLOR.ink, fontWeight: 700 }}>
+                        {fmtInt(row.count)}
+                      </td>
+                      <td style={{ padding: '7px 0 7px 8px', textAlign: 'right', color: COLOR.inkMute }}>
+                        {fmtPct(row.share)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState title="No feature events yet" subtitle="Feature events (sessions, analyses, ratings) will appear here." />
+          )}
+        </Glass>
       </ScreenShell>
     </>
   );

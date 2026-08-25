@@ -31,6 +31,11 @@ export const analyzer = {
   'analyzer.vision.skinNone': 'No obvious skin or coat anomalies visible.',
   'analyzer.vision.notVisible': "Can't judge from a photo: {items}.",
 
+  // Estimate override row — every captured field is editable before saving.
+  'analyzer.vision.adjust.title': 'Adjust the estimate before saving',
+  'analyzer.vision.adjust.age': 'Age estimate',
+  'analyzer.vision.adjust.severity': 'Skin / coat severity',
+
   // Dermatitis severity — the enum keys (none/mild/moderate/marked) are
   // machine values sent to the model; these are their display labels.
   'analyzer.vision.severity.none': 'none',

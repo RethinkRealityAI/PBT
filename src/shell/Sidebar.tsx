@@ -10,6 +10,7 @@ import type { FlagKey } from '../services/flagsClient';
 import { PRE_ONBOARDING_SCREENS, type Screen } from '../app/routes';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
+import { logEvent } from '../lib/analytics';
 
 interface NavItem {
   screen: Screen;
@@ -122,7 +123,14 @@ export function Sidebar() {
             <button
               key={screen}
               type="button"
-              onClick={() => go(screen)}
+              onClick={() => {
+                // Same navigation-analytics event the mobile TabBar emits, so
+                // desktop navigation shows up in the admin Analytics screens.
+                if (screen !== current) {
+                  logEvent({ type: 'tab_change', screen: current, target: screen });
+                }
+                go(screen);
+              }}
               aria-label={label}
               aria-current={active ? 'page' : undefined}
               style={{

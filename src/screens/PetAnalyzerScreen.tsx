@@ -16,6 +16,7 @@ import { usePetVision } from '../features/pet-analyzer/usePetVision';
 import {
   DERM_SEVERITY_KEY,
   PetVisionCard,
+  type VisionOverrides,
 } from '../features/pet-analyzer/PetVisionCard';
 import { BreedSearch } from '../features/pet-analyzer/BreedSearch';
 import { isWeightPlausibleFor, resolveBreed } from '../data/breeds';
@@ -100,22 +101,44 @@ export function PetAnalyzerScreen() {
   // Inline delete confirmation, one row at a time. No browser confirm().
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Vision provenance to attach on save — present once a photo has been
-  // analysed (and the user may have edited the seeded fields afterwards).
-  const visionMeta: VisionSaveMeta | undefined =
+  // User corrections to the AI estimate (SOW: every captured field is
+  // reviewable before saving). Reset whenever a new photo is analysed.
+  const [visionOverrides, setVisionOverrides] = useState<VisionOverrides | null>(null);
+
+  // The vision result with any user corrections applied — what actually
+  // persists and what the scenario handoff describes.
+  const effectiveVisionResult: PetVisionResult | null =
     vision.status === 'done' && vision.result?.isDog
       ? {
-          ageEstimate: vision.result.ageEstimate,
-          breedConfidence: vision.result.breedConfidence,
-          lifeStage: vision.result.lifeStage,
-          dermatitis: vision.result.dermatitis,
+          ...vision.result,
+          ageEstimate: visionOverrides?.ageEstimate ?? vision.result.ageEstimate,
+          dermatitis:
+            visionOverrides && visionOverrides.dermatitisSeverity !== vision.result.dermatitis.severity
+              ? { ...vision.result.dermatitis, severity: visionOverrides.dermatitisSeverity }
+              : vision.result.dermatitis,
         }
-      : undefined;
+      : null;
+
+  // Vision provenance to attach on save — present once a photo has been
+  // analysed (and the user may have edited the seeded fields afterwards).
+  const visionMeta: VisionSaveMeta | undefined = effectiveVisionResult
+    ? {
+        ageEstimate: effectiveVisionResult.ageEstimate,
+        breedConfidence: effectiveVisionResult.breedConfidence,
+        lifeStage: effectiveVisionResult.lifeStage,
+        dermatitis: effectiveVisionResult.dermatitis,
+      }
+    : undefined;
 
   const handleVisionPick = async (file: File) => {
     const r = await vision.analyzeFile(file);
     // Seed the editable fields from the estimate; the user can override any
     // of them before saving.
+    setVisionOverrides(
+      r?.isDog
+        ? { ageEstimate: r.ageEstimate, dermatitisSeverity: r.dermatitis.severity }
+        : null,
+    );
     if (r?.isDog) {
       if (r.breed && r.breed !== 'Unknown') {
         update('breed', r.breed);
@@ -137,6 +160,7 @@ export function PetAnalyzerScreen() {
     // stale vision provenance would ride along on the next save, and the
     // "Train with this pet" handoff would describe a different animal.
     vision.reset();
+    setVisionOverrides(null);
     setConfirmDeleteId(null);
   };
 
@@ -177,7 +201,12 @@ export function PetAnalyzerScreen() {
         <div>
 
         {/* ── Card 0: Photo analysis (AI vision) ── */}
-        <PetVisionCard vision={vision} onPick={handleVisionPick} />
+        <PetVisionCard
+          vision={vision}
+          onPick={handleVisionPick}
+          overrides={visionOverrides}
+          onOverridesChange={setVisionOverrides}
+        />
 
         {/* ── Card 1: Pet name + Breed ── */}
         <Glass
@@ -661,12 +690,12 @@ export function PetAnalyzerScreen() {
             icon={<Icon.flame />}
             disabled={!canSave}
             onClick={() => {
-              if (!canSave || !vision.result) return;
+              if (!canSave || !effectiveVisionResult) return;
               setScenario(
                 scenarioFromVision(
                   state.breed,
                   state.weightKg,
-                  vision.result,
+                  effectiveVisionResult,
                   locale,
                 ),
               );
