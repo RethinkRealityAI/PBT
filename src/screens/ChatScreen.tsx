@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -37,6 +38,7 @@ import {
 import { useScenarioOverride, useSimulationConfig } from '../app/providers/FlagProvider';
 import type { PromptOverrides } from '../data/knowledge/promptBuilders';
 import { getPreviewRun, subscribePreviewRun } from '../lib/previewMode';
+import { useDialog } from '../lib/useDialog';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
 import { useLanguage } from '../app/providers/LanguageProvider';
@@ -577,7 +579,9 @@ function ChatComposer({
   onResize,
 }: ChatComposerProps) {
   const t = useT();
+  const dark = useTheme().resolvedTheme === 'dark';
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
 
   // Auto-resize: reset to auto, then snap to scrollHeight (capped). Re-runs
   // every keystroke so the textarea hugs its content exactly.
@@ -600,82 +604,105 @@ function ChatComposer({
   }
 
   return (
-    <Glass radius={28} padding={6} blur={18} tint={0.04}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 8,
-          paddingLeft: 6,
-          paddingRight: 2,
-        }}
-      >
-        <textarea
-          ref={taRef}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={t('chat.composer.placeholder')}
-          rows={1}
-          disabled={disabled}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              trySend();
-            }
-          }}
+    <div
+      style={{
+        borderRadius: 28,
+        // Ring the whole pill rather than the transparent textarea inside it —
+        // the textarea has no border of its own to light up.
+        boxShadow: keyboardFocus
+          ? `0 0 0 3px color-mix(in oklab, var(--pbt-cherry) ${dark ? 32 : 26}%, transparent)`
+          : 'none',
+        transition: 'box-shadow 0.15s ease',
+      }}
+    >
+      <Glass radius={28} padding={6} blur={18} tint={0.04}>
+        <div
           style={{
-            flex: 1,
-            border: 'none',
-            outline: 'none',
-            background: 'transparent',
-            fontFamily: 'inherit',
-            // 16px prevents iOS Safari focus zoom; matches body text.
-            fontSize: 16,
-            lineHeight: 1.45,
-            color: 'var(--pbt-text)',
-            resize: 'none',
-            padding: '8px 4px',
-            minHeight: 24,
-            maxHeight: COMPOSER_MAX_HEIGHT,
-            overflowY: 'auto',
-            // Wrap long words (URLs, etc) instead of forcing horizontal scroll.
-            wordBreak: 'break-word',
-            overflowWrap: 'break-word',
-          }}
-        />
-        <button
-          aria-label={t('chat.composer.send')}
-          type="button"
-          disabled={!sendable}
-          onClick={trySend}
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 9999,
-            border: 'none',
-            cursor: sendable ? 'pointer' : 'not-allowed',
-            color: '#fff',
-            // Always driver-tinted; just dim the disabled state instead
-            // of swapping to a neutral grey, so the affordance stays
-            // visually consistent with the rest of the chrome.
-            background:
-              'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
-            opacity: sendable ? 1 : 0.42,
-            flexShrink: 0,
-            // Match the textarea's bottom padding (8px) so the icon's
-            // optical center sits on the same baseline as the typed text.
-            alignSelf: 'flex-end',
-            marginBottom: 4,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'opacity 0.15s ease',
+            display: 'flex',
+            alignItems: 'flex-end',
+            gap: 8,
+            paddingLeft: 6,
+            paddingRight: 2,
           }}
         >
-          <Icon.send />
-        </button>
-      </div>
-    </Glass>
+          <textarea
+            ref={taRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={t('chat.composer.placeholder')}
+            aria-label={t('chat.composer.aria')}
+            rows={1}
+            disabled={disabled}
+            onFocus={(e) => {
+              // `:focus-visible` keeps the ring off pointer taps; browsers that
+              // don't know the selector throw, and get the ring on every focus.
+              try {
+                setKeyboardFocus(e.currentTarget.matches(':focus-visible'));
+              } catch {
+                setKeyboardFocus(true);
+              }
+            }}
+            onBlur={() => setKeyboardFocus(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                trySend();
+              }
+            }}
+            style={{
+              flex: 1,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              fontFamily: 'inherit',
+              // 16px prevents iOS Safari focus zoom; matches body text.
+              fontSize: 16,
+              lineHeight: 1.45,
+              color: 'var(--pbt-text)',
+              resize: 'none',
+              padding: '8px 4px',
+              minHeight: 24,
+              maxHeight: COMPOSER_MAX_HEIGHT,
+              overflowY: 'auto',
+              // Wrap long words (URLs, etc) instead of forcing horizontal scroll.
+              wordBreak: 'break-word',
+              overflowWrap: 'break-word',
+            }}
+          />
+          <button
+            aria-label={t('chat.composer.send')}
+            type="button"
+            disabled={!sendable}
+            onClick={trySend}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 9999,
+              border: 'none',
+              cursor: sendable ? 'pointer' : 'not-allowed',
+              color: '#fff',
+              // Always driver-tinted; just dim the disabled state instead
+              // of swapping to a neutral grey, so the affordance stays
+              // visually consistent with the rest of the chrome.
+              background:
+                'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+              opacity: sendable ? 1 : 0.42,
+              flexShrink: 0,
+              // Match the textarea's bottom padding (8px) so the icon's
+              // optical center sits on the same baseline as the typed text.
+              alignSelf: 'flex-end',
+              marginBottom: 4,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'opacity 0.15s ease',
+            }}
+          >
+            <Icon.send />
+          </button>
+        </div>
+      </Glass>
+    </div>
   );
 }
 
@@ -1116,7 +1143,18 @@ useThinkingSound(
               </div>
             )}
 
-            <div className="flex flex-col gap-12" style={{ gap: 10 }}>
+            {/* `additions` only: a re-render that re-lays-out existing turns
+                must not re-read the whole transcript, and removals (the
+                typing indicator) are not news. */}
+            <div
+              className="flex flex-col gap-12"
+              style={{ gap: 10 }}
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions"
+              aria-atomic="false"
+              aria-label={t('chat.transcript.aria')}
+            >
               {chat.messages.map((m, i) => {
                 if (m.role === 'user') {
                   return (
@@ -1196,14 +1234,22 @@ useThinkingSound(
                         borderRadius: 22,
                         fontSize: 14.5,
                         lineHeight: 1.4,
-                        background: 'rgba(255,255,255,0.42)',
+                        background: darkChrome
+                          ? 'rgba(255,255,255,0.10)'
+                          : 'rgba(255,255,255,0.42)',
                         color: 'var(--pbt-text)',
                         backdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
                         WebkitBackdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
-                        border: `1px solid color-mix(in oklab, ${stateColor} 70%, rgba(255,255,255,0.55))`,
+                        border: `1px solid color-mix(in oklab, ${stateColor} 70%, ${
+                          darkChrome ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.55)'
+                        })`,
                         boxShadow: [
-                          '0 1px 0 rgba(255,255,255,0.9) inset',
-                          '0 4px 12px -6px rgba(60,20,15,0.08)',
+                          darkChrome
+                            ? '0 1px 0 rgba(255,255,255,0.12) inset'
+                            : '0 1px 0 rgba(255,255,255,0.9) inset',
+                          darkChrome
+                            ? '0 6px 14px -6px rgba(0,0,0,0.44)'
+                            : '0 4px 12px -6px rgba(60,20,15,0.08)',
                           `0 0 14px -2px color-mix(in oklab, ${stateColor} 38%, transparent)`,
                         ].join(', '),
                         transition: 'border-color 0.4s ease, box-shadow 0.4s ease',
@@ -1423,17 +1469,20 @@ useThinkingSound(
 
 function TypingIndicator() {
   const t = useT();
+  const dark = useTheme().resolvedTheme === 'dark';
   return (
     <div style={{ alignSelf: 'flex-start' }}>
       <div
         style={{
           padding: '12px 16px',
           borderRadius: 22,
-          background: 'rgba(255,255,255,0.42)',
+          background: dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.42)',
           backdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
           WebkitBackdropFilter: 'blur(22px) saturate(260%) brightness(1.03)',
-          border: '1px solid rgba(255,255,255,0.65)',
-          boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset, 0 4px 12px -6px rgba(60,20,15,0.08)',
+          border: `1px solid ${dark ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.65)'}`,
+          boxShadow: dark
+            ? '0 1px 0 rgba(255,255,255,0.12) inset, 0 6px 14px -6px rgba(0,0,0,0.44)'
+            : '0 1px 0 rgba(255,255,255,0.9) inset, 0 4px 12px -6px rgba(60,20,15,0.08)',
           display: 'inline-flex',
           gap: 4,
         }}
@@ -1963,54 +2012,81 @@ function ModalShell({
               cursor: 'default',
             }}
           />
-          <motion.div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="end-session-modal-title"
-            initial={{ opacity: 0, scale: 0.94, x: '-50%', y: '-46%' }}
-            animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
-            exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-46%' }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            style={{
-              position: 'fixed',
-              top: '50%',
-              left: '50%',
-              zIndex: 71,
-              width: 'min(94vw, 420px)',
-              borderRadius: 28,
-            }}
-          >
-            <Glass radius={28} padding="24px 22px" blur={26} tint={0.06}>
-              <h2
-                id="end-session-modal-title"
-                style={{
-                  margin: 0,
-                  fontSize: 20,
-                  fontWeight: 600,
-                  letterSpacing: '-0.02em',
-                  color: 'var(--pbt-text)',
-                }}
-              >
-                {title}
-              </h2>
-              {subtitle && (
-                <p
-                  style={{
-                    margin: '8px 0 18px',
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                    color: 'var(--pbt-text-muted)',
-                  }}
-                >
-                  {subtitle}
-                </p>
-              )}
-              {children}
-            </Glass>
-          </motion.div>
+          <ModalPanel onClose={onClose} title={title} subtitle={subtitle}>
+            {children}
+          </ModalPanel>
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+/**
+ * Split out of `ModalShell` so it mounts and unmounts with `open` — `useDialog`
+ * grabs focus on mount and hands it back on unmount, which only lines up with
+ * the dialog's lifetime if the component itself is the thing being toggled.
+ */
+function ModalPanel({
+  onClose,
+  title,
+  subtitle,
+  children,
+}: {
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  const titleId = useId();
+  const dialogRef = useDialog<HTMLDivElement>(onClose);
+  return (
+    <motion.div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      initial={{ opacity: 0, scale: 0.94, x: '-50%', y: '-46%' }}
+      animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+      exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-46%' }}
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      style={{
+        position: 'fixed',
+        top: '50%',
+        left: '50%',
+        zIndex: 71,
+        width: 'min(94vw, 420px)',
+        borderRadius: 28,
+        outline: 'none',
+      }}
+    >
+      <Glass radius={28} padding="24px 22px" blur={26} tint={0.06}>
+        <h2
+          id={titleId}
+          style={{
+            margin: 0,
+            fontSize: 20,
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
+            color: 'var(--pbt-text)',
+          }}
+        >
+          {title}
+        </h2>
+        {subtitle && (
+          <p
+            style={{
+              margin: '8px 0 18px',
+              fontSize: 13,
+              lineHeight: 1.55,
+              color: 'var(--pbt-text-muted)',
+            }}
+          >
+            {subtitle}
+          </p>
+        )}
+        {children}
+      </Glass>
+    </motion.div>
   );
 }
 
@@ -2023,6 +2099,7 @@ function ModalActionButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  const dark = useTheme().resolvedTheme === 'dark';
   const styles: Record<typeof tone, CSSProperties> = {
     primary: {
       background:
@@ -2037,9 +2114,9 @@ function ModalActionButton({
       fontWeight: 700,
     },
     secondary: {
-      background: 'rgba(255,255,255,0.42)',
+      background: dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.42)',
       color: 'var(--pbt-text)',
-      border: '1px solid rgba(255,255,255,0.6)',
+      border: `1px solid ${dark ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.6)'}`,
       backdropFilter: 'blur(14px)',
       WebkitBackdropFilter: 'blur(14px)',
       fontWeight: 600,
@@ -2047,7 +2124,7 @@ function ModalActionButton({
     quiet: {
       background: 'transparent',
       color: 'var(--pbt-text-muted)',
-      border: '1px solid rgba(60,20,15,0.16)',
+      border: `1px solid ${dark ? 'rgba(255,255,255,0.16)' : 'rgba(60,20,15,0.16)'}`,
       fontWeight: 600,
     },
   };

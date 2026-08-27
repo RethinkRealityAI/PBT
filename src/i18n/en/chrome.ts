@@ -37,4 +37,16 @@ export const chrome = {
   'chrome.score.ringAriaLabelled': 'Score {score} out of 100 — {label}',
   /** `ScoreChip` accessible name. */
   'chrome.score.chipAria': 'Score {score}',
+
+  // ── Crash recovery (ErrorBoundary) ────────────────────────
+  'chrome.error.eyebrow': 'Something went wrong',
+  'chrome.error.title': "This screen didn't load",
+  'chrome.error.body':
+    'Sorry about that — something broke while this screen was loading. Reloading usually clears it, and your saved sessions are safe.',
+  /** Shown when a deploy replaced the chunk this tab was about to fetch. */
+  'chrome.error.stale.eyebrow': 'New version',
+  'chrome.error.stale.title': 'A new version is available',
+  'chrome.error.stale.body':
+    'The app was updated while this tab was open, so part of it could not load. Reload to pick up the latest version — your saved sessions are safe.',
+  'chrome.error.reload': 'Reload the app',
 } as const;

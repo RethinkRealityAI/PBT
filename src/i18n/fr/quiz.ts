@@ -10,6 +10,13 @@ import type { quiz as en } from '../en/quiz';
 export const quiz: Record<keyof typeof en, string> = {
   'quiz.title': 'Questionnaire des profils ECHO',
   'quiz.back.aria': 'Retour',
+  'quiz.previous.aria': 'Question précédente',
+  'quiz.leave.aria': 'Quitter le questionnaire',
+  'quiz.leave.title': 'Quitter le questionnaire ?',
+  'quiz.leave.body':
+    'Vos réponses seront perdues : le questionnaire reprendra à la question 1.',
+  'quiz.leave.confirm': 'Quitter et perdre mes réponses',
+  'quiz.leave.cancel': 'Poursuivre le questionnaire',
   'quiz.theme.toLight.aria': 'Passer au mode clair',
   'quiz.theme.toDark.aria': 'Passer au mode sombre',
   'quiz.part': 'Partie {part} · {label}',

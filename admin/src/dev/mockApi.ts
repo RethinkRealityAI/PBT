@@ -274,7 +274,37 @@ const ROUTES: Record<string, unknown> = {
   'admin-analyzer': [],
   'admin-nav-events': [],
   'admin-feedback': [],
-  'admin-reports': [],
+  // Deliberately spans the triage states so the queue, the "already dealt
+  // with" filter and the per-row actions can all be reviewed at once.
+  'admin-reports': [
+    {
+      id: 'rep-1',
+      kind: 'bug',
+      message: 'The scorecard spun forever after my session ended.',
+      screen: 'stats',
+      status: 'open',
+      user_agent: 'Mozilla/5.0 (iPhone)',
+      created_at: ago(2 * HOUR),
+    },
+    {
+      id: 'rep-2',
+      kind: 'suggestion',
+      message: 'Could the coach hint stay on screen while I type my reply?',
+      screen: 'chat',
+      status: 'triaged',
+      user_agent: 'Mozilla/5.0 (Macintosh)',
+      created_at: ago(2 * DAY),
+    },
+    {
+      id: 'rep-3',
+      kind: 'bug',
+      message: 'French translation missing on the pet analyzer verdict.',
+      screen: 'analyzer',
+      status: 'resolved',
+      user_agent: 'Mozilla/5.0 (Windows NT 10.0)',
+      created_at: ago(9 * DAY),
+    },
+  ],
   'admin-scenarios': [],
   'admin-audit-log': [],
   'admin-flags': { flags: [], rules: [] },

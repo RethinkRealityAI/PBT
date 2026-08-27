@@ -25,6 +25,7 @@ import { SCREENS_WITH_TAB_BAR } from './routes';
 
 import { mountKeyframes } from '../design-system/keyframes';
 import { AppFrame } from '../shell/AppFrame';
+import { ErrorBoundary } from './ErrorBoundary';
 import { TabBar } from '../shell/TabBar';
 import { useCloudSync } from '../features/auth/useCloudSync';
 import { logEvent, markScreenEntered, startAnalytics } from '../lib/analytics';
@@ -412,7 +413,9 @@ function ScreenFallback() {
 function ScreenSwitch() {
   return (
     <Suspense fallback={<ScreenFallback />}>
-      <CurrentScreen />
+      <ErrorBoundary>
+        <CurrentScreen />
+      </ErrorBoundary>
     </Suspense>
   );
 }

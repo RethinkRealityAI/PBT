@@ -28,4 +28,15 @@ export const chrome: Record<keyof typeof enChrome, string> = {
   'chrome.score.ringAria': 'Résultat de {score} sur 100',
   'chrome.score.ringAriaLabelled': 'Résultat de {score} sur 100 — {label}',
   'chrome.score.chipAria': 'Résultat de {score}',
+
+  // ── Reprise après plantage (ErrorBoundary) ────────────────
+  'chrome.error.eyebrow': 'Une erreur est survenue',
+  'chrome.error.title': "Cet écran n'a pas pu se charger",
+  'chrome.error.body':
+    "Désolé — quelque chose a flanché pendant le chargement de cet écran. Recharger règle habituellement le problème, et vos séances enregistrées sont intactes.",
+  'chrome.error.stale.eyebrow': 'Nouvelle version',
+  'chrome.error.stale.title': 'Une nouvelle version est disponible',
+  'chrome.error.stale.body':
+    "L'application a été mise à jour pendant que cet onglet était ouvert : une partie n'a donc pas pu se charger. Rechargez pour obtenir la version la plus récente — vos séances enregistrées sont intactes.",
+  'chrome.error.reload': "Recharger l'application",
 };

@@ -155,6 +155,17 @@ export function usePlatformReports(range = '28d', limit = 1000) {
   );
 }
 
+/**
+ * Move one report through triage. `status` is one of
+ * open | triaged | resolved | dismissed.
+ */
+export function setReportStatus(
+  id: string,
+  status: 'open' | 'triaged' | 'resolved' | 'dismissed',
+): Promise<PlatformReportRow> {
+  return postJson<PlatformReportRow>('admin-reports?op=status', { id, status });
+}
+
 export function useNavEvents(range = '7d', limit = 5000) {
   return useQuery<NavEvent[]>(
     () =>

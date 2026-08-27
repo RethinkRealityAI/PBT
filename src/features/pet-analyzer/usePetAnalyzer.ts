@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react';
 import { calorieFor, closestRow } from '../../data/calorieTable';
 import type { McsLevel } from '../../data/mcsLevels';
+import { useLanguage } from '../../app/providers/LanguageProvider';
+import type { CatalogKey } from '../../i18n/catalog';
+import { DEFAULT_LOCALE, type Locale } from '../../i18n/locales';
+import { translate } from '../../i18n/translate';
 
 export type Activity = 'active' | 'inactive';
 export type McsKey = McsLevel['key'];
@@ -16,45 +20,53 @@ export interface PetState {
 
 export type Verdict = 'good' | 'warn' | 'ok';
 
+/** Stable code for the clinical sentence, so the prose can live in a catalog. */
+export type VerdictCode =
+  | 'mcsAbnormal'
+  | 'bcsHigh'
+  | 'bcsLow'
+  | 'bcsIdeal'
+  | 'bcsMonitor';
+
+const VERDICT_MESSAGE_KEY: Record<VerdictCode, CatalogKey> = {
+  mcsAbnormal: 'analyzer.verdict.message.mcsAbnormal',
+  bcsHigh: 'analyzer.verdict.message.bcsHigh',
+  bcsLow: 'analyzer.verdict.message.bcsLow',
+  bcsIdeal: 'analyzer.verdict.message.bcsIdeal',
+  bcsMonitor: 'analyzer.verdict.message.bcsMonitor',
+};
+
 export interface VerdictResult {
   verdict: Verdict;
+  code: VerdictCode;
+  /** Already rendered in `locale` — consumers display it as-is. */
   message: string;
 }
 
-export function deriveVerdict(state: PetState): VerdictResult {
+/**
+ * Pure clinical triage. `locale` is a parameter rather than a hook read so the
+ * saved-pets list and the tests can derive a verdict outside React; callers
+ * that only need the traffic-light `verdict` can ignore it.
+ */
+export function deriveVerdict(
+  state: PetState,
+  locale: Locale = DEFAULT_LOCALE,
+): VerdictResult {
   const { bcs, mcs } = state;
-  if (mcs !== 'normal') {
-    return {
-      verdict: 'warn',
-      message:
-        'Muscle condition is not normal — screen for chronic disease or geriatric loss before adjusting calories.',
-    };
-  }
-  if (bcs >= 7) {
-    return {
-      verdict: 'warn',
-      message: `BCS ${bcs}/9. Caloric deficit recommended; recheck weight in 4 weeks.`,
-    };
-  }
-  if (bcs <= 3) {
-    return {
-      verdict: 'warn',
-      message: `BCS ${bcs}/9. Rule out medical cause; increase nutrient density.`,
-    };
-  }
-  if (bcs >= 4 && bcs <= 6) {
-    return {
-      verdict: 'good',
-      message: `BCS ${bcs}/9 with normal muscle. Maintain current intake.`,
-    };
-  }
-  return {
-    verdict: 'ok',
-    message: `BCS ${bcs}/9. Monitor monthly.`,
-  };
+  const result = (verdict: Verdict, code: VerdictCode): VerdictResult => ({
+    verdict,
+    code,
+    message: translate(locale, VERDICT_MESSAGE_KEY[code], { bcs }),
+  });
+  if (mcs !== 'normal') return result('warn', 'mcsAbnormal');
+  if (bcs >= 7) return result('warn', 'bcsHigh');
+  if (bcs <= 3) return result('warn', 'bcsLow');
+  if (bcs >= 4 && bcs <= 6) return result('good', 'bcsIdeal');
+  return result('ok', 'bcsMonitor');
 }
 
 export function usePetAnalyzer(initial?: Partial<PetState>) {
+  const { locale } = useLanguage();
   const [state, setState] = useState<PetState>({
     name: '',
     breed: '',
@@ -84,7 +96,10 @@ export function usePetAnalyzer(initial?: Partial<PetState>) {
     () => closestRow(state.weightKg),
     [state.weightKg],
   );
-  const verdictResult = useMemo(() => deriveVerdict(state), [state]);
+  const verdictResult = useMemo(
+    () => deriveVerdict(state, locale),
+    [state, locale],
+  );
 
   return {
     state,

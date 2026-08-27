@@ -133,6 +133,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   email_settings: 'Email settings',
   email_template: 'Email template',
   knowledge_document: 'Knowledge document',
+  report: 'Problem report',
 };
 
 /** What was done to it. */

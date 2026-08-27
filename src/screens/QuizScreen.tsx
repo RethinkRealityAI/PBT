@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { DriverWave } from '../design-system/DriverWave';
 import { Icon } from '../design-system/Icon';
+import { PillButton } from '../design-system/PillButton';
+import { useDialog } from '../lib/useDialog';
 import { useQuiz } from '../features/quiz/useQuiz';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
@@ -55,6 +57,24 @@ const glassBorder = (dark: boolean) =>
 const glassShadowIdle = 'var(--pbt-shadow-glass)';
 const glassShadowChosenCompact = `${LETTER_RIM_CHOSEN_COMPACT}, 0 4px 16px -8px rgba(15, 10, 12, 0.08)`;
 
+/** Same cherry ring `.pbt-glass-input:focus-visible` uses, so keyboard focus reads alike app-wide */
+const focusRing = (dark: boolean) =>
+  `0 0 0 3px color-mix(in oklab, var(--pbt-cherry) ${dark ? 32 : 26}%, transparent)`;
+const focusBorder = '1px solid color-mix(in oklab, var(--pbt-cherry) 55%, transparent)';
+
+/**
+ * `:focus-visible` keeps the ring off pointer taps. Browsers that don't know
+ * the selector throw on `matches()` — they get the ring on every focus, which
+ * is the safe side of the trade.
+ */
+function isKeyboardFocus(el: HTMLElement) {
+  try {
+    return el.matches(':focus-visible');
+  } catch {
+    return true;
+  }
+}
+
 export function QuizScreen() {
   const { replace, back } = useNavigation();
   const { setProfile } = useProfile();
@@ -62,8 +82,10 @@ export function QuizScreen() {
   const t = useT();
   const { locale } = useLanguage();
   const dark = resolvedTheme === 'dark';
-  const { step, currentQuestion, tieBreaker, answer } = useQuiz();
+  const { step, currentQuestion, tieBreaker, answer, undo, canUndo } = useQuiz();
   const [chosen, setChosen] = useState<QuizOption | null>(null);
+  const [focusedLetter, setFocusedLetter] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
 
   // Prevent double-fire
   const answering = useRef(false);
@@ -81,6 +103,7 @@ export function QuizScreen() {
 
   useEffect(() => {
     setChosen(null);
+    setFocusedLetter(null);
     answering.current = false;
   }, [
     step.kind === 'question' ? step.index : null,
@@ -116,12 +139,24 @@ export function QuizScreen() {
     setTimeout(() => answer(opt.driver as DriverKey), 420);
   };
 
+  /**
+   * The chevron walks back through the answers instead of dropping the whole
+   * quiz. Only on the first question — where nothing has been answered yet —
+   * does it leave the screen; every other exit goes through the confirmation.
+   */
+  const handleBack = () => {
+    if (answering.current) return;
+    if (canUndo) {
+      undo();
+      return;
+    }
+    back();
+  };
+
   const pct =
     step.kind === 'question'
       ? ((step.index + 1) / step.total) * 100
       : 100;
-
-  const showBack = !(step.kind === 'question' && step.index === 0);
   /** Must match `<DriverWave height=…>` — a shorter wrapper clips the strip and it overlaps the progress bar */
   const quizWaveStripPx = 52;
 
@@ -151,20 +186,18 @@ export function QuizScreen() {
               paddingBottom: 'clamp(8px, 2.5vw, 14px)',
             }}
           >
-            {showBack ? (
-              <Glass
-                radius={9999}
-                padding={0}
-                blur={20}
-                tint={0.45}
-                onClick={back}
-                ariaLabel={t('quiz.back.aria')}
-                shine={false}
-                className="flex h-9 w-9 shrink-0 items-center justify-center"
-              >
-                <Icon.back />
-              </Glass>
-            ) : null}
+            <Glass
+              radius={9999}
+              padding={0}
+              blur={20}
+              tint={0.45}
+              onClick={handleBack}
+              ariaLabel={t(canUndo ? 'quiz.previous.aria' : 'quiz.back.aria')}
+              shine={false}
+              className="flex h-9 w-9 shrink-0 items-center justify-center"
+            >
+              <Icon.back />
+            </Glass>
             <h1
               className="min-w-0 flex-1 truncate text-left"
               style={{
@@ -177,24 +210,34 @@ export function QuizScreen() {
             >
               {t('quiz.title')}
             </h1>
-            <button
-              type="button"
-              onClick={back}
+            {/* Progress readout, not a control — tapping it must never end the quiz */}
+            <span
               style={{
                 fontFamily: 'var(--pbt-font-mono)',
                 fontSize: 10,
                 letterSpacing: '0.10em',
                 textTransform: 'uppercase',
                 color: 'var(--pbt-text-muted)',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
                 flexShrink: 0,
                 padding: '4px 2px',
               }}
             >
               {counter}
-            </button>
+            </span>
+            {canUndo ? (
+              <Glass
+                radius={9999}
+                padding={0}
+                blur={20}
+                tint={0.45}
+                onClick={() => setLeaving(true)}
+                ariaLabel={t('quiz.leave.aria')}
+                shine={false}
+                className="flex h-9 w-9 shrink-0 items-center justify-center"
+              >
+                <Icon.close />
+              </Glass>
+            ) : null}
             <Glass
               radius={9999}
               padding={0}
@@ -339,11 +382,20 @@ export function QuizScreen() {
               {question.options.map((opt) => {
                 const isChosen = chosen?.letter === opt.letter;
                 const isOther = chosen !== null && !isChosen;
+                const isFocused = focusedLetter === opt.letter;
 
                 return (
                   <motion.div
                     key={opt.letter}
                     className="min-w-0"
+                    onFocus={(e) => {
+                      if (isKeyboardFocus(e.target as HTMLElement)) {
+                        setFocusedLetter(opt.letter);
+                      }
+                    }}
+                    onBlur={() =>
+                      setFocusedLetter((cur) => (cur === opt.letter ? null : cur))
+                    }
                     animate={
                       isChosen
                         ? { y: -3, scale: 1 }
@@ -369,12 +421,19 @@ export function QuizScreen() {
                       tint={isChosen ? (dark ? 0.48 : 0.22) : (dark ? 0.28 : 0.10)}
                       glow={null}
                       shine={true}
-                      className="rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:ring-offset-0"
+                      className="rounded-[28px] outline-none"
                       style={{
                         border: isChosen
                           ? '1px solid rgba(255,255,255,0.72)'
-                          : glassBorder(dark),
-                        boxShadow: isChosen ? glassShadowChosenCompact : glassShadowIdle,
+                          : isFocused
+                            ? focusBorder
+                            : glassBorder(dark),
+                        boxShadow: [
+                          isFocused ? focusRing(dark) : null,
+                          isChosen ? glassShadowChosenCompact : glassShadowIdle,
+                        ]
+                          .filter(Boolean)
+                          .join(', '),
                         transition: 'box-shadow 0.28s ease, border-color 0.28s ease, transform 0.22s ease',
                         outline: 'none',
                         WebkitTapHighlightColor: 'transparent',
@@ -450,6 +509,115 @@ export function QuizScreen() {
           </div>
         </div>
       </Page>
+
+      <LeaveQuizModal
+        open={leaving}
+        onClose={() => setLeaving(false)}
+        onConfirm={() => {
+          setLeaving(false);
+          back();
+        }}
+      />
+    </>
+  );
+}
+
+function LeaveQuizModal({
+  open,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {open ? <LeaveQuizDialog onClose={onClose} onConfirm={onConfirm} /> : null}
+    </AnimatePresence>
+  );
+}
+
+function LeaveQuizDialog({
+  onClose,
+  onConfirm,
+}: {
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useT();
+  const dialogRef = useDialog<HTMLDivElement>(onClose);
+
+  return (
+    <>
+      <motion.button
+        type="button"
+        aria-label={t('quiz.leave.cancel')}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 70,
+          border: 'none',
+          background: 'rgba(20, 12, 14, 0.36)',
+          backdropFilter: 'blur(6px)',
+          cursor: 'default',
+        }}
+      />
+      <motion.div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quiz-leave-title"
+        initial={{ opacity: 0, scale: 0.94, x: '-50%', y: '-46%' }}
+        animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+        exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-46%' }}
+        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+        style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          zIndex: 71,
+          width: 'min(94vw, 420px)',
+          borderRadius: 28,
+        }}
+      >
+        <Glass radius={28} padding="24px 22px" blur={26} tint={0.06}>
+          <h2
+            id="quiz-leave-title"
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              color: 'var(--pbt-text)',
+            }}
+          >
+            {t('quiz.leave.title')}
+          </h2>
+          <p
+            style={{
+              margin: '8px 0 18px',
+              fontSize: 13,
+              lineHeight: 1.55,
+              color: 'var(--pbt-text-muted)',
+            }}
+          >
+            {t('quiz.leave.body')}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <PillButton variant="solid" fullWidth onClick={onClose}>
+              {t('quiz.leave.cancel')}
+            </PillButton>
+            <PillButton variant="ghost" fullWidth onClick={onConfirm}>
+              {t('quiz.leave.confirm')}
+            </PillButton>
+          </div>
+        </Glass>
+      </motion.div>
     </>
   );
 }

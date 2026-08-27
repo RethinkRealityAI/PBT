@@ -328,7 +328,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       (process.env.GEMINI_API_KEY as string | undefined) ||
       '';
     if (!apiKey) {
-      setTransientError('Gemini API key is not configured. Please add GEMINI_API_KEY to your environment.');
+      setTransientError(translate(locale, 'chat.error.notConfigured'));
       setStatus('error');
       return;
     }

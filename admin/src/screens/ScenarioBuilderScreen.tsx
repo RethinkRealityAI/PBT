@@ -2196,6 +2196,21 @@ function KnowledgeSection({
     docs.loading || docs.error
       ? []
       : missingKnowledgeSlugs(selected, docs.data.map((d) => d.slug));
+  /*
+    How many live documents are filed under each focus area. Only meaningful
+    once the list has loaded — mid-fetch every area would read as empty and the
+    warning below would fire on all of them.
+  */
+  const docsReady = !docs.loading && !docs.error;
+  const focusCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!docsReady) return counts;
+    for (const d of docs.data) {
+      const key = resolveDocFocus(d.metadata);
+      if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [docs.data, docsReady]);
   const resolved = selected.length - missing.length;
   /*
     Attached documents that were never indexed. A document with no chunks
@@ -2249,7 +2264,11 @@ function KnowledgeSection({
           {FOCUS_AREAS.map((f) => (
             <PillToggle
               key={f.key}
-              label={f.label}
+              label={
+                docsReady && (focusCounts.get(f.key) ?? 0) === 0
+                  ? `${f.label} · empty`
+                  : f.label
+              }
               title={f.description}
               on={focus === f.key}
               onClick={() => patch({ focus_area: focus === f.key ? null : f.key })}
@@ -2259,6 +2278,22 @@ function KnowledgeSection({
         {focusMeta && (
           <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 8 }}>
             {focusMeta.description}
+          </div>
+        )}
+        {/*
+          A focus area with nothing filed under it does not narrow anything —
+          retrieval finds no match and falls back to the whole library, which is
+          the opposite of what the field promises. Say so at the moment of
+          choosing rather than letting the scenario look correctly targeted.
+        */}
+        {focus && docsReady && (focusCounts.get(focus) ?? 0) === 0 && (
+          <div style={{ marginTop: 10 }}>
+            <InlineAlert tone="warn" title="Nothing is filed under this focus area yet">
+              No document carries this focus, so the AI will keep searching the
+              whole library and this scenario is not actually narrowed. File a
+              document under it in Library → Knowledge, or attach specific
+              documents below instead.
+            </InlineAlert>
           </div>
         )}
       </Field>
