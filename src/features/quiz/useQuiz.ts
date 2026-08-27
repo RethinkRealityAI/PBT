@@ -73,6 +73,13 @@ export function useQuiz() {
     }
   }, [answers.length]);
 
+  const undo = useCallback(() => {
+    setAnswers((prev) => prev.slice(0, -1));
+    // Stepping back past the tie-breaker has to re-arm it, or the quiz would
+    // complete on a tally that is still tied.
+    setTieBreakerAsked(false);
+  }, []);
+
   const reset = useCallback(() => {
     setAnswers([]);
     setTieBreakerAsked(false);
@@ -82,5 +89,13 @@ export function useQuiz() {
     step.kind === 'question' ? QUIZ_QUESTIONS[step.index] : null;
   const tieBreaker = step.kind === 'tieBreaker' ? TIE_BREAKER : null;
 
-  return { step, currentQuestion, tieBreaker, answer, reset };
+  return {
+    step,
+    currentQuestion,
+    tieBreaker,
+    answer,
+    undo,
+    canUndo: answers.length > 0,
+    reset,
+  };
 }

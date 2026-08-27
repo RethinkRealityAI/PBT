@@ -35,14 +35,13 @@ import { runUserAction } from '../data/queries';
 import { useRoles, type AdminRole } from '../data/access';
 import { SessionModal } from './SessionModal';
 
-type TabKey = 'overview' | 'sessions' | 'scenarios' | 'analyzer' | 'ai' | 'manage';
+type TabKey = 'overview' | 'sessions' | 'scenarios' | 'analyzer' | 'manage';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
   { key: 'sessions', label: 'Sessions' },
   { key: 'scenarios', label: 'Scenarios' },
   { key: 'analyzer', label: 'Analyzer' },
-  { key: 'ai', label: 'AI signals' },
   { key: 'manage', label: 'Manage' },
 ];
 
@@ -103,7 +102,6 @@ export function UserModal({
             )}
             {tab === 'scenarios' && <ScenariosTab scenarios={scenarios} />}
             {tab === 'analyzer' && <AnalyzerTab events={analyzerEvents} />}
-            {tab === 'ai' && <AISignalsTab sessions={sessions} />}
             {tab === 'manage' && (
               <ManageTab
                 user={user}
@@ -519,34 +517,6 @@ function verdictTone(v: string | null | undefined): 'success' | 'warn' | 'danger
   }
 }
 
-// ─── AI signals tab ─────────────────────────────────────────
-function AISignalsTab({ sessions }: { sessions: AdminSession[] }) {
-  // Per-call telemetry isn't passed in here; aggregate what's on the
-  // session rows themselves: turns, model coverage, flags, completion.
-  const totalTurns = sessions.reduce((a, s) => a + (s.turns ?? 0), 0);
-  const flagged = sessions.filter((s) => s.flagged);
-  const refusals = flagged.filter((s) => s.flag_reason === 'AI refusal mid-turn');
-  const offTopic = flagged.filter((s) => s.flag_reason === 'Off-topic drift');
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        <MiniStat label="Total turns" value={totalTurns} />
-        <MiniStat label="Flagged sessions" value={flagged.length} />
-        <MiniStat label="Refusals" value={refusals.length} />
-        <MiniStat label="Off-topic" value={offTopic.length} />
-      </div>
-      <Glass padding={18} radius={16} shine={false}>
-        <Eyebrow>Per-call telemetry</Eyebrow>
-        <div style={{ marginTop: 6, fontSize: 12, color: COLOR.inkMute, lineHeight: 1.55 }}>
-          Per-call latency, tokens, and cost live in the AI Quality screen
-          aggregated across users. A future iteration will surface this
-          user's slice here directly.
-        </div>
-      </Glass>
-    </div>
-  );
-}
-
 // ─── Manage tab (account write-ops) ─────────────────────────
 function ManageTab({
   user,
@@ -652,7 +622,7 @@ function ManageTab({
       {/* Delete */}
       <ManageRow
         title="Delete account"
-        desc="Permanently removes this user, their profile, training sessions, pet records, and built scenarios. Anonymized telemetry, analytics events, and RAG documents are retained."
+        desc="Permanently deletes this person’s account: their profile, their training sessions and transcripts, saved pets, and any scenarios they built. What stays: anonymous usage counts and de-identified conversation text used to improve the AI — neither can be traced back to them."
         danger
         action={
           !confirmDelete ? (

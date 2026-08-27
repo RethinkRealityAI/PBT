@@ -6,6 +6,7 @@ import { Segmented } from '../../design-system/Segmented';
 import { useTheme } from '../../app/providers/ThemeProvider';
 import { usePlatformReport, type ReportKind } from './usePlatformReport';
 import { useT } from '../../i18n/useT';
+import { useDialog } from '../../lib/useDialog';
 import type { CatalogKey } from '../../i18n/catalog';
 
 /**
@@ -60,24 +61,39 @@ export function ReportModal({
   screen?: string;
   onClose: () => void;
 }) {
-  const { status, submitReport, reset } = usePlatformReport();
+  // The dialog body only exists while it is open, so its focus/Escape wiring is
+  // bound on open and torn down on close — and the form starts empty each time.
+  if (!open) return null;
+  return <ReportDialog initialKind={initialKind} screen={screen} onClose={onClose} />;
+}
+
+function ReportDialog({
+  initialKind,
+  screen,
+  onClose,
+}: {
+  initialKind: ReportKind;
+  screen?: string;
+  onClose: () => void;
+}) {
+  const { status, submitReport } = usePlatformReport();
   const t = useT();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   const [kind, setKind] = useState<ReportKind>(initialKind);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const dialogRef = useDialog<HTMLDivElement>(onClose);
 
+  // Scrolling the page under an open modal is the one part of the dialog
+  // contract that lives outside the dialog element itself.
   useEffect(() => {
-    if (open) {
-      setKind(initialKind);
-      setSubject('');
-      setMessage('');
-      reset();
-    }
-  }, [open, initialKind, reset]);
-
-  if (!open) return null;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
 
   const subjects = kind === 'bug' ? BUG_SUBJECTS : SUGGESTION_SUBJECTS;
   const canSubmit = message.trim().length > 0 && status !== 'submitting';
@@ -104,6 +120,7 @@ export function ReportModal({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal
       aria-labelledby="pbt-report-title"
@@ -278,7 +295,6 @@ export function ReportModal({
                       : t('report.message.placeholder.suggestion')
                   }
                   rows={6}
-                  autoFocus
                   className="pbt-glass-input"
                   style={{
                     fontSize: 15,
@@ -293,7 +309,17 @@ export function ReportModal({
               </div>
 
               {status === 'error' && (
-                <div style={{ marginBottom: 10, fontSize: 12.5, color: 'oklch(0.52 0.18 25)' }}>
+                <div
+                  role="alert"
+                  style={{
+                    marginBottom: 10,
+                    fontSize: 12.5,
+                    color: 'var(--pbt-score-poor)',
+                    padding: '6px 10px',
+                    borderRadius: 12,
+                    background: 'color-mix(in oklab, var(--pbt-score-poor) 14%, transparent)',
+                  }}
+                >
                   {message.trim().length === 0
                     ? t('report.error.empty')
                     : t('report.error.send')}

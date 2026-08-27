@@ -89,6 +89,18 @@ export const analyzer = {
   'analyzer.verdict.warn': 'Warn',
   'analyzer.verdict.ok': 'OK',
 
+  // Clinical verdict sentences (`deriveVerdict`). BCS / MCS stay verbatim in
+  // every locale — they are clinical initialisms, not prose.
+  'analyzer.verdict.message.mcsAbnormal':
+    'Muscle condition (MCS) is not normal — screen for chronic disease or geriatric loss before adjusting calories.',
+  'analyzer.verdict.message.bcsHigh':
+    'BCS {bcs}/9. Caloric deficit recommended; recheck weight in 4 weeks.',
+  'analyzer.verdict.message.bcsLow':
+    'BCS {bcs}/9. Rule out medical cause; increase nutrient density.',
+  'analyzer.verdict.message.bcsIdeal':
+    'BCS {bcs}/9 with normal muscle. Maintain current intake.',
+  'analyzer.verdict.message.bcsMonitor': 'BCS {bcs}/9. Monitor monthly.',
+
   // ── Card 6: reference ─────────────────────────────────────
   'analyzer.reference.label': 'Reference (WSAVA · 2006 NRC DMER)',
   'analyzer.reference.closestRow': 'Closest row:',

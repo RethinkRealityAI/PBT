@@ -95,6 +95,19 @@ export const analyzer = {
   'analyzer.verdict.warn': 'Attention',
   'analyzer.verdict.ok': 'Correct',
 
+  // Verdicts cliniques (`deriveVerdict`). « BCS » et « MCS » restent tels
+  // quels : initialismes cliniques du glossaire, jamais traduits.
+  'analyzer.verdict.message.mcsAbnormal':
+    'L’état musculaire (MCS) n’est pas normal — dépistez une maladie chronique ou une fonte musculaire liée à l’âge avant d’ajuster les calories.',
+  'analyzer.verdict.message.bcsHigh':
+    'BCS {bcs}/9. Déficit calorique recommandé ; repesez l’animal dans 4 semaines.',
+  'analyzer.verdict.message.bcsLow':
+    'BCS {bcs}/9. Écartez une cause médicale ; augmentez la densité nutritionnelle.',
+  'analyzer.verdict.message.bcsIdeal':
+    'BCS {bcs}/9 avec un état musculaire normal. Maintenez l’apport actuel.',
+  'analyzer.verdict.message.bcsMonitor':
+    'BCS {bcs}/9. Surveillez tous les mois.',
+
   // ── Carte 6 : référence ───────────────────────────────────
   'analyzer.reference.label': 'Référence (WSAVA · DMER du NRC 2006)',
   'analyzer.reference.closestRow': 'Ligne la plus proche :',

@@ -9,11 +9,16 @@
  *   2. Scoring trend — Recharts LineChart of avg `score_overall` for
  *      completed sessions, bucketed by day (or week for the 90d range).
  *   3. ACT dimension averages — Recharts BarChart of the mean of the 5
- *      ACT-first dimensions across completed sessions that carry them.
+ *      scoring dimensions across completed sessions that carry them.
  *   4. Sentiment distribution — each completed session's mean
  *      `turnSentiment` bucketed hostile→warm (mirrors AnalyzerScreen's
  *      hand-rolled "Verdict mix" distribution style).
  *   5. Feedback summary — mean realism / AI quality / comfort meters.
+ *
+ * Sessions whose scoring attempt failed carry a placeholder 0/100 report
+ * (`score_unavailable`). They are stripped out before any aggregate runs —
+ * counted as real they would pull every average down and manufacture
+ * low-score sessions that never happened.
  */
 import { useMemo } from 'react';
 import {
@@ -30,6 +35,7 @@ import {
 } from 'recharts';
 import { Glass } from '../primitives/Glass';
 import { EmptyState, Kpi, LoadingShimmer, SectionTitle } from '../primitives';
+import { QueryBoundary } from '../primitives/QueryBoundary';
 import { ContextBar, ScreenShell, type Range } from '../primitives/Shell';
 import { useAdminSessions, useSessionFeedback } from '../data/queries';
 import { rangeToDays } from '../lib/api';
@@ -59,9 +65,9 @@ const SENTIMENT_BINS = [
 ] as const;
 
 // ─── tolerant readers (score_report is untyped jsonb) ─────────────────
-// Unlike SessionModal's per-session reader, this does NOT back-fill from
-// the pre-Phase-2 shape — mixing 1–10 legacy subscores into a 0–100 mean
-// would skew the aggregate, so legacy rows are simply excluded.
+// Unlike SessionModal's per-session reader, this does NOT back-fill from the
+// older report shape — mixing its 1–10 subscores into a 0–100 mean would skew
+// the aggregate, so those rows are simply excluded.
 
 function numOrNull(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -126,7 +132,7 @@ interface ScoreTrendPoint {
 }
 
 function buildScoreTrend(
-  completed: AdminSession[],
+  scored: AdminSession[],
   range: Range,
 ): { data: ScoreTrendPoint[]; hasData: boolean; granularity: 'day' | 'week' } {
   const totalDays = rangeToDays(range);
@@ -137,7 +143,7 @@ function buildScoreTrend(
 
   const sums = Array.from({ length: bucketCount }, () => ({ sum: 0, count: 0 }));
 
-  for (const s of completed) {
+  for (const s of scored) {
     if (s.score_overall == null) continue;
     // Clamp to 0 so a session with a slightly-future created_at (server/client
     // clock skew) lands in the newest bucket instead of silently vanishing
@@ -172,26 +178,26 @@ interface ActBar {
   hasData: boolean;
 }
 
-function buildActStats(completed: AdminSession[]): { data: ActBar[]; hasData: boolean; skipped: number } {
+function buildActStats(scored: AdminSession[]): { data: ActBar[]; hasData: boolean; skipped: number } {
   const data = ACT_DIMENSIONS.map((d) => {
-    const values = completed
+    const values = scored
       .map((s) => readActDimension(s.score_report, d.key))
       .filter((v): v is number => v != null);
     const mean = avg(values);
     return { key: d.key, label: d.label, value: mean ?? 0, hasData: mean != null };
   });
   const hasData = data.some((d) => d.hasData);
-  const skipped = completed.filter((s) => ACT_DIMENSIONS.some((d) => readActDimension(s.score_report, d.key) == null))
+  const skipped = scored.filter((s) => ACT_DIMENSIONS.some((d) => readActDimension(s.score_report, d.key) == null))
     .length;
   return { data, hasData, skipped };
 }
 
-function buildSentimentDistribution(completed: AdminSession[]): {
+function buildSentimentDistribution(scored: AdminSession[]): {
   counts: number[];
   total: number;
   mean: number | null;
 } {
-  const values = completed.map((s) => readMeanTurnSentiment(s.score_report)).filter((v): v is number => v != null);
+  const values = scored.map((s) => readMeanTurnSentiment(s.score_report)).filter((v): v is number => v != null);
   const counts = [0, 0, 0, 0, 0];
   for (const v of values) {
     const idx = v < -0.6 ? 0 : v < -0.2 ? 1 : v < 0.2 ? 2 : v < 0.6 ? 3 : 4;
@@ -213,11 +219,14 @@ function buildFeedbackStats(rows: SessionFeedbackRow[]) {
 export function InsightsScreen({
   range,
   onRange,
-  query,
-  onQuery,
 }: {
   range: Range;
   onRange: (r: Range) => void;
+  /**
+   * Accepted so the screen router can hand every screen the same search state,
+   * but deliberately not rendered: every figure here is a rollup, and a search
+   * box that silently narrows a chart is worse than none at all.
+   */
   query?: string;
   onQuery?: (q: string) => void;
 }) {
@@ -226,19 +235,23 @@ export function InsightsScreen({
 
   const completed = useMemo(() => sessions.data.filter((s) => s.completed), [sessions.data]);
 
+  // Only sessions the scorer actually managed to grade belong in an average.
+  const scored = useMemo(() => completed.filter((s) => !s.score_unavailable), [completed]);
+  const unscored = completed.length - scored.length;
+
   const kpis = useMemo(() => {
-    const scored = completed.filter((s) => s.score_overall != null).map((s) => s.score_overall as number);
+    const overalls = scored.filter((s) => s.score_overall != null).map((s) => s.score_overall as number);
     const completionRate = sessions.data.length ? (completed.length / sessions.data.length) * 100 : null;
     return {
       completedCount: completed.length,
-      avgScore: avg(scored),
+      avgScore: avg(overalls),
       completionRate,
     };
-  }, [completed, sessions.data]);
+  }, [completed, scored, sessions.data]);
 
-  const scoreTrend = useMemo(() => buildScoreTrend(completed, range), [completed, range]);
-  const actStats = useMemo(() => buildActStats(completed), [completed]);
-  const sentimentDist = useMemo(() => buildSentimentDistribution(completed), [completed]);
+  const scoreTrend = useMemo(() => buildScoreTrend(scored, range), [scored, range]);
+  const actStats = useMemo(() => buildActStats(scored), [scored]);
+  const sentimentDist = useMemo(() => buildSentimentDistribution(scored), [scored]);
   const feedbackStats = useMemo(() => buildFeedbackStats(feedback.data), [feedback.data]);
 
   const sessionsReady = !sessions.loading;
@@ -251,239 +264,260 @@ export function InsightsScreen({
         subtitle="Performance analytics across training sessions"
         range={range}
         onRange={onRange}
-        query={query}
-        onQuery={onQuery}
       />
       <ScreenShell>
-        {/* ── KPI row ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-          {!kpisReady ? (
-            Array.from({ length: 4 }).map((_, i) => <LoadingShimmer key={i} height={140} />)
-          ) : (
-            <>
-              <Kpi
-                label="Completed sessions"
-                value={kpis.completedCount}
-                icon="◇"
-                accent={COLOR.infoSoft}
-                sparkColor={COLOR.info}
-              />
-              <Kpi
-                label="Avg overall score"
-                value={fmtScore(kpis.avgScore)}
-                icon="✺"
-                accent={COLOR.successSoft}
-                sparkColor={COLOR.success}
-              />
-              <Kpi
-                label="Completion rate"
-                value={fmtPct(kpis.completionRate)}
-                icon="✓"
-                accent={COLOR.warnSoft}
-                sparkColor={COLOR.warn}
-              />
-              <Kpi
-                label="Avg session feedback"
-                value={fmt1(feedbackStats.overall)}
-                icon="☆"
-                accent={COLOR.brandSoft}
-                sparkColor={COLOR.brand}
-              />
-            </>
-          )}
-        </div>
+        <QueryBoundary
+          queries={[sessions, feedback]}
+          title="Couldn't load the training figures"
+          showLoading={false}
+        >
+          {/* ── KPI row ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+            {!kpisReady ? (
+              Array.from({ length: 4 }).map((_, i) => <LoadingShimmer key={i} height={140} />)
+            ) : (
+              <>
+                <Kpi
+                  label="Finished sessions"
+                  value={kpis.completedCount}
+                  icon="◇"
+                  accent={COLOR.infoSoft}
+                  sparkColor={COLOR.info}
+                />
+                <Kpi
+                  label="Average score"
+                  value={fmtScore(kpis.avgScore)}
+                  icon="✺"
+                  accent={COLOR.successSoft}
+                  sparkColor={COLOR.success}
+                />
+                <Kpi
+                  label="Finish rate"
+                  value={fmtPct(kpis.completionRate)}
+                  icon="✓"
+                  accent={COLOR.warnSoft}
+                  sparkColor={COLOR.warn}
+                />
+                <Kpi
+                  label="Average trainee rating"
+                  value={fmt1(feedbackStats.overall)}
+                  icon="☆"
+                  accent={COLOR.brandSoft}
+                  sparkColor={COLOR.brand}
+                />
+              </>
+            )}
+          </div>
 
-        {/* ── Scoring trend ── */}
-        <Glass padding={24} radius={20}>
-          <SectionTitle
-            title="Scoring trend over time"
-            subtitle={`Average overall score of completed sessions · ${scoreTrend.granularity === 'week' ? 'weekly' : 'daily'} buckets`}
-          />
-          {!sessionsReady ? (
-            <div style={{ marginTop: 16 }}>
-              <LoadingShimmer height={260} />
-            </div>
-          ) : scoreTrend.hasData ? (
-            <div style={{ height: 260, marginTop: 16 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={scoreTrend.data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
-                  <CartesianGrid stroke="rgba(60,20,15,0.06)" vertical={false} />
-                  <XAxis
-                    dataKey="label"
-                    stroke={COLOR.inkMute}
-                    fontSize={11}
-                    tickLine={false}
-                    interval={tickInterval(scoreTrend.data.length)}
-                  />
-                  <YAxis domain={[0, 100]} stroke={COLOR.inkMute} fontSize={11} tickLine={false} width={32} />
-                  <Tooltip
-                    cursor={{ stroke: 'rgba(60,20,15,0.12)' }}
-                    contentStyle={{
-                      background: 'rgba(255,255,255,0.95)',
-                      border: '0.5px solid rgba(60,20,15,0.12)',
-                      borderRadius: 10,
-                      fontSize: 12,
-                      boxShadow: '0 8px 20px -8px rgba(60,20,15,0.18)',
-                    }}
-                    formatter={(value: number) => [value == null ? '—' : Math.round(value), 'Avg score']}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="score"
-                    stroke={COLOR.brand}
-                    strokeWidth={2}
-                    dot={{ r: 3, fill: COLOR.brand }}
-                    connectNulls={false}
-                    animationDuration={500}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <EmptyState title="No scored sessions yet" subtitle="Complete a training session to see the trend." />
-          )}
-        </Glass>
-
-        {/* ── ACT dimensions + sentiment distribution ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
+          {/* ── Scoring trend ── */}
           <Glass padding={24} radius={20}>
             <SectionTitle
-              title="ACT dimension averages"
-              subtitle="Mean score per ACT-first dimension · completed sessions"
+              title="Scoring trend over time"
+              subtitle={`Average score of finished sessions, by ${scoreTrend.granularity === 'week' ? 'week' : 'day'}`}
             />
+            {sessionsReady && unscored > 0 && (
+              <div style={{ marginTop: 8, fontSize: 11, color: COLOR.inkMute }}>
+                {unscored} finished session{unscored === 1 ? '' : 's'} could not be
+                scored (the scorer was unreachable) and {unscored === 1 ? 'is' : 'are'}{' '}
+                left out of every figure on this page.
+              </div>
+            )}
             {!sessionsReady ? (
               <div style={{ marginTop: 16 }}>
-                <LoadingShimmer height={220} />
+                <LoadingShimmer height={260} />
               </div>
-            ) : actStats.hasData ? (
-              <>
-                <div style={{ height: 220, marginTop: 16 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={actStats.data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
-                      <CartesianGrid stroke="rgba(60,20,15,0.06)" vertical={false} />
-                      <XAxis dataKey="label" stroke={COLOR.inkMute} fontSize={11} tickLine={false} />
-                      <YAxis domain={[0, 100]} stroke={COLOR.inkMute} fontSize={11} tickLine={false} width={32} />
-                      <Tooltip
-                        cursor={{ fill: 'rgba(60,20,15,0.04)' }}
-                        contentStyle={{
-                          background: 'rgba(255,255,255,0.95)',
-                          border: '0.5px solid rgba(60,20,15,0.12)',
-                          borderRadius: 10,
-                          fontSize: 12,
-                          boxShadow: '0 8px 20px -8px rgba(60,20,15,0.18)',
-                        }}
-                        formatter={(value: number, _name, ctx) => {
-                          const payload = ctx?.payload as { hasData: boolean } | undefined;
-                          return [payload?.hasData ? Math.round(value) : '—', 'Avg'];
-                        }}
-                      />
-                      <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48}>
-                        {actStats.data.map((d) => (
-                          <Cell key={d.key} fill={d.hasData ? bandColor(d.value) : 'oklch(0.9 0.01 20)'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                {actStats.skipped > 0 && (
-                  <div style={{ marginTop: 10, fontSize: 11, color: COLOR.inkMute }}>
-                    {actStats.skipped} completed session{actStats.skipped === 1 ? '' : 's'} without full ACT
-                    dimension scores (legacy) excluded.
-                  </div>
-                )}
-              </>
+            ) : scoreTrend.hasData ? (
+              <div style={{ height: 260, marginTop: 16 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={scoreTrend.data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+                    <CartesianGrid stroke="rgba(60,20,15,0.06)" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      stroke={COLOR.inkMute}
+                      fontSize={11}
+                      tickLine={false}
+                      interval={tickInterval(scoreTrend.data.length)}
+                    />
+                    <YAxis domain={[0, 100]} stroke={COLOR.inkMute} fontSize={11} tickLine={false} width={32} />
+                    <Tooltip
+                      cursor={{ stroke: 'rgba(60,20,15,0.12)' }}
+                      contentStyle={{
+                        background: 'rgba(255,255,255,0.95)',
+                        border: '0.5px solid rgba(60,20,15,0.12)',
+                        borderRadius: 10,
+                        fontSize: 12,
+                        boxShadow: '0 8px 20px -8px rgba(60,20,15,0.18)',
+                      }}
+                      formatter={(value: number) => [value == null ? '—' : Math.round(value), 'Avg score']}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="score"
+                      stroke={COLOR.brand}
+                      strokeWidth={2}
+                      dot={{ r: 3, fill: COLOR.brand }}
+                      connectNulls={false}
+                      animationDuration={500}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             ) : (
-              <EmptyState title="No ACT scoring data" subtitle="Phase 2 sessions will populate this chart." />
+              <EmptyState title="No scored sessions yet" subtitle="Finish a training session to see the trend." />
             )}
           </Glass>
 
-          <Glass padding={24} radius={20}>
-            <SectionTitle title="Sentiment across sessions" subtitle="Mean customer sentiment, completed sessions" />
-            {!sessionsReady ? (
-              <div style={{ marginTop: 16 }}>
-                <LoadingShimmer height={220} />
-              </div>
-            ) : sentimentDist.total > 0 ? (
-              <>
-                <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {SENTIMENT_BINS.map((bin, i) => {
-                    const n = sentimentDist.counts[i];
-                    const pct = sentimentDist.total ? (n / sentimentDist.total) * 100 : 0;
-                    return (
-                      <div key={bin.label}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
+          {/* ── ACT dimensions + sentiment distribution ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
+            <Glass padding={24} radius={20}>
+              <SectionTitle
+                title="ACT dimension averages"
+                subtitle="Average score for each part of the ACT method, across finished sessions"
+              />
+              {!sessionsReady ? (
+                <div style={{ marginTop: 16 }}>
+                  <LoadingShimmer height={220} />
+                </div>
+              ) : actStats.hasData ? (
+                <>
+                  <div style={{ height: 220, marginTop: 16 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={actStats.data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+                        <CartesianGrid stroke="rgba(60,20,15,0.06)" vertical={false} />
+                        <XAxis dataKey="label" stroke={COLOR.inkMute} fontSize={11} tickLine={false} />
+                        <YAxis domain={[0, 100]} stroke={COLOR.inkMute} fontSize={11} tickLine={false} width={32} />
+                        <Tooltip
+                          cursor={{ fill: 'rgba(60,20,15,0.04)' }}
+                          contentStyle={{
+                            background: 'rgba(255,255,255,0.95)',
+                            border: '0.5px solid rgba(60,20,15,0.12)',
+                            borderRadius: 10,
                             fontSize: 12,
-                            color: COLOR.inkSoft,
-                            fontWeight: 600,
+                            boxShadow: '0 8px 20px -8px rgba(60,20,15,0.18)',
                           }}
-                        >
-                          <span>{bin.label}</span>
-                          <span style={{ fontWeight: 700, color: COLOR.ink }}>
-                            {n}{' '}
-                            <span style={{ color: COLOR.inkMute, fontWeight: 500, fontSize: 11 }}>
-                              ({Math.round(pct)}%)
-                            </span>
-                          </span>
-                        </div>
-                        <div
-                          style={{
-                            height: 8,
-                            borderRadius: 4,
-                            background: 'oklch(0.96 0.01 20)',
-                            marginTop: 4,
-                            overflow: 'hidden',
+                          formatter={(value: number, _name, ctx) => {
+                            const payload = ctx?.payload as { hasData: boolean } | undefined;
+                            return [payload?.hasData ? Math.round(value) : '—', 'Avg'];
                           }}
-                        >
+                        />
+                        <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48}>
+                          {actStats.data.map((d) => (
+                            <Cell key={d.key} fill={d.hasData ? bandColor(d.value) : 'oklch(0.9 0.01 20)'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {actStats.skipped > 0 && (
+                    <div style={{ marginTop: 10, fontSize: 11, color: COLOR.inkMute }}>
+                      {actStats.skipped} finished session{actStats.skipped === 1 ? '' : 's'} scored before
+                      these five dimensions existed, so {actStats.skipped === 1 ? 'it is' : 'they are'} not
+                      included here.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <EmptyState
+                  title="No ACT scoring data"
+                  subtitle="Finished sessions appear here once they have been scored."
+                />
+              )}
+            </Glass>
+
+            <Glass padding={24} radius={20}>
+              <SectionTitle
+                title="Sentiment across sessions"
+                subtitle="How the AI client felt by the end, averaged across finished sessions"
+              />
+              {!sessionsReady ? (
+                <div style={{ marginTop: 16 }}>
+                  <LoadingShimmer height={220} />
+                </div>
+              ) : sentimentDist.total > 0 ? (
+                <>
+                  <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {SENTIMENT_BINS.map((bin, i) => {
+                      const n = sentimentDist.counts[i];
+                      const pct = sentimentDist.total ? (n / sentimentDist.total) * 100 : 0;
+                      return (
+                        <div key={bin.label}>
                           <div
                             style={{
-                              width: `${pct}%`,
-                              height: '100%',
-                              background: bin.color,
-                              transition: 'width 0.6s ease',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              fontSize: 12,
+                              color: COLOR.inkSoft,
+                              fontWeight: 600,
                             }}
-                          />
+                          >
+                            <span>{bin.label}</span>
+                            <span style={{ fontWeight: 700, color: COLOR.ink }}>
+                              {n}{' '}
+                              <span style={{ color: COLOR.inkMute, fontWeight: 500, fontSize: 11 }}>
+                                ({Math.round(pct)}%)
+                              </span>
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              height: 8,
+                              borderRadius: 4,
+                              background: 'oklch(0.96 0.01 20)',
+                              marginTop: 4,
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${pct}%`,
+                                height: '100%',
+                                background: bin.color,
+                                transition: 'width 0.6s ease',
+                              }}
+                            />
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div style={{ marginTop: 14, fontSize: 11, color: COLOR.inkMute }}>
-                  Avg{' '}
-                  {sentimentDist.mean != null
-                    ? `${sentimentDist.mean >= 0 ? '+' : ''}${sentimentDist.mean.toFixed(2)}`
-                    : '—'}{' '}
-                  across {sentimentDist.total} session{sentimentDist.total === 1 ? '' : 's'} with captured sentiment.
-                </div>
-              </>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: 14, fontSize: 11, color: COLOR.inkMute }}>
+                    Average{' '}
+                    {sentimentDist.mean != null
+                      ? `${sentimentDist.mean >= 0 ? '+' : ''}${sentimentDist.mean.toFixed(2)}`
+                      : '—'}{' '}
+                    across {sentimentDist.total} session{sentimentDist.total === 1 ? '' : 's'} with captured sentiment.
+                  </div>
+                </>
+              ) : (
+                <EmptyState
+                title="No sentiment data"
+                subtitle="Sessions scored turn by turn will appear here."
+              />
+              )}
+            </Glass>
+          </div>
+
+          {/* ── Feedback summary ── */}
+          <Glass padding={24} radius={20}>
+            <SectionTitle
+              title="What trainees said"
+              subtitle={`${feedbackStats.count} rating${feedbackStats.count === 1 ? '' : 's'} in this window · 1 to 5`}
+            />
+            {feedback.loading ? (
+              <div style={{ marginTop: 16 }}>
+                <LoadingShimmer height={140} />
+              </div>
+            ) : feedbackStats.count > 0 ? (
+              <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 420 }}>
+                <Meter label="How realistic the client was" value={feedbackStats.realism} color={COLOR.info} />
+                <Meter label="How believable the AI was" value={feedbackStats.aiQuality} color={COLOR.success} />
+                <Meter label="How comfortable it felt" value={feedbackStats.comfort} color={COLOR.warn} />
+              </div>
             ) : (
-              <EmptyState title="No sentiment data" subtitle="Sessions scored with per-turn sentiment will appear here." />
+              <EmptyState title="No feedback yet" subtitle="Ratings appear here once trainees rate a session." />
             )}
           </Glass>
-        </div>
-
-        {/* ── Feedback summary ── */}
-        <Glass padding={24} radius={20}>
-          <SectionTitle
-            title="Feedback summary"
-            subtitle={`${feedbackStats.count} response${feedbackStats.count === 1 ? '' : 's'} in this window`}
-          />
-          {feedback.loading ? (
-            <div style={{ marginTop: 16 }}>
-              <LoadingShimmer height={140} />
-            </div>
-          ) : feedbackStats.count > 0 ? (
-            <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 420 }}>
-              <Meter label="Realism" value={feedbackStats.realism} color={COLOR.info} />
-              <Meter label="AI quality" value={feedbackStats.aiQuality} color={COLOR.success} />
-              <Meter label="Comfort" value={feedbackStats.comfort} color={COLOR.warn} />
-            </div>
-          ) : (
-            <EmptyState title="No feedback yet" subtitle="Responses appear here once users rate a session." />
-          )}
-        </Glass>
+        </QueryBoundary>
       </ScreenShell>
     </>
   );

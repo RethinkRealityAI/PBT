@@ -93,7 +93,7 @@ describe('promptBuilders', () => {
         },
       });
       expect(p).toContain('ZZ_VALIDATE');
-      expect(p).toContain('weight 0.4');
+      expect(p).toContain('weight 34% of the overall score');
       expect(p).toContain('SCORING_PREAMBLE_ABC');
     });
 

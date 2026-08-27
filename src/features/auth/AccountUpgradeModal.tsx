@@ -18,6 +18,7 @@ import { readStorage, writeStorage, STORAGE_KEYS } from '../../lib/storage';
 import { backfillLocalDataToCloud } from './backfillLocalData';
 import { DRIVER_KEYS, type DriverKey } from '../../design-system/tokens';
 import { useT } from '../../i18n/useT';
+import { useDialog } from '../../lib/useDialog';
 
 const isDriverKey = (v: unknown): v is DriverKey =>
   typeof v === 'string' && (DRIVER_KEYS as readonly string[]).includes(v);
@@ -75,6 +76,28 @@ export function AccountUpgradeModal({
   onSuccess,
   onSignedIn,
 }: AccountUpgradeModalProps) {
+  // The dialog body only exists while it is open, so its focus/Escape wiring is
+  // bound on open and torn down on close — and reopening in the other mode
+  // starts from that mode rather than whichever one was last shown.
+  if (!open) return null;
+  return (
+    <AuthDialog
+      initialMode={initialMode}
+      onClose={onClose}
+      onSuccess={onSuccess}
+      onSignedIn={onSignedIn}
+    />
+  );
+}
+
+function AuthDialog({
+  initialMode,
+  onClose,
+  onSuccess,
+  onSignedIn,
+}: Omit<AccountUpgradeModalProps, 'open' | 'initialMode'> & {
+  initialMode: 'signup' | 'signin';
+}) {
   const [mode, setMode] = useState<'signup' | 'signin'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -85,6 +108,17 @@ export function AccountUpgradeModal({
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   const t = useT();
+  const dialogRef = useDialog<HTMLDivElement>(onClose);
+
+  // Scrolling the page under an open modal is the one part of the dialog
+  // contract that lives outside the dialog element itself.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
 
   // Email verification (FLAGS.EMAIL_VERIFICATION). Read through a widened
   // boolean so TypeScript doesn't narrow the flag's `false` literal away —
@@ -127,8 +161,8 @@ export function AccountUpgradeModal({
     ok: false,
   });
   useEffect(() => {
-    if (open) preloadPasswordStrength();
-  }, [open]);
+    preloadPasswordStrength();
+  }, []);
   useEffect(() => {
     let stale = false;
     checkPassword(password)
@@ -148,8 +182,6 @@ export function AccountUpgradeModal({
     const id = setInterval(() => setResendLeft((s) => (s > 0 ? s - 1 : 0)), 1000);
     return () => clearInterval(id);
   }, [resendLeft]);
-
-  if (!open) return null;
 
   const resend = async () => {
     const sb = getSupabase();
@@ -315,6 +347,7 @@ export function AccountUpgradeModal({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal
       aria-labelledby="pbt-auth-title"

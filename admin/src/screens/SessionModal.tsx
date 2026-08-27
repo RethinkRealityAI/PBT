@@ -35,14 +35,14 @@ import {
 } from '../primitives';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
+import { ENDED_REASON_LABELS, MODE_LABELS, labelOf } from '../lib/labels';
 import type { AdminSession, AdminUser } from '../data/types';
 
-type TabKey = 'overview' | 'transcript' | 'ai' | 'scoring';
+type TabKey = 'overview' | 'transcript' | 'scoring';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
   { key: 'transcript', label: 'Transcript' },
-  { key: 'ai', label: 'AI signals' },
   { key: 'scoring', label: 'Scoring' },
 ];
 
@@ -141,7 +141,6 @@ export function SessionModal({
             {tab === 'transcript' && (
               <TranscriptTab session={session} turnSentiment={turnSentiment} />
             )}
-            {tab === 'ai' && <AISignalsTab session={session} />}
             {tab === 'scoring' && <ScoringTab scoring={scoring} />}
           </div>
           <SideRail
@@ -305,14 +304,16 @@ function OverviewTab({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Stat label="Overall score" value={session.score_overall ?? '—'} />
       <Stat label="Turns" value={session.turns ?? session.transcript?.length ?? '—'} />
+      <Stat label="How they trained" value={labelOf(MODE_LABELS, session.mode)} />
       <Stat
-        label="Mode"
-        value={session.mode ?? '—'}
+        label="How it ended"
+        value={
+          session.completed
+            ? 'Finished the conversation'
+            : labelOf(ENDED_REASON_LABELS, session.ended_reason, 'Left early')
+        }
       />
-      <Stat
-        label="Completion"
-        value={session.completed ? `Completed (${session.ended_reason ?? 'completed'})` : `Abandoned (${session.ended_reason ?? 'unknown'})`}
-      />
+      <Stat label="AI model used" value={session.model_id ?? '—'} />
       {scoring?.critique && (
         <Block label="Coach critique">{scoring.critique}</Block>
       )}
@@ -542,26 +543,6 @@ function TranscriptTab({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ─── AI signals tab ─────────────────────────────────────────
-function AISignalsTab({ session }: { session: AdminSession }) {
-  const ai = (session.score_report as Record<string, unknown> | null)?.ai_signals;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Stat label="Model" value={session.model_id ?? '—'} />
-      <Stat label="Mode" value={session.mode ?? '—'} />
-      <Stat label="Turns" value={session.turns ?? session.transcript?.length ?? '—'} />
-      <Stat label="Ended reason" value={session.ended_reason ?? '—'} />
-      {!ai && (
-        <Block label="AI telemetry">
-          Per-call telemetry (latency, tokens, cost) lives in the AI Quality
-          screen aggregated across sessions. This view will surface the
-          per-call rows for this session in a future update.
-        </Block>
-      )}
     </div>
   );
 }

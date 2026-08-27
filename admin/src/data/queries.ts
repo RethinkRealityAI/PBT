@@ -7,7 +7,7 @@
  * service role key, and admin RLS policies are no longer required for
  * cross-user reads.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiFetch, postJson, rangeToSince } from '../lib/api';
 import { getAccessToken } from '../lib/supabase';
 import type {
@@ -27,10 +27,15 @@ import type {
   UserScenario,
 } from './types';
 
-interface QueryState<T> {
+export interface QueryState<T> {
   data: T;
   loading: boolean;
   error: string | null;
+  /**
+   * Re-run the query. Screens surface this behind a "Try again" button so a
+   * transient failure doesn't force a full page reload — see QueryBoundary.
+   */
+  refetch: () => void;
 }
 
 function useQuery<T>(
@@ -38,11 +43,14 @@ function useQuery<T>(
   deps: ReadonlyArray<unknown>,
   fallback: T,
 ): QueryState<T> {
-  const [state, setState] = useState<QueryState<T>>({
+  const [state, setState] = useState<Omit<QueryState<T>, 'refetch'>>({
     data: fallback,
     loading: true,
     error: null,
   });
+  // Bumped by refetch() to re-trigger the effect without touching `deps`.
+  const [nonce, setNonce] = useState(0);
+  const refetch = useCallback(() => setNonce((n) => n + 1), []);
   useEffect(() => {
     let cancelled = false;
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -60,8 +68,8 @@ function useQuery<T>(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return state;
+  }, [...deps, nonce]);
+  return { ...state, refetch };
 }
 
 export { rangeToSince };
@@ -145,6 +153,17 @@ export function usePlatformReports(range = '28d', limit = 1000) {
     [range, limit],
     [],
   );
+}
+
+/**
+ * Move one report through triage. `status` is one of
+ * open | triaged | resolved | dismissed.
+ */
+export function setReportStatus(
+  id: string,
+  status: 'open' | 'triaged' | 'resolved' | 'dismissed',
+): Promise<PlatformReportRow> {
+  return postJson<PlatformReportRow>('admin-reports?op=status', { id, status });
 }
 
 export function useNavEvents(range = '7d', limit = 5000) {

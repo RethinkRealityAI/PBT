@@ -22,6 +22,14 @@ const state = {
 vi.mock('../../data/queries', () => ({
   useKnowledgeDocuments: () => state.docs,
   useScenarioOverrides: () => state.overrides,
+  // The screen warns when retrieval is switched off platform-wide, so it reads
+  // the simulation config too; default to retrieval on for these cases.
+  useAdminSimulationConfig: () => ({
+    data: { config: { rag: { enabled: true } } },
+    loading: false,
+    error: null,
+    refetch: () => {},
+  }),
   deleteKnowledge: vi.fn(),
   ingestBundledStudies: vi.fn(),
   ingestKnowledge: vi.fn(),
@@ -84,7 +92,7 @@ describe('KnowledgeScreen read errors', () => {
     state.overrides = { data: [], loading: false, error: null };
     renderScreen();
     expect(screen.getByText('Couldn’t load the knowledge library')).toBeInTheDocument();
-    expect(screen.getByText('Retry')).toBeInTheDocument();
+    expect(screen.getByText('Try again')).toBeInTheDocument();
     // "No documents yet" would be a lie the admin might act on.
     expect(screen.queryByText('No documents yet')).not.toBeInTheDocument();
     expect(screen.queryByText('+ Add document')).not.toBeInTheDocument();

@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   defaultSimulationConfig,
+  resolveWeights,
   type ScoringDimensionConfig,
   type SimulationConfig,
 } from '../../../src/data/knowledge/simulationConfig';
@@ -52,6 +53,8 @@ import { ReadOnlyBanner, useCan } from '../primitives/access';
 import { useConfirm } from '../primitives/Confirm';
 import { useToast } from '../primitives/Toast';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
+import { QueryBoundary } from '../primitives/QueryBoundary';
+import { postJson } from '../lib/api';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
 import { Field, inputStyle, textareaStyle, btnPrimary, btnSecondary } from './FlagsScreen';
@@ -62,7 +65,12 @@ interface DraftDimension {
   key: DimensionKey;
   label: string;
   description: string;
-  weight: number;
+  /**
+   * Whole percent, 0–100 — the unit the editor speaks. The stored config uses
+   * a 0–1 fraction, so `buildDraft` divides in and `buildMinimalConfig`
+   * multiplies back out; nothing in between ever sees a decimal.
+   */
+  weightPct: number;
   excellentExample: string;
   needsWorkExample: string;
 }
@@ -106,6 +114,9 @@ const DEFAULT_RAG: DraftRag = { enabled: true, k: 4 };
 
 // ─── Text<->array helpers ──────────────────────────────────────────────────────
 
+/** Stored fraction (0.24) → the whole percent the editor edits (24). */
+const toPct = (weight: number) => Math.round(weight * 100);
+
 const arrToText = (arr: string[] | undefined) => (arr ?? []).join('\n');
 const textToArr = (text: string) =>
   text.split('\n').map((s) => s.trim()).filter(Boolean);
@@ -128,7 +139,7 @@ function buildDraft(saved: Record<string, unknown>): Draft {
       key: d.key,
       label: o?.label ?? d.label,
       description: o?.description ?? d.description,
-      weight: typeof o?.weight === 'number' ? o.weight : d.weight,
+      weightPct: toPct(typeof o?.weight === 'number' ? o.weight : d.weight),
       excellentExample: o?.excellentExample ?? d.excellentExample,
       needsWorkExample: o?.needsWorkExample ?? d.needsWorkExample,
     };
@@ -236,14 +247,8 @@ function emptyDraftPushback(id: string): DraftPushback {
 
 // ─── Diff the draft down to a MINIMAL config (only what differs from defaults) ──
 
-/**
- * `rag` is being added to `SimulationConfig` by another engineer in parallel;
- * intersect it locally rather than editing that shared type so this compiles
- * whether or not the upstream field has landed yet. The cast at the save
- * boundary (`as unknown as Record<string, unknown>`) already erases this to
- * a plain object, so the intersection is purely a local typing convenience.
- */
-type MinimalConfig = SimulationConfig & { rag?: { enabled: boolean; k: number } };
+/** Both halves of the editor's output: the shared config plus its retrieval knobs. */
+type MinimalConfig = SimulationConfig;
 
 function buildMinimalConfig(draft: Draft): MinimalConfig {
   const def = defaultSimulationConfig();
@@ -259,7 +264,7 @@ function buildMinimalConfig(draft: Draft): MinimalConfig {
     let changed = false;
     if (d.label.trim() && d.label !== base.label) { o.label = d.label; changed = true; }
     if (d.description.trim() && d.description !== base.description) { o.description = d.description; changed = true; }
-    if (d.weight !== base.weight) { o.weight = d.weight; changed = true; }
+    if (d.weightPct !== toPct(base.weight)) { o.weight = d.weightPct / 100; changed = true; }
     if (d.excellentExample !== base.excellentExample) { o.excellentExample = d.excellentExample; changed = true; }
     if (d.needsWorkExample !== base.needsWorkExample) { o.needsWorkExample = d.needsWorkExample; changed = true; }
     if (changed) dimOverrides.push(o);
@@ -337,40 +342,107 @@ function buildMinimalConfig(draft: Draft): MinimalConfig {
   return out;
 }
 
-// ─── Weight bar ─────────────────────────────────────────────────────────────────
+// ─── Weight read-outs ───────────────────────────────────────────────────────────
 
-function WeightBar({ pct }: { pct: number }) {
+/**
+ * A dimension's share of the overall score, in the accordion header.
+ *
+ * This is the NORMALISED share (weight ÷ the sum of all five), not the number
+ * typed in the box — those only agree when the five happen to add to 100, and
+ * the share is what actually reaches a trainee's scorecard.
+ */
+function SharePill({ pct }: { pct: number }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'baseline',
+        gap: 4,
+        padding: '3px 9px',
+        borderRadius: 999,
+        background: COLOR.brandSoft,
+        color: COLOR.brand,
+        fontSize: 12,
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {pct}%
+      <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.75 }}>of the score</span>
+    </span>
+  );
+}
+
+/** One tint per segment, walked down from the brand colour so the bar reads as
+ *  a single quantity split five ways rather than five unrelated colours. */
+const segmentFill = (i: number) =>
+  `color-mix(in oklab, ${COLOR.brand} ${92 - i * 16}%, ${COLOR.brandSoft})`;
+
+/**
+ * All five shares in ONE bar, plus a legend.
+ *
+ * Five separate percentages leave the reader to add them up and trust that the
+ * total is 100; a single stacked bar shows it. This is the only place on the
+ * screen where the balance of the rubric is visible as a balance.
+ */
+function WeightStack({
+  segments,
+}: {
+  segments: Array<{ key: string; label: string; pct: number }>;
+}) {
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
       <div
         style={{
-          width: 90,
-          height: 6,
+          display: 'flex',
+          height: 22,
           borderRadius: 999,
-          background: 'rgba(60,20,15,0.08)',
           overflow: 'hidden',
+          background: COLOR.borderSoft,
         }}
       >
-        <div
-          style={{
-            width: `${Math.max(0, Math.min(100, pct))}%`,
-            height: '100%',
-            background: `linear-gradient(90deg, ${COLOR.brand}, oklch(0.66 0.22 22))`,
-          }}
-        />
+        {segments.map((seg, i) => (
+          <div
+            key={seg.key}
+            title={`${seg.label} — ${seg.pct}%`}
+            style={{
+              width: `${seg.pct}%`,
+              background: segmentFill(i),
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontSize: 11,
+              fontWeight: 800,
+              overflow: 'hidden',
+              transition: 'width 0.25s ease',
+            }}
+          >
+            {seg.pct >= 8 ? `${seg.pct}%` : ''}
+          </div>
+        ))}
       </div>
-      <span
-        style={{
-          fontFamily: 'var(--pbt-mono)',
-          fontSize: 12,
-          fontWeight: 700,
-          color: COLOR.inkSoft,
-          minWidth: 44,
-          textAlign: 'right',
-        }}
-      >
-        {pct.toFixed(1)}%
-      </span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+        {segments.map((seg, i) => (
+          <span
+            key={seg.key}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: COLOR.inkSoft }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 3,
+                background: segmentFill(i),
+                display: 'inline-block',
+              }}
+            />
+            {seg.label}
+            <strong style={{ color: COLOR.ink }}>{seg.pct}%</strong>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -573,14 +645,43 @@ const SCORING_SUFFIX_INFO = (
 const WEIGHT_INFO = (
   <>
     <p style={{ margin: 0 }}>
-      Relative importance — the five weights are auto-balanced to 100%, so only
-      their ratios matter. Doubling every weight changes nothing; doubling one
-      of them doubles its share.
+      How much this dimension counts towards the single 0–100 score a trainee
+      sees. The five are balanced to add up to 100% automatically, so you can
+      type whatever numbers feel right — only their sizes relative to each other
+      matter. Enter 50 for one and 10 for another and the first counts five
+      times as much.
     </p>
     <p style={{ margin: '12px 0 0' }}>
-      Changing weights changes how the <strong>overall</strong> score is
-      computed from here on. Sessions already scored keep the overall they were
-      given — old scorecards are never silently rewritten.
+      Because of that balancing, the number you type and the share shown beside
+      it only match when your five happen to add to 100. The share is what
+      actually reaches a scorecard.
+    </p>
+    <p style={{ margin: '12px 0 0' }}>
+      Changing these changes how the <strong>overall</strong> score is worked
+      out from here on. Sessions already scored keep the score they were given —
+      old scorecards are never rewritten.
+    </p>
+  </>
+);
+
+const BAND_EXAMPLE_INFO = (
+  <>
+    <p style={{ margin: 0 }}>
+      These two lines are handed to the AI that marks each session, word for
+      word, as its only guide to what a top and a bottom answer sound like for
+      this dimension. Everything between the two — most real answers — is judged
+      by how close it lands to one or the other.
+    </p>
+    <p style={{ margin: '12px 0 0' }}>
+      Write them as things a team member would actually say to a pet owner, not
+      as descriptions of good behaviour. &ldquo;I can hear how worried you
+      are about him&rdquo; teaches the marker far more than &ldquo;shows
+      empathy&rdquo;.
+    </p>
+    <p style={{ margin: '12px 0 0' }}>
+      They are the strongest lever on this screen: rewriting one moves every
+      future score for that dimension. Use <strong>Try this rubric</strong>
+      {' '}below to see the effect before you save.
     </p>
   </>
 );
@@ -588,16 +689,17 @@ const WEIGHT_INFO = (
 const RETRIEVAL_INFO = (
   <>
     <p style={{ margin: 0 }}>
-      When retrieval is on, the app looks up the most relevant chunks of the
-      knowledge base <strong>once per session</strong> — at the moment the
-      simulation opens — and threads them into both the customer prompt and the
-      scoring prompt for the whole conversation. It is not re-run on every turn.
+      When this is on, the app searches your knowledge library
+      <strong> once at the start of each session</strong> — the moment the
+      roleplay opens — and puts the sections it finds into the pet owner&apos;s
+      briefing and the marker&apos;s instructions for the whole conversation. It
+      does not search again on every reply.
     </p>
     <p style={{ margin: '12px 0 0' }}>
-      <strong>k</strong> is how many chunks that single lookup pulls in. Higher
-      k means richer grounding but a longer prompt (and a slightly slower, more
-      expensive call). Retrieval fails open: if the lookup errors, the session
-      still runs on the built-in knowledge.
+      The number sets how many sections that one search brings back. More
+      sections mean richer background, but a longer briefing and a slightly
+      slower, more expensive session. If the search fails, the session still
+      runs on the knowledge built into the app.
     </p>
   </>
 );
@@ -609,7 +711,7 @@ const TAB_LABELS: Record<Tab, string> = {
   scoring: 'Scoring',
   drivers: 'Drivers',
   pushbacks: 'Pushbacks',
-  global: 'Global prompt',
+  global: 'Every conversation',
 };
 
 export function SimulationScreen() {
@@ -795,15 +897,11 @@ export function SimulationScreen() {
     }
   }
 
-  const totalWeight = draft
-    ? draft.dims.reduce((s, d) => s + (d.weight > 0 ? d.weight : 0), 0)
-    : 0;
-
   return (
     <>
       <ContextBar
-        title="Simulation config"
-        subtitle="Tune AI customer personas, the scoring rubric, and prompt injections — no deploy needed. Changes go live within a minute."
+        title="Roleplay & scoring"
+        subtitle="Set how the AI pet owner behaves and how sessions are marked. You can change all of it here — no developer needed — and it reaches everyone within a minute."
         actions={
           <button
             onClick={() => setHistoryOpen(true)}
@@ -822,192 +920,180 @@ export function SimulationScreen() {
       />
       <ScreenShell>
         <ReadOnlyBanner permission="simulation.write" />
-        {snapshot.error ? (
-          /*
-            Hard stop. Without the loaded config there is no honest draft to
-            edit: every field would show its code default, and saving would
-            write those defaults over whatever is actually live.
-          */
-          <InlineAlert tone="error" title="Couldn’t load the simulation settings">
-            <div>{snapshot.error}</div>
-            <div style={{ marginTop: 6 }}>
-              Nothing is editable until this loads — otherwise the editor would show
-              built-in defaults as though they were your settings, and saving would
-              overwrite the live config.
-            </div>
-            <button
-              onClick={() => setRefreshKey((k) => k + 1)}
-              style={{ ...btnSecondary, marginTop: 10 }}
-            >
-              Retry
-            </button>
-          </InlineAlert>
-        ) : snapshot.loading || !draft ? (
-          <LoadingShimmer height={360} />
-        ) : (
-          <>
-            {/* Tabs */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
-                <PillButton key={t} active={tab === t} onClick={() => setTab(t)}>
-                  {TAB_LABELS[t]}
-                </PillButton>
-              ))}
-            </div>
+        {/*
+          A failed load is a hard stop, not an empty editor. Without the saved
+          config every field would show its code default, indistinguishable
+          from "nothing is customised" — and saving from there would overwrite
+          the live settings with defaults.
+        */}
+        <QueryBoundary
+          query={snapshot}
+          title="Couldn’t load these settings — nothing is editable until they load"
+          showLoading={false}
+        >
+          {snapshot.loading || !draft ? (
+            <LoadingShimmer height={360} />
+          ) : (
+            <>
+              {/* Tabs */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
+                  <PillButton key={t} active={tab === t} onClick={() => setTab(t)}>
+                    {TAB_LABELS[t]}
+                  </PillButton>
+                ))}
+              </div>
 
-            {tab === 'scoring' && (
-              <ScoringTab
-                draft={draft}
-                totalWeight={totalWeight}
-                onPatch={patch}
-              />
-            )}
-            {tab === 'drivers' && (
-              <DriversTab
-                draft={draft}
-                selected={selectedDriver}
-                onSelect={setSelectedDriver}
-                onPatch={patch}
-              />
-            )}
-            {tab === 'pushbacks' && (
-              <PushbacksTab
-                draft={draft}
-                selected={selectedPushback}
-                onSelect={setSelectedPushback}
-                onPatch={patch}
-                addingNew={addingNew}
-                newId={newPushbackId}
-                onNewId={setNewPushbackId}
-                onStartAdd={() => { setAddingNew(true); setNewPushbackId(''); }}
-                onConfirmAdd={() => {
-                  const id = newPushbackId.trim();
-                  if (!id || draft.pushbacks[id]) return;
-                  patch({ pushbacks: { ...draft.pushbacks, [id]: emptyDraftPushback(id) } });
-                  setSelectedPushback(id);
-                  setAddingNew(false);
-                  setNewPushbackId('');
-                }}
-                onCancelAdd={() => { setAddingNew(false); setNewPushbackId(''); }}
-                onDelete={(id) => {
-                  // Only admin-added categories can be deleted outright.
-                  const next = { ...draft.pushbacks };
-                  delete next[id];
-                  patch({ pushbacks: next });
-                  if (selectedPushback === id) {
-                    setSelectedPushback(Object.keys(next)[0] ?? null);
-                  }
-                }}
-                onResetOne={(id) => {
-                  // Built-in categories revert their fields to the code default.
-                  patch({ pushbacks: { ...draft.pushbacks, [id]: defaultPushbackDraft(id) } });
-                }}
-              />
-            )}
-            {tab === 'global' && <GlobalTab draft={draft} onPatch={patch} />}
+              {tab === 'scoring' && (
+                <ScoringTab draft={draft} onPatch={patch} />
+              )}
+              {tab === 'drivers' && (
+                <DriversTab
+                  draft={draft}
+                  selected={selectedDriver}
+                  onSelect={setSelectedDriver}
+                  onPatch={patch}
+                />
+              )}
+              {tab === 'pushbacks' && (
+                <PushbacksTab
+                  draft={draft}
+                  selected={selectedPushback}
+                  onSelect={setSelectedPushback}
+                  onPatch={patch}
+                  addingNew={addingNew}
+                  newId={newPushbackId}
+                  onNewId={setNewPushbackId}
+                  onStartAdd={() => { setAddingNew(true); setNewPushbackId(''); }}
+                  onConfirmAdd={() => {
+                    const id = newPushbackId.trim();
+                    if (!id || draft.pushbacks[id]) return;
+                    patch({ pushbacks: { ...draft.pushbacks, [id]: emptyDraftPushback(id) } });
+                    setSelectedPushback(id);
+                    setAddingNew(false);
+                    setNewPushbackId('');
+                  }}
+                  onCancelAdd={() => { setAddingNew(false); setNewPushbackId(''); }}
+                  onDelete={(id) => {
+                    // Only admin-added categories can be deleted outright.
+                    const next = { ...draft.pushbacks };
+                    delete next[id];
+                    patch({ pushbacks: next });
+                    if (selectedPushback === id) {
+                      setSelectedPushback(Object.keys(next)[0] ?? null);
+                    }
+                  }}
+                  onResetOne={(id) => {
+                    // Built-in categories revert their fields to the code default.
+                    patch({ pushbacks: { ...draft.pushbacks, [id]: defaultPushbackDraft(id) } });
+                  }}
+                />
+              )}
+              {tab === 'global' && <GlobalTab draft={draft} onPatch={patch} />}
 
-            {/* Sticky action bar */}
-            <div
-              style={{
-                position: 'sticky',
-                bottom: 16,
-                marginTop: 8,
-                zIndex: 5,
-              }}
-            >
-              <Glass padding="12px 16px" radius={14}>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {canWrite && (
-                    <button
-                      onClick={() => void handleSave()}
-                      disabled={saving || !dirty}
-                      style={{ ...btnPrimary, opacity: saving || !dirty ? 0.5 : 1 }}
-                    >
-                      {saving ? 'Saving…' : 'Save changes'}
-                    </button>
-                  )}
-                  {canWrite && (
-                    <input
-                      value={note}
-                      onChange={(e) => setNote(e.target.value.slice(0, 200))}
-                      placeholder="What changed? (optional — shows in history)"
-                      aria-label="Version description (optional)"
-                      style={{ ...inputStyle, width: 300, maxWidth: '100%' }}
-                    />
-                  )}
-                  {canWrite && (
-                    <button
-                      onClick={() => void handleReset()}
-                      style={{ ...btnSecondary, color: COLOR.danger, borderColor: 'color-mix(in oklab, oklch(0.58 0.20 25) 30%, transparent)' }}
-                    >
-                      Reset all to defaults
-                    </button>
-                  )}
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: dirty ? COLOR.warn : COLOR.inkMute,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                  >
+              {/* Sticky action bar */}
+              <div
+                style={{
+                  position: 'sticky',
+                  bottom: 16,
+                  marginTop: 8,
+                  zIndex: 5,
+                }}
+              >
+                <Glass padding="12px 16px" radius={14}>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {canWrite && (
+                      <button
+                        onClick={() => void handleSave()}
+                        disabled={saving || !dirty}
+                        style={{ ...btnPrimary, opacity: saving || !dirty ? 0.5 : 1 }}
+                      >
+                        {saving ? 'Saving…' : 'Save changes'}
+                      </button>
+                    )}
+                    {canWrite && (
+                      <input
+                        value={note}
+                        onChange={(e) => setNote(e.target.value.slice(0, 200))}
+                        placeholder="What changed? (optional — shows in history)"
+                        aria-label="Version description (optional)"
+                        style={{ ...inputStyle, width: 300, maxWidth: '100%' }}
+                      />
+                    )}
+                    {canWrite && (
+                      <button
+                        onClick={() => void handleReset()}
+                        style={{ ...btnSecondary, color: COLOR.danger, borderColor: 'color-mix(in oklab, oklch(0.58 0.20 25) 30%, transparent)' }}
+                      >
+                        Reset all to defaults
+                      </button>
+                    )}
                     <span
                       style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 999,
-                        background: dirty ? COLOR.warn : 'rgba(60,20,15,0.2)',
-                        display: 'inline-block',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: dirty ? COLOR.warn : COLOR.inkMute,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
                       }}
-                    />
-                    {dirty ? 'Unsaved changes' : 'All changes saved'}
-                  </span>
-                  {saveStatus === 'saved' && (
-                    <span style={{ fontSize: 13, color: COLOR.success, fontWeight: 700 }}>✓ Saved</span>
-                  )}
-                  {saveStatus === 'error' && (
-                    <span style={{ fontSize: 13, color: COLOR.danger, fontWeight: 700 }}>
-                      {saveError ?? 'Save failed'}
-                    </span>
-                  )}
-                  <span style={{ marginLeft: 'auto', fontSize: 11, color: COLOR.inkMute }}>
-                    Only changed fields are saved — untouched items keep inheriting defaults.
-                  </span>
-                  {conflict && (
-                    <InlineAlert
-                      tone="warn"
-                      title="Someone else saved these settings while you were editing."
-                      style={{ flexBasis: '100%' }}
                     >
-                      <div>
-                        Your changes were not written.
-                        {conflict.updatedAt
-                          ? ` Their version was saved ${fmtAgo(new Date(conflict.updatedAt).getTime())}.`
-                          : ''}{' '}
-                        Load theirs and redo your edits on top, or overwrite them — their
-                        version stays in History either way.
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                        <button onClick={() => void reloadTheirVersion()} style={btnPrimary}>
-                          Reload their version
-                        </button>
-                        <button
-                          onClick={() => void saveAnyway()}
-                          disabled={saving}
-                          style={{ ...btnSecondary, color: COLOR.danger }}
-                        >
-                          Save anyway
-                        </button>
-                      </div>
-                    </InlineAlert>
-                  )}
-                </div>
-              </Glass>
-            </div>
-          </>
-        )}
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 999,
+                          background: dirty ? COLOR.warn : 'rgba(60,20,15,0.2)',
+                          display: 'inline-block',
+                        }}
+                      />
+                      {dirty ? 'Unsaved changes' : 'All changes saved'}
+                    </span>
+                    {saveStatus === 'saved' && (
+                      <span style={{ fontSize: 13, color: COLOR.success, fontWeight: 700 }}>✓ Saved</span>
+                    )}
+                    {saveStatus === 'error' && (
+                      <span style={{ fontSize: 13, color: COLOR.danger, fontWeight: 700 }}>
+                        {saveError ?? 'Save failed'}
+                      </span>
+                    )}
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: COLOR.inkMute }}>
+                      Only changed fields are saved — untouched items keep inheriting defaults.
+                    </span>
+                    {conflict && (
+                      <InlineAlert
+                        tone="warn"
+                        title="Someone else saved these settings while you were editing."
+                        style={{ flexBasis: '100%' }}
+                      >
+                        <div>
+                          Your changes were not written.
+                          {conflict.updatedAt
+                            ? ` Their version was saved ${fmtAgo(new Date(conflict.updatedAt).getTime())}.`
+                            : ''}{' '}
+                          Load theirs and redo your edits on top, or overwrite them — their
+                          version stays in History either way.
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                          <button onClick={() => void reloadTheirVersion()} style={btnPrimary}>
+                            Reload their version
+                          </button>
+                          <button
+                            onClick={() => void saveAnyway()}
+                            disabled={saving}
+                            style={{ ...btnSecondary, color: COLOR.danger }}
+                          >
+                            Save anyway
+                          </button>
+                        </div>
+                      </InlineAlert>
+                    )}
+                  </div>
+                </Glass>
+              </div>
+            </>
+          )}
+        </QueryBoundary>
       </ScreenShell>
     </>
   );
@@ -1015,73 +1101,165 @@ export function SimulationScreen() {
 
 // ─── Scoring tab ────────────────────────────────────────────────────────────────
 
+/**
+ * Anything an admin types here is shown to trainees verbatim in every language
+ * — only untouched text carries a translation. Worth saying on each tab that
+ * edits trainee-visible wording.
+ */
+const LOCALE_NOTE =
+  'Wording you change here is shown to every trainee exactly as you type it, in all languages. Anything you leave alone stays translated (English + French).';
+
 function ScoringTab({
   draft,
-  totalWeight,
   onPatch,
 }: {
   draft: Draft;
-  totalWeight: number;
   onPatch: (p: Partial<Draft>) => void;
 }) {
   function patchDim(idx: number, p: Partial<DraftDimension>) {
     onPatch({ dims: draft.dims.map((d, i) => (i === idx ? { ...d, ...p } : d)) });
   }
+
+  /*
+    Resolved the same way a live session resolves them, rather than re-derived
+    here: same normalisation, same "all zero falls back to the built-in
+    weighting" safety net. Re-deriving is how the header and the scorecard end
+    up disagreeing.
+  */
+  const shares = useMemo(() => {
+    const resolved = resolveWeights({
+      scoring: {
+        dimensions: draft.dims.map((d) => ({ key: d.key, weight: d.weightPct / 100 })),
+      },
+    });
+    const out = {} as Record<DimensionKey, number>;
+    for (const d of draft.dims) out[d.key] = Math.round((resolved[d.key] ?? 0) * 100);
+    // Rounding five fractions independently can total 99 or 101, which makes a
+    // liar of the "these add up to 100%" claim right beside them. The residual
+    // lands on the largest share, where a single point is least visible.
+    const residual = 100 - draft.dims.reduce((sum, d) => sum + out[d.key], 0);
+    if (residual !== 0 && draft.dims.length > 0) {
+      const biggest = draft.dims.reduce((a, b) => (out[a.key] >= out[b.key] ? a : b));
+      out[biggest.key] += residual;
+    }
+    return out;
+  }, [draft.dims]);
+  const pctOf = (key: DimensionKey) => shares[key] ?? 0;
+  const allZero = draft.dims.every((d) => d.weightPct <= 0);
+
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <SectionTitle
         title="Scoring rubric"
-        subtitle="Five ACT-first dimensions. Weights are normalised automatically — only their relative size matters."
+        subtitle="Five things every session is marked on. Set how much each one counts, and give the marker an example of a great answer and a weak one."
       />
-      {draft.dims.map((dim, idx) => {
-        const pct = totalWeight > 0 ? (dim.weight / totalWeight) * 100 : 0;
-        return (
-          <Collapsible
-            key={dim.key}
-            title={dim.label || dim.key}
-            accent={
-              <span style={{ fontFamily: 'var(--pbt-mono)', fontSize: 11, color: COLOR.inkMute }}>
-                {dim.key}
-              </span>
-            }
-            badge={<WeightBar pct={pct} />}
-          >
-            <div style={{ display: 'grid', gap: 12 }}>
-              <div style={TWO_COL}>
-                <Field label="Label">
-                  <input value={dim.label} onChange={(e) => patchDim(idx, { label: e.target.value })} style={inputStyle} />
-                </Field>
-                <FieldWithInfo
-                  label="Weight"
-                  infoTitle="Dimension weight"
-                  info={WEIGHT_INFO}
-                  help="Relative importance — auto-balanced, so only the ratios matter."
-                >
+
+      <Glass padding={18} radius={16}>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: COLOR.ink }}>
+              How the 0–100 score is made up
+            </div>
+            <div style={{ fontSize: 12.5, color: COLOR.inkMute, marginTop: 3 }}>
+              These five always add up to 100% — raising one lowers the others.
+            </div>
+          </div>
+          <WeightStack
+            segments={draft.dims.map((d) => ({
+              key: d.key,
+              label: d.label || d.key,
+              pct: pctOf(d.key),
+            }))}
+          />
+          {allZero && (
+            <InlineAlert tone="warn" title="Every dimension is set to 0%">
+              A rubric where nothing counts can&apos;t produce a score, so sessions
+              would fall back to the built-in weighting shown above. Give at least
+              one dimension a weight above zero.
+            </InlineAlert>
+          )}
+        </div>
+      </Glass>
+
+      <div style={{ fontSize: 11.5, color: COLOR.inkMute, lineHeight: 1.5 }}>{LOCALE_NOTE}</div>
+
+      {draft.dims.map((dim, idx) => (
+        <Collapsible
+          key={dim.key}
+          title={dim.label || dim.key}
+          badge={<SharePill pct={pctOf(dim.key)} />}
+        >
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={TWO_COL}>
+              <Field label="Name shown to trainees">
+                <input value={dim.label} onChange={(e) => patchDim(idx, { label: e.target.value })} style={inputStyle} />
+              </Field>
+              <FieldWithInfo
+                label="How much it counts"
+                infoTitle="How much a dimension counts"
+                info={WEIGHT_INFO}
+                help={`Currently ${pctOf(dim.key)}% of the overall score, after all five are balanced to 100%.`}
+              >
+                <div style={{ position: 'relative' }}>
                   <input
                     type="number"
                     min={0}
-                    step={0.01}
-                    value={dim.weight}
-                    onChange={(e) => patchDim(idx, { weight: parseFloat(e.target.value) || 0 })}
-                    style={inputStyle}
+                    max={100}
+                    step={1}
+                    value={dim.weightPct}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      patchDim(idx, {
+                        weightPct: Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0,
+                      });
+                    }}
+                    aria-label={`${dim.label || dim.key} weight, percent`}
+                    style={{ ...inputStyle, paddingRight: 30 }}
                   />
-                </FieldWithInfo>
-              </div>
-              <Field label="Description">
-                <textarea value={dim.description} rows={2} onChange={(e) => patchDim(idx, { description: e.target.value })} style={proseArea} />
-              </Field>
-              <div style={TWO_COL}>
-                <Field label="Excellent example (≥85)">
-                  <textarea value={dim.excellentExample} rows={3} onChange={(e) => patchDim(idx, { excellentExample: e.target.value })} style={proseArea} />
-                </Field>
-                <Field label="Needs-work example (<70)">
-                  <textarea value={dim.needsWorkExample} rows={3} onChange={(e) => patchDim(idx, { needsWorkExample: e.target.value })} style={proseArea} />
-                </Field>
-              </div>
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      right: 11,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      fontSize: 12.5,
+                      fontWeight: 800,
+                      color: COLOR.inkMute,
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    %
+                  </span>
+                </div>
+              </FieldWithInfo>
             </div>
-          </Collapsible>
-        );
-      })}
+            <Field label="Description">
+              <textarea value={dim.description} rows={2} onChange={(e) => patchDim(idx, { description: e.target.value })} style={proseArea} />
+            </Field>
+            <div style={TWO_COL}>
+              <FieldWithInfo
+                label="What a great answer sounds like"
+                infoTitle="Great and weak answer examples"
+                info={BAND_EXAMPLE_INFO}
+                help="Shown to the AI marker as the anchor for a score of 85 or above. Write it as a line someone would actually say."
+              >
+                <textarea value={dim.excellentExample} rows={3} onChange={(e) => patchDim(idx, { excellentExample: e.target.value })} style={proseArea} />
+              </FieldWithInfo>
+              <FieldWithInfo
+                label="What a weak answer sounds like"
+                infoTitle="Great and weak answer examples"
+                info={BAND_EXAMPLE_INFO}
+                help="The anchor for a score below 70. The two together are all the marker has to calibrate this dimension."
+              >
+                <textarea value={dim.needsWorkExample} rows={3} onChange={(e) => patchDim(idx, { needsWorkExample: e.target.value })} style={proseArea} />
+              </FieldWithInfo>
+            </div>
+          </div>
+        </Collapsible>
+      ))}
+
+      <TryRubricPanel draft={draft} />
 
       <Collapsible
         title="Extra instructions for the AI scorer"
@@ -1115,6 +1293,236 @@ function ScoringTab({
   );
 }
 
+// ─── "Try this rubric" — score a sample conversation with the unsaved draft ─────
+//
+// Saving is live for every trainee within a minute, so the only honest way to
+// judge a weighting or a rewritten example is to run it first. The draft is
+// posted to `admin-score-preview`, which scores with it and writes nothing.
+
+interface PreviewTurn {
+  role: 'user' | 'ai';
+  text: string;
+}
+
+interface ScorePreview {
+  scenario: {
+    breed: string;
+    pushback: string;
+    persona: string;
+    driver: string;
+    difficulty: number;
+  };
+  transcript: PreviewTurn[];
+  dimensions: Array<{ key: string; label: string; score: number; sharePct: number }>;
+  overall: number;
+  band: 'good' | 'ok' | 'poor';
+  critique: string;
+}
+
+const BAND_LABEL: Record<ScorePreview['band'], string> = {
+  good: 'Strong',
+  ok: 'Solid',
+  poor: 'Needs work',
+};
+const BAND_TONE: Record<ScorePreview['band'], 'success' | 'warn' | 'danger'> = {
+  good: 'success',
+  ok: 'warn',
+  poor: 'danger',
+};
+
+const SPEAKER_LABEL: Record<PreviewTurn['role'], string> = {
+  user: 'Team member',
+  ai: 'Pet owner',
+};
+
+/**
+ * Parse a pasted conversation. Each turn starts with a speaker prefix;
+ * continuation lines fold into the turn above so pasted paragraphs survive.
+ */
+function parsePastedTranscript(text: string): PreviewTurn[] | null {
+  const turns: PreviewTurn[] = [];
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const match = /^(team member|staff|me|pet owner|owner|customer|client)\s*:\s*(.*)$/i.exec(trimmed);
+    if (match) {
+      const who = match[1].toLowerCase();
+      const role: PreviewTurn['role'] =
+        who === 'team member' || who === 'staff' || who === 'me' ? 'user' : 'ai';
+      turns.push({ role, text: match[2].trim() });
+      continue;
+    }
+    if (turns.length === 0) return null;
+    turns[turns.length - 1].text = `${turns[turns.length - 1].text} ${trimmed}`.trim();
+  }
+  const usable = turns.filter((t) => t.text.length > 0);
+  return usable.length > 0 ? usable : null;
+}
+
+function TryRubricPanel({ draft }: { draft: Draft }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<ScorePreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const [ownText, setOwnText] = useState('');
+
+  async function run() {
+    let transcript: PreviewTurn[] | null = null;
+    if (ownOpen && ownText.trim()) {
+      transcript = parsePastedTranscript(ownText);
+      if (!transcript) {
+        setError('Start each line with “Team member:” or “Pet owner:” so we know who is speaking.');
+        return;
+      }
+    }
+    setRunning(true);
+    setError(null);
+    try {
+      const res = await postJson<ScorePreview>('admin-score-preview', {
+        config: buildMinimalConfig(draft),
+        transcript,
+      });
+      setResult(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The test run failed');
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <Glass padding={18} radius={16}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <SectionTitle
+          title="Try this rubric"
+          subtitle="Mark a sample conversation with the settings as they stand right now — including changes you haven't saved."
+        />
+        <StatusPill tone="info" dot={false}>Test only — nothing is saved</StatusPill>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 14 }}>
+        <button
+          onClick={() => void run()}
+          disabled={running}
+          style={{ ...btnPrimary, opacity: running ? 0.6 : 1 }}
+        >
+          {running ? 'Marking…' : result ? 'Run it again' : 'Run the test'}
+        </button>
+        <button
+          onClick={() => setOwnOpen((o) => !o)}
+          style={{ ...btnSecondary, fontSize: 12 }}
+        >
+          {ownOpen ? 'Use the sample conversation' : 'Paste my own conversation'}
+        </button>
+        <span style={{ fontSize: 11.5, color: COLOR.inkMute }}>
+          Takes a few seconds. No trainee sees this, and your settings stay exactly as they are.
+        </span>
+      </div>
+
+      {ownOpen && (
+        <div style={{ marginTop: 12 }}>
+          <Field
+            label="Your conversation"
+            help="One turn per line, each starting with “Team member:” or “Pet owner:”. Leave it empty to use the sample."
+          >
+            <textarea
+              value={ownText}
+              rows={6}
+              onChange={(e) => setOwnText(e.target.value)}
+              placeholder={'Pet owner: He\'s not fat, he\'s just a big Lab.\nTeam member: I hear you — can I ask what a normal day of food looks like for him?'}
+              style={proseArea}
+            />
+          </Field>
+        </div>
+      )}
+
+      {error && (
+        <InlineAlert tone="error" title="Couldn’t run the test" style={{ marginTop: 12 }}>
+          {error}
+        </InlineAlert>
+      )}
+
+      {result && (
+        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                minWidth: 92,
+                padding: '10px 16px',
+                borderRadius: 14,
+                background: COLOR.brandSoft,
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 30, fontWeight: 800, color: COLOR.brand, lineHeight: 1 }}>
+                {result.overall}
+              </div>
+              <div style={{ ...monoLabel, marginTop: 4 }}>out of 100</div>
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <StatusPill tone={BAND_TONE[result.band]}>{BAND_LABEL[result.band]}</StatusPill>
+              <div style={{ fontSize: 12.5, color: COLOR.inkMute, maxWidth: 460 }}>
+                What this sample conversation would score if you saved these settings now.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: 8 }}>
+            {result.dimensions.map((d) => (
+              <div key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: COLOR.ink, width: 150, flexShrink: 0 }}>
+                  {d.label}
+                </span>
+                <div style={{ flex: 1, height: 8, borderRadius: 999, background: COLOR.borderSoft, overflow: 'hidden', minWidth: 80 }}>
+                  <div
+                    style={{
+                      width: `${Math.max(0, Math.min(100, d.score))}%`,
+                      height: '100%',
+                      background: COLOR.brand,
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: COLOR.ink, width: 30, textAlign: 'right' }}>
+                  {d.score}
+                </span>
+                <span style={{ fontSize: 11.5, color: COLOR.inkMute, width: 96, textAlign: 'right' }}>
+                  counts {d.sharePct}%
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {result.critique && (
+            <p style={{ margin: 0, fontSize: 13, color: COLOR.inkSoft, lineHeight: 1.6 }}>
+              {result.critique}
+            </p>
+          )}
+
+          <Collapsible
+            title="The conversation that was marked"
+            badge={
+              <span style={{ fontSize: 11, color: COLOR.inkMute }}>
+                {result.scenario.breed} · {result.scenario.pushback}
+              </span>
+            }
+          >
+            <div style={{ display: 'grid', gap: 8 }}>
+              {result.transcript.map((turn, i) => (
+                <div key={i} style={{ fontSize: 12.5, color: COLOR.inkSoft, lineHeight: 1.55 }}>
+                  <strong style={{ color: turn.role === 'user' ? COLOR.brand : COLOR.ink }}>
+                    {SPEAKER_LABEL[turn.role]}:
+                  </strong>{' '}
+                  {turn.text}
+                </div>
+              ))}
+            </div>
+          </Collapsible>
+        </div>
+      )}
+    </Glass>
+  );
+}
+
 // ─── Drivers tab ────────────────────────────────────────────────────────────────
 
 const DRIVER_ARR_FIELDS: Array<{ key: keyof DraftDriver; label: string }> = [
@@ -1143,6 +1551,7 @@ function DriversTab({
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <SectionTitle title="Driver personas" subtitle="The four ECHO archetypes that drive the AI customer's behaviour." />
+      <div style={{ fontSize: 11.5, color: COLOR.inkMute, lineHeight: 1.5 }}>{LOCALE_NOTE}</div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {DRIVER_KEYS.map((k) => (
           <PillButton key={k} active={selected === k} onClick={() => onSelect(k)} size="sm">
@@ -1221,6 +1630,7 @@ function PushbacksTab({
           <SectionTitle title="Pushback categories" subtitle={`${ids.length} categories — what the AI customer pushes back on`} />
           <button onClick={onStartAdd} style={{ ...btnPrimary, fontSize: 12 }}>+ New category</button>
         </div>
+        <div style={{ fontSize: 11.5, color: COLOR.inkMute, lineHeight: 1.5, marginBottom: 12 }}>{LOCALE_NOTE}</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {ids.map((id) => (
             <PillButton key={id} active={selected === id} onClick={() => onSelect(id)} size="sm">
@@ -1314,9 +1724,12 @@ function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draf
       </Glass>
 
       <Glass padding={18} radius={16}>
-        <SectionTitle title="Retrieval (RAG)" subtitle="Pull relevant knowledge-base chunks into the customer + scoring prompts, once at the start of each session." />
+        <SectionTitle
+          title="Use your knowledge library"
+          subtitle="When this is on, each roleplay starts by pulling the most relevant sections of your uploaded documents into the AI's briefing and into the marker's instructions."
+        />
         <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
-          <Field label="Enabled">
+          <Field label="Use knowledge documents">
             <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
                 type="checkbox"
@@ -1327,10 +1740,10 @@ function GlobalTab({ draft, onPatch }: { draft: Draft; onPatch: (p: Partial<Draf
             </label>
           </Field>
           <FieldWithInfo
-            label="k"
-            infoTitle="Retrieval (RAG)"
+            label="How many sections to look up"
+            infoTitle="Using your knowledge library"
             info={RETRIEVAL_INFO}
-            help="Knowledge chunks pulled in once per session (1–8) — not per turn."
+            help="Between 1 and 8. More sections mean richer background, but a slightly slower session."
           >
             <input
               type="number"
@@ -1392,6 +1805,9 @@ function HistoryModal({
   const [versions, setVersions] = useState<SimulationVersion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by the boundary's Try again, so a hiccup doesn't cost the admin the
+  // modal (and the restore path) until they reopen it.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -1411,7 +1827,13 @@ function HistoryModal({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, attempt]);
+
+  const query = {
+    loading,
+    error,
+    refetch: () => setAttempt((n) => n + 1),
+  };
 
   return (
     <Modal open={open} onClose={onClose} width={880} ariaLabel="Simulation config history">
@@ -1429,25 +1851,25 @@ function HistoryModal({
         <ModalCloseButton onClose={onClose} />
       </div>
       <div style={{ padding: '12px 26px 26px', overflow: 'auto', display: 'grid', gap: 8 }}>
-        {loading ? (
-          <LoadingShimmer height={180} />
-        ) : error ? (
-          <div style={{ fontSize: 13, color: COLOR.danger, fontWeight: 700 }}>{error}</div>
-        ) : versions.length === 0 ? (
-          <div style={{ padding: '36px 12px', textAlign: 'center', color: COLOR.inkMute, fontSize: 13 }}>
-            No saved versions in the last 30 days.
-          </div>
-        ) : (
-          versions.map((v) => (
-            <VersionRow
-              key={v.id}
-              version={v}
-              isCurrent={configEquals(v.after, currentConfig)}
-              canRestore={canRestore}
-              onRestore={() => onRestore(v)}
-            />
-          ))
-        )}
+        <QueryBoundary query={query} title="Couldn’t load the version history" showLoading={false}>
+          {loading ? (
+            <LoadingShimmer height={180} />
+          ) : versions.length === 0 ? (
+            <div style={{ padding: '36px 12px', textAlign: 'center', color: COLOR.inkMute, fontSize: 13 }}>
+              No saved versions in the last 30 days.
+            </div>
+          ) : (
+            versions.map((v) => (
+              <VersionRow
+                key={v.id}
+                version={v}
+                isCurrent={configEquals(v.after, currentConfig)}
+                canRestore={canRestore}
+                onRestore={() => onRestore(v)}
+              />
+            ))
+          )}
+        </QueryBoundary>
         {!loading && !error && versions.length > 0 && (
           <div
             style={{

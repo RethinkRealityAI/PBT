@@ -25,9 +25,10 @@ import { SCREENS_WITH_TAB_BAR } from './routes';
 
 import { mountKeyframes } from '../design-system/keyframes';
 import { AppFrame } from '../shell/AppFrame';
+import { ErrorBoundary } from './ErrorBoundary';
 import { TabBar } from '../shell/TabBar';
 import { useCloudSync } from '../features/auth/useCloudSync';
-import { logEvent, startAnalytics } from '../lib/analytics';
+import { logEvent, markScreenEntered, startAnalytics } from '../lib/analytics';
 
 /*
  * Screen loading strategy (spec §13.9 — main JS chunk < 500 kB gzip).
@@ -165,11 +166,16 @@ export function App() {
   );
 }
 
-/** Emits a `screen_view` nav_event each time the current screen changes. */
+/**
+ * Emits a `screen_view` nav_event each time the current screen changes, and
+ * hands the screen to the dwell timer so the screen just left is logged with
+ * the time spent on it.
+ */
 function ScreenViewLogger() {
   const { current } = useNavigation();
   useEffect(() => {
     logEvent({ type: 'screen_view', screen: current });
+    markScreenEntered(current);
   }, [current]);
   return null;
 }
@@ -407,7 +413,9 @@ function ScreenFallback() {
 function ScreenSwitch() {
   return (
     <Suspense fallback={<ScreenFallback />}>
-      <CurrentScreen />
+      <ErrorBoundary>
+        <CurrentScreen />
+      </ErrorBoundary>
     </Suspense>
   );
 }

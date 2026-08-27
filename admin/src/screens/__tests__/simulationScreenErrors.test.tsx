@@ -42,10 +42,8 @@ describe('SimulationScreen read errors', () => {
   it('blocks editing when the config read fails', () => {
     snapshot.error = 'Request failed (500)';
     renderScreen();
-    expect(
-      screen.getByText('Couldn’t load the simulation settings'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Retry')).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t load these settings/)).toBeInTheDocument();
+    expect(screen.getByText('Try again')).toBeInTheDocument();
     // No draft, so nothing to save over the live config with.
     expect(screen.queryByText('Save changes')).not.toBeInTheDocument();
     expect(screen.queryByText('Reset all to defaults')).not.toBeInTheDocument();

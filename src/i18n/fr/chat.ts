@@ -35,14 +35,16 @@ export const chat: Record<keyof typeof enChat, string> = {
   'chat.controls.end': 'Terminer',
 
   'chat.composer.placeholder': 'Reconnaissez, questionnez, recommandez…',
+  'chat.composer.aria': 'Votre réponse au client',
   'chat.composer.send': 'Envoyer',
+  'chat.transcript.aria': 'Transcription de la conversation',
   'chat.bubble.you': 'Vous',
   'chat.typing.aria': 'Le client est en train d’écrire',
   'chat.status.scoring': 'Évaluation de la conversation…',
   'chat.error.connect': 'Connexion impossible — vérifiez votre réseau.',
   'chat.error.retry': 'Réessayer',
   'chat.error.notConfigured':
-    'La clé API Gemini n’est pas configurée. Ajoutez GEMINI_API_KEY à votre environnement.',
+    'Les séances de pratique sont indisponibles pour le moment. Avisez votre administrateur, puis réessayez plus tard.',
   'chat.error.openFailed':
     'Impossible de joindre l’IA — vérifiez votre réseau et touchez « Réessayer ».',
   'chat.error.sendFailed':

@@ -17,7 +17,7 @@ import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import { ScenarioHints } from '../features/scenarios/ScenarioHints';
 import { useResolvedLibraryScenarios } from '../data/useResolvedScenarios';
 import { useFlag, useFlagValue, useFlags, useSimulationConfig, IfFlag } from '../app/providers/FlagProvider';
-import { resolveDimensions } from '../data/knowledge/simulationConfig';
+import { resolveDimensions, resolveWeights } from '../data/knowledge/simulationConfig';
 import type { DimensionKey } from '../data/knowledge/scoringRubric';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
 import { useTheme } from '../app/providers/ThemeProvider';
@@ -1353,6 +1353,10 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
     t('home.dim.clarify'),
     t('home.dim.transform'),
   ].join(' → ');
+  // Shares must mirror the arithmetic that actually grades a session: scoring
+  // runs on the normalised weights, so a raw config that doesn't sum to one
+  // would otherwise show the trainee percentages they were never scored on.
+  const scoringWeights = resolveWeights(simulationConfig ?? {});
   const scoringDimensions = resolveDimensions(simulationConfig ?? {})
     // Code-default labels/descriptions are translated; anything an admin typed
     // in the Simulation screen is shown verbatim (see dataL10n/rubric.ts).
@@ -1360,7 +1364,7 @@ function ScoringInfoModal({ open, onClose }: { open: boolean; onClose: () => voi
     .map((d) => ({
       key: d.key,
       label: d.label,
-      weight: formatPercent(Math.round(d.weight * 100), locale),
+      weight: formatPercent(Math.round((scoringWeights[d.key] ?? 0) * 100), locale),
       description: d.description,
     }));
 

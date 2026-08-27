@@ -51,14 +51,18 @@ export const chat = {
 
   // Text mode
   'chat.composer.placeholder': 'Acknowledge, ask, recommend…',
+  'chat.composer.aria': 'Your reply to the client',
   'chat.composer.send': 'Send',
+  'chat.transcript.aria': 'Conversation transcript',
   'chat.bubble.you': 'You',
   'chat.typing.aria': 'Customer is typing',
   'chat.status.scoring': 'Scoring conversation…',
   'chat.error.connect': 'Could not connect — check your network.',
   'chat.error.retry': 'Try again',
+  /** Shown when the AI is not reachable for a reason the trainee cannot fix —
+   *  they need their administrator, not a retry. */
   'chat.error.notConfigured':
-    'Gemini API key is not configured. Please add GEMINI_API_KEY to your environment.',
+    'Practice sessions are unavailable right now. Let your administrator know, then try again later.',
   'chat.error.openFailed':
     'Could not reach the AI — check your network and tap "Try again".',
   'chat.error.sendFailed':

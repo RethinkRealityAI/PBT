@@ -9,11 +9,30 @@ import { Page } from '../shell/Page';
 import { PUSHBACK_CATEGORIES } from '../data/scenarios';
 import { readStorage } from '../lib/storage';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
-import { isScoreUnavailable } from '../services/types';
+import { isScoreUnavailable, type SessionRecord } from '../services/types';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { setSelectedSessionId } from '../lib/selectedSession';
 import { useLanguage } from '../app/providers/LanguageProvider';
+import { localizedPushbackLabel } from '../i18n/dataL10n/pushbacks';
 import { formatDateTime, formatPercent } from '../i18n/format';
+import type { Locale } from '../i18n/locales';
+
+/**
+ * A session's stored `scenarioSummary` is canonical English on purpose — it
+ * doubles as the RAG cache key — so localize it for display only: swap the
+ * leading pushback title for the locale's label and leave the breed and the
+ * trainee's own notes verbatim.
+ */
+function localizedSummary(session: SessionRecord, locale: Locale): string {
+  const canonical = PUSHBACK_CATEGORIES.find((c) => c.id === session.pushbackId);
+  if (!canonical || !session.scenarioSummary.startsWith(canonical.title)) {
+    return session.scenarioSummary;
+  }
+  return (
+    localizedPushbackLabel(session.pushbackId, locale) +
+    session.scenarioSummary.slice(canonical.title.length)
+  );
+}
 
 export function HistoryScreen() {
   const { go } = useNavigation();
@@ -90,7 +109,7 @@ export function HistoryScreen() {
               active={filter === c.id}
               onClick={() => setFilter(c.id)}
             >
-              {c.title.split(' ').slice(0, 2).join(' ')}
+              {localizedPushbackLabel(c.id, locale)}
             </Chip>
           ))}
         </div>
@@ -136,7 +155,7 @@ export function HistoryScreen() {
                   <Icon.chat />
                   <div className="flex-1 min-w-0">
                     <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      {s.scenarioSummary}
+                      {localizedSummary(s, locale)}
                     </div>
                     <div
                       style={{

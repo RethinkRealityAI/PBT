@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Glass } from '../design-system/Glass';
 import { DriverWave } from '../design-system/DriverWave';
 import { PillButton } from '../design-system/PillButton';
@@ -16,6 +16,7 @@ import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS } from '../design-system/tokens';
 import { clearAllStorage } from '../lib/storage';
 import { isTrainingUseAllowed, setTrainingUseAllowed } from '../lib/privacy';
+import { useDialog } from '../lib/useDialog';
 import { useT } from '../i18n/useT';
 import { AccountUpgradeModal } from '../features/auth/AccountUpgradeModal';
 import { getSupabase } from '../features/auth/supabaseClient';
@@ -31,7 +32,7 @@ const MODAL_FILL_DARK =
 const MODAL_FILL_LIGHT =
   'linear-gradient(165deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.30) 100%)';
 
-const DANGER = 'oklch(0.55 0.24 18)';
+const DANGER = 'var(--pbt-score-poor)';
 
 export function SettingsScreen() {
   const { go, replace } = useNavigation();
@@ -275,7 +276,7 @@ export function SettingsScreen() {
               }
             }}
           >
-            <span style={{ color: 'oklch(0.55 0.24 18)' }}>
+            <span style={{ color: DANGER }}>
               <Icon.close />
             </span>
           </Row>
@@ -371,14 +372,20 @@ function Row({
  * signing out alone would leave the anonymous copy of their history behind.
  */
 function DeleteAccountModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  // The dialog body only exists while it is open, so its focus/Escape wiring is
+  // bound on open and torn down on close — and the typed confirmation never
+  // survives a dismiss.
+  if (!open) return null;
+  return <DeleteAccountDialog onClose={onClose} />;
+}
+
+function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
   const t = useT();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (!open) return null;
 
   const confirmWord = t('settings.delete.confirmWord');
   const canDelete = typed.trim().toUpperCase() === confirmWord.toUpperCase() && !busy;
@@ -389,6 +396,20 @@ function DeleteAccountModal({ open, onClose }: { open: boolean; onClose: () => v
     setError(null);
     onClose();
   };
+
+  // Escape goes through `close` so a delete already in flight can't be
+  // dismissed out from under itself.
+  const dialogRef = useDialog<HTMLDivElement>(close);
+
+  // Scrolling the page under an open modal is the one part of the dialog
+  // contract that lives outside the dialog element itself.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
 
   const handleDelete = async () => {
     setError(null);
@@ -428,6 +449,7 @@ function DeleteAccountModal({ open, onClose }: { open: boolean; onClose: () => v
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal
       aria-labelledby="pbt-delete-title"
@@ -534,7 +556,6 @@ function DeleteAccountModal({ open, onClose }: { open: boolean; onClose: () => v
             <input
               type="text"
               value={typed}
-              autoFocus
               autoCapitalize="characters"
               autoCorrect="off"
               spellCheck={false}
