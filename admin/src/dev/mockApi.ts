@@ -284,6 +284,43 @@ const ROUTES: Record<string, unknown> = {
   'user-scenarios': [],
 };
 
+/**
+ * POSTs whose response is itself a reviewable surface. Everything else falls
+ * through to a bare success — see the branch in installAdminMocks.
+ */
+const POST_ROUTES: Record<string, unknown> = {
+  // Rubric dry run. Shares are the shipped defaults so the panel reads the way
+  // it will against a real config; scores are mid-band on purpose, so neither
+  // the "strong" nor the "needs work" styling monopolises the review.
+  'admin-score-preview': {
+    scenario: {
+      breed: 'Labrador Retriever',
+      pushback: 'Weight / obesity denial',
+      persona: 'Defensive',
+      driver: 'Harmonizer',
+      difficulty: 2,
+    },
+    transcript: [
+      { role: 'ai', text: "She's always been a big girl — the vet says that every visit." },
+      { role: 'user', text: 'I hear you, and it’s clear how much you care about her.' },
+      { role: 'ai', text: 'So you agree she looks fine?' },
+      { role: 'user', text: 'Can I ask what a normal day of meals and treats looks like for her?' },
+    ],
+    dimensions: [
+      { key: 'acknowledge', label: 'Acknowledge', score: 82, sharePct: 24 },
+      { key: 'clarify', label: 'Clarify', score: 74, sharePct: 24 },
+      { key: 'transform', label: 'Transform', score: 58, sharePct: 22 },
+      { key: 'empathy', label: 'Empathy & warmth', score: 88, sharePct: 18 },
+      { key: 'rapport', label: 'Rapport & pacing', score: 71, sharePct: 12 },
+    ],
+    overall: 74,
+    band: 'good',
+    critique:
+      'Opened with genuine acknowledgement and asked a good open question about daily routine. ' +
+      'Stopped short of a concrete next step — no recheck, trial or written plan was offered.',
+  },
+};
+
 export function installAdminMocks(): void {
   // `?mock=signedout` skips the seeded session so the sign-in and recovery
   // screens can be reviewed too.
@@ -297,8 +334,12 @@ export function installAdminMocks(): void {
     const name = match[1];
     // Writes just succeed — this harness is for reviewing layout and copy,
     // not for exercising the mutation paths (those have server-side tests).
+    // The exception is a POST whose *response* is the thing being reviewed:
+    // the rubric dry-run renders a scorecard, so a bare `{ok:true}` would
+    // leave the panel it exists to demonstrate permanently blank.
     if ((init?.method ?? 'GET').toUpperCase() === 'POST') {
-      return json({ ok: true, status: 'sent' });
+      const posted = POST_ROUTES[name];
+      return json(posted === undefined ? { ok: true, status: 'sent' } : posted);
     }
     const body = ROUTES[name];
     if (body === undefined) return json({ error: `No mock for ${name}` }, 404);

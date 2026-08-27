@@ -50,7 +50,7 @@ describe('ScenarioBuilderScreen read errors', () => {
     state.userScenarios = { data: [], loading: false, error: null };
     renderScreen();
     expect(screen.getByText('Couldn’t load the scenarios')).toBeInTheDocument();
-    expect(screen.getByText('Retry')).toBeInTheDocument();
+    expect(screen.getByText('Try again')).toBeInTheDocument();
     // The manifest-only list must not be presented as the truth.
     expect(screen.queryByText('Weight / obesity denial')).not.toBeInTheDocument();
     expect(screen.queryByText('+ New scenario')).not.toBeInTheDocument();

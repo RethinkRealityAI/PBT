@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   EmptyState,
   Eyebrow,
-  LoadingShimmer,
   SectionTitle,
   StatusPill,
 } from '../primitives';
 import { Glass } from '../primitives/Glass';
+import { QueryBoundary } from '../primitives/QueryBoundary';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { useConfirm } from '../primitives/Confirm';
 import {
@@ -17,6 +17,7 @@ import {
   textareaStyle,
 } from '../primitives/form';
 import { COLOR } from '../lib/tokens';
+import { humanize } from '../lib/labels';
 import {
   deleteFlagRule,
   upsertFlagRule,
@@ -27,6 +28,7 @@ import type {
   FlagDef,
   FlagRule,
   FlagSurface,
+  FlagValueType,
 } from '../data/types';
 import { DRIVER_KEYS } from '../lib/tokens';
 
@@ -47,6 +49,33 @@ const SURFACE_ORDER: FlagSurface[] = [
   'scenario',
   'ai',
 ];
+
+/** What kind of setting a switch holds, said without the column name. */
+const VALUE_TYPE_LABELS: Record<FlagValueType, string> = {
+  boolean: 'On / off',
+  string: 'Text',
+  number: 'Number',
+  json: 'Structured settings',
+};
+
+/**
+ * A switch value as a person would say it out loud.
+ *
+ * `JSON.stringify` was reaching the screen directly, so an admin read
+ * `true` / `"Book a call"` / `{"a":1}` instead of On / the actual wording.
+ */
+function describeValue(value: unknown, type: FlagValueType): string {
+  if (type === 'boolean') return value === true ? 'On' : 'Off';
+  if (value == null) return 'Not set';
+  if (typeof value === 'string') return value.trim() ? `“${value}”` : 'Empty text';
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+
+/** Falls back to the key when nobody wrote a description for the switch. */
+function flagTitle(flag: FlagDef): string {
+  return flag.description?.trim() || humanize(flag.key.replace(/\./g, ' '));
+}
 
 export function FlagsScreen({
   query,
@@ -104,8 +133,8 @@ export function FlagsScreen({
   return (
     <>
       <ContextBar
-        title="Feature flags"
-        subtitle="Toggle screens, navigation, components, scenarios, and field text — globally or for a targeted audience."
+        title="Feature switches"
+        subtitle="A feature switch turns one part of the trainee app on or off without a new release — switch something off and it simply stops appearing for the people it targets, next time they open the app."
         query={query}
         onQuery={onQuery}
       />
@@ -118,43 +147,46 @@ export function FlagsScreen({
             {saveError ?? 'Save failed'}
           </span>
         )}
-        {snapshot.loading ? (
-          <LoadingShimmer height={280} />
-        ) : snapshot.data.flags.length === 0 ? (
-          <EmptyState title="No flags registered" subtitle="Run the latest migration to seed the flag registry." />
-        ) : (
-          SURFACE_ORDER.filter((s) => grouped.has(s)).map((surface) => (
-            <Glass key={surface} padding={20} radius={20}>
-              <SectionTitle
-                title={SURFACE_LABELS[surface]}
-                subtitle={`${grouped.get(surface)?.length ?? 0} flags`}
-              />
-              <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
-                {grouped.get(surface)!.map((flag) => {
-                  const rules = rulesByFlag.get(flag.key) ?? [];
-                  return (
-                    <FlagRow
-                      key={flag.key}
-                      flag={flag}
-                      rules={rules}
-                      onEditRule={(rule) => setEditing({ flag, rule })}
-                      onAddRule={() => setEditing({ flag, rule: null })}
-                      onDeleteRule={async (id) => {
-                        try {
-                          await deleteFlagRule(id);
-                          setRefreshKey((k) => k + 1);
-                          flashSaved();
-                        } catch (err) {
-                          flashError(err);
-                        }
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            </Glass>
-          ))
-        )}
+        <QueryBoundary query={snapshot} title="Couldn’t load the feature switches">
+          {snapshot.data.flags.length === 0 ? (
+            <EmptyState
+              title="No feature switches yet"
+              subtitle="Nothing has been set up to switch on or off. Switches are added by the development team — ask your support contact if you expected some here."
+            />
+          ) : (
+            SURFACE_ORDER.filter((s) => grouped.has(s)).map((surface) => (
+              <Glass key={surface} padding={20} radius={20}>
+                <SectionTitle
+                  title={SURFACE_LABELS[surface]}
+                  subtitle={`${grouped.get(surface)?.length ?? 0} switches`}
+                />
+                <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
+                  {grouped.get(surface)!.map((flag) => {
+                    const rules = rulesByFlag.get(flag.key) ?? [];
+                    return (
+                      <FlagRow
+                        key={flag.key}
+                        flag={flag}
+                        rules={rules}
+                        onEditRule={(rule) => setEditing({ flag, rule })}
+                        onAddRule={() => setEditing({ flag, rule: null })}
+                        onDeleteRule={async (id) => {
+                          try {
+                            await deleteFlagRule(id);
+                            setRefreshKey((k) => k + 1);
+                            flashSaved();
+                          } catch (err) {
+                            flashError(err);
+                          }
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </Glass>
+            ))
+          )}
+        </QueryBoundary>
       </ScreenShell>
       {editing && (
         <RuleEditorModal
@@ -199,22 +231,32 @@ function FlagRow({
       }}
     >
       <div style={{ minWidth: 0 }}>
+        {/*
+          What the switch does leads; the key is the identifier engineering
+          quotes in a bug report, so it stays available but small. The other
+          way round, the row read as a config file to everyone else.
+        */}
+        <div
+          style={{
+            fontSize: 13.5,
+            fontWeight: 700,
+            color: COLOR.ink,
+            lineHeight: 1.35,
+          }}
+        >
+          {flagTitle(flag)}
+        </div>
         <div
           style={{
             fontFamily: 'var(--pbt-mono)',
-            fontSize: 12,
-            fontWeight: 700,
-            color: COLOR.ink,
+            fontSize: 11,
+            color: COLOR.inkMute,
+            marginTop: 3,
             wordBreak: 'break-word',
           }}
         >
           {flag.key}
         </div>
-        {flag.description && (
-          <div style={{ fontSize: 12, color: COLOR.inkMute, marginTop: 2 }}>
-            {flag.description}
-          </div>
-        )}
         <div
           style={{
             display: 'flex',
@@ -224,22 +266,23 @@ function FlagRow({
             alignItems: 'center',
           }}
         >
-          <Eyebrow style={{ marginRight: 4 }}>Default</Eyebrow>
-          <code
+          <Eyebrow style={{ marginRight: 4 }}>Everyone gets</Eyebrow>
+          <span
             style={{
               fontSize: 11,
+              fontWeight: 700,
               padding: '2px 8px',
               borderRadius: 6,
               background: 'rgba(60,20,15,0.05)',
               color: COLOR.ink,
             }}
           >
-            {JSON.stringify(flag.default_value)}
-          </code>
+            {describeValue(flag.default_value, flag.value_type)}
+          </span>
           <span
             style={{ fontSize: 11, color: COLOR.inkMute, fontWeight: 700 }}
           >
-            · {flag.value_type}
+            · {VALUE_TYPE_LABELS[flag.value_type]}
           </span>
         </div>
         {rules.length > 0 && (
@@ -260,13 +303,13 @@ function FlagRow({
                 }}
               >
                 <StatusPill tone={r.enabled ? 'success' : 'neutral'}>
-                  {r.enabled ? `priority ${r.priority}` : 'off'}
+                  {r.enabled ? `Priority ${r.priority}` : 'Paused'}
                 </StatusPill>
                 <span style={{ color: COLOR.inkMute }}>
                   {summarizeAudience(r.audience)}
                 </span>
-                <span style={{ marginLeft: 'auto', fontFamily: 'var(--pbt-mono)' }}>
-                  → {JSON.stringify(r.value)}
+                <span style={{ marginLeft: 'auto', fontWeight: 700 }}>
+                  gets {describeValue(r.value, flag.value_type)}
                 </span>
                 {/*
                   Reference usage of the confirmation ladder: rung 2 — the
@@ -285,13 +328,13 @@ function FlagRow({
                       title: 'Delete this targeting rule?',
                       body: (
                         <>
-                          Rule on <code>{flag.key}</code> at priority {r.priority}.
+                          Rule on “{flagTitle(flag)}” at priority {r.priority}.
                         </>
                       ),
                       consequences: [
-                        `${summarizeAudience(r.audience)} stops receiving ${JSON.stringify(r.value)}.`,
-                        `They fall back to the flag default (${JSON.stringify(flag.default_value)}) or a lower-priority rule.`,
-                        'Takes effect on the next flag resolve — no deploy needed.',
+                        `${summarizeAudience(r.audience)} stops getting ${describeValue(r.value, flag.value_type)}.`,
+                        `They go back to what everyone gets (${describeValue(flag.default_value, flag.value_type)}), or to a lower-priority rule.`,
+                        'Takes effect the next time they open the app — no release needed.',
                       ],
                       confirmLabel: 'Delete rule',
                       tone: 'danger',
@@ -328,21 +371,62 @@ function FlagRow({
           cursor: 'pointer',
         }}
       >
-        + Add rule
+        + Target a group
       </button>
     </div>
   );
 }
 
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 function summarizeAudience(a: FlagAudience): string {
   const parts: string[] = [];
-  if (a.drivers?.length) parts.push(`drivers: ${a.drivers.join(', ')}`);
-  if (a.user_ids?.length) parts.push(`${a.user_ids.length} user(s)`);
+  if (a.drivers?.length) parts.push(`${a.drivers.join(', ')} styles`);
+  if (a.user_ids?.length) parts.push(plural(a.user_ids.length, 'named person', 'named people'));
   if (a.anon_session_ids?.length)
-    parts.push(`${a.anon_session_ids.length} session(s)`);
-  if (a.clinic_ids?.length) parts.push(`${a.clinic_ids.length} clinic(s)`);
-  if (typeof a.percentage === 'number') parts.push(`${a.percentage}% rollout`);
-  return parts.length ? parts.join(' · ') : 'everyone';
+    parts.push(plural(a.anon_session_ids.length, 'device', 'devices'));
+  if (a.clinic_ids?.length) parts.push(plural(a.clinic_ids.length, 'clinic', 'clinics'));
+  if (typeof a.percentage === 'number')
+    parts.push(`a random ${a.percentage}% of them`);
+  return parts.length ? parts.join(' · ') : 'Everyone';
+}
+
+/** On/off switches get a two-state choice, not a box to type `true` into. */
+function OnOffChoice({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div role="radiogroup" style={{ display: 'flex', gap: 6 }}>
+      {[true, false].map((v) => (
+        <button
+          key={String(v)}
+          type="button"
+          role="radio"
+          aria-checked={value === v}
+          onClick={() => onChange(v)}
+          style={{
+            padding: '8px 18px',
+            borderRadius: 10,
+            border: 'none',
+            cursor: 'pointer',
+            background: value === v ? COLOR.brand : 'rgba(60,20,15,0.06)',
+            color: value === v ? '#fff' : COLOR.ink,
+            fontFamily: 'var(--pbt-font)',
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+        >
+          {v ? 'On' : 'Off'}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function RuleEditorModal({
@@ -356,13 +440,19 @@ function RuleEditorModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [valueText, setValueText] = useState(() =>
-    JSON.stringify(
-      rule?.value ??
-        (flag.value_type === 'boolean'
-          ? !flag.default_value
-          : flag.default_value),
-    ),
+  // A new rule starts at the opposite of the default for an on/off switch —
+  // a rule that hands the same value back to a group does nothing.
+  const initialValue =
+    rule?.value ??
+    (flag.value_type === 'boolean' ? !flag.default_value : flag.default_value);
+  const [boolValue, setBoolValue] = useState(initialValue === true);
+  const [textValue, setTextValue] = useState(
+    typeof initialValue === 'string' || typeof initialValue === 'number'
+      ? String(initialValue)
+      : '',
+  );
+  const [jsonText, setJsonText] = useState(() =>
+    JSON.stringify(initialValue ?? null, null, 2),
   );
   const [priority, setPriority] = useState(rule?.priority ?? 100);
   const [percentage, setPercentage] = useState<number | ''>(
@@ -387,10 +477,23 @@ function RuleEditorModal({
     setError(null);
     try {
       let value: unknown;
-      try {
-        value = JSON.parse(valueText);
-      } catch {
-        throw new Error('Value must be valid JSON.');
+      if (flag.value_type === 'boolean') {
+        value = boolValue;
+      } else if (flag.value_type === 'number') {
+        const n = Number(textValue);
+        if (!textValue.trim() || Number.isNaN(n))
+          throw new Error('Enter a number for this setting.');
+        value = n;
+      } else if (flag.value_type === 'string') {
+        value = textValue;
+      } else {
+        try {
+          value = JSON.parse(jsonText);
+        } catch {
+          throw new Error(
+            'The structured settings aren’t valid JSON — check the brackets, commas and quotes.',
+          );
+        }
       }
       const audience: FlagAudience = {};
       if (drivers.length) audience.drivers = drivers as FlagAudience['drivers'];
@@ -425,24 +528,65 @@ function RuleEditorModal({
   }
 
   return (
-    <ModalShell title={rule ? 'Edit rule' : 'New rule'} onClose={onClose}>
+    <ModalShell
+      title={rule ? 'Edit targeting rule' : 'New targeting rule'}
+      onClose={onClose}
+    >
       <div style={{ display: 'grid', gap: 14 }}>
-        <Field label="Flag">
-          <code style={{ fontSize: 12 }}>{flag.key}</code>
+        <Field label="Feature switch">
+          <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>
+            {flagTitle(flag)}
+          </div>
+          <div
+            style={{
+              fontFamily: 'var(--pbt-mono)',
+              fontSize: 11,
+              color: COLOR.inkMute,
+              marginTop: 2,
+            }}
+          >
+            {flag.key}
+          </div>
         </Field>
         <Field
-          label="Value"
-          help={`JSON literal — must match value_type: ${flag.value_type}`}
+          label="What this group gets"
+          help={`Everyone else keeps the current setting: ${describeValue(
+            flag.default_value,
+            flag.value_type,
+          )}.`}
         >
-          <textarea
-            value={valueText}
-            onChange={(e) => setValueText(e.target.value)}
-            rows={3}
-            style={textareaStyle}
-          />
+          {flag.value_type === 'boolean' ? (
+            <OnOffChoice value={boolValue} onChange={setBoolValue} />
+          ) : flag.value_type === 'json' ? (
+            <textarea
+              value={jsonText}
+              onChange={(e) => setJsonText(e.target.value)}
+              rows={4}
+              aria-label="Structured settings, written as JSON"
+              style={textareaStyle}
+            />
+          ) : (
+            <input
+              type={flag.value_type === 'number' ? 'number' : 'text'}
+              value={textValue}
+              onChange={(e) => setTextValue(e.target.value)}
+              placeholder={flag.value_type === 'number' ? '0' : 'Type the wording…'}
+              style={inputStyle}
+            />
+          )}
         </Field>
+        {flag.value_type === 'json' && (
+          <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: -8 }}>
+            This switch holds structured settings, so it is edited as JSON. If
+            you aren’t sure of the shape, ask your support contact rather than
+            guessing — a malformed value is refused, not applied.
+          </div>
+        )}
         <div style={{ display: 'grid', gap: 14, gridTemplateColumns: '1fr 1fr' }}>
-          <Field label="Priority" help="Higher wins. Default 100; user-list rules typically 200+.">
+          <Field
+            label="Priority"
+            help="When two rules match the same person, the higher number wins. Leave at 100 unless one rule needs to beat another."
+          >
             <input
               type="number"
               value={priority}
@@ -450,18 +594,18 @@ function RuleEditorModal({
               style={inputStyle}
             />
           </Field>
-          <Field label="Enabled">
+          <Field label="Rule is active" help="Pause a rule to keep it without applying it.">
             <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
                 type="checkbox"
                 checked={enabled}
                 onChange={(e) => setEnabled(e.target.checked)}
               />
-              {enabled ? 'On' : 'Off'}
+              {enabled ? 'Active' : 'Paused'}
             </label>
           </Field>
         </div>
-        <Field label="Drivers (any of)">
+        <Field label="Communication styles (any of)">
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {DRIVER_KEYS.map((d) => {
               const on = drivers.includes(d);
@@ -491,30 +635,30 @@ function RuleEditorModal({
           </div>
         </Field>
         <Field
-          label="User IDs"
-          help="Comma-separated auth user UUIDs. Matches signed-in users."
+          label="Named people"
+          help="Account IDs, separated by commas — copy them from a person’s row on the People screen. Only matches people who are signed in."
         >
           <input
             value={userIds}
             onChange={(e) => setUserIds(e.target.value)}
-            placeholder="uuid, uuid, ..."
+            placeholder="account id, account id, …"
             style={inputStyle}
           />
         </Field>
         <Field
-          label="Anonymous session IDs"
-          help="Comma-separated pbt:session_id values. For pre-auth targeting."
+          label="Devices without an account"
+          help="Device IDs for people training anonymously, separated by commas."
         >
           <input
             value={anonIds}
             onChange={(e) => setAnonIds(e.target.value)}
-            placeholder="id, id, ..."
+            placeholder="device id, device id, …"
             style={inputStyle}
           />
         </Field>
         <Field
-          label="Rollout percentage"
-          help="Sticky bucket 0–99 by user/session id. Empty = no percentage gate."
+          label="Share of people"
+          help="Give this to a random share of the people above — and to the same ones each time. Leave empty to include all of them."
         >
           <input
             type="number"
@@ -524,11 +668,11 @@ function RuleEditorModal({
             onChange={(e) =>
               setPercentage(e.target.value === '' ? '' : Number(e.target.value))
             }
-            placeholder="(none)"
+            placeholder="(all of them)"
             style={inputStyle}
           />
         </Field>
-        <Field label="Note (optional)">
+        <Field label="Why (optional)" help="A note for whoever reads this rule next.">
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}

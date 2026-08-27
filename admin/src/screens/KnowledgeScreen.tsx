@@ -2,14 +2,15 @@
  * KnowledgeScreen — the admin's library of source material for the AI.
  *
  * Written for the person who uploads documents, not for the person who wrote
- * the embedder: types and sources read as words ("Clinical reference",
+ * the search pipeline: types and sources read as words ("Clinical reference",
  * "Built-in"), focus areas come from the shared vocabulary that scenarios
- * filter retrieval by, and the technical operations (indexing, seeding, raw
- * slugs) are still here — just labelled in plain language and explained
- * in-place via InfoTip.
+ * filter on, and the technical operations (making a document searchable,
+ * loading the built-in set) are still here — just labelled in plain language
+ * and explained in-place via InfoTip.
  *
  * Everything that is more than one click deep lives in the detail modal:
- * content preview, indexing state, slug, focus/citation editing, delete.
+ * content preview, searchable state, reference name, focus/citation editing,
+ * delete.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Glass } from '../primitives/Glass';
@@ -29,12 +30,14 @@ import { ReadOnlyBanner, useCan } from '../primitives/access';
 import { useConfirm } from '../primitives/Confirm';
 import { useToast } from '../primitives/Toast';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
+import { QueryBoundary } from '../primitives/QueryBoundary';
 import {
   deleteKnowledge,
   ingestBundledStudies,
   ingestKnowledge,
   reembedKnowledge,
   seedKnowledge,
+  useAdminSimulationConfig,
   useKnowledgeDocuments,
   useScenarioOverrides,
   type IngestResult,
@@ -42,7 +45,6 @@ import {
 import {
   UPLOAD_CATEGORIES,
   batchOutcomeMessage,
-  categoryLabel,
   deleteConsequences,
   docCitation,
   fetchDeletedKnowledge,
@@ -56,8 +58,9 @@ import {
   type DeletedKnowledgeDocument,
 } from '../data/knowledgeActions';
 import { LIBRARY_MANIFEST } from '../data/scenarioManifest';
-import { FOCUS_AREAS, focusAreaLabel } from '../../../src/shared/knowledge/focusAreas';
+import { FOCUS_AREAS } from '../../../src/shared/knowledge/focusAreas';
 import type { KnowledgeDocument } from '../data/types';
+import { FOCUS_AREA_LABELS, KNOWLEDGE_CATEGORY_LABELS, labelOf } from '../lib/labels';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
 import { Field, btnPrimary, btnSecondary, inputStyle, textareaStyle } from './FlagsScreen';
@@ -68,12 +71,30 @@ const GRID = '1.8fr 130px 150px 100px 90px 150px';
 
 // ─── Small shared bits ──────────────────────────────────────────────────────
 
+/** The shared plain-English name for a `knowledge_documents.category` value. */
+function typeLabel(category: string): string {
+  return labelOf(KNOWLEDGE_CATEGORY_LABELS, category);
+}
+
 function TypePill({ category }: { category: string }) {
   const tone: 'info' | 'success' | 'neutral' =
     category === 'clinical' ? 'info' : category === 'custom' ? 'success' : 'neutral';
   return (
     <StatusPill tone={tone} dot={false}>
-      {categoryLabel(category)}
+      {typeLabel(category)}
+    </StatusPill>
+  );
+}
+
+/**
+ * A document with no searchable sections is invisible to every scenario, so
+ * this pill is shown wherever a document is listed — not just in the detail
+ * modal the admin may never open.
+ */
+function NotSearchablePill() {
+  return (
+    <StatusPill tone="warn" dot={false}>
+      Not searchable yet
     </StatusPill>
   );
 }
@@ -127,16 +148,18 @@ function FocusChipButton({
 const INDEXING_HELP = (
   <>
     <p style={{ margin: '0 0 10px' }}>
-      Indexing splits a document into short sections and stores a numeric
-      “fingerprint” of each one. During a roleplay the app looks up the sections
-      that best match what the client just said and feeds only those to the AI —
-      that is how a scenario stays grounded in your material instead of the
-      model's general knowledge.
+      Making a document searchable splits it into short sections and files each
+      one so it can be matched by meaning rather than by exact words. When a
+      roleplay starts, the app pulls the handful of sections most relevant to
+      that scenario — its pushback, the pet, the client's communication style —
+      and hands them to the AI for the whole conversation. That is how a session
+      stays grounded in your material instead of the AI's general knowledge.
     </p>
     <p style={{ margin: 0 }}>
-      Rebuilding is safe to re-run at any time. It replaces the sections for this
+      Rebuilding is safe to re-run at any time. It redoes the sections for this
       one document and leaves everything else alone. You only need it if a
-      document shows “Not indexed yet”, or after the search set-up changes.
+      document shows “Not searchable yet”, or if some of its sections failed
+      when it was added.
     </p>
   </>
 );
@@ -162,7 +185,7 @@ const FOCUS_HELP = (
  * Runs a bulk job and reports through the toast channel. The outcome copy is
  * built by `batchOutcomeMessage`, so a partial failure ("11 of 13 indexed — 2
  * failed") can never render as a clean success — which is exactly how a
- * half-indexed corpus used to slip through.
+ * half-searchable library used to slip through.
  */
 function BulkActionButton({
   label,
@@ -212,6 +235,7 @@ export function KnowledgeScreen({
   const [refreshKey, setRefreshKey] = useState(0);
   const docs = useKnowledgeDocuments(refreshKey);
   const overrides = useScenarioOverrides();
+  const simulation = useAdminSimulationConfig();
   const toast = useToast();
   const canWrite = useCan()('knowledge.write');
   const [adding, setAdding] = useState(false);
@@ -266,8 +290,17 @@ export function KnowledgeScreen({
       chunks: d.reduce((s, doc) => s + (doc.chunk_count ?? 0), 0),
       cited: d.filter((doc) => docCitation(doc.metadata) !== null).length,
       uploaded: d.filter((doc) => !isBuiltIn(doc)).length,
+      unsearchable: d.filter((doc) => (doc.chunk_count ?? 0) === 0).length,
     };
   }, [docs.data]);
+
+  /*
+    The global switch in Library → Simulation turns supporting research off for
+    every scenario. With it off nothing here reaches a roleplay, so the library
+    must say so rather than keep promising that scenarios can quote from it.
+  */
+  const researchOff =
+    (simulation.data.config.rag as { enabled?: boolean } | undefined)?.enabled === false;
 
   const filtered = useMemo(
     () => filterKnowledgeDocs(docs.data, { query, focus: focusFilter, category: typeFilter }),
@@ -275,7 +308,7 @@ export function KnowledgeScreen({
   );
 
   // Present focus filters that actually match something, so the row doesn't
-  // advertise buckets this corpus has nothing in.
+  // advertise buckets this library has nothing in.
   const focusCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const doc of docs.data) {
@@ -303,37 +336,38 @@ export function KnowledgeScreen({
       <ScreenShell>
         <ReadOnlyBanner permission="knowledge.write" />
         <FirstRunCard id="knowledge" title="What this library is for">
-          Everything here is source material the AI can draw on mid-roleplay: file a
-          document under a <strong>focus area</strong> and every scenario set to that
-          area can pull from it. For tighter control, attach specific documents to a
-          scenario in <strong>Library → Builder</strong> — attachments win, and the
-          focus filter is then ignored.
+          Everything here is source material the AI can draw on during a roleplay:
+          file a document under a <strong>focus area</strong> and every scenario set
+          to that area starts its sessions with the most relevant sections of it. For
+          tighter control, attach specific documents to a scenario in{' '}
+          <strong>Library → Builder</strong> — attachments win, and the focus filter
+          is then ignored.
         </FirstRunCard>
-        {docs.error ? (
-          /*
-            Blocking. With no document list the KPIs read "0 documents", the
-            filters offer nothing, and the Builder's attachment picker would
-            look like an empty corpus rather than a failed request.
-          */
-          <InlineAlert tone="error" title="Couldn’t load the knowledge library">
-            <div>{docs.error}</div>
-            <div style={{ marginTop: 6 }}>
-              The list below is hidden on purpose — an empty table here would read as
-              “no documents”, which is a different and much more alarming thing.
-            </div>
-            <button onClick={refresh} style={{ ...btnSecondary, marginTop: 10 }}>
-              Retry
-            </button>
+        {researchOff && (
+          <InlineAlert tone="warn" title="Scenarios aren’t using this library right now">
+            Supporting research is switched off for every scenario, so nothing here
+            reaches a roleplay — the AI answers from its own general knowledge.
+            Turn it back on in <strong>Library → Simulation → Global</strong>.
           </InlineAlert>
-        ) : (
-          <>
+        )}
+        {/*
+          Blocking. With no document list the KPIs read "0 documents", the
+          filters offer nothing, and the empty table would read as "no
+          documents" — a different and much more alarming thing than a failed
+          request. Retry goes through refresh() so the deleted drawer reloads too.
+        */}
+        <QueryBoundary
+          query={{ loading: docs.loading, error: docs.error, refetch: refresh }}
+          title="Couldn’t load the knowledge library"
+          showLoading={false}
+        >
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           {docs.loading ? (
             Array.from({ length: 4 }).map((_, i) => <LoadingShimmer key={i} height={140} />)
           ) : (
             <>
               <Kpi label="Documents" value={stats.total} icon="⌆" accent={COLOR.brandSoft} sparkColor={COLOR.brand} />
-              <Kpi label="Indexed sections" value={stats.chunks} icon="▤" accent={COLOR.infoSoft} sparkColor={COLOR.info} />
+              <Kpi label="Searchable sections" value={stats.chunks} icon="▤" accent={COLOR.infoSoft} sparkColor={COLOR.info} />
               <Kpi label="Cited studies" value={stats.cited} icon="✦" accent={COLOR.successSoft} sparkColor={COLOR.success} />
               <Kpi label="Uploaded docs" value={stats.uploaded} icon="✎" accent={COLOR.warnSoft} sparkColor={COLOR.warn} />
             </>
@@ -379,7 +413,7 @@ export function KnowledgeScreen({
                   toast(outcome);
                   setBulkFailures(
                     res.failures?.length
-                      ? { title: 'Built-in knowledge — documents that failed to index', lines: res.failures }
+                      ? { title: 'Built-in knowledge — documents that could not be made searchable', lines: res.failures }
                       : null,
                   );
                 } catch (err) {
@@ -400,7 +434,7 @@ export function KnowledgeScreen({
                     <p style={{ margin: '0 0 10px' }}>
                       Loads the five veterinary communication and obesity studies
                       that ship with the app. Each PDF is read, turned into text,
-                      split into sections, and indexed — the same thing that
+                      split into sections, and made searchable — the same thing that
                       happens when you upload a document yourself.
                     </p>
                     <p style={{ margin: 0 }}>
@@ -483,7 +517,7 @@ export function KnowledgeScreen({
                 label="Type"
                 options={[
                   { key: 'all', label: 'All' },
-                  ...typeKeys.map((k) => ({ key: k, label: categoryLabel(k) })),
+                  ...typeKeys.map((k) => ({ key: k, label: typeLabel(k) })),
                 ]}
                 value={typeFilter}
                 onChange={setTypeFilter}
@@ -491,6 +525,17 @@ export function KnowledgeScreen({
             )}
           </div>
         </Glass>
+
+        {stats.unsearchable > 0 && (
+          <InlineAlert
+            tone="warn"
+            title={`${stats.unsearchable} document${stats.unsearchable === 1 ? '' : 's'} can’t be used yet`}
+          >
+            They are saved, but none of their text was made searchable, so no
+            scenario can pull from them. Open each one and press “Rebuild search
+            index” — the rows are marked “Not searchable yet” in the list below.
+          </InlineAlert>
+        )}
 
         <Glass padding={0} radius={20}>
           <div
@@ -542,8 +587,7 @@ export function KnowledgeScreen({
           }}
           onError={(message) => toast({ message, tone: 'error' })}
         />
-          </>
-        )}
+        </QueryBoundary>
       </ScreenShell>
 
       <AddDocumentModal
@@ -555,13 +599,13 @@ export function KnowledgeScreen({
           const failures = res.failures ?? [];
           if (failures.length > 0) {
             toast({
-              message: `Added, but ${failures.length} section${failures.length === 1 ? '' : 's'} failed to index — open the document and rebuild its search index.`,
+              message: `Added, but ${failures.length} section${failures.length === 1 ? '' : 's'} couldn’t be made searchable — open the document and rebuild its search index.`,
               tone: 'info',
             });
-            setBulkFailures({ title: 'Sections that failed to index', lines: failures });
+            setBulkFailures({ title: 'Sections that could not be made searchable', lines: failures });
           } else {
             toast({
-              message: `Document added — ${res.chunks} section${res.chunks === 1 ? '' : 's'} indexed.`,
+              message: `Document added — searchable in ${res.chunks} section${res.chunks === 1 ? '' : 's'}.`,
               tone: 'success',
             });
           }
@@ -652,7 +696,7 @@ function RecentlyDeleted({
         ) : (
           <div style={{ display: 'grid', gap: 8 }}>
             <div style={{ fontSize: 12, color: COLOR.inkMute }}>
-              Deleted documents are hidden from retrieval but not destroyed. Restoring
+              Deleted documents are hidden from scenarios but not destroyed. Restoring
               brings a document back — it does <strong>not</strong> re-attach it to the
               scenarios it was detached from.
             </div>
@@ -681,7 +725,7 @@ function RecentlyDeleted({
                       marginTop: 2,
                     }}
                   >
-                    {categoryLabel(row.category)} · deleted{' '}
+                    {typeLabel(row.category)} · deleted{' '}
                     {fmtAgo(new Date(row.deleted_at).getTime())}
                   </div>
                 </div>
@@ -748,6 +792,7 @@ function FilterRow({
 function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => void }) {
   const focus = resolveDocFocus(doc.metadata);
   const citation = docCitation(doc.metadata);
+  const searchable = (doc.chunk_count ?? 0) > 0;
   return (
     <div
       role="button"
@@ -768,10 +813,21 @@ function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => vo
         borderBottom: '0.5px solid rgba(60,20,15,0.04)',
         cursor: 'pointer',
         textAlign: 'left',
+        // A document with nothing searchable is dead weight; tint the whole row
+        // so it can't be mistaken for a working one at a glance.
+        background: searchable ? undefined : COLOR.warnSoft,
       }}
     >
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>{doc.title}</div>
+        {!searchable && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+            <NotSearchablePill />
+            <span style={{ fontSize: 11, color: COLOR.inkSoft }}>
+              no scenario can pull from it — open it and rebuild the search index
+            </span>
+          </div>
+        )}
         {citation && (
           <div
             style={{
@@ -790,8 +846,8 @@ function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => vo
       <TypePill category={doc.category} />
       <div style={{ fontSize: 12, color: focus ? COLOR.ink : COLOR.inkMute, fontWeight: 600 }}>
         {focus ? (
-          <StatusPill tone="warn" dot={false}>
-            {focusAreaLabel(focus)}
+          <StatusPill tone="info" dot={false}>
+            {labelOf(FOCUS_AREA_LABELS, focus)}
           </StatusPill>
         ) : (
           '—'
@@ -859,7 +915,7 @@ function DocumentModal({
   if (!doc) return null;
 
   const builtIn = isBuiltIn(doc);
-  const indexed = (doc.chunk_count ?? 0) > 0;
+  const searchable = (doc.chunk_count ?? 0) > 0;
   const preview = doc.content.slice(0, PREVIEW_CHARS);
   const truncated = doc.content.length > PREVIEW_CHARS;
   const links = scenariosUsingDoc(doc, overrides, scenarioTitle);
@@ -884,15 +940,15 @@ function DocumentModal({
       });
       setNote(
         res.chunks_updated > 0
-          ? `Saved — ${res.chunks_updated} indexed section${res.chunks_updated === 1 ? '' : 's'} re-tagged.`
+          ? `Saved — ${res.chunks_updated} section${res.chunks_updated === 1 ? '' : 's'} re-filed.`
           : 'Saved.',
       );
       const chunkFailures = res.chunk_failures ?? [];
       if (chunkFailures.length > 0) {
-        // The document row saved but some chunks kept their old tags, so
-        // focus-filtered retrieval is now partly stale. Saving again retries.
+        // The document row saved but some sections kept their old tags, so a
+        // focus-filtered scenario now sees a stale mix. Saving again retries.
         onToast({
-          message: `Saved, but ${chunkFailures.length} indexed section${chunkFailures.length === 1 ? '' : 's'} kept the old focus tag — save again to retry.`,
+          message: `Saved, but ${chunkFailures.length} section${chunkFailures.length === 1 ? '' : 's'} kept the old focus area — save again to retry.`,
           tone: 'info',
         });
       } else {
@@ -913,7 +969,7 @@ function DocumentModal({
     setNote(null);
     try {
       const res = await reembedKnowledge(doc.slug);
-      setNote(`Search index rebuilt — ${res.chunks} sections.`);
+      setNote(`Search index rebuilt — this document is now searchable in ${res.chunks} sections.`);
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Rebuild failed');
@@ -974,7 +1030,7 @@ function DocumentModal({
         </div>
 
         <div style={{ display: 'grid', gap: 16, marginTop: 18 }}>
-          {/* Indexing state */}
+          {/* Searchable state */}
           <div
             style={{
               display: 'flex',
@@ -983,15 +1039,15 @@ function DocumentModal({
               flexWrap: 'wrap',
               padding: '10px 14px',
               borderRadius: 12,
-              background: indexed ? COLOR.successSoft : COLOR.warnSoft,
+              background: searchable ? COLOR.successSoft : COLOR.warnSoft,
             }}
           >
             <span style={{ fontSize: 12.5, fontWeight: 700, color: COLOR.ink }}>
-              {indexed
-                ? `Searchable — ${doc.chunk_count} section${doc.chunk_count === 1 ? '' : 's'} indexed`
-                : 'Not indexed yet — scenarios can’t pull from this document'}
+              {searchable
+                ? `Searchable — split into ${doc.chunk_count} section${doc.chunk_count === 1 ? '' : 's'}`
+                : 'Not searchable yet — no scenario can pull from this document'}
             </span>
-            <InfoTip title="Search indexing">{INDEXING_HELP}</InfoTip>
+            <InfoTip title="How a document becomes searchable">{INDEXING_HELP}</InfoTip>
             {canWrite && (
               <span style={{ marginLeft: 'auto' }}>
                 <button
@@ -1023,7 +1079,7 @@ function DocumentModal({
                 style={{ ...inputStyle, opacity: builtIn ? 0.6 : 1 }}
               >
                 {(builtIn
-                  ? [{ value: doc.category, label: categoryLabel(doc.category) }]
+                  ? [{ value: doc.category, label: typeLabel(doc.category) }]
                   : UPLOAD_CATEGORIES
                 ).map((c) => (
                   <option key={c.value} value={c.value}>
@@ -1160,7 +1216,8 @@ function DocumentModal({
             {truncated && (
               <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 6 }}>
                 Showing the first {PREVIEW_CHARS.toLocaleString()} characters of{' '}
-                {doc.content.length.toLocaleString()}. The whole document is indexed.
+                {doc.content.length.toLocaleString()}. Scenarios can draw on the whole
+                document, not just this preview.
               </div>
             )}
           </div>
@@ -1197,14 +1254,15 @@ function DocumentModal({
 
           <div
             style={{
-              fontFamily: 'var(--pbt-mono)',
               fontSize: 10.5,
               color: COLOR.inkMute,
               borderTop: `1px solid ${COLOR.border}`,
               paddingTop: 10,
             }}
           >
-            ID {doc.slug}
+            Short name: <span style={{ fontFamily: 'var(--pbt-mono)' }}>{doc.slug}</span> — how
+            this document is named behind the scenes. Quote it if you need to describe
+            the document to support.
           </div>
         </div>
       </div>
@@ -1444,8 +1502,8 @@ function AddDocumentModal({
             }}
           >
             <strong style={{ fontWeight: 800 }}>What happens next:</strong> we’ll
-            extract the text, split it into sections, and index it so scenarios
-            can pull from it — usually under a minute.
+            extract the text, split it into short sections, and make them
+            searchable so scenarios can pull from them — usually under a minute.
           </div>
 
           {error && <div style={{ fontSize: 12.5, color: COLOR.danger, fontWeight: 600 }}>{error}</div>}

@@ -11,6 +11,7 @@ import {
   resolveDimensions,
   resolveDriverKnowledge,
   resolvePushbackKnowledge,
+  resolveWeights,
   type SimulationConfig,
 } from './simulationConfig';
 import type { RetrievedChunk } from '../../services/ragShared';
@@ -416,10 +417,14 @@ export function buildScoringSystemPrompt({
     'EVIDENCE BASE',
     'Peer-reviewed findings relevant to this conversation. Ground your coaching in them and cite as (Author, Year) in the critique when relevant.',
   );
+  // Quote the normalised share, not the raw config weight: `overall` is
+  // computed from resolveWeights, so the raw number would mis-calibrate the
+  // scorer whenever admin weights don't happen to sum to one.
+  const dimensionWeights = resolveWeights(config);
   const dimensionLines = resolveDimensions(config)
     .map(
       (d) =>
-        `- ${d.key} (${d.label}, weight ${d.weight}): ${d.description} | EXCELLENT (≥85): ${d.excellentExample} | NEEDS WORK (<70): ${d.needsWorkExample}`,
+        `- ${d.key} (${d.label}, weight ${Math.round((dimensionWeights[d.key] ?? 0) * 100)}% of the overall score): ${d.description} | EXCELLENT (≥85): ${d.excellentExample} | NEEDS WORK (<70): ${d.needsWorkExample}`,
     )
     .join('\n');
 

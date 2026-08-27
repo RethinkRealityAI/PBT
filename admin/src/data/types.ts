@@ -39,6 +39,12 @@ export interface AdminSession {
   transcript: Array<{ role: string; text: string; timestamp?: number }> | null;
   score_report: Record<string, unknown> | null;
   score_overall: number | null;
+  /**
+   * True when `score_report` is a scoring-failure placeholder: `score_overall`
+   * is then a stand-in 0, not a result, and must be excluded from every
+   * average, count and trend. Derived server-side in `admin-sessions`.
+   */
+  score_unavailable: boolean;
   duration_seconds: number | null;
   mode: 'text' | 'voice' | null;
   completed: boolean;

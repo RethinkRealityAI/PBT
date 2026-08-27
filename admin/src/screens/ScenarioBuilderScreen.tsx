@@ -15,7 +15,6 @@ import {
   EmptyState,
   Eyebrow,
   InfoTip,
-  LoadingShimmer,
   SectionTitle,
   StatusPill,
 } from '../primitives';
@@ -23,8 +22,10 @@ import { FirstRunCard } from '../primitives/FirstRunCard';
 import { InlineAlert } from '../primitives/form';
 import { ReadOnlyBanner, useCan } from '../primitives/access';
 import { DangerZone, useConfirm } from '../primitives/Confirm';
+import { ErrorState, QueryBoundary } from '../primitives/QueryBoundary';
 import { useToast } from '../primitives/Toast';
 import { COLOR, DRIVER_KEYS, DRIVERS, type DriverKey } from '../lib/tokens';
+import { KNOWLEDGE_CATEGORY_LABELS, labelOf } from '../lib/labels';
 import {
   deleteScenarioOverride,
   duplicateScenario,
@@ -43,9 +44,12 @@ import {
 } from '../data/scenarioManifest';
 import { FOCUS_AREAS } from '../../../src/shared/knowledge/focusAreas';
 import {
+  DIFFICULTY_LABELS,
   LIFE_STAGES,
   PERSONAS,
+  PUSHBACK_EXAMPLES,
   PUSHBACK_IDS,
+  PUSHBACK_LABELS,
   isLifeStage,
   isPersona,
   isPushbackId,
@@ -59,7 +63,26 @@ import {
 } from './FlagsScreen';
 import { suggestField, type WizardField } from '../lib/scenarioAi';
 
+// ─────────────────────────────────────────────────────────────
+// Limits — the same numbers `validateOverride` enforces in
+// netlify/functions/admin-scenario-overrides.ts.
+//
+// A rule the server has and the form doesn't costs the admin their work: they
+// fill a long form, press Save, and get a rejection naming a column. Every cap
+// below is shown next to its field, counted while typing, and checked before
+// the request goes out.
+// ─────────────────────────────────────────────────────────────
+
 const PROMPT_MAX = 1500;
+const BREED_MAX = 80;
+const CARD_TITLE_MAX = 120;
+const CARD_SUBTITLE_MAX = 240;
+const START_BTN_MAX = 40;
+const INFO_BODY_MAX = 4000;
+const KNOWLEDGE_SLUG_MAX = 40;
+const WEIGHT_MIN_KG = 0.1;
+const WEIGHT_MAX_KG = 200;
+const DIFFICULTY_LEVELS = [1, 2, 3, 4];
 
 // ─────────────────────────────────────────────────────────────
 // Stepped visual editor — model + pure state helpers
@@ -271,6 +294,58 @@ export function overriddenFieldLabels(
 }
 
 /**
+ * Everything the server would refuse this draft for, written as a sentence the
+ * admin can act on.
+ *
+ * Mirrors `validateOverride` in netlify/functions/admin-scenario-overrides.ts.
+ * The server still has the final word — this only moves the news to before the
+ * admin presses Save, and says it in the field's own words rather than in the
+ * column name the endpoint returns.
+ */
+export function draftProblems(draft: Partial<ScenarioOverrideRow>): string[] {
+  const out: string[] = [];
+  const tooLong = (
+    value: string | null | undefined,
+    max: number,
+    label: string,
+  ) => {
+    const len = (value ?? '').length;
+    if (len > max) out.push(`${label} is ${len} characters — the limit is ${max}.`);
+  };
+
+  tooLong(draft.breed, BREED_MAX, 'Breed');
+  tooLong(draft.card_title_override, CARD_TITLE_MAX, 'Card title');
+  tooLong(draft.card_subtitle_override, CARD_SUBTITLE_MAX, 'Card subtitle');
+  tooLong(draft.start_button_label, START_BTN_MAX, 'Start button label');
+  tooLong(draft.info_modal_body, INFO_BODY_MAX, 'Info modal body');
+  tooLong(draft.prompt_prefix, PROMPT_MAX, 'Opening notes');
+  tooLong(draft.prompt_suffix, PROMPT_MAX, 'Final reminders');
+
+  const difficulty = draft.difficulty_override;
+  if (difficulty != null && !DIFFICULTY_LEVELS.includes(difficulty)) {
+    out.push('Difficulty has to be one of the four levels (1–4).');
+  }
+
+  const weight = draft.weight_kg;
+  if (weight != null) {
+    if (!Number.isFinite(weight) || weight <= 0 || weight > WEIGHT_MAX_KG) {
+      out.push(
+        `Weight has to be more than 0 and at most ${WEIGHT_MAX_KG} kg — leave it empty to use the dog's usual weight.`,
+      );
+    }
+  }
+
+  const slugs = draft.knowledge_slugs ?? [];
+  if (slugs.length > KNOWLEDGE_SLUG_MAX) {
+    out.push(
+      `${slugs.length} documents are attached — at most ${KNOWLEDGE_SLUG_MAX} can be. Untick the ones this scenario doesn't need.`,
+    );
+  }
+
+  return out;
+}
+
+/**
  * Attached slugs with no live document behind them.
  *
  * A document can be deleted after a scenario attached it (the server prunes
@@ -356,6 +431,17 @@ const PREVIEW_STACK_BREAKPOINT = 1100;
 /** Initial estimate of the sticky action bar's height; refined by measurement. */
 const STICKY_TOP = 76;
 
+/**
+ * Where a scenario came from, said rather than named. `library` / `admin` /
+ * `user` are the shapes of our own data; nobody outside the codebase knows
+ * that an "admin" scenario is one somebody wrote on this screen.
+ */
+const SOURCE_LABELS: Record<'library' | 'admin' | 'user', string> = {
+  library: 'Ships with the app',
+  admin: 'Written here',
+  user: 'Built by a trainee',
+};
+
 interface ListEntry {
   id: string;
   source: 'library' | 'admin' | 'user';
@@ -427,7 +513,11 @@ export function ScenarioBuilderScreen({
         id: s.id,
         source: 'library',
         title: o?.card_title_override?.trim() || s.title,
-        subtitle: `${s.breed} · ${s.driver}`,
+        subtitle: `${s.breed} · ${s.driver} · Level ${s.defaultDifficulty}${
+          DIFFICULTY_LABELS[s.defaultDifficulty]
+            ? `, ${DIFFICULTY_LABELS[s.defaultDifficulty]}`
+            : ''
+        }`,
         override: o,
       });
     }
@@ -437,8 +527,8 @@ export function ScenarioBuilderScreen({
       out.push({
         id: o.scenario_id,
         source: 'admin',
-        title: o.card_title_override?.trim() || '(untitled admin scenario)',
-        subtitle: `${o.breed ?? '—'} · ${o.suggested_driver ?? '—'}`,
+        title: o.card_title_override?.trim() || '(untitled scenario)',
+        subtitle: `${o.breed ?? 'No breed yet'} · ${o.suggested_driver ?? 'No driver yet'}`,
         override: o,
       });
     }
@@ -450,7 +540,7 @@ export function ScenarioBuilderScreen({
         id: fullId,
         source: 'user',
         title: o?.card_title_override?.trim() || s.title,
-        subtitle: `${s.breed ?? '—'} · ${s.life_stage ?? '—'}`,
+        subtitle: `${s.breed ?? 'No breed'} · ${s.life_stage ?? 'No life stage'}`,
         override: o,
         userScenario: s,
       });
@@ -538,20 +628,26 @@ export function ScenarioBuilderScreen({
           onQuery={onQuery}
         />
         <ScreenShell>
-          <InlineAlert tone="error" title="Couldn’t load the scenarios">
-            <div>{readError}</div>
-            <div style={{ marginTop: 6 }}>
-              The list is hidden rather than shown half-loaded: without the saved
-              overrides, every scenario would look untouched, and saving one would
-              wipe the changes that are actually live.
-            </div>
-            <button
-              onClick={() => setRefreshKey((k) => k + 1)}
-              style={{ ...btnSecondary, marginTop: 10 }}
-            >
-              Retry
-            </button>
-          </InlineAlert>
+          <ErrorState
+            title="Couldn’t load the scenarios"
+            detail={readError}
+            onRetry={() => {
+              setRefreshKey((k) => k + 1);
+              userScenarios.refetch();
+            }}
+          />
+          <div
+            style={{
+              marginTop: 12,
+              fontSize: 12.5,
+              color: COLOR.inkMute,
+              textAlign: 'center',
+            }}
+          >
+            The list is hidden rather than shown half-loaded: without the saved
+            changes, every scenario would look untouched, and saving one would wipe
+            the edits that are actually live.
+          </div>
         </ScreenShell>
       </>
     );
@@ -613,6 +709,7 @@ export function ScenarioBuilderScreen({
             ? {
                 title: baseManifest.title,
                 breed: baseManifest.breed,
+                lifeStage: baseManifest.lifeStage,
                 pushback: baseManifest.pushback,
                 driver: baseManifest.driver,
                 difficulty: baseManifest.defaultDifficulty,
@@ -626,7 +723,10 @@ export function ScenarioBuilderScreen({
         }}
         onSaved={() => {
           onSaved();
-          setSeedDraft(null);
+          // The seed draft is kept: saving a hidden scenario leaves the editor
+          // open so it can be published from here, and dropping the seed would
+          // unmount the Builder for as long as the refreshed list takes to
+          // arrive. The copy notice does go — it isn't a copy any more.
           setCopiedFrom(null);
         }}
       />
@@ -669,29 +769,32 @@ export function ScenarioBuilderScreen({
               </button>
             )}
           </div>
-          {overrides.loading || userScenarios.loading ? (
-            <LoadingShimmer height={180} />
-          ) : list.length === 0 ? (
-            <EmptyState title="No scenarios match" />
-          ) : (
-            <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
-              {list.map((it) => (
-                <ListRow
-                  key={it.id}
-                  entry={it}
-                  canWrite={canWrite}
-                  onOpen={() => setActiveId(it.id)}
-                  onDuplicate={() => {
-                    // `admin:` rows are the scenario, so the server copy is
-                    // complete; everything else is copied from the hydrated
-                    // draft instead (see duplicateLocally).
-                    if (it.source === 'admin') void duplicateSaved(it);
-                    else duplicateLocally(it);
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          <QueryBoundary
+            queries={[overrides, userScenarios]}
+            title="Couldn’t load the scenarios"
+          >
+            {list.length === 0 ? (
+              <EmptyState title="No scenarios match" />
+            ) : (
+              <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
+                {list.map((it) => (
+                  <ListRow
+                    key={it.id}
+                    entry={it}
+                    canWrite={canWrite}
+                    onOpen={() => setActiveId(it.id)}
+                    onDuplicate={() => {
+                      // `admin:` rows are the scenario, so the server copy is
+                      // complete; everything else is copied from the hydrated
+                      // draft instead (see duplicateLocally).
+                      if (it.source === 'admin') void duplicateSaved(it);
+                      else duplicateLocally(it);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </QueryBoundary>
         </Glass>
       </ScreenShell>
     </>
@@ -730,23 +833,22 @@ function ListRow({
               : 'neutral'
         }
       >
-        {entry.source}
+        {SOURCE_LABELS[entry.source]}
       </StatusPill>
-      <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={onOpen}>
+      {/* The scenario id is storage, not a name — it stays on the row as a
+          tooltip for support, and off the line the admin reads. */}
+      <div
+        style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+        onClick={onOpen}
+        title={`Reference: ${entry.id}`}
+      >
         <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>{entry.title}</div>
-        <div
-          style={{
-            fontFamily: 'var(--pbt-mono)',
-            fontSize: 11,
-            color: COLOR.inkMute,
-            marginTop: 2,
-          }}
-        >
-          {entry.id} · {entry.subtitle}
+        <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 2 }}>
+          {entry.subtitle}
         </div>
       </div>
       {entry.override && !entry.override.visible && (
-        <StatusPill tone="warn">hidden</StatusPill>
+        <StatusPill tone="warn">Hidden from trainees</StatusPill>
       )}
       <button onClick={onOpen} style={btnSecondary}>
         {canWrite ? 'Edit' : 'View'}
@@ -767,6 +869,8 @@ function ListRow({
 interface BaseDescriptor {
   title: string;
   breed: string;
+  /** `Scenario.age` — needed to render the card subtitle the app renders. */
+  lifeStage: string;
   pushback: string;
   driver: string;
   difficulty: number;
@@ -819,6 +923,8 @@ function Builder({
   const baselineRef = useRef<string>(JSON.stringify(initial));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Rules the save would have been rejected for — checked before sending. */
+  const [problems, setProblems] = useState<string[]>([]);
   const [testOpen, setTestOpen] = useState(false);
 
   // The action bar wraps at narrow widths (and grows when a save error shows),
@@ -854,6 +960,12 @@ function Builder({
     [draft],
   );
 
+  // Once the admin has been shown what blocks the save, keep the list live so
+  // fixing a field visibly clears its line instead of waiting for another try.
+  useEffect(() => {
+    setProblems((p) => (p.length === 0 ? p : draftProblems(draft)));
+  }, [draft]);
+
   // Warn on tab/window close while there are unsaved changes.
   useEffect(() => {
     if (!dirty) return;
@@ -885,12 +997,17 @@ function Builder({
   }
 
   async function save() {
+    // Everything the server would reject, said before the request goes out —
+    // a late rejection costs the admin the whole form.
+    const blocking = draftProblems(draft);
+    setProblems(blocking);
+    if (blocking.length > 0) {
+      setError(null);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      if ((draft.prompt_prefix ?? '').length > PROMPT_MAX || (draft.prompt_suffix ?? '').length > PROMPT_MAX) {
-        throw new Error(`Prompt overrides must be ≤ ${PROMPT_MAX} chars.`);
-      }
       // Trim empties → null so they don't accidentally override defaults.
       // `sparsify` nulls out fields still equal to the base scenario (so
       // saving never pins base values); `stripServerManaged` drops
@@ -924,12 +1041,25 @@ function Builder({
       }
       await upsertScenarioOverride({ ...trimmed, scenario_id: scenarioId });
       baselineRef.current = JSON.stringify(draft);
-      toast({
-        message: `“${draft.card_title_override?.trim() || baseDescriptor?.title || scenarioId}” saved — live in the app now.`,
-        tone: 'success',
-      });
+      const name =
+        draft.card_title_override?.trim() ||
+        baseDescriptor?.title ||
+        '(untitled scenario)';
       onSaved();
-      onClose();
+      // Saving is not publishing: a new scenario and every duplicate are
+      // created hidden, so claiming it is live would send the admin away
+      // believing trainees can see something they cannot.
+      if (draft.visible) {
+        toast({ message: `“${name}” saved — trainees can see it now.`, tone: 'success' });
+        onClose();
+        return;
+      }
+      // Stay on the editor: the one control that would publish it is a step
+      // away, and closing would leave the admin hunting for it in the list.
+      toast({
+        message: `“${name}” saved — still hidden from trainees. Tick “Visible” on step 4, Card & visibility, to publish it.`,
+        tone: 'info',
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Save failed';
       setError(message);
@@ -997,7 +1127,7 @@ function Builder({
 
   /** Admin-authored scenarios: the row IS the scenario, so this deletes it. */
   async function deleteScenario() {
-    const title = draft.card_title_override?.trim() || '(untitled admin scenario)';
+    const title = draft.card_title_override?.trim() || '(untitled scenario)';
     const ok = await confirm({
       title: `Delete “${title}”?`,
       body: 'This scenario was written here, so deleting the row deletes the scenario.',
@@ -1036,7 +1166,15 @@ function Builder({
           baseDescriptor?.title ||
           'Builder'
         }
-        subtitle={`${scenarioId}${baseDescriptor ? ` · base: ${baseDescriptor.breed} ${baseDescriptor.driver}` : ' · admin-authored'}`}
+        /* The id is a storage key, not a description — it lives on the row's
+           tooltip in the list, and the subtitle says what this scenario is. */
+        subtitle={
+          baseDescriptor
+            ? `${SOURCE_LABELS[source]} · built-in: ${baseDescriptor.breed}, ${baseDescriptor.lifeStage}, ${baseDescriptor.driver}`
+            : `${SOURCE_LABELS[source]} · ${draft.breed?.trim() || 'no breed yet'}, ${
+                draft.suggested_driver ?? 'no driver yet'
+              }`
+        }
       />
       <ScreenShell>
         {/*
@@ -1104,7 +1242,7 @@ function Builder({
                 </button>
               )}
               <StatusPill tone={draft.visible ? 'success' : 'warn'}>
-                {draft.visible ? 'Visible in app' : 'Hidden'}
+                {draft.visible ? 'Trainees can see this' : 'Hidden from trainees'}
               </StatusPill>
               {dirty && (
                 <span
@@ -1137,6 +1275,24 @@ function Builder({
             </div>
             {/* Save failures surface HERE, next to the button that failed —
                 not at the page bottom where a scrolled admin never sees them. */}
+            {problems.length > 0 && (
+              <div style={{ flexBasis: '100%' }}>
+                <InlineAlert
+                  tone="error"
+                  title={
+                    problems.length === 1
+                      ? 'One thing to fix before this can be saved'
+                      : `${problems.length} things to fix before this can be saved`
+                  }
+                >
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                    {problems.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                </InlineAlert>
+              </div>
+            )}
             {error && (
               <div
                 role="alert"
@@ -1529,8 +1685,12 @@ function ScenarioStep({
         defaultOpen
       >
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Field label="Breed">
+          <Field
+            label={`Breed (${(draft.breed ?? '').length}/${BREED_MAX})`}
+            help={`Up to ${BREED_MAX} characters.`}
+          >
             <input
+              maxLength={BREED_MAX}
               value={draft.breed ?? ''}
               onChange={(e) => patch({ breed: e.target.value })}
               placeholder={baseDescriptor?.breed}
@@ -1544,11 +1704,21 @@ function ScenarioStep({
               options={LIFE_STAGES}
             />
           </Field>
-          <Field label="Pushback">
+          <Field
+            label="Pushback"
+            help={
+              draft.pushback_id === 'custom'
+                ? 'Write the objection yourself in Pushback notes, below.'
+                : draft.pushback_id
+                  ? `The customer says something like ${PUSHBACK_EXAMPLES[draft.pushback_id] ?? '—'}`
+                  : 'What the customer is actually objecting to.'
+            }
+          >
             <SelectInput
               value={draft.pushback_id ?? ''}
               onChange={(v) => patch({ pushback_id: v || null })}
               options={PUSHBACK_IDS}
+              labels={PUSHBACK_LABELS}
             />
           </Field>
           <TipField
@@ -1622,8 +1792,8 @@ function ScenarioStep({
             />
           </TipField>
           <TipField
-            label="Difficulty (1–4)"
-            help="1 Coachable · 2 Skeptical · 3 Hostile · 4 Combative"
+            label="Difficulty"
+            help="How long the customer holds their ground. Leave unset to use the built-in level."
             tip={{
               title: 'Difficulty',
               body: (
@@ -1656,30 +1826,57 @@ function ScenarioStep({
               ),
             }}
           >
-            <input
-              type="number"
-              min={1}
-              max={4}
-              value={draft.difficulty_override ?? ''}
-              onChange={(e) =>
-                patch({
-                  difficulty_override:
-                    e.target.value === '' ? null : Number(e.target.value),
-                })
-              }
-              style={inputStyle}
-            />
+            {/* Four named levels rather than a number box: the server accepts
+                1–4 and nothing else, and "3" alone doesn't say what it does. */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <PillToggle
+                label="Built-in"
+                title="Use the level this scenario ships with."
+                on={draft.difficulty_override == null}
+                onClick={() => patch({ difficulty_override: null })}
+              />
+              {DIFFICULTY_LEVELS.map((level) => (
+                <PillToggle
+                  key={level}
+                  label={`${level} · ${DIFFICULTY_LABELS[level]}`}
+                  on={draft.difficulty_override === level}
+                  onClick={() => patch({ difficulty_override: level })}
+                />
+              ))}
+            </div>
           </TipField>
-          <Field label="Weight (kg)">
+          <Field
+            label="Weight (kg)"
+            help={`Optional. Between ${WEIGHT_MIN_KG} and ${WEIGHT_MAX_KG} kg — leave empty to use the dog's usual weight.`}
+          >
             <input
               type="number"
               step="0.1"
+              min={WEIGHT_MIN_KG}
+              max={WEIGHT_MAX_KG}
               value={draft.weight_kg ?? ''}
               onChange={(e) =>
                 patch({ weight_kg: e.target.value === '' ? null : Number(e.target.value) })
               }
               style={inputStyle}
             />
+            {/* `min`/`max` only style the box — the browser still lets the
+                value through, so the rule is spelled out where it is broken. */}
+            {draft.weight_kg != null &&
+              (!Number.isFinite(draft.weight_kg) ||
+                draft.weight_kg <= 0 ||
+                draft.weight_kg > WEIGHT_MAX_KG) && (
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    color: COLOR.danger,
+                    marginTop: 4,
+                  }}
+                >
+                  {`A weight has to be more than 0 kg and at most ${WEIGHT_MAX_KG} kg.`}
+                </div>
+              )}
           </Field>
           <Field label="Pushback notes">
             <input
@@ -1776,6 +1973,15 @@ function CardStep({
   onVisible: (next: boolean) => void;
   baseDescriptor: BaseDescriptor | null;
 }) {
+  // Placeholders show what the app would render if the box is left empty, so
+  // they follow the draft exactly as the card preview does.
+  const fallbackTitle =
+    (draft.pushback_id ? labelOf(PUSHBACK_LABELS, draft.pushback_id) : '') ||
+    baseDescriptor?.title ||
+    '—';
+  const fallbackSubtitle = `${draft.breed?.trim() || baseDescriptor?.breed || '—'}, ${
+    draft.life_stage?.trim() || baseDescriptor?.lifeStage || '—'
+  }. Driver: ${draft.suggested_driver ?? baseDescriptor?.driver ?? '—'}.`;
   return (
     <>
       {/* Visibility / sort / driver tint */}
@@ -1840,31 +2046,35 @@ function CardStep({
 
       <Section label="Card text" defaultOpen>
         <div style={{ display: 'grid', gap: 14 }}>
-          <Field label={`Card title (${(draft.card_title_override ?? '').length}/120)`}>
+          <Field
+            label={`Card title (${(draft.card_title_override ?? '').length}/${CARD_TITLE_MAX})`}
+            help="Empty = the pushback's own name."
+          >
             <input
-              maxLength={120}
+              maxLength={CARD_TITLE_MAX}
               value={draft.card_title_override ?? ''}
               onChange={(e) => patch({ card_title_override: e.target.value })}
-              placeholder={baseDescriptor?.title ?? '—'}
+              placeholder={fallbackTitle}
               style={inputStyle}
             />
           </Field>
-          <Field label={`Card subtitle (${(draft.card_subtitle_override ?? '').length}/240)`}>
+          <Field
+            label={`Card subtitle (${(draft.card_subtitle_override ?? '').length}/${CARD_SUBTITLE_MAX})`}
+            help="Empty = breed, life stage and driver, as shown below."
+          >
             <input
-              maxLength={240}
+              maxLength={CARD_SUBTITLE_MAX}
               value={draft.card_subtitle_override ?? ''}
               onChange={(e) => patch({ card_subtitle_override: e.target.value })}
-              placeholder={
-                baseDescriptor
-                  ? `${baseDescriptor.breed}. Driver: ${baseDescriptor.driver}.`
-                  : '—'
-              }
+              placeholder={fallbackSubtitle}
               style={inputStyle}
             />
           </Field>
-          <Field label={`Start button label (${(draft.start_button_label ?? '').length}/40)`}>
+          <Field
+            label={`Start button label (${(draft.start_button_label ?? '').length}/${START_BTN_MAX})`}
+          >
             <input
-              maxLength={40}
+              maxLength={START_BTN_MAX}
               value={draft.start_button_label ?? ''}
               onChange={(e) => patch({ start_button_label: e.target.value })}
               placeholder="Start scenario"
@@ -1885,11 +2095,11 @@ function CardStep({
             />
           </Field>
           <Field
-            label={`Modal body (${(draft.info_modal_body ?? '').length}/4000)`}
+            label={`Modal body (${(draft.info_modal_body ?? '').length}/${INFO_BODY_MAX})`}
             help="Plain text. Empty = info icon shows the global scoring modal instead."
           >
             <textarea
-              maxLength={4000}
+              maxLength={INFO_BODY_MAX}
               rows={5}
               value={draft.info_modal_body ?? ''}
               onChange={(e) => patch({ info_modal_body: e.target.value })}
@@ -1987,6 +2197,15 @@ function KnowledgeSection({
       ? []
       : missingKnowledgeSlugs(selected, docs.data.map((d) => d.slug));
   const resolved = selected.length - missing.length;
+  /*
+    Attached documents that were never indexed. A document with no chunks
+    cannot be retrieved, so attaching only those turns this scenario's
+    grounding off while the form still reads as if it were wired up.
+  */
+  const unindexed = docs.data.filter(
+    (d) => selected.includes(d.slug) && d.chunk_count === 0,
+  );
+  const atCap = selected.length >= KNOWLEDGE_SLUG_MAX;
 
   function toggleDoc(slug: string) {
     const next = selected.includes(slug)
@@ -2047,10 +2266,12 @@ function KnowledgeSection({
       <Field
         label={`Attached documents${
           selected.length
-            ? ` (${resolved}${missing.length ? ` + ${missing.length} missing` : ''})`
+            ? ` (${resolved} of ${KNOWLEDGE_SLUG_MAX}${
+                missing.length ? ` + ${missing.length} missing` : ''
+              })`
             : ''
         }`}
-        help="Pin the exact documents this scenario reads from. When any are attached, the focus-area filter is ignored."
+        help={`Pin the exact documents this scenario reads from — up to ${KNOWLEDGE_SLUG_MAX}. When any are attached, the focus-area filter is ignored.`}
       >
         {missing.length > 0 && (
           <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
@@ -2100,73 +2321,128 @@ function KnowledgeSection({
             </div>
           </div>
         )}
-        {docs.loading ? (
-          <LoadingShimmer height={80} />
-        ) : docs.error ? (
-          <div style={{ fontSize: 12, color: COLOR.danger }}>
-            Couldn't load knowledge documents: {docs.error}
-          </div>
-        ) : docs.data.length === 0 ? (
-          <div style={{ fontSize: 12, color: COLOR.inkMute }}>
-            No knowledge documents yet — add them in Library → Knowledge.
-          </div>
-        ) : (
-          <div
-            style={{
-              maxHeight: 260,
-              overflowY: 'auto',
-              display: 'grid',
-              gap: 6,
-              border: `1px solid ${COLOR.border}`,
-              borderRadius: 12,
-              padding: 8,
-              background: 'rgba(255,255,255,0.5)',
-            }}
+        {unindexed.length > 0 && (
+          <InlineAlert
+            tone="warn"
+            title={
+              unindexed.length === 1
+                ? 'One attached document isn’t searchable yet'
+                : `${unindexed.length} attached documents aren’t searchable yet`
+            }
+            style={{ marginBottom: 10 }}
           >
-            {docs.data.map((d) => {
-              const hint = [d.category, focusHintOf(d.metadata)].filter(Boolean).join(' · ');
-              return (
-                <label
-                  key={d.slug}
-                  style={{
-                    display: 'flex',
-                    gap: 10,
-                    alignItems: 'flex-start',
-                    padding: '6px 8px',
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    background: selected.includes(d.slug) ? COLOR.brandSoft : 'transparent',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(d.slug)}
-                    onChange={() => toggleDoc(d.slug)}
-                    style={{ marginTop: 3 }}
-                  />
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 13, color: COLOR.ink }}>
-                      {d.title}
-                    </span>
-                    {hint && (
+            The search index for {unindexed.map((d) => `“${d.title}”`).join(', ')} is
+            empty, so this scenario pulls nothing from{' '}
+            {unindexed.length === 1 ? 'it' : 'them'}. Open{' '}
+            <strong>Library → Knowledge</strong>, select the document and press{' '}
+            <strong>Rebuild search index</strong> — or untick{' '}
+            {unindexed.length === 1 ? 'it' : 'them'} here.
+          </InlineAlert>
+        )}
+        {atCap && (
+          <InlineAlert tone="info" style={{ marginBottom: 10 }}>
+            {KNOWLEDGE_SLUG_MAX} documents attached — the most a scenario can hold.
+            Untick one before attaching another.
+          </InlineAlert>
+        )}
+        <QueryBoundary query={docs} title="Couldn’t load the knowledge documents">
+          {docs.data.length === 0 ? (
+            <div style={{ fontSize: 12, color: COLOR.inkMute }}>
+              No knowledge documents yet — add them in Library → Knowledge.
+            </div>
+          ) : (
+            <div
+              style={{
+                maxHeight: 260,
+                overflowY: 'auto',
+                display: 'grid',
+                gap: 6,
+                border: `1px solid ${COLOR.border}`,
+                borderRadius: 12,
+                padding: 8,
+                background: 'rgba(255,255,255,0.5)',
+              }}
+            >
+              {docs.data.map((d) => {
+                const on = selected.includes(d.slug);
+                const searchable = d.chunk_count > 0;
+                const hint = [
+                  labelOf(KNOWLEDGE_CATEGORY_LABELS, d.category),
+                  focusHintOf(d.metadata),
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
+                return (
+                  <label
+                    key={d.slug}
+                    style={{
+                      display: 'flex',
+                      gap: 10,
+                      alignItems: 'flex-start',
+                      padding: '6px 8px',
+                      borderRadius: 8,
+                      // The cap is the server's, so the checkbox stops rather
+                      // than letting the admin build a row that gets rejected.
+                      cursor: !on && atCap ? 'not-allowed' : 'pointer',
+                      opacity: !on && atCap ? 0.5 : 1,
+                      background: on ? COLOR.brandSoft : 'transparent',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      disabled={!on && atCap}
+                      onChange={() => toggleDoc(d.slug)}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span style={{ minWidth: 0 }}>
                       <span
                         style={{
-                          display: 'block',
-                          fontFamily: 'var(--pbt-mono)',
-                          fontSize: 10.5,
-                          color: COLOR.inkMute,
-                          marginTop: 1,
+                          display: 'flex',
+                          gap: 6,
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          fontSize: 13,
+                          color: COLOR.ink,
                         }}
                       >
-                        {hint}
+                        {d.title}
+                        {!searchable && (
+                          <StatusPill tone="warn">Not searchable yet</StatusPill>
+                        )}
                       </span>
-                    )}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        )}
+                      {hint && (
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: 11,
+                            color: COLOR.inkMute,
+                            marginTop: 1,
+                          }}
+                        >
+                          {hint}
+                        </span>
+                      )}
+                      {!searchable && (
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: 11,
+                            color: COLOR.inkMute,
+                            marginTop: 1,
+                          }}
+                        >
+                          Nothing to retrieve until it is indexed — Library → Knowledge →
+                          Rebuild search index.
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </QueryBoundary>
         {selected.length > 0 && (
           <button
             onClick={() => patch({ knowledge_slugs: null })}
@@ -2313,17 +2589,24 @@ function SelectInput({
   value,
   onChange,
   options,
+  labels,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: string[];
+  /**
+   * Human titles for options whose stored value is an id. Without it the
+   * dropdown offers database slugs (`rx-diet`, `weight-denial`) — the stored
+   * value is unchanged either way.
+   */
+  labels?: Record<string, string>;
 }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} style={inputStyle}>
       <option value="">—</option>
       {options.map((o) => (
         <option key={o} value={o}>
-          {o}
+          {labels ? labelOf(labels, o) : o}
         </option>
       ))}
     </select>
@@ -2400,9 +2683,21 @@ const WIZARD_STEPS: WizardStep[] = [
  * prompt. Same pickers as the visual editor, same validators as the server.
  */
 const WIZARD_ENUMS: Partial<
-  Record<WizardField, { options: string[]; isValid: (v: string) => boolean }>
+  Record<
+    WizardField,
+    {
+      options: string[];
+      isValid: (v: string) => boolean;
+      /** Human titles, where the stored value is an id rather than a word. */
+      labels?: Record<string, string>;
+    }
+  >
 > = {
-  pushback_id: { options: PUSHBACK_IDS, isValid: (v) => isPushbackId(v) },
+  pushback_id: {
+    options: PUSHBACK_IDS,
+    isValid: (v) => isPushbackId(v),
+    labels: PUSHBACK_LABELS,
+  },
   life_stage: { options: LIFE_STAGES, isValid: (v) => isLifeStage(v) },
   persona_override: { options: PERSONAS, isValid: (v) => isPersona(v) },
   suggested_driver: {
@@ -2576,6 +2871,7 @@ function ScenarioWizard({
             value={currentValue}
             onChange={(v) => setManually(v)}
             options={enumSpec.options}
+            labels={enumSpec.labels}
           />
         ) : (
           <textarea
@@ -2649,21 +2945,34 @@ function CardPreview({
   draft: Partial<ScenarioOverrideRow>;
   baseDescriptor: BaseDescriptor | null;
 }) {
-  const title =
-    draft.card_title_override?.trim() ||
-    baseDescriptor?.title ||
-    '(scenario)';
-  const subtitle =
-    draft.card_subtitle_override?.trim() ||
-    (baseDescriptor
-      ? `${baseDescriptor.breed}. Driver: ${baseDescriptor.driver}.`
-      : `${draft.breed ?? '—'} · ${draft.suggested_driver ?? '—'}`);
-  const buttonLabel = draft.start_button_label?.trim() || 'Start scenario';
+  /*
+    Defaults come from the DRAFT, with the built-in scenario as a per-field
+    fallback — the same order HomeScreen resolves them in. Reading them off
+    the base scenario instead showed the admin the old breed and the old
+    driver while they were editing those very fields.
+  */
+  const breed = draft.breed?.trim() || baseDescriptor?.breed || '—';
+  const lifeStage = draft.life_stage?.trim() || baseDescriptor?.lifeStage || '—';
   const driver: DriverKey =
     (draft.card_driver_override as DriverKey | null) ??
     (draft.suggested_driver as DriverKey | null) ??
     (baseDescriptor?.driver as DriverKey) ??
     'Activator';
+  const scenarioDriver =
+    (draft.suggested_driver as DriverKey | null) ??
+    (baseDescriptor?.driver as DriverKey | null) ??
+    driver;
+  const title =
+    draft.card_title_override?.trim() ||
+    (draft.pushback_id ? labelOf(PUSHBACK_LABELS, draft.pushback_id) : '') ||
+    baseDescriptor?.title ||
+    '(scenario)';
+  // Verbatim shape of `home.pick.subtitle` — the preview is only useful if it
+  // is the string the trainee will read.
+  const subtitle =
+    draft.card_subtitle_override?.trim() ||
+    `${breed}, ${lifeStage}. Driver: ${scenarioDriver}.`;
+  const buttonLabel = draft.start_button_label?.trim() || 'Start scenario';
   const dc = DRIVERS[driver];
   return (
     <div
