@@ -60,6 +60,7 @@ export function TeamScreen({
   const roles = useRoles(refreshKey);
   const invites = useInvites(refreshKey);
   const [inviting, setInviting] = useState(false);
+  const [promoting, setPromoting] = useState(false);
 
   const can = (p: string) => myPermissions.includes(p);
   const roleList = roles.data?.roles ?? [];
@@ -84,6 +85,14 @@ export function TeamScreen({
 
   const pendingCount = (invites.data?.invites ?? []).filter((i) => i.status === 'pending').length;
 
+  // Everyone who could be promoted: an existing account with no role yet.
+  // Promotion needs no email at all, which matters a great deal before a mail
+  // provider is configured — and stays the quickest path afterwards.
+  const promotable = useMemo(
+    () => users.data.filter((u) => !u.admin_role),
+    [users.data],
+  );
+
   return (
     <>
       <ContextBar
@@ -99,6 +108,11 @@ export function TeamScreen({
           <Tally label={tab === 'roles' ? 'Roles' : tab === 'invites' ? 'Pending invites' : 'Admins'}
                  value={tab === 'roles' ? roleList.length : tab === 'invites' ? pendingCount : members.length} />
           <div style={{ flex: 1 }} />
+          {can('team.manage') && (
+            <button style={btnSecondary} onClick={() => setPromoting(true)}>
+              Add existing user
+            </button>
+          )}
           {can('invites.manage') && (
             <button style={btnPrimary} onClick={() => setInviting(true)}>
               + Invite teammate
@@ -118,6 +132,7 @@ export function TeamScreen({
               roles={roleList}
               meUserId={meUserId}
               canManage={can('team.manage')}
+              onAddExisting={can('team.manage') ? () => setPromoting(true) : undefined}
               onChanged={refresh}
             />
           ))}
@@ -159,7 +174,237 @@ export function TeamScreen({
           refresh();
         }}
       />
+
+      <AddExistingModal
+        open={promoting}
+        candidates={promotable}
+        roles={roleList}
+        loading={users.loading}
+        onClose={() => setPromoting(false)}
+        onAdded={() => {
+          setPromoting(false);
+          onTab('members');
+          refresh();
+        }}
+      />
     </>
+  );
+}
+
+// ── Promote an existing account ────────────────────────────────────────
+
+/**
+ * Grant a role to somebody who already has an account.
+ *
+ * The invitation flow assumes working email; this one assumes nothing. Anyone
+ * who has signed in to the trainer already exists in `profiles`, so making
+ * them an admin is a single role assignment — no message to deliver, no
+ * password to hand over, no link to expire.
+ */
+function AddExistingModal({
+  open,
+  candidates,
+  roles,
+  loading,
+  onClose,
+  onAdded,
+}: {
+  open: boolean;
+  candidates: AdminUser[];
+  roles: AdminRole[];
+  loading: boolean;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [userId, setUserId] = useState<string | null>(null);
+  const [roleKey, setRoleKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const assignable = roles
+    .filter((r) => r.key !== 'owner')
+    .concat(roles.filter((r) => r.key === 'owner'));
+  const chosenRole = roles.find((r) => r.key === roleKey);
+  const summary = summarizePermissions(chosenRole?.permissions ?? []);
+
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = q
+      ? candidates.filter((u) =>
+          `${u.display_name ?? ''} ${u.email ?? ''}`.toLowerCase().includes(q),
+        )
+      : candidates;
+    // A picker is for picking, not for scrolling — searching narrows it.
+    return list.slice(0, 40);
+  }, [candidates, search]);
+
+  const selected = candidates.find((u) => u.user_id === userId) ?? null;
+
+  function close() {
+    setSearch('');
+    setUserId(null);
+    setRoleKey('');
+    setError(null);
+    onClose();
+  }
+
+  async function submit() {
+    if (!userId || !roleKey) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await runUserAction({ op: 'set_role', userId, roleKey });
+      setSearch('');
+      setUserId(null);
+      setRoleKey('');
+      onAdded();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not grant the role');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={close} width={560} ariaLabel="Add an existing user as an admin">
+      <div style={{ padding: 26, overflowY: 'auto' }}>
+        <ModalHeader title="Add an existing user" onClose={close} />
+        <Callout>
+          Grants portal access to somebody who already has an account. They keep
+          the password they already use — nothing is emailed.
+        </Callout>
+
+        <div style={{ display: 'grid', gap: 13 }}>
+          <Field label="Who" help="Accounts that don’t hold a role yet.">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or email…"
+              style={inputStyle}
+              aria-label="Search accounts"
+            />
+          </Field>
+
+          <div
+            style={{
+              maxHeight: 232,
+              overflowY: 'auto',
+              borderRadius: 12,
+              border: '0.5px solid rgba(60,20,15,0.1)',
+              background: 'rgba(255,255,255,0.5)',
+            }}
+          >
+            {loading ? (
+              <div style={{ padding: 16 }}>
+                <LoadingShimmer height={80} />
+              </div>
+            ) : matches.length === 0 ? (
+              <div style={{ padding: '18px 16px', fontSize: 12.5, color: COLOR.inkMute }}>
+                {candidates.length === 0
+                  ? 'Every account already holds a role.'
+                  : 'Nobody matches that search.'}
+              </div>
+            ) : (
+              matches.map((u) => {
+                const active = u.user_id === userId;
+                return (
+                  <button
+                    key={u.user_id}
+                    onClick={() => setUserId(u.user_id)}
+                    aria-pressed={active}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 11,
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '9px 13px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: active ? COLOR.brandSoft : 'transparent',
+                      borderBottom: '0.5px solid rgba(60,20,15,0.04)',
+                    }}
+                  >
+                    <Avatar name={u.display_name} driver={u.echo_primary} size={28} />
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: COLOR.ink,
+                        }}
+                      >
+                        {u.display_name ?? 'Unnamed'}
+                        {u.disabled && <SoftTag tone="warn">DISABLED</SoftTag>}
+                      </span>
+                      <span style={{ ...ellipsis, display: 'block' }}>
+                        {u.email ?? u.user_id.slice(0, 8)}
+                      </span>
+                    </span>
+                    {active && (
+                      <span style={{ fontSize: 12, fontWeight: 800, color: COLOR.brand }}>✓</span>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <Field label="Role">
+            <select value={roleKey} onChange={(e) => setRoleKey(e.target.value)} style={inputStyle}>
+              <option value="">Choose a role…</option>
+              {assignable.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {chosenRole && (
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: 12,
+                background: 'rgba(255,255,255,0.6)',
+                border: '0.5px solid rgba(60,20,15,0.07)',
+              }}
+            >
+              <div style={{ fontSize: 12.5, color: COLOR.inkSoft, lineHeight: 1.55 }}>
+                {chosenRole.description}
+              </div>
+              <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 6 }}>
+                {chosenRole.key === 'owner'
+                  ? 'Every permission, present and future.'
+                  : `${summary.count} of ${summary.total} permissions · ${summary.areas.join(' · ') || 'no areas'}`}
+              </div>
+            </div>
+          )}
+
+          {selected?.disabled && (
+            <Callout tone="warn">
+              This account is disabled and can’t sign in. Enable it from Users →
+              Manage before granting a role.
+            </Callout>
+          )}
+          {error && <ErrorNote>{error}</ErrorNote>}
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 2 }}>
+            <button
+              style={{ ...btnPrimary, opacity: userId && roleKey && !busy ? 1 : 0.5 }}
+              disabled={!userId || !roleKey || busy}
+              onClick={() => void submit()}
+            >
+              {busy ? 'Granting…' : 'Grant access'}
+            </button>
+            <button style={btnSecondary} onClick={close}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -173,6 +418,7 @@ function MembersTable({
   roleByKey,
   meUserId,
   canManage,
+  onAddExisting,
   onChanged,
 }: {
   members: AdminUser[];
@@ -180,6 +426,8 @@ function MembersTable({
   roleByKey: Map<string, AdminRole>;
   meUserId?: string;
   canManage: boolean;
+  /** Undefined when the viewer can't manage the team — hides the CTA. */
+  onAddExisting?: () => void;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -203,8 +451,19 @@ function MembersTable({
       <Glass padding={0} radius={20}>
         <EmptyState
           title="No admins yet"
-          subtitle="Invite a teammate to give them portal access"
+          subtitle={
+            onAddExisting
+              ? 'Invite a teammate, or give portal access to someone who already has an account — that route needs no email at all.'
+              : 'Invite a teammate to give them portal access'
+          }
         />
+        {onAddExisting && (
+          <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 24 }}>
+            <button style={btnSecondary} onClick={onAddExisting}>
+              Add existing user
+            </button>
+          </div>
+        )}
       </Glass>
     );
   }

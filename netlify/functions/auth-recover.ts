@@ -79,6 +79,9 @@ export default async (req: Request): Promise<Response> => {
     to: email,
     settings,
     meta: { scope },
+    // Used only by the `supabase` transport, which sends its own recovery mail
+    // and so needs the destination rather than the link we just minted.
+    authRedirectTo: redirectTo,
     vars: {
       name: displayNameFor(data.user?.user_metadata, email),
       resetUrl: data.properties.action_link,

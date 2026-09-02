@@ -72,6 +72,7 @@ export function Sidebar({
   permissions,
   identity,
   onSignOut,
+  onChangePassword,
   collapsed,
   onToggleCollapsed,
   compact,
@@ -83,6 +84,7 @@ export function Sidebar({
   permissions: readonly string[];
   identity: { name: string; email: string | null; role: string };
   onSignOut: () => void;
+  onChangePassword: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   compact: boolean;
@@ -308,6 +310,9 @@ export function Sidebar({
                     {identity.role}
                   </div>
                 </div>
+                <RailButton label="Change password" onClick={onChangePassword}>
+                  ✎
+                </RailButton>
                 <RailButton label="Sign out" onClick={onSignOut}>
                   ⏻
                 </RailButton>

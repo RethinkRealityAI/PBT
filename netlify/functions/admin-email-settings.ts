@@ -13,7 +13,13 @@
 import { sampleVars } from '../../src/shared/email/defaults';
 import { DEFAULT_BRAND } from '../../src/shared/email/types';
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
-import { configurationProblem, loadEmailSettings, sendTemplateEmail } from './_shared/mailer';
+import {
+  configurationProblem,
+  loadEmailSettings,
+  providerAdvisory,
+  sendTemplateEmail,
+  supabaseDeliveryBlock,
+} from './_shared/mailer';
 import { encryptSecret, hasDedicatedSecretKey, maskSecret } from './_shared/secretbox';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -46,6 +52,9 @@ export default async (req: Request): Promise<Response> => {
       resendKeyHint: maskSecret(s.resendApiKey),
       origin: s.origin,
       problem: configurationProblem(s),
+      // Not a misconfiguration — the built-in mailer works, within limits an
+      // admin needs stated up front rather than discovered from a delivery log.
+      advisory: providerAdvisory(s),
       // Warns the admin that credentials are keyed off the service-role key
       // rather than a dedicated one — works, but rotating either breaks both.
       dedicatedSecretKey: hasDedicatedSecretKey(),
@@ -94,7 +103,9 @@ export default async (req: Request): Promise<Response> => {
 
   if (body.provider !== undefined) {
     const p = String(body.provider);
-    if (p !== 'resend' && p !== 'smtp') return errorResponse(400, 'provider must be resend or smtp');
+    if (p !== 'resend' && p !== 'smtp' && p !== 'supabase') {
+      return errorResponse(400, 'provider must be resend, smtp, or supabase');
+    }
     patch.provider = p;
   }
   if (body.fromEmail !== undefined) {

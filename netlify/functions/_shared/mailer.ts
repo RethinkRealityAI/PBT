@@ -1,9 +1,17 @@
 /**
  * Transactional email delivery.
  *
- * Two transports, one interface:
- *   • resend — HTTPS API, nothing to install, best default
- *   • smtp   — any provider (or an in-house relay) via nodemailer
+ * Three transports, one interface:
+ *   • resend   — HTTPS API, nothing to install, best default
+ *   • smtp     — any provider (or an in-house relay) via nodemailer
+ *   • supabase — the project's built-in auth mailer, as a stopgap
+ *
+ * The `supabase` transport is deliberately limited and is meant to bridge the
+ * gap before a real provider is configured. Supabase's built-in service only
+ * sends *auth* mail (recovery, signup confirmation), renders Supabase's own
+ * dashboard templates rather than ours, and is rate-limited to a handful of
+ * messages an hour. Templates it cannot carry are logged as `skipped` with the
+ * reason rather than silently dropped — see SUPABASE_AUTH_TEMPLATES.
  *
  * Configuration is read from `email_settings` (admin-editable, credentials
  * encrypted at rest) and falls back to environment variables so a fresh deploy
@@ -17,8 +25,10 @@ import { DEFAULT_BRAND, type EmailBrand, type EmailTemplate } from '../../../src
 import { DEFAULT_TEMPLATES } from '../../../src/shared/email/defaults';
 import { decryptSecret } from './secretbox';
 
+export type EmailProvider = 'resend' | 'smtp' | 'supabase';
+
 export interface EmailSettings {
-  provider: 'resend' | 'smtp';
+  provider: EmailProvider;
   fromEmail: string;
   fromName: string;
   replyTo: string;
@@ -62,9 +72,9 @@ export async function loadEmailSettings(sb: SupabaseClient): Promise<SettingsSou
   const envResend = envStr('RESEND_API_KEY');
   const envSmtpHost = envStr('SMTP_HOST');
 
-  const provider = ((): 'resend' | 'smtp' => {
+  const provider = ((): EmailProvider => {
     const p = str('provider');
-    if (p === 'resend' || p === 'smtp') return p;
+    if (p === 'resend' || p === 'smtp' || p === 'supabase') return p;
     return envSmtpHost && !envResend ? 'smtp' : 'resend';
   })();
 
@@ -73,7 +83,10 @@ export async function loadEmailSettings(sb: SupabaseClient): Promise<SettingsSou
   const smtpPass = dbSmtpPass || envStr('SMTP_PASSWORD', 'SMTP_PASS');
   const fromEmail = str('from_email') || envStr('EMAIL_FROM_ADDRESS', 'SMTP_FROM');
 
-  const hasCreds = provider === 'resend' ? Boolean(resendApiKey) : Boolean(smtpHost);
+  // Supabase's built-in mailer carries no credentials of ours — the project's
+  // service role is the whole authentication story.
+  const hasCreds =
+    provider === 'supabase' ? true : provider === 'resend' ? Boolean(resendApiKey) : Boolean(smtpHost);
   const brandRow = (row?.brand ?? {}) as Partial<EmailBrand>;
 
   const appBaseUrl = (str('app_base_url') || envStr('APP_BASE_URL', 'URL', 'DEPLOY_PRIME_URL')).replace(
@@ -100,23 +113,82 @@ export async function loadEmailSettings(sb: SupabaseClient): Promise<SettingsSou
       ...brandRow,
     },
     origin: {
-      credentials: (provider === 'resend' ? dbResendKey : dbSmtpPass || str('smtp_host'))
-        ? 'database'
-        : hasCreds
-          ? 'env'
-          : 'none',
+      credentials:
+        provider === 'supabase'
+          ? 'none'
+          : (provider === 'resend' ? dbResendKey : dbSmtpPass || str('smtp_host'))
+            ? 'database'
+            : hasCreds
+              ? 'env'
+              : 'none',
       sender: str('from_email') ? 'database' : fromEmail ? 'env' : 'none',
     },
   };
 }
 
+// ── Supabase built-in mailer (stopgap transport) ───────────────────────
+
+/**
+ * The only templates Supabase's built-in service can deliver, mapped to the
+ * auth action that triggers it.
+ *
+ * Supabase has no "send this arbitrary message" API — mail leaves the project
+ * only as a side effect of an auth action, rendered from the template you edit
+ * in *their* dashboard. So this map is the whole capability surface, and
+ * everything absent from it is honestly reported as undeliverable rather than
+ * rendered, logged as sent, and silently discarded.
+ *
+ * Deliberately excluded, with reasons:
+ *   admin_invite     — `inviteUserByEmail` creates a passwordless account, which
+ *                      collides with our own invite token + set-your-password
+ *                      flow and can strand someone with an account they can't
+ *                      sign in to. The accept link is surfaced for copying
+ *                      instead (see admin-invites), which needs no mail at all.
+ *   welcome, role_changed, account_disabled, password_changed
+ *                    — courtesy notices with no auth action behind them.
+ */
+export const SUPABASE_AUTH_TEMPLATES: Readonly<Record<string, 'recovery' | 'signup'>> = {
+  password_reset: 'recovery',
+  email_verify: 'signup',
+};
+
+/** Why this template can't go out over the built-in mailer, or null if it can. */
+export function supabaseDeliveryBlock(templateKey: string): string | null {
+  if (SUPABASE_AUTH_TEMPLATES[templateKey]) return null;
+  return (
+    `Supabase's built-in mailer only sends auth email (password reset, address ` +
+    `confirmation), so the “${templateKey}” template can't be delivered. ` +
+    `Configure Resend or SMTP to send it.`
+  );
+}
+
+/**
+ * Provider-level caveats worth showing even when nothing is misconfigured.
+ * `configurationProblem` answers "is it broken"; this answers "what should you
+ * know", which for the built-in mailer is quite a lot.
+ */
+export function providerAdvisory(s: EmailSettings): string | null {
+  if (s.provider !== 'supabase') return null;
+  return (
+    "Using Supabase's built-in mailer. It sends password-reset and address-confirmation " +
+    'mail only, using the templates from your Supabase dashboard rather than the ones ' +
+    'below, from Supabase’s address rather than yours — and it is rate-limited (2 an hour ' +
+    'by default) and documented as a testing service. Invitations still work: the portal ' +
+    'shows a single-use link to share directly. Move to Resend or SMTP before launch.'
+  );
+}
+
 export function isConfigured(s: EmailSettings): boolean {
+  if (s.provider === 'supabase') return true;
   if (!s.fromEmail) return false;
   return s.provider === 'resend' ? Boolean(s.resendApiKey) : Boolean(s.smtpHost);
 }
 
 /** Why sending would fail right now, in words an admin can act on. */
 export function configurationProblem(s: EmailSettings): string | null {
+  // The built-in mailer needs no sender identity or credentials from us — its
+  // limits are a capability question (providerAdvisory), not a config error.
+  if (s.provider === 'supabase') return null;
   if (!s.fromEmail) return 'No sender address is set. Add a verified “from” address in Email → Settings.';
   if (s.provider === 'resend' && !s.resendApiKey) return 'No Resend API key is set.';
   if (s.provider === 'smtp' && !s.smtpHost) return 'No SMTP host is set.';
@@ -172,6 +244,12 @@ interface SendArgs {
   /** Extra context stored on the log row (invite id, actor, …). */
   meta?: Record<string, unknown>;
   settings?: SettingsSource;
+  /**
+   * Where the recipient should land after following an auth link. Only the
+   * `supabase` transport uses it — the other two embed the destination in the
+   * link we render ourselves.
+   */
+  authRedirectTo?: string;
 }
 
 /**
@@ -200,17 +278,32 @@ export async function sendTemplateEmail(args: SendArgs): Promise<SendResult> {
     return logAndReturn(sb, templateKey, to, rendered.subject, settings.provider, 'skipped', problem, args.meta);
   }
 
+  // Under the built-in mailer the recipient sees Supabase's template, not ours,
+  // so the log records what actually went out rather than what we rendered.
+  const authKind = SUPABASE_AUTH_TEMPLATES[templateKey];
+  const loggedSubject =
+    settings.provider === 'supabase' ? `Supabase ${authKind ?? 'auth'} template` : rendered.subject;
+
+  if (settings.provider === 'supabase') {
+    const block = supabaseDeliveryBlock(templateKey);
+    if (block) {
+      return logAndReturn(sb, templateKey, to, loggedSubject, 'supabase', 'skipped', block, args.meta);
+    }
+  }
+
   try {
-    if (settings.provider === 'resend') {
+    if (settings.provider === 'supabase') {
+      await sendViaSupabaseAuth(sb, authKind as 'recovery' | 'signup', to, args.authRedirectTo);
+    } else if (settings.provider === 'resend') {
       await sendViaResend(settings, to, rendered.subject, rendered.html, rendered.text);
     } else {
       await sendViaSmtp(settings, to, rendered.subject, rendered.html, rendered.text);
     }
-    return logAndReturn(sb, templateKey, to, rendered.subject, settings.provider, 'sent', null, args.meta);
+    return logAndReturn(sb, templateKey, to, loggedSubject, settings.provider, 'sent', null, args.meta);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Send failed';
     console.error('[email] send failed', templateKey, message);
-    return logAndReturn(sb, templateKey, to, rendered.subject, settings.provider, 'failed', message, args.meta);
+    return logAndReturn(sb, templateKey, to, loggedSubject, settings.provider, 'failed', message, args.meta);
   }
 }
 
@@ -243,6 +336,39 @@ async function sendViaResend(
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string; name?: string };
     throw new Error(body.message ?? `Resend rejected the message (${res.status})`);
+  }
+}
+
+/**
+ * Ask Supabase to send one of its own auth emails.
+ *
+ * There is no generic send endpoint, so each supported template maps to the
+ * auth call whose side effect is the message. `generateLink` is *not* usable
+ * here: it mints the link but sends nothing.
+ */
+async function sendViaSupabaseAuth(
+  sb: SupabaseClient,
+  kind: 'recovery' | 'signup',
+  to: string,
+  redirectTo?: string,
+): Promise<void> {
+  const { error } =
+    kind === 'recovery'
+      ? await sb.auth.resetPasswordForEmail(to, redirectTo ? { redirectTo } : undefined)
+      : await sb.auth.resend({
+          type: 'signup',
+          email: to,
+          ...(redirectTo ? { options: { emailRedirectTo: redirectTo } } : {}),
+        });
+  if (error) {
+    // The built-in service throttles hard; say so plainly rather than leaving
+    // an admin staring at a bare "429".
+    const rateLimited = /rate|limit|too many/i.test(error.message) || error.status === 429;
+    throw new Error(
+      rateLimited
+        ? `Supabase's built-in mailer is rate-limited (${error.message}). It allows only a couple of messages an hour — configure Resend or SMTP to lift this.`
+        : error.message,
+    );
   }
 }
 
