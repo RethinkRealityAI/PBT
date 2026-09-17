@@ -1,36 +1,31 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { AI_ENDPOINTS } from '../../shared/ai/contract';
 
-const { generateContent } = vi.hoisted(() => ({
-  generateContent: vi.fn(),
-}));
+/**
+ * petVisionService is a thin client over the `ai-vision` Netlify Function
+ * (which holds the key and the prompt). Mock the transport and pin the wire
+ * contract; the prompt/normaliser themselves are covered where they live
+ * (`src/shared/ai/petVision.ts`).
+ */
+const { postAi } = vi.hoisted(() => ({ postAi: vi.fn() }));
 
-vi.mock('@google/genai', () => {
-  class MockGoogleGenAI {
-    models = { generateContent };
-  }
-  return {
-    GoogleGenAI: MockGoogleGenAI,
-    Type: {
-      OBJECT: 'OBJECT',
-      INTEGER: 'INTEGER',
-      STRING: 'STRING',
-      ARRAY: 'ARRAY',
-      BOOLEAN: 'BOOLEAN',
-      NUMBER: 'NUMBER',
-    },
-  };
+vi.mock('../aiApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../aiApi')>();
+  return { ...actual, postAi };
 });
 
+import { AiApiError } from '../aiApi';
 import {
   analyzePetPhoto,
   visionLifeStageToLabel,
+  type PetVisionResult,
 } from '../petVisionService';
 
 beforeEach(() => {
-  generateContent.mockReset();
+  postAi.mockReset();
 });
 
-const validResult = {
+const validResult: PetVisionResult = {
   isDog: true,
   breed: 'Labrador Retriever',
   breedConfidence: 0.82,
@@ -49,83 +44,41 @@ const validResult = {
 };
 
 describe('analyzePetPhoto', () => {
-  it('parses a valid multimodal response', async () => {
-    generateContent.mockResolvedValueOnce({ text: JSON.stringify(validResult) });
+  it('posts the image to the vision function and returns its result', async () => {
+    postAi.mockResolvedValueOnce({ result: validResult });
     const r = await analyzePetPhoto('BASE64DATA', 'image/jpeg');
-    expect(r.isDog).toBe(true);
+    expect(r).toBe(validResult);
     expect(r.breed).toBe('Labrador Retriever');
     expect(r.bcs).toBe(7);
     expect(r.dermatitis.severity).toBe('mild');
-    // The image is passed as inlineData, not as text.
-    const arg = generateContent.mock.calls[0][0];
-    expect(arg.contents[0].parts[0].inlineData.data).toBe('BASE64DATA');
-    expect(arg.contents[0].parts[0].inlineData.mimeType).toBe('image/jpeg');
+
+    expect(postAi).toHaveBeenCalledOnce();
+    const [endpoint, body, opts] = postAi.mock.calls[0];
+    expect(endpoint).toBe(AI_ENDPOINTS.vision);
+    // Raw base64 (no data-URL prefix) + mime type, nothing else about the image.
+    expect(body.imageBase64).toBe('BASE64DATA');
+    expect(body.mimeType).toBe('image/jpeg');
+    expect(body.locale).toBeUndefined();
+    // A multimodal call gets the longer deadline.
+    expect(opts).toEqual({ timeoutMs: 45_000 });
   });
 
-  it('clamps BCS into the 1–9 range and confidence into 0–1', async () => {
-    generateContent.mockResolvedValueOnce({
-      text: JSON.stringify({ ...validResult, bcs: 14, breedConfidence: 1.8 }),
-    });
-    const r = await analyzePetPhoto('x', 'image/png');
-    expect(r.bcs).toBe(9);
-    expect(r.breedConfidence).toBe(1);
+  it('threads the app locale through to the function', async () => {
+    postAi.mockResolvedValueOnce({ result: validResult });
+    await analyzePetPhoto('x', 'image/png', { locale: 'fr' });
+    const [, body] = postAi.mock.calls[0];
+    expect(body.locale).toBe('fr');
+    expect(body.mimeType).toBe('image/png');
   });
 
-  it('flags non-dog images', async () => {
-    generateContent.mockResolvedValueOnce({
-      text: JSON.stringify({ ...validResult, isDog: false, breed: 'Unknown' }),
-    });
-    const r = await analyzePetPhoto('x', 'image/jpeg');
-    expect(r.isDog).toBe(false);
+  it('rejects on transport failure so the UI can offer a retry', async () => {
+    postAi.mockRejectedValueOnce(new AiApiError('vision unavailable', 503, 'upstream'));
+    await expect(analyzePetPhoto('x', 'image/jpeg')).rejects.toThrow('vision unavailable');
   });
 
-  it('rejects on an unparseable response', async () => {
-    generateContent.mockResolvedValueOnce({ text: 'not json' });
-    await expect(analyzePetPhoto('x', 'image/jpeg')).rejects.toBeTruthy();
-  });
-});
-
-describe('analyzePetPhoto — locale', () => {
-  it('sends the English prompt unchanged by default', async () => {
-    generateContent.mockResolvedValueOnce({ text: JSON.stringify(validResult) });
-    await analyzePetPhoto('x', 'image/jpeg');
-    const instruction = generateContent.mock.calls[0][0].config.systemInstruction;
-    expect(instruction).toContain('veterinary visual triage assistant');
-    expect(instruction).not.toContain('CANADIAN FRENCH');
-  });
-
-  it('appends a French output directive for locale "fr"', async () => {
-    generateContent.mockResolvedValueOnce({ text: JSON.stringify(validResult) });
-    await analyzePetPhoto('x', 'image/jpeg', { locale: 'fr' });
-    const call = generateContent.mock.calls[0][0];
-    expect(call.config.systemInstruction).toContain('# OUTPUT LANGUAGE — CANADIAN FRENCH');
-    // The clinical scaffolding is retained, not replaced.
-    expect(call.config.systemInstruction).toContain('BODY CONDITION SCORE (WSAVA 1–9)');
-    // Enums stay machine-stable in every locale.
-    expect(call.config.responseSchema.properties.lifeStage.enum).toEqual([
-      'puppy',
-      'junior',
-      'adult',
-      'senior',
-      'unknown',
-    ]);
-    expect(call.config.responseSchema.properties.dermatitis.properties.severity.enum).toEqual(
-      ['none', 'mild', 'moderate', 'marked'],
-    );
-  });
-
-  it('localises the age-estimate fallback', async () => {
-    generateContent.mockResolvedValueOnce({
-      text: JSON.stringify({ ...validResult, ageEstimate: '' }),
-    });
-    const fr = await analyzePetPhoto('x', 'image/jpeg', { locale: 'fr' });
-    expect(fr.ageEstimate).toBe('Impossible à déterminer à partir de la photo');
-
-    generateContent.mockResolvedValueOnce({
-      text: JSON.stringify({ ...validResult, ageEstimate: '' }),
-    });
-    const en = await analyzePetPhoto('x', 'image/jpeg');
-    expect(en.ageEstimate).toBe('Not determinable from photo');
+  it('rejects a malformed 200 without a result', async () => {
+    postAi.mockResolvedValueOnce({});
+    await expect(analyzePetPhoto('x', 'image/jpeg')).rejects.toThrow('Empty response');
   });
 });
 

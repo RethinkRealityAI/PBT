@@ -2,17 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import type { Scenario } from '../data/scenarios';
 import type { ChatMessage, ScoreReport } from './types';
-import { buildVoiceSystemPrompt } from '../data/knowledge/promptBuilders';
 import type { PromptOverrides } from '../data/knowledge/promptBuilders';
-import { evaluateConversation, MODEL_LIVE } from './geminiService';
-import { useSimulationConfig } from '../app/providers/FlagProvider';
+import { evaluateConversation } from './geminiService';
+import { postAi } from './aiApi';
 import {
-  retrieveContext,
-  scenarioRetrievalCacheKey,
-  scenarioRetrievalFilters,
-} from './ragClient';
-import { resolveRag } from '../data/knowledge/simulationConfig';
-import type { RetrievedChunk } from './ragShared';
+  AI_ENDPOINTS,
+  type VoiceTokenRequest,
+  type VoiceTokenResponse,
+} from '../shared/ai/contract';
 import { uuid } from '../lib/id';
 import { DEFAULT_LOCALE, LOCALE_BCP47, type Locale } from '../i18n/locales';
 import { translate } from '../i18n/translate';
@@ -151,14 +148,6 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const [liveAiText, setLiveAiText] = useState('');
   const [capWarning, setCapWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Global admin simulation config — held in a ref so the prompt build + the
-  // post-session scoring (both inside callbacks) read the latest value.
-  const simulationConfig = useSimulationConfig();
-  const configRef = useRef(simulationConfig);
-  configRef.current = simulationConfig;
-  // Knowledge retrieved for this voice session (RAG) — set in start().
-  const retrievedRef = useRef<RetrievedChunk[]>([]);
 
   // Session stored as a Promise (reference pattern) — all sends via .then()
   const sessionPromiseRef = useRef<Promise<unknown> | null>(null);
@@ -586,12 +575,6 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       localeRef.current = options.locale ?? DEFAULT_LOCALE;
       openingLineRef.current = options.openingLine ?? scenario.openingLine ?? null;
 
-      const apiKey =
-        (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
-        (process.env.GEMINI_API_KEY as string | undefined) ||
-        '';
-      if (!apiKey) throw new Error('Gemini API key is not configured. Add GEMINI_API_KEY to your environment.');
-
       // Playback context (24 kHz) — created before connecting so user-gesture
       // satisfies autoplay policy, separate from the 16 kHz capture context.
       const playbackCtx = new AudioContext({ sampleRate: SAMPLE_RATE_OUT });
@@ -622,26 +605,43 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         return;
       }
 
-      // RAG: fail-open retrieval before the prompt is built (mirrors text
-      // mode). After the permission grant so the dialog isn't delayed by a
-      // network round-trip.
+      // EPHEMERAL TOKEN. The long-lived Gemini key never reaches the browser:
+      // `ai-voice-token` mints a single-use Live token with the model, the
+      // system prompt (built server-side from the scenario, the admin
+      // simulation config, RAG grounding and the per-scenario overrides) and
+      // the tools LOCKED in, so nothing below can alter them. Requested after
+      // the permission grant so the dialog isn't delayed by a network
+      // round-trip — same slot the client-side RAG fetch used to occupy.
+      let voiceToken: VoiceTokenResponse;
       try {
-        const ragCfg = resolveRag(configRef.current ?? undefined);
-        retrievedRef.current = ragCfg.enabled
-          ? await retrieveContext(
-              `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
-              {
-                k: ragCfg.k,
-                cacheKey: scenarioRetrievalCacheKey(scenario),
-                filters: scenarioRetrievalFilters(scenario),
-              },
-            )
-          : [];
-      } catch {
-        retrievedRef.current = [];
+        const tokenRequest: VoiceTokenRequest = {
+          scenario,
+          openingLine: openingLineRef.current,
+          locale: localeRef.current,
+          sessionId: sessionIdRef.current,
+          // Per-scenario prompt wraps — same source text mode uses. Honoured
+          // by the server only in admin preview; otherwise loaded there.
+          promptOverrides: options.overrides,
+        };
+        voiceToken = await postAi<VoiceTokenResponse>(AI_ENDPOINTS.voiceToken, tokenRequest);
+      } catch (tokenErr) {
+        console.error('[voiceSession] voice token error', tokenErr);
+        setError(translate(localeRef.current, 'chat.voice.error.connection'));
+        setStatusSync('error');
+        cleanup();
+        return;
+      }
+      // stop() may also have run during the token round-trip.
+      if ((statusRef.current as VoiceStatus) !== 'connecting') {
+        stopRecording();
+        return;
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      // Ephemeral tokens are only accepted on the v1alpha surface.
+      const ai = new GoogleGenAI({
+        apiKey: voiceToken.token,
+        httpOptions: { apiVersion: 'v1alpha' },
+      });
 
       // The cue itself stays English (it is an instruction to the model, not
       // dialogue); the LINE it quotes is whatever the caller localized.
@@ -650,17 +650,12 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         ? `Begin the simulation now. Deliver this exact opening line as the ${scenario.persona} owner: "${openingLine}"`
         : 'Please begin the simulation now by delivering your opening statement.';
 
+      // No `systemInstruction` here — it is locked into the token server-side.
+      // Everything else stays exactly as before so behaviour is identical if
+      // the server leaves a field unlocked.
       const sessionPromise = (ai.live.connect as (opts: unknown) => Promise<unknown>)({
-        model: MODEL_LIVE,
+        model: voiceToken.model,
         config: {
-          systemInstruction: buildVoiceSystemPrompt({
-            scenario,
-            config: configRef.current ?? undefined,
-            retrieved: retrievedRef.current,
-            locale: localeRef.current,
-            // Per-scenario prompt wraps — same source text mode uses.
-            overrides: options.overrides,
-          }),
           tools: [
             {
               functionDeclarations: [
@@ -939,12 +934,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       });
       const msg = err instanceof Error ? err.message : String(err);
       setError(
-        msg.toLowerCase().includes('api key')
-          ? msg
-          : translate(localeRef.current, 'chat.voice.error.startFailed', {
-              reason:
-                msg || translate(localeRef.current, 'chat.voice.error.unknown'),
-            }),
+        translate(localeRef.current, 'chat.voice.error.startFailed', {
+          reason: msg || translate(localeRef.current, 'chat.voice.error.unknown'),
+        }),
       );
       setStatusSync('error');
       cleanup();
@@ -1010,8 +1002,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         try {
           report = await evaluateConversation(scenario, transcriptSnapshot, {
             sessionId,
-            config: configRef.current ?? undefined,
             locale: localeRef.current,
+            mode: 'voice',
           });
         } catch {
           report = null;

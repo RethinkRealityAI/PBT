@@ -12,23 +12,19 @@
 import { getSupabase } from '../features/auth/supabaseClient';
 import { isTrainingUseAllowed } from '../lib/privacy';
 import { isPreviewMode } from '../lib/previewMode';
+import type { AiCallRecord } from '../shared/ai/telemetryHeuristics';
 
-export type CallType = 'roleplay' | 'evaluate' | 'voice' | 'hint' | 'vision';
-
-export interface AiCallRecord {
-  sessionId?: string | null;
-  callType: CallType;
-  modelId: string;
-  latencyMs: number;
-  tokensIn?: number;
-  tokensOut?: number;
-  costUsd?: number;
-  refusal?: boolean;
-  offTopic?: boolean;
-  endTokenEmitted?: boolean;
-  retries?: number;
-  error?: string | null;
-}
+// The pure heuristics (cost table, token estimate, refusal detector) live in
+// the dependency-free shared module so the Netlify AI functions can use the
+// same numbers. Re-exported here so every existing importer keeps working.
+export {
+  COST_PER_M,
+  REFUSAL_PATTERNS,
+  estimateCostUsd,
+  estimateTokens,
+  isLikelyRefusal,
+} from '../shared/ai/telemetryHeuristics';
+export type { AiCallRecord, CallType } from '../shared/ai/telemetryHeuristics';
 
 export interface AiTurnRecord {
   sessionId: string;
@@ -45,50 +41,6 @@ export interface AiTurnRecord {
     | null;
   hintShown?: boolean;
   hintFollowed?: boolean | null;
-}
-
-/**
- * Public Gemini cost table (USD per 1M tokens, approximate). Update when
- * pricing changes — fine if slightly stale, this is for trend visibility.
- */
-const COST_PER_M: Record<string, { in: number; out: number }> = {
-  'gemini-2.5-flash': { in: 0.3, out: 2.5 },
-  'gemini-3-flash-preview': { in: 0.3, out: 2.5 },
-  'gemini-3.1-flash-live-preview': { in: 0.3, out: 2.5 },
-  'gemini-2.0-flash-live-001': { in: 0.3, out: 2.5 },
-  default: { in: 0.5, out: 4.0 },
-};
-
-export function estimateCostUsd(
-  modelId: string,
-  tokensIn: number,
-  tokensOut: number,
-): number {
-  const t = COST_PER_M[modelId] ?? COST_PER_M.default;
-  return (tokensIn / 1e6) * t.in + (tokensOut / 1e6) * t.out;
-}
-
-/**
- * Heuristic: did the model refuse the roleplay? Triggers a flag without
- * blocking the user — admins surface these via AI Quality screen.
- */
-const REFUSAL_PATTERNS = [
-  /i (?:can(?:not|'?t)|am unable to|won'?t)/i,
-  /as an ai/i,
-  /i don'?t feel comfortable/i,
-  /against my guidelines/i,
-];
-export function isLikelyRefusal(text: string): boolean {
-  return REFUSAL_PATTERNS.some((p) => p.test(text));
-}
-
-/**
- * Crude token estimate when the SDK doesn't return usage. ~4 chars/token
- * for English. Good enough for cost trends — the dashboard surfaces an
- * "estimated" badge when tokens come from this fallback.
- */
-export function estimateTokens(text: string): number {
-  return Math.max(1, Math.ceil(text.length / 4));
 }
 
 export async function recordCall(rec: AiCallRecord): Promise<void> {
