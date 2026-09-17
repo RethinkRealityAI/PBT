@@ -32,6 +32,10 @@
 create or replace function public.guard_server_authoritative_scores()
 returns trigger
 language plpgsql
+-- Pinned search_path: a mutable one lets a role with CREATE on some earlier
+-- schema shadow an object this body resolves, which is the whole point of the
+-- `function_search_path_mutable` linter. auth.role() is already qualified.
+set search_path = pg_catalog, public
 as $$
 declare
   caller text := coalesce(auth.role(), current_user::text);
