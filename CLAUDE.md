@@ -62,16 +62,45 @@ Drivers: Activator · Energizer · Analyzer · Harmonizer.
 
 ## AI integration (CRITICAL — preserve)
 
-Services call `@google/genai`:
+**The Gemini key never reaches a browser.** Every Gemini call is made by a
+Netlify Function that reads `GEMINI_API_KEY` from the runtime environment; the
+consumer and admin bundles contain no key and no `@google/genai` import except
+`src/services/voiceSession.ts` (the Live socket must open from the device — it
+does so with a single-use ephemeral token minted by `ai-voice-token`, never the
+long-lived key). `npm run check:bundle` fails if a key-shaped string
+(`AIza…`) appears anywhere in `dist/`.
 
+| Browser entry point (thin client)         | Netlify Function      | Model                                   | Purpose                       |
+| ----------------------------------------- | --------------------- | --------------------------------------- | ----------------------------- |
+| `generateRoleplayMessage` (geminiService) | `ai-roleplay`         | `gemini-3-flash-preview` (JSON mode)    | Customer turn                 |
+| `evaluateConversation` (geminiService)    | `ai-evaluate`         | `gemini-3-flash-preview` (JSON mode)    | ACT-first 5-dim scorecard; **writes the score** for signed-in users |
+| `generateCoachHint` (geminiService)       | `ai-hint`             | `gemini-3-flash-preview`                | In-chat coach nudge (text mode, ≤3/session) |
+| `analyzePetPhoto` (petVisionService)      | `ai-vision`           | `gemini-3-flash-preview` (multimodal)   | Pet Vision (breed/BCS/derm)   |
+| `useVoiceSession` (voiceSession)          | `ai-voice-token` → `ai.live.connect` from the device | `gemini-3.1-flash-live-preview` | Voice mode |
+| `suggestField` (admin `scenarioAi`)       | `admin-scenario-ai`   | `gemini-3-flash-preview`                | Scenario Builder wizard (admin, `scenarios.write`) |
 
-| Function                  | Model (`MODEL_TEXT` / `MODEL_LIVE`)     | Purpose                       |
-| ------------------------- | --------------------------------------- | ----------------------------- |
-| `generateRoleplayMessage` | `gemini-3-flash-preview`                | Customer turn                 |
-| `evaluateConversation`    | `gemini-3-flash-preview` (JSON mode)    | ACT-first 5-dim scorecard     |
-| `generateCoachHint`       | `gemini-3-flash-preview`                | In-chat coach nudge (text mode, ≤3/session) |
-| `analyzePetPhoto`         | `gemini-3-flash-preview` (multimodal)   | Pet Vision (breed/BCS/derm)   |
-| `ai.live.connect`         | `gemini-3.1-flash-live-preview`         | Voice mode                    |
+Wire contract: `src/shared/ai/contract.ts` (read its header — it states what the
+server trusts). Transport: `src/services/aiApi.ts::postAi` attaches the Supabase
+bearer when signed in and the `allowTelemetry` / `preview` flags. Shared server
+helpers: `netlify/functions/_shared/ai.ts` (caller identity, per-IP rate limit,
+payload bounds, `simulation_config` + `scenario_overrides` loaders, server-side
+telemetry). Model IDs live in `src/shared/ai/models.ts`.
+
+**Trust boundary — never regress it:**
+- The simulation config (scoring weights, rubric prompt, personas) is loaded
+  from the database ON THE SERVER. It is never accepted from a request body.
+- `score_report` / `score_overall` on `training_sessions` are server-authoritative:
+  `ai-evaluate` writes them (after an ownership check on the row) and a database
+  trigger (`20260911000000_server_authoritative_scores.sql`) rejects any
+  `authenticated`/`anon` write that sets them. The client upsert must not send
+  those columns.
+- Admin prompt prefix/suffix are loaded server-side by `scenario._overrideId`;
+  a request may supply them only with `preview: true` (admin "Test in app"),
+  and they wrap the customer turn only — never the scorer.
+- Anonymous callers are allowed by design (anonymous-first product); they get
+  the same AI behaviour with no persistence.
+
+Local dev: run `netlify dev` (serves the functions); `vite` alone has no AI.
 
 **Scoring is ACT-first (Phase 2):** 5 dimensions — `acknowledge`, `clarify`,
 `transform`, `empathy`, `rapport` (see `scoringRubric.ts`). ACT pillars carry
@@ -104,7 +133,7 @@ System prompts are composed in `src/data/knowledge/promptBuilders.ts` from:
 
 Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL_LIVE`.
 
-**Voice pipeline:** `src/services/voiceSession.ts` — the ordering is load-bearing: mic **permission first** (`acquireMic()` is the first await in `start()`, inside the Begin tap — nothing connects or plays until granted), then playback `AudioContext`, then `ai.live.connect`; the capture processor is wired inside `onopen`. Re-entrancy guard runs synchronously before any await (double-Begin must not open two sockets). A playback-end watchdog force-exits `aiSpeaking` if `source.onended` is missed — a stuck `aiSpeaking` mutes the mic for the rest of the session. Avoid calling `session.close()` twice (guarded).
+**Voice pipeline:** `src/services/voiceSession.ts` — the ordering is load-bearing: mic **permission first** (`acquireMic()` is the first await in `start()`, inside the Begin tap — nothing connects or plays until granted), then playback `AudioContext`, then **`POST ai-voice-token`** (the server builds the voice system prompt with server-loaded config/overrides/RAG and mints a single-use token whose model + system prompt + tools are locked — `uses: 1`, new-session window 2 min, session life 15 min > the 5-min cap), then `ai.live.connect` on a client created with that token and `httpOptions: { apiVersion: 'v1alpha' }`; the capture processor is wired inside `onopen`. The browser never builds or sees the voice system prompt. Re-entrancy guard runs synchronously before any await (double-Begin must not open two sockets). A playback-end watchdog force-exits `aiSpeaking` if `source.onended` is missed — a stuck `aiSpeaking` mutes the mic for the rest of the session. Avoid calling `session.close()` twice (guarded).
 
 ## Scenario builder (`CreateScreen`)
 
@@ -165,6 +194,12 @@ Migrations:
   `email_settings`, `email_templates`, `email_log`; audit-log entity types
   extended with role/invite/email_settings/email_template. Applied to prod
   2026-08
+- `20260911000000_server_authoritative_scores.sql` — trigger on
+  `training_sessions` rejecting client (`authenticated`/`anon`) writes to
+  `score_report` / `score_overall`; only the service role (`ai-evaluate`)
+  may set them. **Must be applied before deploying the server-side AI
+  functions** — until it is, the client-side forgery hole stays open (the app
+  still works either way)
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -388,7 +423,9 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
 
 ## Build pipeline
 
-- Vite injects `process.env.GEMINI_API_KEY` via the `define` block in `vite.config.ts`.
+- No secrets are injected at build time. `GEMINI_API_KEY` is read by Netlify
+  Functions at runtime only; there is no `define` for it and no `VITE_GEMINI_*`
+  variable — adding one would put the key in the bundle.
 - Vendor splitting uses the **function form** of `manualChunks` (path-matched
   buckets: `vendor-react`, `vendor-genai`, `vendor-supabase`, `vendor-motion`,
   `vendor-ui`, `vendor-zxcvbn`, admin-only `vendor-recharts`). Don't revert to
@@ -399,7 +436,8 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
   (`src/features/auth/passwordStrength.ts`); the French catalog rides the lazy
   `import('./fr')` in `src/i18n/translate.ts`.
 - **Bundle gate**: `npm run check:bundle` after a build asserts the main entry
-  stays < 500 kB gzip (spec §13.9; currently ~66 kB).
+  stays < 500 kB gzip (spec §13.9; currently ~66 kB) AND that no Google
+  API-key-shaped string (`AIza…`) exists in any `dist/**/*.js`.
 - Netlify build command: `npm run build`.
 
 ## Database migrations & deploy alignment (REQUIRED)
@@ -462,7 +500,14 @@ full fr-CA localization.)
 - Don't ship a feature that adds/alters a Supabase relation without applying its
   migration to the target project — run `npm run verify:db` first (see
   "Database migrations & deploy alignment").
+- Don't call Gemini from browser code or add a `VITE_GEMINI_*` variable — every
+  AI call goes through a Netlify Function (see "AI integration"). The only
+  `@google/genai` import allowed under `src/`/`admin/` is the Live socket in
+  `voiceSession.ts`, and it connects with an ephemeral token.
+- Don't accept a simulation config, rubric, or score from a request body in
+  any function — the server loads config from the database and writes scores
+  itself.
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→66 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. `**npm test` — 393 tests** (incl. schema-parity + catalog guards + EN prompt byte-parity; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→66 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings. `**npm test` — 650+ tests** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.

@@ -1,102 +1,53 @@
-import { GoogleGenAI, Type } from '@google/genai';
+/**
+ * Text-mode AI client — customer role-play turns, coach hints and the
+ * ACT-first scorer.
+ *
+ * Every call goes to a Netlify Function (`netlify/functions/ai-*`) that holds
+ * the Gemini key, builds the system prompt from the knowledge modules and the
+ * admin simulation config, and records telemetry. The browser never sees the
+ * key, never sends the simulation config (the server loads its own — it is
+ * authoritative for scoring) and never sends retrieved RAG chunks (the server
+ * retrieves for the prompt; the client's own retrieval only feeds
+ * `rag_documents`). See `src/shared/ai/contract.ts` for the trust boundary.
+ *
+ * The exported signatures are unchanged from the in-browser implementation
+ * they replace, so every caller (`useTextChat`, `voiceSession`, `CoachHint`)
+ * keeps working as-is.
+ */
 import type { Scenario } from '../data/scenarios';
 import type { ChatMessage, ScoreReport } from './types';
+import type { PromptOverrides } from '../data/knowledge/promptBuilders';
+import type { Locale } from '../i18n/locales';
 import {
-  buildCoachHintSystemPrompt,
-  buildCustomerSystemPrompt,
-  buildScoringSystemPrompt,
-  type PromptOverrides,
-} from '../data/knowledge/promptBuilders';
-import {
-  bandFor,
-  weightedOverall,
-  type DimensionKey,
-} from '../data/knowledge/scoringRubric';
-import {
-  resolveWeights,
-  type SimulationConfig,
-} from '../data/knowledge/simulationConfig';
-import type { RetrievedChunk } from './ragShared';
-import { DEFAULT_LOCALE, type Locale } from '../i18n/locales';
-import {
-  estimateCostUsd,
-  estimateTokens,
-  isLikelyRefusal,
-  recordCall,
-} from './aiTelemetry';
+  AI_ENDPOINTS,
+  type EvaluateRequest,
+  type EvaluateResponse,
+  type HintRequest,
+  type HintResponse,
+  type RoleplayRequest,
+  type RoleplayResponse,
+} from '../shared/ai/contract';
+import { postAi } from './aiApi';
 
-/** Text / scoring */
-export const MODEL_TEXT = 'gemini-3-flash-preview';
-/** Live voice WebSocket session */
-export const MODEL_LIVE = 'gemini-3.1-flash-live-preview';
+export { MODEL_TEXT, MODEL_LIVE } from '../shared/ai/models';
 
-function getClient(): GoogleGenAI {
-  const apiKey =
-    (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
-    (process.env.GEMINI_API_KEY as string | undefined) ||
-    '';
-  return new GoogleGenAI({ apiKey });
-}
-
-async function withRetry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 1200): Promise<{ value: T; retries: number }> {
-  let last: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const value = await fn();
-      return { value, retries: i };
-    } catch (e) {
-      last = e;
-      if (i < attempts - 1) await new Promise(r => setTimeout(r, delayMs));
-    }
-  }
-  throw last;
-}
-
-const END_TOKEN = '[END_SIMULATION]';
-
-interface CallOptions {
+export interface CallOptions {
   /** PBT session id (training_sessions.id). Telemetry rows attribute to it. */
   sessionId?: string | null;
-  /** Bounded per-scenario admin overrides (customer prompt prefix/suffix). */
+  /**
+   * Bounded per-scenario admin overrides (customer prompt prefix/suffix).
+   * The server honours these ONLY in admin preview; otherwise it loads them
+   * itself from `scenario_overrides`.
+   */
   promptOverrides?: PromptOverrides;
-  /** Global admin simulation config (scoring weights/prompt, driver + pushback edits). */
-  config?: SimulationConfig;
-  /** Retrieved knowledge chunks (RAG) — grounds customer + scorer prompts. */
-  retrieved?: RetrievedChunk[];
   /**
    * App locale. Drives the language the CUSTOMER speaks and the language the
-   * COACHING output is written in. Defaults to English, so every existing
-   * caller keeps today's behaviour untouched.
+   * COACHING output is written in. Defaults to English server-side, so every
+   * existing caller keeps today's behaviour untouched.
    */
   locale?: Locale;
-}
-
-/**
- * Localized `description` for a structured-output field whose VALUE is
- * free-form prose the trainee will read.
- *
- * Returns an empty object for English so the English schema literal is
- * byte-identical to what it always was — the response schema is part of the
- * prompt, and an added description is a behaviour change. Field KEYS and
- * enum VALUES are never localized: `ScoreReport` is a typed contract and
- * `red|yellow|green` are machine values.
- */
-function frDescription(
-  locale: Locale | undefined,
-  french: string,
-): { description?: string } {
-  return (locale ?? DEFAULT_LOCALE) === 'fr' ? { description: french } : {};
-}
-
-interface UsageMetadata {
-  promptTokenCount?: number;
-  candidatesTokenCount?: number;
-}
-
-function readUsage(response: unknown): UsageMetadata {
-  if (!response || typeof response !== 'object') return {};
-  const meta = (response as { usageMetadata?: UsageMetadata }).usageMetadata;
-  return meta ?? {};
+  /** Which pipeline produced the transcript being scored. Defaults to text. */
+  mode?: 'text' | 'voice';
 }
 
 /**
@@ -109,121 +60,20 @@ export async function generateRoleplayMessage(
   userMessage?: string,
   options: CallOptions = {},
 ): Promise<ChatMessage> {
-  const ai = getClient();
-  const systemInstruction = buildCustomerSystemPrompt({
+  const body: RoleplayRequest = {
     scenario,
-    overrides: options.promptOverrides,
-    config: options.config,
-    retrieved: options.retrieved,
+    // Strip any transient error messages from history before sending to the model
+    history: history.filter((m) => !m._transientError),
+    userMessage,
+    sessionId: options.sessionId ?? null,
     locale: options.locale,
-    mode: 'text',
-  });
-
-  // Strip any transient error messages from history before sending to the model
-  const cleanHistory = history.filter((m) => !m._transientError);
-
-  const contents = cleanHistory.map((m) => ({
-    role: m.role === 'ai' ? 'model' : 'user',
-    parts: [{ text: m.text }],
-  }));
-
-  if (userMessage) {
-    contents.push({ role: 'user', parts: [{ text: userMessage }] });
+    promptOverrides: options.promptOverrides,
+  };
+  const { message } = await postAi<RoleplayResponse>(AI_ENDPOINTS.roleplay, body);
+  if (!message || typeof message.text !== 'string' || !message.text.trim()) {
+    throw new Error('Empty response from AI');
   }
-
-  if (contents.length === 0) {
-    contents.push({
-      role: 'user',
-      parts: [{ text: 'Please begin the simulation by opening with your pushback in character.' }],
-    });
-  }
-
-  // Structured output: model returns { emotion, text } so we can render
-  // the AI bubble's state border (red/yellow/green) without parsing free
-  // text. Mirrors the voice mode's `updateEmotion` tool call so both
-  // modes use the same vocabulary downstream.
-  const responseSchema = {
-    type: Type.OBJECT,
-    required: ['emotion', 'text'],
-    properties: {
-      emotion: {
-        type: Type.STRING,
-        enum: ['red', 'yellow', 'green'],
-        description:
-          "The customer's resolution state for this turn. red = defensive/resistant, yellow = listening/receptive, green = convinced/resolved. Start at red. Move to yellow when the trainee shows real empathy or asks a clarifying question. Move to green only after the trainee has clarified the root concern AND offered a credible solution.",
-      },
-      text: {
-        type: Type.STRING,
-        description:
-          (options.locale ?? DEFAULT_LOCALE) === 'fr'
-            ? 'Ta réplique, en personnage, adressée à la personne en formation. 1 à 3 phrases, en français québécois parlé.'
-            : 'Your in-character reply to the trainee. 1–3 sentences.',
-      },
-    },
-  } as const;
-
-  const t0 = performance.now();
-  try {
-    const { value, retries } = await withRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: MODEL_TEXT,
-        contents,
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          responseSchema,
-        },
-      });
-      const raw = response.text ?? '';
-      if (!raw) throw new Error('Empty response from AI');
-      let parsed: { emotion?: string; text?: string } = {};
-      try {
-        parsed = JSON.parse(raw) as { emotion?: string; text?: string };
-      } catch {
-        // Fallback: model occasionally drifts and returns raw prose
-        // despite the schema. Treat the whole thing as `text` and
-        // default to 'red' so the UI still has something to render.
-        parsed = { text: raw };
-      }
-      const text = (parsed.text ?? '').trim();
-      if (!text) throw new Error('Empty response from AI');
-      const emotion: 'red' | 'yellow' | 'green' =
-        parsed.emotion === 'green' || parsed.emotion === 'yellow' ? parsed.emotion : 'red';
-      return { response, text, emotion };
-    });
-
-    const latency = Math.round(performance.now() - t0);
-    const usage = readUsage(value.response);
-    const tokensIn = usage.promptTokenCount ?? estimateTokens(systemInstruction + JSON.stringify(contents));
-    const tokensOut = usage.candidatesTokenCount ?? estimateTokens(value.text);
-    const refusal = isLikelyRefusal(value.text);
-    const endTokenEmitted = value.text.includes(END_TOKEN);
-
-    void recordCall({
-      sessionId: options.sessionId ?? null,
-      callType: 'roleplay',
-      modelId: MODEL_TEXT,
-      latencyMs: latency,
-      tokensIn,
-      tokensOut,
-      costUsd: estimateCostUsd(MODEL_TEXT, tokensIn, tokensOut),
-      refusal,
-      endTokenEmitted,
-      retries,
-    });
-
-    return { role: 'ai' as const, text: value.text, emotion: value.emotion, timestamp: Date.now() };
-  } catch (err) {
-    const latency = Math.round(performance.now() - t0);
-    void recordCall({
-      sessionId: options.sessionId ?? null,
-      callType: 'roleplay',
-      modelId: MODEL_TEXT,
-      latencyMs: latency,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    throw err;
-  }
+  return message;
 }
 
 /**
@@ -236,270 +86,77 @@ export async function generateCoachHint(
   history: ChatMessage[],
   options: CallOptions = {},
 ): Promise<string> {
-  const ai = getClient();
-  const systemInstruction = buildCoachHintSystemPrompt({
+  const body: HintRequest = {
     scenario,
-    config: options.config,
+    history: history.filter((m) => !m._transientError),
+    sessionId: options.sessionId ?? null,
     locale: options.locale,
-  });
-  const formatted = history
-    .filter((m) => !m._transientError)
-    .map((m) => `${m.role === 'user' ? 'STAFF' : 'CUSTOMER'}: ${m.text}`)
-    .join('\n');
-  const contents = `Live transcript so far:\n\n${formatted}\n\nGive the trainee one nudge for their next reply.`;
-
-  const t0 = performance.now();
-  try {
-    const { value, retries } = await withRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: MODEL_TEXT,
-        contents,
-        config: { systemInstruction },
-      });
-      const text = (response.text ?? '').trim();
-      if (!text) throw new Error('Empty coach response');
-      return { response, text };
-    });
-
-    const latency = Math.round(performance.now() - t0);
-    const usage = readUsage(value.response);
-    const tokensIn = usage.promptTokenCount ?? estimateTokens(systemInstruction + contents);
-    const tokensOut = usage.candidatesTokenCount ?? estimateTokens(value.text);
-    void recordCall({
-      sessionId: options.sessionId ?? null,
-      callType: 'hint',
-      modelId: MODEL_TEXT,
-      latencyMs: latency,
-      tokensIn,
-      tokensOut,
-      costUsd: estimateCostUsd(MODEL_TEXT, tokensIn, tokensOut),
-      retries,
-    });
-
-    // Belt-and-braces length cap so a drifting model can't flood the drawer.
-    return value.text.length > 320 ? `${value.text.slice(0, 317).trimEnd()}…` : value.text;
-  } catch (err) {
-    void recordCall({
-      sessionId: options.sessionId ?? null,
-      callType: 'hint',
-      modelId: MODEL_TEXT,
-      latencyMs: Math.round(performance.now() - t0),
-      error: err instanceof Error ? err.message : String(err),
-    });
-    throw err;
-  }
+  };
+  const { hint } = await postAi<HintResponse>(AI_ENDPOINTS.hint, body);
+  const text = typeof hint === 'string' ? hint.trim() : '';
+  if (!text) throw new Error('Empty coach response');
+  // Belt-and-braces length cap so a drifting model can't flood the drawer.
+  return text.length > 320 ? `${text.slice(0, 317).trimEnd()}…` : text;
 }
 
-const ZERO_DIMENSIONS: Record<DimensionKey, number> = {
-  acknowledge: 0,
-  clarify: 0,
-  transform: 0,
-  empathy: 0,
-  rapport: 0,
-};
+/**
+ * The honest "we could not score this" report. Never a fake zero: it is
+ * flagged `scoreUnavailable` (and carries the canonical critique
+ * `isScoreUnavailable()` also recognises) so StatsScreen offers a retry and
+ * History excludes it from averages. Fresh object per call — consumers
+ * mutate/persist reports.
+ */
+function scoreUnavailableReport(): ScoreReport {
+  return {
+    acknowledge: 0,
+    clarify: 0,
+    transform: 0,
+    empathy: 0,
+    rapport: 0,
+    overall: 0,
+    band: 'poor',
+    critique:
+      'We could not score this session right now. Please try again, or check your network.',
+    betterAlternative: '—',
+    perDimensionNotes: {
+      acknowledge: '',
+      clarify: '',
+      transform: '',
+      empathy: '',
+      rapport: '',
+    },
+    keyMoments: [],
+    turnSentiment: [],
+    scoreUnavailable: true,
+  };
+}
 
 /**
- * Score the staff side of a conversation. Returns the full 7-dimension scorecard.
+ * Score the staff side of a conversation. Returns the full scorecard.
+ *
+ * NEVER throws: the server already retries upstream and returns a
+ * `scoreUnavailable` report on model failure; any transport failure here
+ * (offline, timeout, 5xx) collapses to the same placeholder so the session
+ * is saved and re-scorable rather than lost.
  */
 export async function evaluateConversation(
   scenario: Scenario,
   transcript: ChatMessage[],
   options: CallOptions = {},
 ): Promise<ScoreReport> {
-  const ai = getClient();
-  const systemInstruction = buildScoringSystemPrompt({
+  const body: EvaluateRequest = {
     scenario,
-    config: options.config,
-    retrieved: options.retrieved,
+    transcript,
+    mode: options.mode ?? 'text',
+    sessionId: options.sessionId ?? null,
     locale: options.locale,
-  });
-  const evalT0 = performance.now();
-
-  const formatted = transcript
-    .map(
-      (m, i) =>
-        `${i + 1}. ${m.role === 'user' ? 'STAFF' : 'CUSTOMER'}: ${m.text}`,
-    )
-    .join('\n');
-
+  };
   try {
-    // Same retry budget as the roleplay call — a single transient network
-    // blip must not turn a finished session into an unscorable one.
-    const { value: response } = await withRetry(() => ai.models.generateContent({
-      model: MODEL_TEXT,
-      contents: `Here is the full conversation transcript. Score the staff turns.\n\n${formatted}`,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            acknowledge: { type: Type.INTEGER, description: '0-100' },
-            clarify: { type: Type.INTEGER, description: '0-100' },
-            transform: { type: Type.INTEGER, description: '0-100' },
-            empathy: { type: Type.INTEGER, description: '0-100' },
-            rapport: { type: Type.INTEGER, description: '0-100' },
-            critique: {
-              type: Type.STRING,
-              ...frDescription(
-                options.locale,
-                'Critique en plusieurs paragraphes, rédigée en français canadien. Les extraits du dialogue sont cités mot pour mot dans la langue où ils ont été dits.',
-              ),
-            },
-            betterAlternative: {
-              type: Type.STRING,
-              ...frDescription(
-                options.locale,
-                'Exemple de réplique améliorée, en français canadien.',
-              ),
-            },
-            perDimensionNotes: {
-              type: Type.OBJECT,
-              properties: {
-                acknowledge: {
-                  type: Type.STRING,
-                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
-                },
-                clarify: {
-                  type: Type.STRING,
-                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
-                },
-                transform: {
-                  type: Type.STRING,
-                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
-                },
-                empathy: {
-                  type: Type.STRING,
-                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
-                },
-                rapport: {
-                  type: Type.STRING,
-                  ...frDescription(options.locale, 'Note de coaching en français canadien.'),
-                },
-              },
-              required: [
-                'acknowledge',
-                'clarify',
-                'transform',
-                'empathy',
-                'rapport',
-              ],
-            },
-            keyMoments: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  ts: { type: Type.STRING },
-                  // `type` stays a machine value (win|miss) in every locale.
-                  type: { type: Type.STRING },
-                  label: {
-                    type: Type.STRING,
-                    ...frDescription(options.locale, 'Titre court du moment, en français canadien.'),
-                  },
-                  quote: {
-                    type: Type.STRING,
-                    ...frDescription(
-                      options.locale,
-                      "Extrait du dialogue cité MOT POUR MOT, dans la langue où il a été dit — ne jamais traduire une citation.",
-                    ),
-                  },
-                },
-                required: ['ts', 'type', 'label', 'quote'],
-              },
-            },
-            // Per-turn sentiment arc — drives the sentiment chart in the
-            // admin session modal. One entry per transcript turn.
-            turnSentiment: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  idx: { type: Type.INTEGER },
-                  speaker: { type: Type.STRING },
-                  sentiment: { type: Type.NUMBER },
-                },
-                required: ['idx', 'speaker', 'sentiment'],
-              },
-            },
-          },
-          required: [
-            'acknowledge',
-            'clarify',
-            'transform',
-            'empathy',
-            'rapport',
-            'critique',
-            'betterAlternative',
-            'perDimensionNotes',
-            'keyMoments',
-            'turnSentiment',
-          ],
-        },
-      },
-    }));
-
-    const raw = response.text ?? '';
-    if (!raw) throw new Error('Empty score response');
-    const parsed = JSON.parse(raw) as Omit<ScoreReport, 'overall' | 'band'>;
-    // Coerce each dimension to a clamped 0–100 integer. The schema marks them
-    // required, but a drifting model can still omit one or return a non-number;
-    // without this the canonical report (and the RAG/persistence consumers that
-    // read it un-normalized) would carry undefined → NaN bars.
-    const dim = (v: unknown): number =>
-      typeof v === 'number' && Number.isFinite(v)
-        ? Math.max(0, Math.min(100, Math.round(v)))
-        : 0;
-    const dims: Record<DimensionKey, number> = {
-      acknowledge: dim(parsed.acknowledge),
-      clarify: dim(parsed.clarify),
-      transform: dim(parsed.transform),
-      empathy: dim(parsed.empathy),
-      rapport: dim(parsed.rapport),
-    };
-    const overall = weightedOverall(dims, resolveWeights(options.config));
-
-    const latency = Math.round(performance.now() - evalT0);
-    const usage = readUsage(response);
-    const tokensIn = usage.promptTokenCount ?? estimateTokens(formatted);
-    const tokensOut = usage.candidatesTokenCount ?? estimateTokens(raw);
-    void recordCall({
-      sessionId: options.sessionId ?? null,
-      callType: 'evaluate',
-      modelId: MODEL_TEXT,
-      latencyMs: latency,
-      tokensIn,
-      tokensOut,
-      costUsd: estimateCostUsd(MODEL_TEXT, tokensIn, tokensOut),
-    });
-
-    return { ...parsed, ...dims, overall, band: bandFor(overall) };
+    const { report } = await postAi<EvaluateResponse>(AI_ENDPOINTS.evaluate, body);
+    if (!report || typeof report !== 'object') throw new Error('Empty score response');
+    return report;
   } catch (error) {
     console.error('[geminiService] evaluateConversation failed', error);
-    void recordCall({
-      sessionId: options.sessionId ?? null,
-      callType: 'evaluate',
-      modelId: MODEL_TEXT,
-      latencyMs: Math.round(performance.now() - evalT0),
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return {
-      ...ZERO_DIMENSIONS,
-      overall: 0,
-      band: 'poor',
-      critique:
-        'We could not score this session right now. Please try again, or check your network.',
-      betterAlternative: '—',
-      perDimensionNotes: {
-        acknowledge: '',
-        clarify: '',
-        transform: '',
-        empathy: '',
-        rapport: '',
-      },
-      keyMoments: [],
-      turnSentiment: [],
-      scoreUnavailable: true,
-    };
+    return scoreUnavailableReport();
   }
 }

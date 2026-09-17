@@ -1,23 +1,28 @@
 /**
  * LIVE end-to-end scenario-resolution check (no mocks).
  *
- * Skipped unless GEMINI_API_KEY is set, so it never runs in CI or offline.
- * To run it against the real model:
+ * The Gemini key lives only in the Netlify Functions now, so this test needs
+ * a running functions host rather than a key. Skipped unless
+ * `PBT_LIVE_AI_BASE` is set, so it never runs in CI or offline. To run it
+ * against the real model through `netlify dev` (which serves
+ * `/.netlify/functions/*` with GEMINI_API_KEY from your environment):
  *
- *   GEMINI_API_KEY=your_key npx vitest run scenarioResolution.live
+ *   PBT_LIVE_AI_BASE=http://localhost:8888 npx vitest run scenarioResolution.live
+ *
+ * A deployed preview URL works too. The base is threaded into the client via
+ * `VITE_AI_FUNCTIONS_BASE` (see `src/services/aiApi.ts`).
  *
  * It proves the ACT-first pipeline end-to-end: a conversation where the trainee
  * acknowledges → clarifies → transforms scores meaningfully higher than a
  * pitch-first one, and resolves with a non-failing band. This is the
  * "can you actually resolve a scenario" check the mocked tests can't make.
  */
-import { describe, expect, it } from 'vitest';
-import { evaluateConversation, generateRoleplayMessage } from '../geminiService';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../types';
 import { SEED_SCENARIOS } from '../../data/scenarios';
 
-const hasKey =
-  !!process.env.GEMINI_API_KEY || !!process.env.VITE_GEMINI_API_KEY;
+const LIVE_BASE = process.env.PBT_LIVE_AI_BASE ?? '';
+if (LIVE_BASE) vi.stubEnv('VITE_AI_FUNCTIONS_BASE', LIVE_BASE);
 
 // A staff trainee who runs the ACT play cleanly: acknowledge → clarify →
 // transform with a bounded trial + a recheck checkpoint.
@@ -48,10 +53,11 @@ function buildTranscript(staffTurns: string[]): ChatMessage[] {
   return msgs;
 }
 
-describe.skipIf(!hasKey)('LIVE scenario resolution (real Gemini)', () => {
+describe.skipIf(!LIVE_BASE)('LIVE scenario resolution (real Gemini via the AI functions)', () => {
   const scenario = SEED_SCENARIOS[0];
 
   it('the AI customer opens in character', { timeout: 30_000 }, async () => {
+    const { generateRoleplayMessage } = await import('../geminiService');
     const opener = await generateRoleplayMessage(scenario, []);
     expect(opener.role).toBe('ai');
     expect(opener.text.length).toBeGreaterThan(0);
@@ -61,6 +67,7 @@ describe.skipIf(!hasKey)('LIVE scenario resolution (real Gemini)', () => {
     'rewards a full ACT resolution over a pitch-first attempt',
     { timeout: 60_000 },
     async () => {
+      const { evaluateConversation } = await import('../geminiService');
       const idealReport = await evaluateConversation(
         scenario,
         buildTranscript(IDEAL_STAFF_TURNS),
@@ -69,6 +76,10 @@ describe.skipIf(!hasKey)('LIVE scenario resolution (real Gemini)', () => {
         scenario,
         buildTranscript(PITCH_FIRST_TURNS),
       );
+
+      // A transport/config problem must fail loudly, not as a 0-vs-0 pass.
+      expect(idealReport.scoreUnavailable).toBeUndefined();
+      expect(pitchReport.scoreUnavailable).toBeUndefined();
 
       // The ACT-run resolves with a non-failing band and beats the pitch-first
       // run on the overall AND on each ACT pillar.

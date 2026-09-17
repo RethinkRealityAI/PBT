@@ -4,27 +4,35 @@ import { renderHook, act } from '@testing-library/react';
 /**
  * voiceSession is a socket + WebAudio hook, so these tests keep the harness
  * deliberately thin: a fake `ai.live.connect` that just hands back its
- * callbacks, a fake AudioContext, and a fake mic stream. That's enough to
- * pin the two behaviours that are cheap to break and expensive to lose —
+ * callbacks, a fake AudioContext, a fake mic stream, and a mocked
+ * `postAi` standing in for the `ai-voice-token` function. That's enough to
+ * pin the behaviours that are cheap to break and expensive to lose —
  *
  *  1. the session id allocated at start() is what the scorer is told about
- *     and what endSession() hands back (telemetry attribution), and
+ *     and what endSession() hands back (telemetry attribution),
  *  2. the duration cap warns at 4:00 and ends GRACEFULLY at 5:00 (via the
- *     natural-end path) instead of killing the socket.
+ *     natural-end path) instead of killing the socket, and
+ *  3. the Live socket opens with the EPHEMERAL token minted server-side
+ *     (never a long-lived key), after the mic grant, with no client-side
+ *     system prompt.
  *
  * Audio decode/playback is not exercised — that would need a real WebAudio
  * mock and buys nothing these assertions don't already cover.
  */
 
-const { evaluateConversation, connect, retrieveContext } = vi.hoisted(() => ({
+const { evaluateConversation, connect, postAi, genaiCtor } = vi.hoisted(() => ({
   evaluateConversation: vi.fn(),
   connect: vi.fn(),
-  retrieveContext: vi.fn(),
+  postAi: vi.fn(),
+  genaiCtor: vi.fn(),
 }));
 
 vi.mock('@google/genai', () => {
   class GoogleGenAI {
     live = { connect };
+    constructor(opts: unknown) {
+      genaiCtor(opts);
+    }
   }
   return {
     GoogleGenAI,
@@ -32,17 +40,23 @@ vi.mock('@google/genai', () => {
     Type: { OBJECT: 'OBJECT', STRING: 'STRING' },
   };
 });
-vi.mock('../geminiService', () => ({
-  evaluateConversation,
-  MODEL_LIVE: 'gemini-2.0-flash-live-001',
-}));
-vi.mock('../ragClient', () => ({ retrieveContext }));
-vi.mock('../../app/providers/FlagProvider', () => ({ useSimulationConfig: () => null }));
+vi.mock('../geminiService', () => ({ evaluateConversation }));
+vi.mock('../aiApi', () => ({ postAi }));
 
 import { sanitizeAiText, useVoiceSession, VOICE_SESSION_CAPS } from '../voiceSession';
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
+import { AI_ENDPOINTS } from '../../shared/ai/contract';
+import { translate } from '../../i18n/translate';
 
 const SCENARIO = LIBRARY_SCENARIOS[0];
+
+/** What `ai-voice-token` hands back — a single-use token pinned to a model. */
+const TOKEN_RESPONSE = {
+  token: 'auth_tokens/ephemeral-abc123',
+  model: 'gemini-live-model-from-server',
+  expiresAt: '2026-09-11T00:30:00.000Z',
+  newSessionExpiresAt: '2026-09-11T00:01:00.000Z',
+};
 
 type Callbacks = {
   onopen: () => void;
@@ -76,22 +90,23 @@ class FakeAudioContext {
   }
 }
 
+let getUserMedia: ReturnType<typeof vi.fn>;
+
 beforeEach(() => {
-  process.env.GEMINI_API_KEY = 'test-key';
   vi.useFakeTimers();
   evaluateConversation.mockReset();
   connect.mockReset();
-  retrieveContext.mockReset();
-  retrieveContext.mockResolvedValue([]);
+  postAi.mockReset();
+  genaiCtor.mockReset();
+  postAi.mockResolvedValue(TOKEN_RESPONSE);
 
   (globalThis as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext;
+  getUserMedia = vi.fn(async () => ({
+    getTracks: () => [{ readyState: 'live', stop: vi.fn() }],
+  }));
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
-    value: {
-      getUserMedia: vi.fn(async () => ({
-        getTracks: () => [{ readyState: 'live', stop: vi.fn() }],
-      })),
-    },
+    value: { getUserMedia },
   });
 
   connect.mockImplementation((opts: { callbacks: Callbacks }) => {
@@ -126,6 +141,13 @@ function connectConfig(): Record<string, any> {
   return connect.mock.calls.at(-1)![0].config;
 }
 
+/** The body posted to `ai-voice-token` for the latest session. */
+function tokenRequest(): Record<string, any> {
+  const call = postAi.mock.calls.at(-1)!;
+  expect(call[0]).toBe(AI_ENDPOINTS.voiceToken);
+  return call[1];
+}
+
 /** Drive one completed AI turn through the message callback. */
 function deliverAiTurn(text: string) {
   act(() => {
@@ -150,9 +172,25 @@ describe('voiceSession — telemetry attribution', () => {
     const [, , options] = evaluateConversation.mock.calls[0];
     expect(typeof options.sessionId).toBe('string');
     expect(options.sessionId).toHaveLength(36);
-    // The scorer's telemetry id IS the id the consumer saves the record under.
+    // The scorer's telemetry id IS the id the consumer saves the record under…
     expect(outcome?.sessionId).toBe(options.sessionId);
     expect(outcome?.transcript).toHaveLength(1);
+    // …and the same id was attributed to the token mint, so the server-side
+    // telemetry for the voice turns lines up with the scorer's row.
+    expect(tokenRequest().sessionId).toBe(options.sessionId);
+  });
+
+  it('scores a voice transcript as voice, never sending the simulation config', async () => {
+    evaluateConversation.mockResolvedValue(null);
+    const { result } = await startSession();
+    deliverAiTurn('That price feels steep to me.');
+    await act(async () => {
+      await result.current.endSession();
+    });
+    const options = evaluateConversation.mock.calls[0][2];
+    expect(options.mode).toBe('voice');
+    expect(options).not.toHaveProperty('config');
+    expect(options).not.toHaveProperty('retrieved');
   });
 
   it('mints a fresh id per session', async () => {
@@ -215,33 +253,97 @@ describe('sanitizeAiText — tool-call narration never reaches the transcript', 
   });
 });
 
+describe('voiceSession — ephemeral token', () => {
+  it('requests the token only AFTER the mic permission is granted', async () => {
+    await startSession();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(postAi).toHaveBeenCalledTimes(1);
+    // Permission first: the dialog must be the first thing the user sees
+    // after tapping Begin, not delayed behind a network round-trip.
+    expect(getUserMedia.mock.invocationCallOrder[0]).toBeLessThan(
+      postAi.mock.invocationCallOrder[0],
+    );
+    expect(postAi.mock.invocationCallOrder[0]).toBeLessThan(connect.mock.invocationCallOrder[0]);
+  });
+
+  it('opens the Live socket with the token on the v1alpha surface and the server-chosen model', async () => {
+    await startSession();
+    expect(genaiCtor).toHaveBeenCalledTimes(1);
+    expect(genaiCtor).toHaveBeenCalledWith({
+      apiKey: TOKEN_RESPONSE.token,
+      httpOptions: { apiVersion: 'v1alpha' },
+    });
+    expect(connect.mock.calls.at(-1)![0].model).toBe(TOKEN_RESPONSE.model);
+  });
+
+  it('sends no systemInstruction — the prompt is locked into the token server-side — but keeps the rest of the config', async () => {
+    await startSession();
+    const cfg = connectConfig();
+    expect(cfg).not.toHaveProperty('systemInstruction');
+    expect(cfg.responseModalities).toEqual(['AUDIO']);
+    expect(cfg.tools[0].functionDeclarations.map((f: { name: string }) => f.name)).toEqual([
+      'updateEmotion',
+      'endSimulation',
+    ]);
+    expect(cfg.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Aoede');
+    expect(cfg.inputAudioTranscription).toEqual({});
+    expect(cfg.outputAudioTranscription).toEqual({});
+  });
+
+  it('hands the server everything it needs to build the prompt', async () => {
+    const overrides = { promptPrefix: 'Be brisk.', promptSuffix: null };
+    await startSession({ locale: 'fr', openingLine: 'Ben là, c\'est cher.', overrides });
+    const body = tokenRequest();
+    expect(body.scenario).toBe(SCENARIO);
+    expect(body.openingLine).toBe("Ben là, c'est cher.");
+    expect(body.locale).toBe('fr');
+    expect(body.promptOverrides).toEqual(overrides);
+    expect(body.sessionId).toHaveLength(36);
+  });
+
+  it('surfaces a token failure as the connection error and never opens a socket', async () => {
+    postAi.mockRejectedValueOnce(new Error('503 upstream'));
+    const { result } = await startSession();
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe(translate('en', 'chat.voice.error.connection'));
+    expect(genaiCtor).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('localises the token-failure message', async () => {
+    postAi.mockRejectedValueOnce(new Error('503 upstream'));
+    const { result } = await startSession({ locale: 'fr' });
+    expect(result.current.error).toBe(translate('fr', 'chat.voice.error.connection'));
+  });
+});
+
 describe('voiceSession — locale', () => {
   it('defaults to the current English behaviour when no locale is passed', async () => {
     await startSession();
     const cfg = connectConfig();
     expect(cfg.speechConfig.languageCode).toBe('en-US');
     expect(cfg.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Aoede');
-    expect(cfg.systemInstruction).toContain('Speak conversational AMERICAN ENGLISH');
+    // The prompt is built server-side from the locale we send.
+    expect(tokenRequest().locale).toBe('en');
   });
 
   it('locale "en" is identical to omitting it', async () => {
     await startSession();
     const implicit = connectConfig();
+    const implicitToken = tokenRequest();
     await startSession({ locale: 'en' });
     const explicit = connectConfig();
     expect(explicit.speechConfig).toEqual(implicit.speechConfig);
-    expect(explicit.systemInstruction).toBe(implicit.systemInstruction);
+    expect(tokenRequest().locale).toBe(implicitToken.locale);
   });
 
-  it('locale "fr" speaks fr-CA and prompts in Québec French — same voice', async () => {
+  it('locale "fr" speaks fr-CA and asks the server for a Québec French prompt — same voice', async () => {
     await startSession({ locale: 'fr' });
     const cfg = connectConfig();
     expect(cfg.speechConfig.languageCode).toBe('fr-CA');
     // The persona voice must NOT change with the language.
     expect(cfg.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Aoede');
-    expect(cfg.systemInstruction).toContain('FRANÇAIS QUÉBÉCOIS');
-    expect(cfg.systemInstruction).toContain('"Ben,"');
-    expect(cfg.systemInstruction).not.toContain('Speak conversational AMERICAN ENGLISH');
+    expect(tokenRequest().locale).toBe('fr');
   });
 
   it('scores the session in the locale it was played in', async () => {
@@ -262,6 +364,8 @@ describe('voiceSession — locale', () => {
     const cue = liveSession.sendRealtimeInput.mock.calls[0][0].text as string;
     expect(cue).toContain("Ben là, c'est pas mal cher pour un sac de bouffe.");
     expect(cue).not.toContain(SCENARIO.openingLine!);
+    // The server locks the same line into the prompt.
+    expect(tokenRequest().openingLine).toBe("Ben là, c'est pas mal cher pour un sac de bouffe.");
 
     // …and that same line is what gets pinned onto the opening AI turn when
     // the transcription drifts.
@@ -273,6 +377,7 @@ describe('voiceSession — locale', () => {
     await startSession();
     const cue = liveSession.sendRealtimeInput.mock.calls[0][0].text as string;
     expect(cue).toContain(SCENARIO.openingLine!);
+    expect(tokenRequest().openingLine).toBe(SCENARIO.openingLine);
   });
 });
 

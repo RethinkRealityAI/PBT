@@ -156,7 +156,6 @@ interface PersistArgs {
   transcript: ChatMessage[];
   durationSeconds: number;
   mode: 'text' | 'voice';
-  scoreReport: ScoreReport | null;
   completed: boolean;
   endedReason: 'completed' | 'abandoned' | 'timeout' | 'error' | 'user_exit';
 }
@@ -170,6 +169,13 @@ interface PersistArgs {
  * is included. Both sides are required for the RAG corpus and the admin
  * transcript viewer. A sanity log fires below if the transcript ever ends
  * up single-role so a future regression can't silently drop a side.
+ *
+ * SCORES ARE SERVER-AUTHORITATIVE. This row deliberately carries neither
+ * `score_report` nor `score_overall`: the `ai-evaluate` function writes them
+ * into the caller's row itself (it is the only party that can vouch for a
+ * score), and a database trigger REJECTS any client write that sets them —
+ * including them here would fail the whole upsert. The upsert only touches
+ * the columns listed, so a score the server already wrote is left intact.
  */
 async function persistToSupabase(args: PersistArgs): Promise<void> {
   // Admin preview: the conversation is a prompt test, not a training session.
@@ -196,8 +202,6 @@ async function persistToSupabase(args: PersistArgs): Promise<void> {
       user_id: user.id,
       scenario: args.scenario as unknown as Record<string, unknown>,
       transcript: args.transcript as unknown as Record<string, unknown>[],
-      score_report: args.scoreReport as unknown as Record<string, unknown> | null,
-      score_overall: args.scoreReport?.overall ?? null,
       duration_seconds: args.durationSeconds,
       mode: args.mode,
       completed: args.completed,
@@ -236,8 +240,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // Note: ChatProvider mounts this hook with a null scenario placeholder
   // before the user picks one, so we must guard the property access.
   const overrideRow = useScenarioOverride(scenario?._overrideId ?? '');
-  // Global admin simulation config (scoring weights/prompt, driver + pushback
-  // edits). Null = code defaults. Threaded into every generate/evaluate call.
+  // Global admin simulation config. Only the RAG settings are read here
+  // (`resolveRag`) — the AI functions load the config themselves server-side
+  // and are authoritative for prompts + scoring, so it is never sent along.
   const simulationConfig = useSimulationConfig();
   // App locale — decides the language the AI customer speaks and the language
   // the scorecard's coaching prose comes back in. LanguageProvider sits above
@@ -268,8 +273,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
    * is written) and cleared wherever the record id is dropped or replaced.
    */
   const scoredScenarioRef = useRef<Scenario | null>(null);
-  // Knowledge retrieved for this session (RAG) — fetched once at open(),
-  // injected into every customer turn + the scorer. [] = ungrounded.
+  // Knowledge retrieved for this session (RAG) — fetched once at open(). The
+  // server does its own retrieval for the prompts; this copy records which
+  // citations grounded the session in `rag_documents`. [] = ungrounded.
   const retrievedRef = useRef<RetrievedChunk[]>([]);
   const persistedRef = useRef<boolean>(false);
 
@@ -323,16 +329,6 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       },
     });
 
-    const apiKey =
-      (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
-      (process.env.GEMINI_API_KEY as string | undefined) ||
-      '';
-    if (!apiKey) {
-      setTransientError(translate(locale, 'chat.error.notConfigured'));
-      setStatus('error');
-      return;
-    }
-
     try {
       // RAG: one fail-open retrieval per session, cached per scenario.
       const ragCfg = resolveRag(simulationConfig ?? undefined);
@@ -350,22 +346,13 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       const first = await generateRoleplayMessage(scenario, [], undefined, {
         sessionId: recordIdRef.current,
         promptOverrides,
-        config: simulationConfig ?? undefined,
-        retrieved: retrievedRef.current,
         locale,
       });
       appendTurn(first);
       setStatus('awaitingUser');
     } catch (err) {
       console.error('[useTextChat] open failed', err);
-      const msg = err instanceof Error ? err.message : '';
-      const friendly = translate(
-        locale,
-        msg.toLowerCase().includes('api key')
-          ? 'chat.error.notConfigured'
-          : 'chat.error.openFailed',
-      );
-      setTransientError(friendly);
+      setTransientError(translate(locale, 'chat.error.openFailed'));
       setStatus('error');
     }
   }, [scenario, status, promptOverrides, simulationConfig, locale]);
@@ -391,8 +378,6 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           {
             sessionId: recordIdRef.current,
             promptOverrides,
-            config: simulationConfig ?? undefined,
-            retrieved: retrievedRef.current,
             locale,
           },
         );
@@ -453,7 +438,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         setStatus('awaitingUser');
       }
     },
-    [scenario, appendTurn, promptOverrides, simulationConfig, locale],
+    [scenario, appendTurn, promptOverrides, locale],
   );
 
   const end = useCallback(async () => {
@@ -469,9 +454,8 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     try {
       report = await evaluateConversation(scenario, msgs, {
         sessionId: recordIdRef.current,
-        config: simulationConfig ?? undefined,
-        retrieved: retrievedRef.current,
         locale,
+        mode: 'text',
       });
     } catch (err) {
       console.error('[useTextChat] scoring failed', err);
@@ -507,7 +491,6 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       transcript: msgs,
       durationSeconds,
       mode: 'text',
-      scoreReport: effective,
       completed: true,
       endedReason: 'completed',
     });
@@ -522,7 +505,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       completed: true,
       retrieved: retrievedRef.current,
     });
-  }, [scenario, simulationConfig, locale]);
+  }, [scenario, locale]);
 
   const rescore = useCallback(async (): Promise<boolean> => {
     const msgs = transcriptRef.current.filter((m) => !m._transientError);
@@ -533,13 +516,21 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     // that never reached end()/applyVoiceSessionComplete).
     const scoredScenario = scoredScenarioRef.current ?? scenario;
 
+    // Mode + duration come from the stored copy so a voice-session rescore
+    // stays accurate — the scorer prompt differs by mode, and the row does too.
+    const existing = readStorage(SESSIONS_KEY);
+    const saved = existing.find((s) => s.id === recordId) ?? null;
+    const mode = saved?.mode ?? 'text';
+    const durationSeconds =
+      saved?.durationSeconds ??
+      Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000);
+
     let report: ScoreReport | null = null;
     try {
       report = await evaluateConversation(scoredScenario, msgs, {
         sessionId: recordId,
-        config: simulationConfig ?? undefined,
-        retrieved: retrievedRef.current,
         locale,
+        mode,
       });
     } catch (err) {
       console.error('[useTextChat] rescore failed', err);
@@ -549,14 +540,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
 
     setScoreReport(scored);
 
-    // Rewrite the saved history record in place. Mode + duration come from
-    // the stored copy so a voice-session rescore stays accurate.
-    const existing = readStorage(SESSIONS_KEY);
-    const saved = existing.find((s) => s.id === recordId) ?? null;
-    const mode = saved?.mode ?? 'text';
-    const durationSeconds =
-      saved?.durationSeconds ??
-      Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000);
+    // Rewrite the saved history record in place.
     if (saved) {
       writeStorage(
         SESSIONS_KEY,
@@ -569,7 +553,6 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       transcript: msgs,
       durationSeconds,
       mode,
-      scoreReport: scored,
       completed: true,
       endedReason: 'completed',
     });
@@ -591,7 +574,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       meta: { sessionId: recordId, overall: scored.overall },
     });
     return true;
-  }, [scenario, simulationConfig, locale]);
+  }, [scenario, locale]);
 
   const abandon = useCallback(
     async (reason: 'user_exit' | 'timeout' | 'error' = 'user_exit') => {
@@ -615,7 +598,6 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         transcript: msgs,
         durationSeconds,
         mode: 'text',
-        scoreReport: null,
         completed: false,
         endedReason: reason,
       });
@@ -703,7 +685,6 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           transcript: [],
           durationSeconds: 1,
           mode: 'voice',
-          scoreReport: null,
           completed: false,
           endedReason: 'abandoned',
         });
@@ -739,7 +720,6 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         transcript: msgs,
         durationSeconds,
         mode: 'voice',
-        scoreReport: effective,
         completed: true,
         endedReason: 'completed',
       });

@@ -34,27 +34,14 @@ export function __clearRetrievalCache(): void {
   cache.clear();
 }
 
-/**
- * Scenario-derived retrieval targeting. `docSlugs` (explicit knowledge
- * attachments) wins over `focus` (clinical focus area) server-side.
- */
-export interface RetrievalFilters {
-  focus?: string;
-  docSlugs?: string[];
-}
-
-/**
- * Derive retrieval targeting from the scenario the user is about to play.
- * Explicitly attached knowledge documents win over the broader focus area;
- * an unlinked scenario retrieves un-targeted, exactly as before.
- */
-export function scenarioRetrievalFilters(
-  scenario: Pick<Scenario, 'focusArea' | 'knowledgeSlugs'>,
-): RetrievalFilters | undefined {
-  if (scenario.knowledgeSlugs?.length) return { docSlugs: scenario.knowledgeSlugs };
-  if (scenario.focusArea) return { focus: scenario.focusArea };
-  return undefined;
-}
+// Scenario → retrieval targeting now lives in the dependency-free shared
+// module so the Netlify AI functions derive the same filters server-side.
+// Re-exported here so every existing importer keeps working.
+export {
+  scenarioRetrievalFilters,
+  type RetrievalFilters,
+} from '../shared/ai/retrievalQuery';
+import type { RetrievalFilters } from '../shared/ai/retrievalQuery';
 
 /**
  * Stable serialization so `{ focus: 'gi' }` always produces the same cache

@@ -5,7 +5,6 @@ import { Icon } from '../../design-system/Icon';
 import { generateCoachHint } from '../../services/geminiService';
 import type { ChatMessage } from '../../services/types';
 import type { Scenario } from '../../data/scenarios';
-import type { SimulationConfig } from '../../data/knowledge/simulationConfig';
 import { logEvent } from '../../lib/analytics';
 import { useT } from '../../i18n/useT';
 import { useLanguage } from '../../app/providers/LanguageProvider';
@@ -38,9 +37,8 @@ export function useCoachHint(args: {
   scenario: Scenario | null;
   messages: ChatMessage[];
   sessionId: string | null;
-  config?: SimulationConfig;
 }): UseCoachHint {
-  const { scenario, messages, sessionId, config } = args;
+  const { scenario, messages, sessionId } = args;
   // The nudge is coaching prose the trainee reads, so it follows the app
   // locale rather than the transcript's language.
   const { locale } = useLanguage();
@@ -69,7 +67,8 @@ export function useCoachHint(args: {
       target: 'coach_hint_request',
       meta: { sessionId, turn: messages.length },
     });
-    void generateCoachHint(scenario, messages, { sessionId, config, locale })
+    // The coach prompt (incl. the admin simulation config) is built server-side.
+    void generateCoachHint(scenario, messages, { sessionId, locale })
       .then((text) => {
         setHint(text);
         setStatus('idle');
@@ -79,7 +78,7 @@ export function useCoachHint(args: {
         // Failed hints don't burn the budget.
         setStatus('error');
       });
-  }, [scenario, status, used, messages, sessionId, config, locale]);
+  }, [scenario, status, used, messages, sessionId, locale]);
 
   const dismiss = useCallback(() => {
     setOpen(false);
