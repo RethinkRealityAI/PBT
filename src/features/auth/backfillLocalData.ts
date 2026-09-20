@@ -164,8 +164,25 @@ export async function backfillLocalDataToCloud(
             driver: s.driver,
           } as Record<string, unknown>,
           transcript: s.transcript as unknown as Record<string, unknown>[],
-          score_report: s.scoreReport as unknown as Record<string, unknown> | null,
-          score_overall: s.scoreReport?.overall ?? null,
+          // NO score_report / score_overall. Two reasons, and the second is
+          // the one that matters:
+          //
+          //  1. A database trigger rejects any write to those columns from
+          //     the `authenticated` role (see the migration
+          //     20260911000000_server_authoritative_scores.sql). Sending them
+          //     would raise 42501 and fail this whole batch upsert, so an
+          //     anonymous user upgrading to an account would lose their
+          //     entire history from the cloud.
+          //
+          //  2. These scores come from `pbt:sessions` in localStorage, which
+          //     is user-controlled — anyone can hand-edit it to perfect
+          //     scores before signing up. A backfilled score is unverifiable
+          //     by construction, which is precisely what the trigger exists
+          //     to stop. Dropping it is the correct answer, not a workaround.
+          //
+          // The transcript still lands, so the session is visible and can be
+          // scored later; History already renders an unscored session as "—"
+          // and excludes it from averages.
           duration_seconds: s.durationSeconds,
           mode: s.mode,
           completed: !!s.scoreReport,
