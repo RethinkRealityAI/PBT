@@ -1,0 +1,54 @@
+@page { size: Letter; margin: 18mm 16mm 20mm 16mm; }
+:root{--ink:#14161a;--muted:#5b6270;--line:#e3e6eb;--soft:#f5f6f8;--brand:#1f4fd8;--brand-soft:#e8eefc;--warn:#b45309;--warn-soft:#fff4e5;--ok:#15803d;--ok-soft:#e8f6ec;--danger:#b91c1c;--danger-soft:#fdecec}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;color:var(--ink);font:11pt/1.5 "Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+h1{font-size:26pt;font-weight:600;letter-spacing:-.02em;margin:0 0 6pt}
+h2{font-size:16pt;font-weight:600;letter-spacing:-.01em;margin:0 0 8pt;padding-bottom:5pt;border-bottom:2px solid var(--ink);page-break-after:avoid}
+h3{font-size:12.5pt;font-weight:600;margin:16pt 0 5pt;page-break-after:avoid}
+h4{font-size:11pt;font-weight:600;margin:12pt 0 4pt;page-break-after:avoid}
+p{margin:0 0 7pt}
+ul,ol{margin:0 0 8pt 18pt;padding:0}
+li{margin:0 0 3pt}
+li>ul,li>ol{margin-top:3pt}
+code{font:9.5pt/1.4 "SF Mono",Menlo,Consolas,monospace;background:var(--soft);border:1px solid var(--line);border-radius:3px;padding:0 3px;white-space:nowrap}
+pre{font:9pt/1.45 "SF Mono",Menlo,Consolas,monospace;background:var(--soft);border:1px solid var(--line);border-radius:5px;padding:8pt 10pt;white-space:pre-wrap;word-break:break-word;margin:6pt 0 10pt}
+pre code{background:none;border:0;padding:0;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;margin:6pt 0 12pt;font-size:9.6pt;page-break-inside:auto}
+tr{page-break-inside:avoid}
+th,td{text-align:left;vertical-align:top;padding:5pt 7pt;border-bottom:1px solid var(--line)}
+th{background:var(--soft);font-weight:600;font-size:8.6pt;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border-bottom:1px solid #cfd4dc}
+td:first-child{font-weight:600}
+.eyebrow{font-size:8.5pt;text-transform:uppercase;letter-spacing:.18em;color:var(--muted);margin:0 0 6pt}
+.muted{color:var(--muted)}
+.section{page-break-before:always}
+.cover{height:235mm;display:flex;flex-direction:column;justify-content:space-between}
+.cover .title{margin-top:70mm}
+.cover .title h1{font-size:34pt;line-height:1.15;max-width:150mm}
+.cover .sub{font-size:14pt;color:var(--muted);max-width:150mm;margin-top:10pt}
+.cover .meta{border-top:1px solid var(--line);padding-top:10pt;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12pt;font-size:9.5pt}
+.cover .meta b{display:block;font-size:8.2pt;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:2pt}
+.callout{border-left:3px solid var(--brand);background:var(--brand-soft);padding:7pt 10pt;border-radius:0 5px 5px 0;margin:8pt 0 10pt;page-break-inside:avoid}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.danger{border-color:var(--danger);background:var(--danger-soft)}
+.callout p:last-child{margin:0}
+.pill{display:inline-block;font-size:8pt;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1pt 6pt;border-radius:999px;background:var(--soft);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.req{background:var(--danger-soft);border-color:#f3c4c4;color:var(--danger)}
+.pill.opt{background:var(--ok-soft);border-color:#bfe3c9;color:var(--ok)}
+.pill.secret{background:var(--warn-soft);border-color:#f5d9b0;color:var(--warn)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10pt;margin:6pt 0 10pt}
+.card{border:1px solid var(--line);border-radius:6px;padding:9pt 11pt;page-break-inside:avoid;background:#fff}
+.card h4{margin:0 0 4pt}
+.card p{margin:0;font-size:9.8pt}
+.step{display:flex;gap:9pt;margin:0 0 7pt;page-break-inside:avoid}
+.step .n{flex:0 0 18pt;height:18pt;border-radius:50%;background:var(--ink);color:#fff;font-size:9.5pt;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:1pt}
+.step .b{flex:1}
+.step .b p{margin:0 0 3pt}
+.checklist li{list-style:none;margin-left:-18pt;padding-left:18pt;position:relative}
+.checklist li:before{content:"";position:absolute;left:0;top:3pt;width:10pt;height:10pt;border:1.4px solid #8a919e;border-radius:2px}
+.toc ol{margin-left:0;list-style:none;counter-reset:t}
+.toc li{counter-increment:t;display:flex;gap:8pt;padding:4pt 0;border-bottom:1px dotted var(--line);font-size:10.5pt}
+.toc li:before{content:counter(t,decimal-leading-zero);font-weight:600;color:var(--muted);min-width:20pt}
+.arch{font:9pt/1.35 "SF Mono",Menlo,Consolas,monospace;background:var(--soft);border:1px solid var(--line);border-radius:5px;padding:10pt;white-space:pre;overflow:hidden}
+.small{font-size:9.3pt}
+.footer-note{font-size:8.6pt;color:var(--muted);border-top:1px solid var(--line);padding-top:6pt;margin-top:18pt}

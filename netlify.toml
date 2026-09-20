@@ -1,10 +1,19 @@
 # PBT (Pushback Training) — https://github.com/RethinkRealityAI/PBT
 # In Netlify: Site configuration → Environment variables, set at least:
-#   GEMINI_API_KEY                  — required; Vite inlines it at build
+#   GEMINI_API_KEY                  — required; read ONLY by Netlify Functions
+#                                    (netlify/functions/ai-*). It is never
+#                                    compiled into a browser bundle — the
+#                                    bundle gate (npm run check:bundle) fails
+#                                    the build if a key-shaped string appears
+#                                    in dist/.
 #   VITE_SUPABASE_URL              — required for cloud sync + admin dashboard
 #   VITE_SUPABASE_PUBLISHABLE_KEY  — required (anon key, browser-side)
-#   SUPABASE_SERVICE_ROLE_KEY      — required by admin Netlify Functions only;
+#   SUPABASE_SERVICE_ROLE_KEY      — required by Netlify Functions only;
 #                                    never exposed to the client
+#
+# Local development: AI features need the functions, so run `netlify dev`
+# (which starts Vite and serves /.netlify/functions/*) rather than `vite`
+# alone.
 #
 # `npm ci` uses package-lock.json for reproducible Netlify builds.
 

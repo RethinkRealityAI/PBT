@@ -11,13 +11,34 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'jsdom',
     globals: true,
-    setupFiles: ['./src/tests/setup.ts'],
     css: false,
-    // The admin dashboard is a second entry of this repo (admin/src/**); its
-    // colocated tests were previously invisible to the runner.
-    include: ['src/**/*.{test,spec}.{ts,tsx}', 'admin/src/**/*.{test,spec}.{ts,tsx}'],
+    // Two projects because the environments are incompatible: the app tests
+    // need jsdom + the DOM shims in src/tests/setup.ts (which touches
+    // `window` at load and would throw under node), while the Netlify
+    // Function tests run against the Fetch `Request`/`Response` globals in a
+    // plain node environment with no DOM setup file.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'app',
+          environment: 'jsdom',
+          setupFiles: ['./src/tests/setup.ts'],
+          // The admin dashboard is a second entry of this repo (admin/src/**);
+          // its colocated tests were previously invisible to the runner.
+          include: ['src/**/*.{test,spec}.{ts,tsx}', 'admin/src/**/*.{test,spec}.{ts,tsx}'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'functions',
+          environment: 'node',
+          include: ['netlify/functions/**/*.{test,spec}.ts'],
+        },
+      },
+    ],
     coverage: {
       reporter: ['text', 'html'],
       include: [

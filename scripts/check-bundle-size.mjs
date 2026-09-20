@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 /**
- * Bundle-size gate (spec §13.9) — the consumer PWA's main entry chunk must
- * stay under 500 kB gzipped.
+ * Bundle gate — two checks on the production build:
+ *
+ *  1. SIZE (spec §13.9): the consumer PWA's main entry chunk must stay under
+ *     500 kB gzipped.
+ *  2. SECRETS: no Google API key may appear in ANY emitted JS. The Gemini key
+ *     is held only by the Netlify Functions (`netlify/functions/ai-*`) and is
+ *     no longer needed — or read — at build time; this scan is the CI proof
+ *     that it stayed out of the bundle.
  *
  * Run AFTER a production build; this script only reads `dist/`:
  *
- *   GEMINI_API_KEY=… npm run build
+ *   npm run build
  *   npm run check:bundle
  *
  * Deliberately NOT chained into `npm run build` — Netlify's build should stay
@@ -23,7 +29,7 @@
  */
 import { gzipSync } from 'node:zlib';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,9 +40,26 @@ const ASSETS = join(DIST, 'assets');
 const KB = 1000;
 const LIMIT_BYTES = 500 * KB;
 
+/**
+ * Shape of a Google API key (`AIza` + 35 URL-safe chars). Anchored on the
+ * prefix so ordinary base64/hashes in a bundle don't false-positive.
+ */
+const GOOGLE_API_KEY_RX = /AIza[0-9A-Za-z_-]{30,}/;
+
 function fail(msg) {
   console.error(`\n✖ ${msg}\n`);
   process.exit(1);
+}
+
+/** Every `*.js` under `dir`, recursively. */
+function walkJs(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkJs(full));
+    else if (entry.isFile() && entry.name.endsWith('.js')) out.push(full);
+  }
+  return out;
 }
 
 function fmt(bytes) {
@@ -146,6 +169,20 @@ if (!hasSupabase) {
 }
 
 console.log('');
+
+// ── Secret scan: the Gemini key must not be in any emitted JS ──────────────
+const allJs = walkJs(DIST);
+const leaks = allJs.filter((file) => GOOGLE_API_KEY_RX.test(readFileSync(file, 'utf8')));
+if (leaks.length > 0) {
+  fail(
+    'A Google API key–shaped string (AIza…) was found in the build output:\n' +
+      leaks.map((f) => `  - ${relative(ROOT, f)}`).join('\n') +
+      '\n  The Gemini key must only be read by the Netlify Functions at runtime.\n' +
+      '  Check for a `define` in vite.config.ts, a `VITE_*` env var holding the key,\n' +
+      '  or a hardcoded key in src/ or admin/src/.',
+  );
+}
+console.log(`✔ No Google API key–shaped string in ${allJs.length} emitted JS file(s).`);
 
 if (main.gzip > LIMIT_BYTES) {
   fail(

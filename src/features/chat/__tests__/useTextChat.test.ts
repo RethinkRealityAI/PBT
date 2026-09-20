@@ -15,12 +15,15 @@ const {
   persistRagDocument,
   retrieveContext,
   logEvent,
+  supabase,
 } = vi.hoisted(() => ({
   generateRoleplayMessage: vi.fn(),
   evaluateConversation: vi.fn(),
   persistRagDocument: vi.fn(),
   retrieveContext: vi.fn(),
   logEvent: vi.fn(),
+  /** Swapped per test: null = signed out / Supabase off (the default). */
+  supabase: { client: null as unknown },
 }));
 
 vi.mock('../../../services/geminiService', () => ({
@@ -33,7 +36,7 @@ vi.mock('../../../app/providers/FlagProvider', () => ({
   useScenarioOverride: () => null,
   useSimulationConfig: () => null,
 }));
-vi.mock('../../auth/supabaseClient', () => ({ getSupabase: () => null }));
+vi.mock('../../auth/supabaseClient', () => ({ getSupabase: () => supabase.client }));
 vi.mock('../../../services/aiTelemetry', () => ({ recordTurns: vi.fn() }));
 vi.mock('../../../services/ragDocument', () => ({ persistRagDocument }));
 vi.mock('../../../services/ragClient', () => ({ retrieveContext }));
@@ -80,8 +83,22 @@ const goodReport = (overall: number): ScoreReport => ({
   turnSentiment: [],
 });
 
+/** A signed-in Supabase client whose `training_sessions` upsert we can inspect. */
+function fakeSignedInSupabase() {
+  const upsert = vi.fn(async (_row: Record<string, unknown>) => ({ error: null }));
+  const from = vi.fn(() => ({ upsert }));
+  return {
+    client: {
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
+      from,
+    },
+    from,
+    upsert,
+  };
+}
+
 beforeEach(() => {
-  process.env.GEMINI_API_KEY = 'test-key';
+  supabase.client = null;
   generateRoleplayMessage.mockReset();
   evaluateConversation.mockReset();
   persistRagDocument.mockReset();
@@ -245,5 +262,110 @@ describe('useTextChat.rescore', () => {
       expect.any(Array),
       expect.any(Object),
     );
+  });
+
+  it('re-scores a voice session as voice (the saved record\'s mode), a text one as text', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+
+    await act(async () => {
+      await result.current.applyVoiceSessionComplete(null, [
+        aiTurn('This kibble costs more than my own food.'),
+        { role: 'user', text: 'I understand — let me explain.', timestamp: Date.now() },
+      ]);
+    });
+    evaluateConversation.mockResolvedValueOnce(goodReport(58));
+    await act(async () => {
+      await result.current.rescore();
+    });
+    expect(evaluateConversation.mock.calls.at(-1)?.[2]).toMatchObject({ mode: 'voice' });
+
+    act(() => {
+      result.current.reset();
+    });
+    await runFailedSession(result);
+    expect(evaluateConversation.mock.calls.at(-1)?.[2]).toMatchObject({ mode: 'text' });
+    evaluateConversation.mockResolvedValueOnce(goodReport(61));
+    await act(async () => {
+      await result.current.rescore();
+    });
+    expect(evaluateConversation.mock.calls.at(-1)?.[2]).toMatchObject({ mode: 'text' });
+  });
+});
+
+describe('useTextChat — server-side AI contract', () => {
+  it('sends neither the simulation config nor retrieved chunks to the AI calls', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    await act(async () => {
+      await result.current.send('I hear you on the cost.');
+    });
+    evaluateConversation.mockResolvedValueOnce(goodReport(70));
+    await act(async () => {
+      await result.current.end();
+    });
+
+    for (const call of generateRoleplayMessage.mock.calls) {
+      const options = call[3];
+      expect(options).not.toHaveProperty('config');
+      expect(options).not.toHaveProperty('retrieved');
+      expect(options).toHaveProperty('promptOverrides');
+      expect(options).toHaveProperty('sessionId');
+    }
+    const scorerOptions = evaluateConversation.mock.calls.at(-1)?.[2];
+    expect(scorerOptions).not.toHaveProperty('config');
+    expect(scorerOptions).not.toHaveProperty('retrieved');
+    expect(scorerOptions.mode).toBe('text');
+    // The client's own retrieval still feeds the RAG document.
+    expect(persistRagDocument.mock.calls.at(-1)?.[0]).toHaveProperty('retrieved');
+  });
+
+  it('never writes score_report / score_overall to training_sessions — the server owns scores', async () => {
+    const sb = fakeSignedInSupabase();
+    supabase.client = sb.client;
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+
+    await act(async () => {
+      await result.current.open();
+    });
+    await act(async () => {
+      await result.current.send('I hear you on the cost.');
+    });
+    evaluateConversation.mockResolvedValueOnce(goodReport(77));
+    await act(async () => {
+      await result.current.end();
+    });
+
+    await vi.waitFor(() => expect(sb.upsert).toHaveBeenCalled());
+    expect(sb.from).toHaveBeenCalledWith('training_sessions');
+    const row = sb.upsert.mock.calls[0][0];
+    expect(row).not.toHaveProperty('score_report');
+    expect(row).not.toHaveProperty('score_overall');
+    expect(row).toMatchObject({
+      id: result.current.sessionId,
+      user_id: 'user-1',
+      mode: 'text',
+      completed: true,
+      ended_reason: 'completed',
+      turns: 2,
+    });
+    expect(Array.isArray(row.transcript)).toBe(true);
+
+    // Same for a rescore and a voice session.
+    evaluateConversation.mockResolvedValueOnce(goodReport(81));
+    await act(async () => {
+      await result.current.rescore();
+    });
+    await act(async () => {
+      await result.current.applyVoiceSessionComplete(goodReport(66), [
+        aiTurn('This kibble costs more than my own food.'),
+      ]);
+    });
+    await vi.waitFor(() => expect(sb.upsert.mock.calls.length).toBeGreaterThanOrEqual(3));
+    for (const call of sb.upsert.mock.calls) {
+      expect(call[0]).not.toHaveProperty('score_report');
+      expect(call[0]).not.toHaveProperty('score_overall');
+    }
   });
 });

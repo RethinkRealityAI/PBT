@@ -35,7 +35,7 @@ import {
   CoachHintPanel,
   useCoachHint,
 } from '../features/chat/CoachHint';
-import { useScenarioOverride, useSimulationConfig } from '../app/providers/FlagProvider';
+import { useScenarioOverride } from '../app/providers/FlagProvider';
 import type { PromptOverrides } from '../data/knowledge/promptBuilders';
 import { getPreviewRun, subscribePreviewRun } from '../lib/previewMode';
 import { useDialog } from '../lib/useDialog';
@@ -783,12 +783,10 @@ export function ChatScreen() {
   voiceOverridesRef.current = voicePromptOverrides;
 
   // In-chat coach (text mode): capped ACT nudges from the live transcript.
-  const simulationConfig = useSimulationConfig();
   const coach = useCoachHint({
     scenario: scenario ?? null,
     messages: chat.messages,
     sessionId: chat.sessionId,
-    config: simulationConfig ?? undefined,
   });
 
   // Count of user turns committed to the session — gates the back-button
