@@ -7,7 +7,13 @@
  * working; the functions import from here directly.
  */
 
-export type CallType = 'roleplay' | 'evaluate' | 'voice' | 'hint' | 'vision';
+export type CallType =
+  | 'roleplay'
+  | 'evaluate'
+  | 'voice'
+  | 'hint'
+  | 'vision'
+  | 'fecal_scan';
 
 export interface AiCallRecord {
   sessionId?: string | null;

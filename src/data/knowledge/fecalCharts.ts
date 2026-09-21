@@ -335,11 +335,41 @@ export function fecalEntryParagraph(species: FecalSpecies, entry: FecalChartEntr
   return `Score ${entry.score} (${chart.title}): ${entry.label}.${desc} ${band}`.trim();
 }
 
+/** One-line chart header, repeated inside every chunk so a hit stands alone. */
+function fecalChartHeaderLine(species: FecalSpecies): string {
+  const chart = FECAL_CHARTS[species];
+  const title = `${chart.title}${chart.subtitle ? ` — ${chart.subtitle}` : ''}`;
+  return `${title}. Directions: ${chart.directions}`;
+}
+
 /**
- * The knowledge-base document body for a chart. Paragraphs are separated by
- * blank lines so `chunkMarkdown` keeps one score per paragraph; the whole
- * chart is well under one chunk's token budget, so a retrieval hit returns
- * the full chart context with the matching score inside it.
+ * The EMBEDDING unit: one self-contained chunk per score.
+ *
+ * `chunkMarkdown` packs to ~800 tokens and a whole chart is only ~370, so
+ * chunking the document body would produce ONE chunk per chart — every query
+ * would retrieve the same passage at the same similarity and the per-score
+ * ranking the Fecal Scan grounding panel shows would be meaningless. So the
+ * seeders chunk with this instead: each score is embedded on its own, with
+ * the chart header riding along so a retrieved chunk still carries its
+ * provenance and the "record the higher score" rule.
+ *
+ * Note the header is deliberately safe for `scoresMentionedIn`: the
+ * directions say "Score stools individually from 1 … to 5", which the
+ * `Score <number>` pattern does not match, so a chunk only ever reports its
+ * own score.
+ */
+export function fecalChartChunks(species: FecalSpecies): string[] {
+  const header = fecalChartHeaderLine(species);
+  return FECAL_CHARTS[species].entries.map(
+    (entry) => `${header}\n\n${fecalEntryParagraph(species, entry)}`,
+  );
+}
+
+/**
+ * The knowledge-base DOCUMENT body for a chart (and the bundled fallback the
+ * function hands the scorer when retrieval comes back empty). Paragraphs are
+ * separated by blank lines, one per score. This is the human-readable whole;
+ * for the embedding units see `fecalChartChunks`.
  */
 export function buildFecalChartMarkdown(species: FecalSpecies): string {
   const chart = FECAL_CHARTS[species];

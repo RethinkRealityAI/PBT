@@ -26,6 +26,7 @@ export type FlagKey =
   | 'nav.tab.settings.enabled'
   | 'nav.sidebar.create.enabled'
   | 'nav.sidebar.analyzer.enabled'
+  | 'nav.sidebar.fecalScan.enabled'
   | 'nav.sidebar.history.enabled'
   | 'nav.sidebar.resources.enabled'
   | 'component.home.save_progress_banner'
@@ -51,6 +52,7 @@ export const FLAG_DEFAULTS: Record<FlagKey, unknown> = {
   'nav.tab.settings.enabled': true,
   'nav.sidebar.create.enabled': true,
   'nav.sidebar.analyzer.enabled': true,
+  'nav.sidebar.fecalScan.enabled': true,
   'nav.sidebar.history.enabled': true,
   'nav.sidebar.resources.enabled': true,
   'component.home.save_progress_banner': true,

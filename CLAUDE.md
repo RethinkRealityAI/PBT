@@ -76,6 +76,7 @@ long-lived key). `npm run check:bundle` fails if a key-shaped string
 | `evaluateConversation` (geminiService)    | `ai-evaluate`         | `gemini-3-flash-preview` (JSON mode)    | ACT-first 5-dim scorecard; **writes the score** for signed-in users |
 | `generateCoachHint` (geminiService)       | `ai-hint`             | `gemini-3-flash-preview`                | In-chat coach nudge (text mode, ≤3/session) |
 | `analyzePetPhoto` (petVisionService)      | `ai-vision`           | `gemini-3-flash-preview` (multimodal)   | Pet Vision (breed/BCS/derm)   |
+| `analyzeStoolPhoto` (fecalScanService)    | `ai-fecal-scan`       | `gemini-3-flash-preview` (multimodal ×2 + `gemini-embedding-001` retrieval) | Fecal Scan (chart score, RAG-grounded) |
 | `useVoiceSession` (voiceSession)          | `ai-voice-token` → `ai.live.connect` from the device | `gemini-3.1-flash-live-preview` | Voice mode |
 | `suggestField` (admin `scenarioAi`)       | `admin-scenario-ai`   | `gemini-3-flash-preview`                | Scenario Builder wizard (admin, `scenarios.write`) |
 
@@ -161,6 +162,47 @@ Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL
 - **Privacy opt-out** (spec §8.3): `pbt:allow_training_use` read via
   `src/lib/privacy.ts`; gates `logEvent`, AI call/turn telemetry, and RAG
   document assembly. The user's own sessions/feedback/reports are NOT gated.
+
+## Fecal Scan (stool assessment, RAG showcase)
+
+A supportive stool-assessment aid for vet techs — **not a diagnostic**. The
+tech picks a chart (Adult dog · Puppy 8 wk+ · Cat), photographs the stool, and
+gets the Royal Canin fecal score (1 → 5) with a confidence rating, the chart's
+reference photo side by side, and the exact chart passages the answer was
+grounded in. Spec: `docs/superpowers/specs/2026-09-21-fecal-scan-design.md`.
+
+The ONLY knowledge the feature uses is the three Royal Canin charts
+(`resources/fecal-charts/*.pdf`, VGI/064/0324 + VGI/066/0324), transcribed
+verbatim in `src/data/knowledge/fecalCharts.ts` (+ reference photos in
+`public/fecal-scan/<species>/<score>.jpg`). Never add outside sources.
+
+Pipeline (`netlify/functions/ai-fecal-scan.ts`, mirrors `ai-vision`):
+1. **Observe** — multimodal JSON, chart-free neutral description.
+2. **Retrieve** — `retrieveChunks(observationText, { docSlugs: ['fecal:<species>'] })`
+   against `knowledge_chunks` (pgvector). Each chart score is its own chunk
+   (`fecalChartChunks`), so the top-k are the nearest *scores*.
+3. **Ground** — hits → `retrieval.source = 'rag'`; nothing → the same chart
+   text from the code module, `source = 'bundled'` (never model priors).
+4. **Score** — multimodal JSON with ONLY those passages;
+   `normalizeFecalScanResult` snaps the score onto the passages' scores
+   (confidence capped at 0.4 if the model strayed) and re-derives the band
+   from the chart (puppy score 3 splits by `breedSize`).
+
+Knowledge base: the charts are code-seed documents `fecal:dog|cat|puppy`
+(admin Knowledge → "Load built-in knowledge", or `npm run seed:fecal` with the
+service-role env — the script also proves retrieval by checking the 3.5
+passage ranks first). Netlify masks `SUPABASE_SERVICE_ROLE_KEY` as a secret,
+so local `netlify dev` always reports `source: 'bundled'`; `'rag'` needs a
+deploy or a real key. Migration `20260921000000_fecal_scan.sql` adds the
+`fecal_scan` telemetry call type + the `nav.sidebar.fecalScan.enabled` flag row.
+
+UI: `src/screens/FecalScanScreen.tsx` + `src/features/fecal-scan/*`
+(capture card, observe→retrieve→match stepper, result card, grounding panel,
+full chart sheet); hook `useFecalScan`; service `fecalScanService.ts`;
+image prep shared with Pet Vision in `src/lib/imagePrep.ts`. Entry points:
+Home tile, desktop sidebar (`nav.sidebar.fecalScan.enabled`), Pet Analyzer
+cross-link. Catalogs `src/i18n/{en,fr}/fecalScan.ts`; FR chart text overlay
+`src/i18n/fr/data/fecalCharts.ts` via `dataL10n/fecalCharts.ts`.
 
 ## Admin dashboard (admin/)
 

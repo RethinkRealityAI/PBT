@@ -151,6 +151,27 @@ export const Icon = {
       <polyline points="2 12 12 17 22 12" />
     </>,
   ),
+  /** Camera — in-app capture (Fecal Scan shutter / "Take photo") */
+  camera: stroke(
+    <>
+      <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.7a1 1 0 0 0 .83-.45l.94-1.4A1 1 0 0 1 9.8 3.7h4.4a1 1 0 0 1 .83.45l.94 1.4a1 1 0 0 0 .83.45h1.7A2.5 2.5 0 0 1 21 8.5v8A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5Z" />
+      <circle cx="12" cy="12.5" r="3.4" />
+    </>,
+  ),
+  /** Two arrows in a loop — flip between front and rear camera */
+  flipCamera: stroke(
+    <>
+      <path d="M4 8a8 8 0 0 1 13.2-3.2L20 7M20 16a8 8 0 0 1-13.2 3.2L4 17" />
+      <path d="M20 3v4h-4M4 21v-4h4" />
+    </>,
+  ),
+  /** Viewfinder — photo-capture / scan surfaces (Fecal Scan) */
+  scan: stroke(
+    <>
+      <path d="M3 8V5.5A2.5 2.5 0 0 1 5.5 3H8M16 3h2.5A2.5 2.5 0 0 1 21 5.5V8M21 16v2.5a2.5 2.5 0 0 1-2.5 2.5H16M8 21H5.5A2.5 2.5 0 0 1 3 18.5V16" />
+      <path d="M3 12h18" strokeWidth={1.6} />
+    </>,
+  ),
   /** Document — clinical references / tables */
   fileText: stroke(
     <>

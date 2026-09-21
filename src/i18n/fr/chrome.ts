@@ -19,6 +19,7 @@ export const chrome: Record<keyof typeof enChrome, string> = {
   'chrome.brand.tagline': 'Entraînement aux objections',
   'chrome.nav.create': 'Créer un scénario',
   'chrome.nav.analyzer': "Analyseur d'animaux",
+  'chrome.nav.fecalScan': 'Analyse fécale',
   'chrome.nav.profile': 'Profil',
   'chrome.theme.dark': 'Thème sombre',
   'chrome.theme.light': 'Thème clair',

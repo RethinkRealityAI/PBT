@@ -55,6 +55,14 @@ import {
   NON_SHAMING_FRAMING,
   PRODUCT_ANCHORS,
 } from '../../src/data/knowledge/clinicalReference';
+import {
+  FECAL_CHARTS,
+  FECAL_SPECIES,
+  buildFecalChartMarkdown,
+  fecalChartChunks,
+  fecalChartCitation,
+  fecalKnowledgeSlug,
+} from '../../src/data/knowledge/fecalCharts';
 
 const CATEGORIES = ['driver', 'pushback', 'act', 'clinical', 'custom'];
 
@@ -90,6 +98,24 @@ interface SeedDoc {
   category: 'driver' | 'pushback' | 'act' | 'clinical';
   content: string;
   metadata: Record<string, unknown>;
+  /**
+   * Default catalogue tags for this document (and its chunks). Most seed docs
+   * ship untagged and get filed by an admin; the fecal charts arrive already
+   * filed because retrieval targets them by slug AND focus.
+   * An admin's own focus edit still wins — see `keptFocus` in `seed()`.
+   */
+  tags?: Record<string, unknown>;
+  /** Default citation. An admin's own citation edit wins (`keptCitation`). */
+  citation?: string;
+  /**
+   * Explicit embedding units, overriding `chunkMarkdown(content)`.
+   *
+   * `chunkMarkdown` packs paragraphs up to ~800 tokens, which is right for
+   * prose but wrong for a reference table: a whole fecal chart is ~370 tokens
+   * and would collapse into ONE chunk, so every query would retrieve the same
+   * passage and per-score similarity ranking would be meaningless.
+   */
+  chunks?: string[];
 }
 
 /** Serialise the code knowledge modules into embedder-ready documents. */
@@ -163,6 +189,23 @@ function buildSeedDocs(): SeedDoc[] {
     metadata: { anchors: Object.keys(PRODUCT_ANCHORS) },
   });
 
+  // Royal Canin fecal scoring charts — one document per chart, one paragraph
+  // per score, so each score becomes its own retrievable chunk. This is the
+  // only knowledge `ai-fecal-scan` is allowed to ground on.
+  for (const species of FECAL_SPECIES) {
+    docs.push({
+      slug: fecalKnowledgeSlug(species),
+      title: FECAL_CHARTS[species].title,
+      category: 'clinical',
+      content: buildFecalChartMarkdown(species),
+      metadata: {},
+      tags: { focus: 'gi', topic: 'fecal-scoring', species },
+      citation: fecalChartCitation(species),
+      // One embedded chunk per score — see SeedDoc.chunks.
+      chunks: fecalChartChunks(species),
+    });
+  }
+
   return docs;
 }
 
@@ -192,22 +235,38 @@ async function seed(ctx: AdminCtx): Promise<Response> {
     if (row.deleted_at) keptDeleted.set(row.slug, String(row.deleted_at));
   }
 
+  // Effective cataloguing for a doc: the admin's edit first, then whatever
+  // the seed itself declares (the fecal charts ship pre-filed), then nothing.
+  const tagsFor = (d: SeedDoc): Bag | null => {
+    const focus = keptFocus.get(d.slug) ?? (typeof d.tags?.focus === 'string' ? d.tags.focus : '');
+    if (!d.tags && !focus) return null;
+    const bag: Bag = { ...(d.tags ?? {}) };
+    if (focus) bag.focus = focus;
+    return bag;
+  };
+  const citationFor = (d: SeedDoc): string | null =>
+    keptCitation.get(d.slug) ?? d.citation ?? null;
+
   const { error } = await ctx.sb.from('knowledge_documents').upsert(
-    docs.map((d) => ({
-      slug: d.slug,
-      title: d.title,
-      category: d.category,
-      content: d.content,
-      metadata: {
-        ...d.metadata,
-        ...(keptFocus.has(d.slug) ? { tags: { focus: keptFocus.get(d.slug) } } : {}),
-        ...(keptCitation.has(d.slug) ? { citation: keptCitation.get(d.slug) } : {}),
-      },
-      source: 'code-seed',
-      deleted_at: keptDeleted.get(d.slug) ?? null,
-      updated_by: ctx.user.id,
-      updated_at: new Date().toISOString(),
-    })),
+    docs.map((d) => {
+      const tags = tagsFor(d);
+      const citation = citationFor(d);
+      return {
+        slug: d.slug,
+        title: d.title,
+        category: d.category,
+        content: d.content,
+        metadata: {
+          ...d.metadata,
+          ...(tags ? { tags } : {}),
+          ...(citation ? { citation } : {}),
+        },
+        source: 'code-seed',
+        deleted_at: keptDeleted.get(d.slug) ?? null,
+        updated_by: ctx.user.id,
+        updated_at: new Date().toISOString(),
+      };
+    }),
     { onConflict: 'slug' },
   );
   if (error) return errorResponse(500, error.message);
@@ -229,7 +288,7 @@ async function seed(ctx: AdminCtx): Promise<Response> {
         .eq('slug', d.slug)
         .maybeSingle();
       if (!row) continue;
-      const chunks = chunkMarkdown(d.content);
+      const chunks = d.chunks ?? chunkMarkdown(d.content);
       const embeddings = await embedTexts(chunks, 'RETRIEVAL_DOCUMENT');
       await ctx.sb.from('knowledge_chunks').delete().eq('doc_id', row.id);
       await ctx.sb.from('knowledge_chunks').insert(
@@ -241,9 +300,9 @@ async function seed(ctx: AdminCtx): Promise<Response> {
           tags: {
             category: d.category,
             ...d.metadata,
-            ...(keptFocus.has(d.slug) ? { focus: keptFocus.get(d.slug) } : {}),
+            ...(tagsFor(d) ?? {}),
           },
-          citation: keptCitation.get(d.slug) ?? null,
+          citation: citationFor(d),
           embedding: `[${embeddings[i].join(',')}]`,
         })),
       );

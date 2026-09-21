@@ -25,6 +25,11 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Local `netlify dev`: Vite is pinned to 3006 in vite.config.ts; without this
+# the CLI waits on Vite's default 5173 and times out.
+[dev]
+  targetPort = 3006
+
 # Admin SPA fallback — /admin and /admin/anything serves admin.html.
 # Must come before the global SPA fallback so it wins.
 [[redirects]]

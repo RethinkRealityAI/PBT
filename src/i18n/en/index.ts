@@ -4,6 +4,7 @@ import { auth } from './auth';
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { create } from './create';
+import { fecalScan } from './fecalScan';
 import { feedback } from './feedback';
 import { history } from './history';
 import { home } from './home';
@@ -30,6 +31,7 @@ export const en = {
   ...create,
   ...settings,
   ...analyzer,
+  ...fecalScan,
   ...onboarding,
   ...terms,
   ...quiz,

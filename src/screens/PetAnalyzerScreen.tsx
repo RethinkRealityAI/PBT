@@ -21,7 +21,7 @@ import { BreedSearch } from '../features/pet-analyzer/BreedSearch';
 import { isWeightPlausibleFor, resolveBreed } from '../data/breeds';
 import { BCS_LEVELS } from '../data/bcsLevels';
 import { MCS_LEVELS } from '../data/mcsLevels';
-import { COLORS } from '../design-system/tokens';
+import { COLORS, RADII } from '../design-system/tokens';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
@@ -178,6 +178,30 @@ export function PetAnalyzerScreen() {
 
         {/* ── Card 0: Photo analysis (AI vision) ── */}
         <PetVisionCard vision={vision} onPick={handleVisionPick} />
+
+        {/*
+         * Sibling tool, same exam-table moment: a tech who just photographed
+         * the dog often has the litter tray / yard question next. One quiet
+         * row, not a second hero card.
+         */}
+        <Glass
+          radius={RADII.md}
+          padding="10px 14px"
+          glow={null}
+          onClick={() => go('fecalScan')}
+          ariaLabel={t('fecalScan.crossLink.fromAnalyzer')}
+          style={{ marginBottom: 14 }}
+        >
+          <div className="flex items-center gap-3">
+            <Icon.scan
+              aria-hidden
+              style={{ width: 17, height: 17, flexShrink: 0, color: 'var(--pbt-driver-primary)' }}
+            />
+            <span style={{ fontSize: 12.5, lineHeight: 1.4, color: 'var(--pbt-text)' }}>
+              {t('fecalScan.crossLink.fromAnalyzer')}
+            </span>
+          </div>
+        </Glass>
 
         {/* ── Card 1: Pet name + Breed ── */}
         <Glass

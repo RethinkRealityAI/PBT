@@ -13,7 +13,8 @@
     "test:ui": "vitest --ui",
     "typecheck": "tsc --noEmit",
     "check:bundle": "node scripts/check-bundle-size.mjs",
-    "verify:db": "node scripts/verify-db-schema.mjs"
+    "verify:db": "node scripts/verify-db-schema.mjs",
+    "seed:fecal": "esbuild scripts/seed-fecal-knowledge.ts --bundle --platform=node --format=esm --packages=external --outfile=.netlify/seed-fecal.mjs && node .netlify/seed-fecal.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
@@ -22,6 +23,7 @@
     "@supabase/supabase-js": "^2.105.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jpeg-js": "^0.4.4",
     "lucide-react": "^0.563.0",
     "motion": "^12.38.0",
     "nodemailer": "^7.0.13",
@@ -50,5 +52,6 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vitest": "^4.1.5"
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

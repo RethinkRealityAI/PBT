@@ -80,6 +80,11 @@ const PetAnalyzerScreen = lazy(() =>
     default: m.PetAnalyzerScreen,
   })),
 );
+const FecalScanScreen = lazy(() =>
+  import('../screens/FecalScanScreen').then((m) => ({
+    default: m.FecalScanScreen,
+  })),
+);
 const ResourcesScreen = lazy(() =>
   import('../screens/ResourcesScreen').then((m) => ({
     default: m.ResourcesScreen,
@@ -447,6 +452,8 @@ function CurrentScreen() {
       return <HistoryDetailScreen />;
     case 'analyzer':
       return <PetAnalyzerScreen />;
+    case 'fecalScan':
+      return <FecalScanScreen />;
     case 'resources':
       return <ResourcesScreen />;
     case 'settings':

@@ -76,6 +76,7 @@ export const CALL_TYPE_LABELS: Record<string, string> = {
   voice: 'Voice conversation',
   hint: 'Writing a coach hint',
   vision: 'Analysing a pet photo',
+  fecal_scan: 'Scoring a stool photo',
   retrieval: 'Looking up knowledge',
 };
 

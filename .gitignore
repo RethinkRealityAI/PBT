@@ -64,3 +64,6 @@ admin/tsconfig.tsbuildinfo
 
 # Fecal chart print masters (TIF/PSD/AI, ~80 MB) — the PDFs are the source of truth
 resources/fecal-charts/*/Links/
+
+# Playwright MCP screenshots/snapshots
+.playwright-mcp/

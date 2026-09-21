@@ -993,7 +993,7 @@ export function HomeScreen() {
               </div>
             </IfFlag>
 
-            <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 14 }}>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3" style={{ marginBottom: 14 }}>
               {([
                 {
                   label: t('home.actions.build.title'),
@@ -1007,7 +1007,16 @@ export function HomeScreen() {
                   icon: <Icon.paw />,
                   screen: 'analyzer' as const,
                 },
-              ] as const).map(({ label, sub, icon, screen }) => (
+                {
+                  label: t('home.actions.fecalScan.title'),
+                  sub: t('home.actions.fecalScan.sub'),
+                  icon: <Icon.scan />,
+                  screen: 'fecalScan' as const,
+                  // Third of three: full width on the 2-col mobile grid (so the
+                  // row never ends in a hole), one of three on desktop.
+                  wide: true,
+                },
+              ] as const).map(({ label, sub, icon, screen, ...rest }) => (
                 <Glass
                   key={screen}
                   radius={RADII.lg}
@@ -1015,6 +1024,9 @@ export function HomeScreen() {
                   {...dashTileGlass(dark)}
                   onClick={() => go(screen)}
                   ariaLabel={label}
+                  className={
+                    'wide' in rest && rest.wide ? 'col-span-2 lg:col-span-1' : undefined
+                  }
                 >
                   <div className="flex items-start gap-2" style={{ minWidth: 0 }}>
                     <div style={{ ...iconBadgeStyle(driverColors, dark), flexShrink: 0, marginTop: 1 }}>

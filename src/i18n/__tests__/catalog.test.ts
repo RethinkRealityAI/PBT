@@ -7,6 +7,7 @@ import { home as enHome } from '../en/home';
 import { create as enCreate } from '../en/create';
 import { settings as enSettings } from '../en/settings';
 import { analyzer as enAnalyzer } from '../en/analyzer';
+import { fecalScan as enFecalScan } from '../en/fecalScan';
 import { onboarding as enOnboarding } from '../en/onboarding';
 import { terms as enTerms } from '../en/terms';
 import { quiz as enQuiz } from '../en/quiz';
@@ -48,6 +49,8 @@ const IDENTICAL_ALLOWED = new Set<string>([
   'resources.sources.label', // 'Sources' — same word in fr-CA
   'analyzer.vision.bcsLead', // 'BCS {score}/9.' — clinical initialism + token
   'analyzer.vision.context.pet', // '{breed}, {age}.' — two tokens + punctuation
+  'fecalScan.grounding.source.rag', // 'pgvector · knowledge_chunks' — Postgres extension + table name
+  'fecalScan.grounding.passage', // 'Passage {n}' — same word in fr-CA, plus a bare token
 ]);
 
 const CATALOGS = { en, fr } as const;
@@ -109,6 +112,7 @@ describe('locale catalogs', () => {
       enCreate,
       enSettings,
       enAnalyzer,
+      enFecalScan,
       enOnboarding,
       enTerms,
       enQuiz,
