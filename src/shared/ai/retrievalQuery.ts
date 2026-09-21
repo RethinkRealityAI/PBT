@@ -11,8 +11,17 @@ import type { Scenario } from '../../data/scenarios';
  * attachments) wins over `focus` (clinical focus area) server-side.
  */
 export interface RetrievalFilters {
+  /** Clinical focus area — SOFT: relaxed when it matches nothing. */
   focus?: string;
+  /** Explicit document attachment — wins over `focus`, never relaxed. */
   docSlugs?: string[];
+  /**
+   * The consumer asking (KNOWLEDGE_TOOL_KEYS) — HARD: only documents whose
+   * `tools` scope lists it are ever returned. Every production caller sets it.
+   */
+  tool?: string;
+  /** Species / life-stage scope (KNOWLEDGE_SPECIES_KEYS) — HARD, like `tool`. */
+  species?: string;
 }
 
 /**
