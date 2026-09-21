@@ -85,7 +85,9 @@ export default async (req: Request): Promise<Response> => {
   const config = await loadSimulationConfig(caller.sb);
   const [overrides, retrieved] = await Promise.all([
     loadPromptOverrides(caller.sb, scenario, body),
-    retrieveForScenario(caller.sb, scenario, config),
+    // Scoped to the `roleplay` knowledge tool — the customer may only quote
+    // documents an admin filed for roleplay (never, say, a fecal chart).
+    retrieveForScenario(caller.sb, scenario, config, 'roleplay'),
   ]);
 
   const systemInstruction = buildCustomerSystemPrompt({

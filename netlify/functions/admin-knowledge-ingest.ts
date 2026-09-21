@@ -1,7 +1,8 @@
 /**
  * Admin: ingest documents into the RAG knowledge base (POST only).
  *
- *   { op: 'ingest', pdfBase64?, text?, title?, category?, tags? }
+ *   { op: 'ingest', pdfBase64?, text?, title?, category?,
+ *     tags? — { focus?, tools?: string[], species?: string[] } }
  *       PDF → Gemini native PDF understanding extracts structured markdown +
  *       citation metadata; text is used as-is. Content is chunked
  *       (~800-token paragraphs), embedded (gemini-embedding-001, 768d,
@@ -15,6 +16,12 @@
  */
 import { errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
+import {
+  ALL_KNOWLEDGE_SPECIES,
+  DEFAULT_KNOWLEDGE_TOOLS,
+  normalizeKnowledgeSpecies,
+  normalizeKnowledgeTools,
+} from '../../src/shared/knowledge/knowledgeScopes';
 import { embedTexts, getGeminiClient } from './_shared/gemini';
 import { chunkMarkdown } from '../../src/services/ragShared';
 import { estimateTokens } from '../../src/services/aiTelemetry';
@@ -31,21 +38,42 @@ const MAX_PDF_BYTES = 4 * 1024 * 1024;
  * scenario. `topic` is kept alongside for back-compat with anything that read
  * the old shape.
  */
+const STUDY_SCOPE = {
+  tools: DEFAULT_KNOWLEDGE_TOOLS,
+  species: ALL_KNOWLEDGE_SPECIES,
+} as const;
+
 const BUNDLED_STUDIES: Array<{ file: string; slug: string; tags: Record<string, unknown> }> = [
-  { file: 'davies-2024-dog-owner-preferences-obesity.pdf', slug: 'study:davies-2024', tags: { focus: 'weight' } },
-  { file: 'sutherland-2024-cat-owner-preferences-obesity.pdf', slug: 'study:sutherland-2024-cat', tags: { focus: 'weight' } },
-  { file: 'sutherland-2024-client-obesity-communication.pdf', slug: 'study:sutherland-2024-client', tags: { focus: 'weight' } },
+  { file: 'davies-2024-dog-owner-preferences-obesity.pdf', slug: 'study:davies-2024', tags: { focus: 'weight', ...STUDY_SCOPE } },
+  { file: 'sutherland-2024-cat-owner-preferences-obesity.pdf', slug: 'study:sutherland-2024-cat', tags: { focus: 'weight', ...STUDY_SCOPE } },
+  { file: 'sutherland-2024-client-obesity-communication.pdf', slug: 'study:sutherland-2024-client', tags: { focus: 'weight', ...STUDY_SCOPE } },
   {
     file: 'macmartin-2015-nutritional-history-question-design.pdf',
     slug: 'study:macmartin-2015',
-    tags: { focus: 'communication', topic: 'communication' },
+    tags: { focus: 'communication', topic: 'communication', ...STUDY_SCOPE },
   },
   {
     file: 'macmartin-2023-client-resistance-conversation-analysis.pdf',
     slug: 'study:macmartin-2023',
-    tags: { focus: 'communication', topic: 'communication' },
+    tags: { focus: 'communication', topic: 'communication', ...STUDY_SCOPE },
   },
 ];
+
+/**
+ * Stamp a knowledge scope onto a tag bag: unknown keys dropped, absent or
+ * empty → the defaults (the four training-session tools, every species —
+ * never the Fecal Scan, which has to be chosen on purpose).
+ *
+ * Applied in `storeDoc`, so EVERY write path — upload, bundled study,
+ * re-embed — produces a document that scoped retrieval can actually see.
+ */
+function withKnowledgeScope(tags: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...tags,
+    tools: normalizeKnowledgeTools(tags.tools),
+    species: normalizeKnowledgeSpecies(tags.species),
+  };
+}
 
 interface Extracted {
   title: string;
@@ -112,6 +140,9 @@ async function storeDoc(
     metadata?: Record<string, unknown>;
   },
 ): Promise<number> {
+  // One choke point for the scope: document metadata and chunk tags can never
+  // disagree, whichever op got here.
+  const tags = withKnowledgeScope(args.tags);
   const { data: doc, error: docErr } = await ctx.sb
     .from('knowledge_documents')
     .upsert(
@@ -120,7 +151,9 @@ async function storeDoc(
         title: args.title,
         category: args.category,
         content: args.content,
-        metadata: args.metadata ?? { citation: args.citation, tags: args.tags },
+        metadata: args.metadata
+          ? { ...args.metadata, tags }
+          : { citation: args.citation, tags },
         source: args.source ?? 'admin',
         updated_by: ctx.user.id,
         updated_at: new Date().toISOString(),
@@ -146,7 +179,7 @@ async function storeDoc(
       chunk_idx: i,
       content,
       token_estimate: estimateTokens(content),
-      tags: { category: args.category, ...args.tags },
+      tags: { category: args.category, ...tags },
       citation: args.citation || null,
       embedding: `[${embeddings[i].join(',')}]`,
     })),
@@ -169,12 +202,16 @@ export default async (req: Request): Promise<Response> => {
 
   try {
     if (body.op === 'ingest') {
-      const tags = (body.tags as Record<string, unknown>) ?? {};
+      const raw = (body.tags as Record<string, unknown>) ?? {};
       // A typo'd focus key would tag the document into a bucket no scenario
       // can ever select — reject rather than silently mis-file it.
-      if (tags.focus != null && !isFocusAreaKey(tags.focus)) {
-        return errorResponse(400, `Unknown focus area: ${String(tags.focus)}`);
+      if (raw.focus != null && !isFocusAreaKey(raw.focus)) {
+        return errorResponse(400, `Unknown focus area: ${String(raw.focus)}`);
       }
+      // The scope is normalised, not rejected: an unknown tool key WIDENS
+      // nothing (it is simply dropped) and an empty list means "the admin
+      // didn't choose", which is what the defaults are for.
+      const tags = withKnowledgeScope(raw);
       const category = ['clinical', 'custom'].includes(String(body.category))
         ? String(body.category)
         : 'custom';

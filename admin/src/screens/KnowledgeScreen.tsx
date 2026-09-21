@@ -51,14 +51,26 @@ import {
   filterKnowledgeDocs,
   isBuiltIn,
   resolveDocFocus,
+  resolveDocScope,
   restoreKnowledgeDocument,
   scenariosUsingDoc,
+  scopeSpeciesSummary,
+  scopeToolsSummary,
   sourceLabel,
   updateKnowledgeDocument,
   type DeletedKnowledgeDocument,
 } from '../data/knowledgeActions';
+import { KnowledgeSearchCard } from './KnowledgeSearchCard';
 import { LIBRARY_MANIFEST } from '../data/scenarioManifest';
 import { FOCUS_AREAS } from '../../../src/shared/knowledge/focusAreas';
+import {
+  ALL_KNOWLEDGE_SPECIES,
+  DEFAULT_KNOWLEDGE_TOOLS,
+  KNOWLEDGE_SPECIES,
+  KNOWLEDGE_SPECIES_KEYS,
+  KNOWLEDGE_TOOLS,
+  KNOWLEDGE_TOOL_KEYS,
+} from '../../../src/shared/knowledge/knowledgeScopes';
 import type { KnowledgeDocument } from '../data/types';
 import { FOCUS_AREA_LABELS, KNOWLEDGE_CATEGORY_LABELS, labelOf } from '../lib/labels';
 import { COLOR } from '../lib/tokens';
@@ -67,7 +79,24 @@ import { Field, btnPrimary, btnSecondary, inputStyle, textareaStyle } from './Fl
 
 const MAX_PDF_BYTES = 4 * 1024 * 1024; // 4MB
 const PREVIEW_CHARS = 4000;
-const GRID = '1.8fr 130px 150px 100px 90px 150px';
+const GRID = '1.5fr 120px 130px 130px 110px 90px 80px 90px';
+
+/**
+ * Toggle a key in a scope list, keeping the vocabulary's own order.
+ *
+ * Order matters beyond tidiness: the list is what gets written to the tag bag
+ * and compared for dirtiness, so a click-order-dependent array would make
+ * every re-tick look like an edit.
+ */
+function toggleScopeKey(current: string[], key: string, vocabulary: readonly string[]): string[] {
+  const next = current.includes(key)
+    ? current.filter((k) => k !== key)
+    : [...current, key];
+  return vocabulary.filter((k) => next.includes(k));
+}
+
+const sameKeys = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((k, i) => k === b[i]);
 
 // ─── Small shared bits ──────────────────────────────────────────────────────
 
@@ -179,6 +208,100 @@ const FOCUS_HELP = (
   </>
 );
 
+/**
+ * What "Used by" means, in the words of the people who will read it. The last
+ * paragraph is the whole point of the feature: the scope is a hard wall, not a
+ * preference, and the fecal example is the one that makes that concrete.
+ */
+const TOOLS_HELP = (
+  <>
+    <p style={{ margin: '0 0 10px' }}>
+      “Used by” is the list of tools allowed to read this document. Nothing else
+      can see it, whatever it is about:
+    </p>
+    <ul style={{ margin: '0 0 10px', paddingLeft: 18, display: 'grid', gap: 4 }}>
+      {KNOWLEDGE_TOOLS.map((t) => (
+        <li key={t.key}>
+          <strong>{t.label}</strong> — {t.description}
+        </li>
+      ))}
+    </ul>
+    <p style={{ margin: 0 }}>
+      New documents are used by the four training tools and not by Fecal Scan —
+      that one has to be ticked on purpose. Fecal Scan only sees documents filed
+      under Fecal Scan, and only for the species ticked: a cat document can never
+      reach a dog scan.
+    </p>
+  </>
+);
+
+const SPECIES_HELP = (
+  <>
+    <p style={{ margin: '0 0 10px' }}>
+      Which animals this document applies to. A document filed under
+      <strong> Adult dog</strong> only ever comes back for a dog request — a cat
+      scan cannot see it, and never will.
+    </p>
+    <p style={{ margin: 0 }}>
+      Leave all three ticked for anything that isn’t species-specific; that is
+      what a new document starts as.
+    </p>
+  </>
+);
+
+/**
+ * A row of multi-select scope chips with at-least-one enforcement handled by
+ * the caller (the caller is the one that owns the save button the rule blocks).
+ */
+function ScopeChips({
+  testId,
+  options,
+  selected,
+  vocabulary,
+  onChange,
+}: {
+  testId: string;
+  options: Array<{ key: string; label: string; description: string }>;
+  selected: string[];
+  vocabulary: readonly string[];
+  onChange: (next: string[]) => void;
+}) {
+  return (
+    <div data-testid={testId} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {options.map((o) => (
+        <FocusChipButton
+          key={o.key}
+          label={o.label}
+          description={o.description}
+          active={selected.includes(o.key)}
+          onClick={() => onChange(toggleScopeKey(selected, o.key, vocabulary))}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** The mono eyebrow + InfoTip pair that heads each scope block. */
+function ScopeHeading({ label, help }: { label: string; help: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 800,
+          textTransform: 'uppercase',
+          letterSpacing: '0.10em',
+          color: COLOR.inkMute,
+          fontFamily: 'var(--pbt-mono)',
+        }}
+      >
+        {label}
+      </span>
+      <InfoTip title={label}>{help}</InfoTip>
+    </div>
+  );
+}
+
 // ─── Bulk-action button (busy state + transient "✓ Done (n)" / error) ──────
 
 /**
@@ -237,11 +360,15 @@ export function KnowledgeScreen({
   const overrides = useScenarioOverrides();
   const simulation = useAdminSimulationConfig();
   const toast = useToast();
-  const canWrite = useCan()('knowledge.write');
+  const can = useCan();
+  const canWrite = can('knowledge.write');
+  const canRead = can('knowledge.read');
   const [adding, setAdding] = useState(false);
   const [openSlug, setOpenSlug] = useState<string | null>(null);
   const [focusFilter, setFocusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [toolFilter, setToolFilter] = useState('all');
+  const [speciesFilter, setSpeciesFilter] = useState('all');
   /** Failure lines from the last bulk run, listed under the action bar. */
   const [bulkFailures, setBulkFailures] = useState<{ title: string; lines: string[] } | null>(
     null,
@@ -303,8 +430,15 @@ export function KnowledgeScreen({
     (simulation.data.config.rag as { enabled?: boolean } | undefined)?.enabled === false;
 
   const filtered = useMemo(
-    () => filterKnowledgeDocs(docs.data, { query, focus: focusFilter, category: typeFilter }),
-    [docs.data, query, focusFilter, typeFilter],
+    () =>
+      filterKnowledgeDocs(docs.data, {
+        query,
+        focus: focusFilter,
+        category: typeFilter,
+        tool: toolFilter,
+        species: speciesFilter,
+      }),
+    [docs.data, query, focusFilter, typeFilter, toolFilter, speciesFilter],
   );
 
   // Present focus filters that actually match something, so the row doesn't
@@ -321,6 +455,20 @@ export function KnowledgeScreen({
   const typeKeys = useMemo(() => {
     const seen = new Set(docs.data.map((d) => d.category));
     return [...seen].sort();
+  }, [docs.data]);
+
+  // Scope counts are containment counts, not a partition: a document filed
+  // under three species is counted under all three, which is exactly what the
+  // filter will do with it.
+  const scopeCounts = useMemo(() => {
+    const tools = new Map<string, number>();
+    const species = new Map<string, number>();
+    for (const doc of docs.data) {
+      const scope = resolveDocScope(doc.metadata);
+      for (const t of scope.tools) tools.set(t, (tools.get(t) ?? 0) + 1);
+      for (const s of scope.species) species.set(s, (species.get(s) ?? 0) + 1);
+    }
+    return { tools, species };
   }, [docs.data]);
 
   const openDoc = openSlug ? docs.data.find((d) => d.slug === openSlug) ?? null : null;
@@ -342,6 +490,15 @@ export function KnowledgeScreen({
           tighter control, attach specific documents to a scenario in{' '}
           <strong>Library → Builder</strong> — attachments win, and the focus filter
           is then ignored.
+          <br />
+          <br />
+          Two columns decide who can see a document at all. <strong>Used by</strong>{' '}
+          lists the tools allowed to read it — new documents are used by the four
+          training tools, and <strong>Fecal Scan</strong> has to be ticked on purpose.{' '}
+          <strong>Species</strong> says which animals it applies to. Both are hard
+          limits that are never relaxed: a cat document can never reach a dog scan.
+          Use <strong>Try a search</strong> below to see exactly what any tool would
+          get back.
         </FirstRunCard>
         {researchOff && (
           <InlineAlert tone="warn" title="Scenarios aren’t using this library right now">
@@ -493,6 +650,14 @@ export function KnowledgeScreen({
         </Glass>
         )}
 
+        {/*
+          Reading permission only: the tester runs a search, it changes nothing.
+          It sits directly under the bulk bar because it is the answer to the
+          question the rest of this screen raises — "is this document actually
+          reachable?" — and that question comes up before the filters do.
+        */}
+        {canRead && <KnowledgeSearchCard />}
+
         <Glass padding={16} radius={20}>
           <div style={{ display: 'grid', gap: 10 }}>
             <FilterRow
@@ -511,6 +676,34 @@ export function KnowledgeScreen({
               value={focusFilter}
               onChange={setFocusFilter}
               info={{ title: 'Focus area', body: FOCUS_HELP }}
+            />
+            <FilterRow
+              label="Used by"
+              options={[
+                { key: 'all', label: `All (${docs.data.length})` },
+                ...KNOWLEDGE_TOOLS.filter((t) => scopeCounts.tools.has(t.key)).map((t) => ({
+                  key: t.key,
+                  label: `${t.label} (${scopeCounts.tools.get(t.key)})`,
+                  description: t.description,
+                })),
+              ]}
+              value={toolFilter}
+              onChange={setToolFilter}
+              info={{ title: 'Used by', body: TOOLS_HELP }}
+            />
+            <FilterRow
+              label="Species"
+              options={[
+                { key: 'all', label: `All (${docs.data.length})` },
+                ...KNOWLEDGE_SPECIES.filter((s) => scopeCounts.species.has(s.key)).map((s) => ({
+                  key: s.key,
+                  label: `${s.label} (${scopeCounts.species.get(s.key)})`,
+                  description: s.description,
+                })),
+              ]}
+              value={speciesFilter}
+              onChange={setSpeciesFilter}
+              info={{ title: 'Species', body: SPECIES_HELP }}
             />
             {typeKeys.length > 1 && (
               <FilterRow
@@ -548,7 +741,7 @@ export function KnowledgeScreen({
               borderBottom: '0.5px solid rgba(60,20,15,0.06)',
             }}
           >
-            {['Title', 'Type', 'Focus area', 'Source', 'Updated', ''].map((h, i) => (
+            {['Title', 'Type', 'Focus area', 'Used by', 'Species', 'Source', 'Updated', ''].map((h, i) => (
               <div
                 key={h || `col-${i}`}
                 style={{
@@ -791,12 +984,14 @@ function FilterRow({
 
 function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => void }) {
   const focus = resolveDocFocus(doc.metadata);
+  const scope = resolveDocScope(doc.metadata);
   const citation = docCitation(doc.metadata);
   const searchable = (doc.chunk_count ?? 0) > 0;
   return (
     <div
       role="button"
       tabIndex={0}
+      data-testid={`doc-row-${doc.slug}`}
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -853,6 +1048,17 @@ function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => vo
           '—'
         )}
       </div>
+      {/* Scope, the two hard walls: who may read it, and for which animals. */}
+      <div>
+        <StatusPill tone={scope.tools.includes('fecal-scan') ? 'info' : 'neutral'} dot={false}>
+          {scopeToolsSummary(scope.tools)}
+        </StatusPill>
+      </div>
+      <div>
+        <StatusPill tone="neutral" dot={false}>
+          {scopeSpeciesSummary(scope.species)}
+        </StatusPill>
+      </div>
       <SourcePill source={doc.source} />
       <div style={{ fontSize: 11, color: COLOR.inkMute }}>
         {fmtAgo(new Date(doc.updated_at).getTime())}
@@ -895,6 +1101,8 @@ function DocumentModal({
   const [category, setCategory] = useState('custom');
   const [focus, setFocus] = useState<string | null>(null);
   const [citation, setCitation] = useState('');
+  const [tools, setTools] = useState<string[]>([]);
+  const [species, setSpecies] = useState<string[]>([]);
   const [busy, setBusy] = useState<null | 'save' | 'index' | 'delete'>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -908,6 +1116,9 @@ function DocumentModal({
     setCategory(doc.category);
     setFocus(resolveDocFocus(doc.metadata));
     setCitation(docCitation(doc.metadata) ?? '');
+    const scope = resolveDocScope(doc.metadata);
+    setTools(scope.tools);
+    setSpecies(scope.species);
     setError(null);
     setNote(null);
   }, [doc?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -920,11 +1131,27 @@ function DocumentModal({
   const truncated = doc.content.length > PREVIEW_CHARS;
   const links = scenariosUsingDoc(doc, overrides, scenarioTitle);
 
+  const savedScope = resolveDocScope(doc.metadata);
   const dirty =
     title.trim() !== doc.title ||
     category !== doc.category ||
     focus !== resolveDocFocus(doc.metadata) ||
-    citation.trim() !== (docCitation(doc.metadata) ?? '');
+    citation.trim() !== (docCitation(doc.metadata) ?? '') ||
+    !sameKeys(tools, savedScope.tools) ||
+    !sameKeys(species, savedScope.species);
+
+  /*
+    An empty scope is not a narrower document, it is an invisible one: nothing
+    would ever retrieve it again and nothing on this screen would look wrong.
+    So the save is blocked rather than the last chip being un-clickable — the
+    admin sees what they did and reads why it can't be saved.
+  */
+  const scopeProblem =
+    tools.length === 0
+      ? 'Pick at least one tool — a document no tool is allowed to read can never be retrieved again.'
+      : species.length === 0
+        ? 'Pick at least one species — a document with no species can never be retrieved again.'
+        : null;
 
   async function save() {
     if (!doc) return;
@@ -937,6 +1164,10 @@ function DocumentModal({
         ...(builtIn ? {} : { title: title.trim(), category }),
         focus,
         citation: citation.trim() || null,
+        // Scope is editable on built-ins too: where a document is allowed to
+        // be read is the admin's decision, not the seed's.
+        tools,
+        species,
       });
       setNote(
         res.chunks_updated > 0
@@ -1133,6 +1364,35 @@ function DocumentModal({
             )}
           </div>
 
+          {/* Scope — the hard walls, editable on built-ins too */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <ScopeHeading label="Used by" help={TOOLS_HELP} />
+              <ScopeChips
+                testId="doc-scope-tools"
+                options={KNOWLEDGE_TOOLS}
+                selected={tools}
+                vocabulary={KNOWLEDGE_TOOL_KEYS}
+                onChange={setTools}
+              />
+            </div>
+            <div>
+              <ScopeHeading label="Species" help={SPECIES_HELP} />
+              <ScopeChips
+                testId="doc-scope-species"
+                options={KNOWLEDGE_SPECIES}
+                selected={species}
+                vocabulary={KNOWLEDGE_SPECIES_KEYS}
+                onChange={setSpecies}
+              />
+            </div>
+          </div>
+          {scopeProblem && (
+            <div style={{ fontSize: 11.5, color: COLOR.danger, fontWeight: 700, marginTop: -8 }}>
+              {scopeProblem}
+            </div>
+          )}
+
           <Field label="Citation" help="Shown to the AI alongside any passage it quotes from this document.">
             <input
               value={citation}
@@ -1230,8 +1490,11 @@ function DocumentModal({
             {canWrite && (
               <button
                 onClick={() => void save()}
-                disabled={busy !== null || !dirty}
-                style={{ ...btnPrimary, opacity: busy !== null || !dirty ? 0.5 : 1 }}
+                disabled={busy !== null || !dirty || scopeProblem !== null}
+                style={{
+                  ...btnPrimary,
+                  opacity: busy !== null || !dirty || scopeProblem !== null ? 0.5 : 1,
+                }}
               >
                 {busy === 'save' ? 'Saving…' : 'Save changes'}
               </button>
@@ -1298,6 +1561,10 @@ function AddDocumentModal({
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<'clinical' | 'custom'>('clinical');
   const [focus, setFocus] = useState<string | null>(null);
+  // Default scope: the four training tools, every species. Fecal Scan is
+  // deliberately off — it only ever gets what someone filed there on purpose.
+  const [tools, setTools] = useState<string[]>([...DEFAULT_KNOWLEDGE_TOOLS]);
+  const [species, setSpecies] = useState<string[]>([...ALL_KNOWLEDGE_SPECIES]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1308,6 +1575,8 @@ function AddDocumentModal({
     setTitle('');
     setCategory('clinical');
     setFocus(null);
+    setTools([...DEFAULT_KNOWLEDGE_TOOLS]);
+    setSpecies([...ALL_KNOWLEDGE_SPECIES]);
     setError(null);
   }
 
@@ -1335,6 +1604,8 @@ function AddDocumentModal({
 
   const canSubmit =
     !busy &&
+    tools.length > 0 &&
+    species.length > 0 &&
     (mode === 'pdf' ? file !== null : text.trim().length > 0 && title.trim().length > 0);
 
   async function submit() {
@@ -1342,7 +1613,7 @@ function AddDocumentModal({
     setBusy(true);
     setError(null);
     try {
-      const tags = focus ? { focus } : undefined;
+      const tags = { ...(focus ? { focus } : {}), tools, species };
       let res: IngestResult;
       if (mode === 'pdf') {
         if (!file) throw new Error('Choose a PDF file first.');
@@ -1488,6 +1759,32 @@ function AddDocumentModal({
                 {FOCUS_AREAS.find((f) => f.key === focus)?.description}
               </div>
             )}
+          </div>
+
+          <div>
+            <ScopeHeading label="Used by" help={TOOLS_HELP} />
+            <ScopeChips
+              testId="add-scope-tools"
+              options={KNOWLEDGE_TOOLS}
+              selected={tools}
+              vocabulary={KNOWLEDGE_TOOL_KEYS}
+              onChange={setTools}
+            />
+            <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 6 }}>
+              Tick this to supplement the fecal charts. Choose the species it
+              applies to.
+            </div>
+          </div>
+
+          <div>
+            <ScopeHeading label="Species" help={SPECIES_HELP} />
+            <ScopeChips
+              testId="add-scope-species"
+              options={KNOWLEDGE_SPECIES}
+              selected={species}
+              vocabulary={KNOWLEDGE_SPECIES_KEYS}
+              onChange={setSpecies}
+            />
           </div>
 
           <div

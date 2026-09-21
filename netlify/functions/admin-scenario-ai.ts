@@ -67,7 +67,7 @@ async function fetchGrounding(draft: ScenarioDraftForAi, sb: SupabaseClient): Pr
       .filter(Boolean)
       .join(' ');
     const results = await Promise.race<RetrievedChunk[]>([
-      retrieveChunks(query, { k: 3, sb }),
+      retrieveChunks(query, { k: 3, sb, filters: { tool: 'scenario-builder' } }),
       new Promise<RetrievedChunk[]>((resolve) => {
         timer = setTimeout(() => resolve([]), GROUNDING_TIMEOUT_MS);
       }),

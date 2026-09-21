@@ -75,6 +75,13 @@ export interface FecalScanRetrievedChunk {
   excerpt: string;
   /** Chart scores mentioned in the passage. */
   scores: FecalScore[];
+  /**
+   * Title of the knowledge document this passage came from, so an admin's own
+   * supplement is visibly distinguished from the Royal Canin chart. Null when
+   * the RPC did not return provenance (pre-scopes deployment) or on the
+   * bundled fallback path.
+   */
+  docTitle?: string | null;
 }
 
 export interface FecalScanRetrieval {
@@ -86,7 +93,18 @@ export interface FecalScanRetrieval {
   source: 'rag' | 'bundled';
   /** The observation text that was embedded and searched. */
   query: string;
-  /** The knowledge documents the search was restricted to. */
+  /**
+   * The knowledge SCOPE the search ran in — a `tools`/`species` containment
+   * filter, never relaxed (see `netlify/functions/_shared/retrieval.ts`). This
+   * is what makes "a cat document cannot reach a dog scan" inspectable from
+   * the UI rather than a claim.
+   */
+  scope: { tool: string; species: string };
+  /**
+   * The knowledge documents the passages actually came from (distinct, in hit
+   * order) — so an admin supplement retrieved alongside the chart is visible.
+   * The bundled fallback reports the chart's own slug.
+   */
   docSlugs: string[];
   chunks: FecalScanRetrievedChunk[];
   /**

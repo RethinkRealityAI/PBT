@@ -109,6 +109,8 @@ export const fecalScan: Record<keyof typeof enFecalScan, string> = {
   'fecalScan.grounding.collapse': 'Replier le passage',
   'fecalScan.grounding.queryLabel': 'Requête vectorisée',
   'fecalScan.grounding.docs': 'Documents interrogés',
+  /** {tool} et {species} proviennent du vocabulaire partagé des portées. */
+  'fecalScan.grounding.scope': 'Portée · {tool} · {species}',
   'fecalScan.grounding.empty': "Aucun passage n'a été retourné pour cette analyse.",
   'fecalScan.grounding.idle':
     "Analysez une photo et les passages de la charte qui fondent la cote s'afficheront ici.",

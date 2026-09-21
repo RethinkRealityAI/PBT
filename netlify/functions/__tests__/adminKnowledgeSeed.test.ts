@@ -34,6 +34,10 @@ import {
   fecalKnowledgeSlug,
 } from '../../../src/data/knowledge/fecalCharts';
 import { chunkMarkdown } from '../../../src/services/ragShared';
+import {
+  ALL_KNOWLEDGE_SPECIES,
+  DEFAULT_KNOWLEDGE_TOOLS,
+} from '../../../src/shared/knowledge/knowledgeScopes';
 import type { SbCall } from './fakeSupabase';
 
 let sb: FakeSupabase;
@@ -109,7 +113,14 @@ describe('admin-knowledge seed — fecal charts', () => {
       });
       expect(doc!.metadata).toMatchObject({
         citation: fecalChartCitation(species),
-        tags: { focus: 'gi', topic: 'fecal-scoring', species },
+        // Scoped to the Fecal Scan ONLY — never the training-session tools,
+        // or a stool chart becomes quotable in a GI roleplay.
+        tags: {
+          focus: 'gi',
+          topic: 'fecal-scoring',
+          tools: ['fecal-scan'],
+          species: [species],
+        },
       });
       expect(String(doc!.content)).toContain('Score 1 ');
     }
@@ -132,7 +143,8 @@ describe('admin-knowledge seed — fecal charts', () => {
           category: 'clinical',
           focus: 'gi',
           topic: 'fecal-scoring',
-          species,
+          tools: ['fecal-scan'],
+          species: [species],
         });
         expect(typeof row.embedding).toBe('string');
       }
@@ -161,13 +173,18 @@ describe('admin-knowledge seed — fecal charts', () => {
     }
   });
 
-  it('leaves the other seed documents uncatalogued, as before', async () => {
+  it('leaves the other seed documents un-FOCUSED, but scoped to the default tools', async () => {
     await seed();
     const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
     const act = docs.find((d) => String(d.slug).startsWith('act:'));
     expect(act).toBeTruthy();
-    expect(act!.metadata).not.toHaveProperty('tags');
     expect(act!.metadata).not.toHaveProperty('citation');
+    // Clinical focus is still the admin's job; the SCOPE is not optional —
+    // an untagged chunk is invisible to scoped retrieval.
+    expect(act!.metadata).toMatchObject({
+      tags: { tools: DEFAULT_KNOWLEDGE_TOOLS, species: ALL_KNOWLEDGE_SPECIES },
+    });
+    expect((act!.metadata as Record<string, unknown>).tags).not.toHaveProperty('focus');
 
     const chunks = written(sb.callsFor('knowledge_chunks'), 'insert');
     const actChunks = chunks.filter((c) => String(c.doc_id).startsWith('id:act:'));
@@ -175,7 +192,70 @@ describe('admin-knowledge seed — fecal charts', () => {
     for (const row of actChunks) {
       expect(row.citation).toBeNull();
       expect(row.tags).not.toHaveProperty('focus');
+      expect(row.tags).toMatchObject({
+        tools: DEFAULT_KNOWLEDGE_TOOLS,
+        species: ALL_KNOWLEDGE_SPECIES,
+      });
     }
+  });
+
+  it('scopes EVERY non-fecal seed document and chunk to the training tools', async () => {
+    await seed();
+    const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
+    const chunks = written(sb.callsFor('knowledge_chunks'), 'insert');
+
+    for (const doc of docs.filter((d) => !String(d.slug).startsWith('fecal:'))) {
+      expect((doc.metadata as Record<string, unknown>).tags, String(doc.slug)).toMatchObject({
+        tools: DEFAULT_KNOWLEDGE_TOOLS,
+        species: ALL_KNOWLEDGE_SPECIES,
+      });
+    }
+    const fecalChunks = chunks.filter((c) => String(c.doc_id).startsWith('id:fecal:'));
+    for (const row of chunks.filter((c) => !String(c.doc_id).startsWith('id:fecal:'))) {
+      expect(row.tags).toMatchObject({ tools: DEFAULT_KNOWLEDGE_TOOLS });
+    }
+    // …and the fecal ones are NOT in that set.
+    for (const row of fecalChunks) {
+      expect((row.tags as Record<string, unknown>).tools).toEqual(['fecal-scan']);
+    }
+  });
+
+  it('carries an admin-edited scope across a re-seed, like focus and citation', async () => {
+    sb.setHandler('knowledge_documents', (call) => {
+      const eqSlug = call.ops.find((o) => o.op === 'eq' && o.args[0] === 'slug');
+      if (eqSlug) return { data: { id: `id:${String(eqSlug.args[1])}` }, error: null };
+      if (call.ops.some((o) => o.op === 'select')) {
+        return {
+          data: [
+            {
+              slug: 'act:acknowledge',
+              deleted_at: null,
+              metadata: {
+                citation: 'Clinic handbook',
+                tags: { focus: 'communication', tools: ['coach'], species: ['cat'] },
+              },
+            },
+          ],
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    await seed();
+    const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
+    const edited = docs.find((d) => d.slug === 'act:acknowledge');
+    expect(edited!.metadata).toMatchObject({
+      citation: 'Clinic handbook',
+      tags: { focus: 'communication', tools: ['coach'], species: ['cat'] },
+    });
+
+    // Untouched siblings still get the defaults.
+    const other = docs.find((d) => d.slug !== 'act:acknowledge' && String(d.slug).startsWith('act:'));
+    expect((other!.metadata as Record<string, unknown>).tags).toMatchObject({
+      tools: DEFAULT_KNOWLEDGE_TOOLS,
+      species: ALL_KNOWLEDGE_SPECIES,
+    });
   });
 
   it('still chunks every non-fecal document with chunkMarkdown', async () => {

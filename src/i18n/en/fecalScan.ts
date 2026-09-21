@@ -107,6 +107,12 @@ export const fecalScan = {
   'fecalScan.grounding.collapse': 'Collapse the passage',
   'fecalScan.grounding.queryLabel': 'Embedded query',
   'fecalScan.grounding.docs': 'Documents searched',
+  /**
+   * The retrieval scope that was actually applied — the hard wall the search
+   * ran inside. {tool} and {species} come from the shared knowledge-scope
+   * vocabulary, so they read as "Fecal Scan" / "Adult dog", never as keys.
+   */
+  'fecalScan.grounding.scope': 'Scope · {tool} · {species}',
   'fecalScan.grounding.empty': 'No passages were returned for this scan.',
   'fecalScan.grounding.idle':
     'Scan a photo and the chart passages the score was grounded in appear here.',

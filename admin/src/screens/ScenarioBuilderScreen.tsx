@@ -35,7 +35,7 @@ import {
   useUserScenarios,
 } from '../data/queries';
 import type { ScenarioOverrideRow, UserScenario } from '../data/types';
-import { resolveDocFocus } from '../data/knowledgeActions';
+import { resolveDocFocus, resolveDocScope } from '../data/knowledgeActions';
 import {
   LIBRARY_MANIFEST,
   buildInitialDraft,
@@ -2401,6 +2401,15 @@ function KnowledgeSection({
               {docs.data.map((d) => {
                 const on = selected.includes(d.slug);
                 const searchable = d.chunk_count > 0;
+                /*
+                  Attaching a document the roleplay isn't allowed to read would
+                  be accepted here and then silently ignored at retrieval time
+                  (tool scope is a hard filter). Show it greyed with the reason
+                  rather than hiding it: an admin looking for a document they
+                  just uploaded needs to find out WHY it isn't offered.
+                */
+                const usedByRoleplay = resolveDocScope(d.metadata).tools.includes('roleplay');
+                const blocked = !on && (atCap || !usedByRoleplay);
                 const hint = [
                   labelOf(KNOWLEDGE_CATEGORY_LABELS, d.category),
                   focusHintOf(d.metadata),
@@ -2418,15 +2427,15 @@ function KnowledgeSection({
                       borderRadius: 8,
                       // The cap is the server's, so the checkbox stops rather
                       // than letting the admin build a row that gets rejected.
-                      cursor: !on && atCap ? 'not-allowed' : 'pointer',
-                      opacity: !on && atCap ? 0.5 : 1,
+                      cursor: blocked ? 'not-allowed' : 'pointer',
+                      opacity: blocked ? 0.5 : 1,
                       background: on ? COLOR.brandSoft : 'transparent',
                     }}
                   >
                     <input
                       type="checkbox"
                       checked={on}
-                      disabled={!on && atCap}
+                      disabled={blocked}
                       onChange={() => toggleDoc(d.slug)}
                       style={{ marginTop: 3 }}
                     />
@@ -2444,6 +2453,9 @@ function KnowledgeSection({
                         {d.title}
                         {!searchable && (
                           <StatusPill tone="warn">Not searchable yet</StatusPill>
+                        )}
+                        {!usedByRoleplay && (
+                          <StatusPill tone="neutral">Not used by roleplay</StatusPill>
                         )}
                       </span>
                       {hint && (
@@ -2469,6 +2481,20 @@ function KnowledgeSection({
                         >
                           Nothing to retrieve until it is indexed — Library → Knowledge →
                           Rebuild search index.
+                        </span>
+                      )}
+                      {!usedByRoleplay && (
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: 11,
+                            color: COLOR.inkMute,
+                            marginTop: 1,
+                          }}
+                        >
+                          The roleplay customer isn’t allowed to read this document, so
+                          attaching it would do nothing. Add <strong>Roleplay customer</strong>{' '}
+                          to its “Used by” list in Library → Knowledge first.
                         </span>
                       )}
                     </span>

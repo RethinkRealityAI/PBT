@@ -53,6 +53,7 @@ const RETRIEVAL: FecalScanRetrieval = {
   source: 'rag',
   query: 'moist stool no cracks distinct shape',
   docSlugs: ['fecal:dog'],
+  scope: { tool: 'fecal-scan', species: 'dog' },
   referenceScores: [3, 3.5, 4],
     exactReference: null,
     mostSimilarReference: null,
@@ -60,6 +61,7 @@ const RETRIEVAL: FecalScanRetrieval = {
     {
       citation: CITATION,
       similarity: 0.84,
+      docTitle: 'Fecal scoring — adult dog',
       excerpt:
         'Score 3.5 (Fecal Scoring System for Dogs): MOIST STOOL WITH NO CRACKS. The stool has a distinct shape.',
       scores: [3.5],
@@ -171,6 +173,19 @@ describe('FecalScanScreen', () => {
     expect(screen.getByText(RETRIEVAL.query)).toBeInTheDocument();
     // The visual half of the grounding: how many chart photos were compared.
     expect(screen.getByText('Compared against 3 chart photos')).toBeInTheDocument();
+  });
+
+  it('names the scope the search ran in, and the document each passage came from', () => {
+    scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
+    renderScreen();
+
+    // The scope is the hard wall: it says a cat passage could not have been
+    // used, which the raw slug list never did.
+    expect(screen.getByText('Scope · Fecal Scan · Adult dog')).toBeInTheDocument();
+    // Provenance per passage — a clinic supplement must not read as the chart.
+    expect(screen.getByText('Fecal scoring — adult dog')).toBeInTheDocument();
+    // The slugs survive as a mono tail for anyone who needs the identifier.
+    expect(screen.getByText('fecal:dog')).toBeInTheDocument();
   });
 
   it('hides the reference-photo count when the scorer compared none', () => {

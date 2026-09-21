@@ -334,6 +334,15 @@ export default async (req: Request): Promise<Response> => {
   const preview = body.preview === true;
   const allowTelemetry = body.allowTelemetry !== false;
   const docSlug = fecalKnowledgeSlug(species);
+  /**
+   * The knowledge scope this scan retrieves in. HARD on both axes: only
+   * documents an admin filed for the Fecal Scan AND for this species can be
+   * returned, on every fallback path inside `retrieveChunks`. It replaces the
+   * old hard-wired `docSlugs: ['fecal:<species>']`, so an admin supplement
+   * ("photograph the sample in daylight") is retrievable beside the chart
+   * while a cat passage still cannot reach a dog scan.
+   */
+  const scope = { tool: 'fecal-scan', species } as const;
 
   let ai: GoogleGenAI;
   try {
@@ -416,6 +425,7 @@ export default async (req: Request): Promise<Response> => {
         retrieval: {
           source: 'bundled',
           query: '',
+          scope,
           docSlugs: [docSlug],
           chunks: [],
           referenceScores: [],
@@ -432,7 +442,7 @@ export default async (req: Request): Promise<Response> => {
     try {
       hits = await retrieveChunks(query, {
         k: RETRIEVAL_K,
-        filters: { docSlugs: [docSlug] },
+        filters: { ...scope },
         sb: caller.sb,
       });
     } catch (err) {
@@ -446,6 +456,10 @@ export default async (req: Request): Promise<Response> => {
     let source: FecalScanRetrieval['source'];
     let passages: string[];
     let chunks: FecalScanRetrievedChunk[];
+    // The documents the answer is actually standing on. Derived from the hits
+    // rather than assumed, because the scope can now return an admin
+    // supplement as well as (or instead of) the chart.
+    let docSlugs: string[];
     if (hits.length > 0) {
       source = 'rag';
       passages = hits.map((h) => h.content);
@@ -454,7 +468,12 @@ export default async (req: Request): Promise<Response> => {
         similarity: h.similarity,
         excerpt: h.content,
         scores: scoresMentionedIn(h.content, species),
+        docTitle: h.docTitle ?? null,
       }));
+      docSlugs = [...new Set(hits.map((h) => h.docSlug).filter((s): s is string => !!s))];
+      // A pre-scopes RPC returns no provenance; naming the chart is still
+      // truer than naming nothing.
+      if (docSlugs.length === 0) docSlugs = [docSlug];
     } else {
       source = 'bundled';
       const markdown = buildFecalChartMarkdown(species);
@@ -465,8 +484,10 @@ export default async (req: Request): Promise<Response> => {
           similarity: null,
           excerpt: markdown,
           scores: scoresMentionedIn(markdown, species),
+          docTitle: null,
         },
       ];
+      docSlugs = [docSlug];
     }
     const mentioned = new Set<FecalScore>(passages.flatMap((p) => scoresMentionedIn(p, species)));
     const allowedScores: FecalScore[] = mentioned.size
@@ -593,7 +614,8 @@ export default async (req: Request): Promise<Response> => {
       retrieval: {
         source,
         query,
-        docSlugs: [docSlug],
+        scope,
+        docSlugs,
         chunks,
         referenceScores: references.map((r) => r.score),
         exactReference,

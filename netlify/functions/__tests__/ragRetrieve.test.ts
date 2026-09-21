@@ -71,6 +71,24 @@ describe('rag-retrieve', () => {
     );
   });
 
+  it('passes a sanitized knowledge scope through, dropping unknown keys', async () => {
+    sb.rpc.mockResolvedValueOnce({ data: [ROW], error: null });
+    await ragRetrieve(
+      post({
+        query: 'weight denial',
+        filters: { tool: 'roleplay', species: 'dog', focus: 'weight' },
+      }),
+    );
+    expect(sb.rpc.mock.calls[0][1]).toMatchObject({
+      filter: { tools: ['roleplay'], species: ['dog'], focus: 'weight' },
+    });
+
+    __clearRetrievalCache();
+    sb.rpc.mockResolvedValueOnce({ data: [ROW], error: null });
+    await ragRetrieve(post({ query: 'weight denial', filters: { tool: 'not-a-tool' } }));
+    expect(sb.rpc.mock.calls[1][1]).toMatchObject({ filter: {} });
+  });
+
   it('retries unfiltered when a focus filter matches nothing', async () => {
     sb.rpc.mockResolvedValueOnce({ data: [], error: null }).mockResolvedValueOnce({ data: [ROW], error: null });
     const results = await retrieveChunks('q', { k: 2, filters: { focus: 'weight' } });

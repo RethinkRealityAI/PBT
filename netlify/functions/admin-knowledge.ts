@@ -7,12 +7,14 @@
  *        (driver personas, pushback taxonomy, ACT guide, clinical reference)
  *        as 'code-seed' documents, upserted by slug — re-running refreshes
  *        them after a code change without duplicating.
- *   POST { op: 'update', slug, title?, category?, focus?, citation? }
+ *   POST { op: 'update', slug, title?, category?, focus?, citation?,
+ *          tools?: string[], species?: string[] }
  *        → edit a stored document's cataloguing WITHOUT re-embedding it.
  *          `title`/`category` are only editable on source='admin' documents
- *          (code-seeded ones are rebuilt by re-seeding); `focus`/`citation`
- *          are editable on every document — tagging built-in knowledge is the
- *          whole point of the focus vocabulary.
+ *          (code-seeded ones are rebuilt by re-seeding); `focus`, `citation`
+ *          and the knowledge scope (`tools` / `species`, see
+ *          `src/shared/knowledge/knowledgeScopes.ts`) are editable on every
+ *          document — filing built-in knowledge is the whole point.
  *   POST { op: 'delete', slug }    → SOFT delete (see below)
  *   POST { op: 'restore', slug }   → undo a soft delete
  *
@@ -42,6 +44,14 @@ import {
   type AdminCtx,
 } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
+import {
+  ALL_KNOWLEDGE_SPECIES,
+  DEFAULT_KNOWLEDGE_TOOLS,
+  isKnowledgeSpeciesKey,
+  isKnowledgeToolKey,
+  normalizeKnowledgeSpecies,
+  normalizeKnowledgeTools,
+} from '../../src/shared/knowledge/knowledgeScopes';
 import { embedTexts } from './_shared/gemini';
 import { chunkMarkdown } from '../../src/services/ragShared';
 import { estimateTokens } from '../../src/services/aiTelemetry';
@@ -83,6 +93,33 @@ function readFocus(tags: unknown): string | null {
   return bag.topic === 'communication' ? 'communication' : null;
 }
 
+/**
+ * A scope list the admin CHOSE, or null when the stored bag never had one.
+ *
+ * The distinction matters on re-seed: "the admin filed this for the coach
+ * only" must survive, while "this document predates scopes" must pick up the
+ * defaults rather than be frozen at whatever the code once wrote.
+ */
+function readScopeList(
+  tags: unknown,
+  key: 'tools' | 'species',
+  normalize: (v: unknown) => string[],
+): string[] | null {
+  if (!tags || typeof tags !== 'object') return null;
+  const raw = (tags as Bag)[key];
+  if (raw === undefined || raw === null) return null;
+  if (Array.isArray(raw) && raw.length === 0) return null;
+  return normalize(raw);
+}
+
+/** Write the chosen scope lists onto a tag bag. `null` = leave as stored. */
+function applyScope(tags: Bag, tools: string[] | null, species: string[] | null): Bag {
+  const next: Bag = { ...tags };
+  if (tools) next.tools = tools;
+  if (species) next.species = species;
+  return next;
+}
+
 /** Set (or clear) the focus key on a tag bag, dropping the legacy `topic` key. */
 function applyFocus(tags: unknown, focus: string | null): Bag {
   const next: Bag = tags && typeof tags === 'object' ? { ...(tags as Bag) } : {};
@@ -100,9 +137,10 @@ interface SeedDoc {
   metadata: Record<string, unknown>;
   /**
    * Default catalogue tags for this document (and its chunks). Most seed docs
-   * ship untagged and get filed by an admin; the fecal charts arrive already
-   * filed because retrieval targets them by slug AND focus.
-   * An admin's own focus edit still wins — see `keptFocus` in `seed()`.
+   * ship without a clinical focus and get filed by an admin; the fecal charts
+   * arrive already filed, and scoped to the Fecal Scan alone.
+   * An admin's own focus / scope edit still wins — see `kept*` in `seed()`.
+   * `tools` / `species` default to the training-session scope when omitted.
    */
   tags?: Record<string, unknown>;
   /** Default citation. An admin's own citation edit wins (`keptCitation`). */
@@ -199,7 +237,9 @@ function buildSeedDocs(): SeedDoc[] {
       category: 'clinical',
       content: buildFecalChartMarkdown(species),
       metadata: {},
-      tags: { focus: 'gi', topic: 'fecal-scoring', species },
+      // `tools: ['fecal-scan']` is the whole point: these charts must be
+      // unreachable from a roleplay / scoring / coach prompt.
+      tags: { focus: 'gi', topic: 'fecal-scoring', tools: ['fecal-scan'], species: [species] },
       citation: fecalChartCitation(species),
       // One embedded chunk per score — see SeedDoc.chunks.
       chunks: fecalChartChunks(species),
@@ -213,10 +253,12 @@ async function seed(ctx: AdminCtx): Promise<Response> {
   const docs = buildSeedDocs();
 
   // Re-seeding rebuilds these documents from code, but an admin's cataloguing
-  // (focus area, citation) is NOT in the code — carry it across so "Load
-  // built-in knowledge" doesn't silently untag everything they filed.
+  // (focus area, citation, knowledge scope) is NOT in the code — carry it
+  // across so "Load built-in knowledge" doesn't silently re-file everything.
   const keptFocus = new Map<string, string>();
   const keptCitation = new Map<string, string>();
+  const keptTools = new Map<string, string[]>();
+  const keptSpecies = new Map<string, string[]>();
   // Soft-deleted built-ins stay deleted. Re-seeding refreshes the CONTENT of a
   // code-seed doc; it is not an undelete, and silently resurrecting a document
   // the admin removed would put it back into retrieval behind their back.
@@ -232,16 +274,24 @@ async function seed(ctx: AdminCtx): Promise<Response> {
     if (typeof meta.citation === 'string' && meta.citation) {
       keptCitation.set(row.slug, meta.citation);
     }
+    const tools = readScopeList(meta.tags, 'tools', (v) => normalizeKnowledgeTools(v));
+    if (tools) keptTools.set(row.slug, tools);
+    const species = readScopeList(meta.tags, 'species', (v) => normalizeKnowledgeSpecies(v));
+    if (species) keptSpecies.set(row.slug, species);
     if (row.deleted_at) keptDeleted.set(row.slug, String(row.deleted_at));
   }
 
   // Effective cataloguing for a doc: the admin's edit first, then whatever
   // the seed itself declares (the fecal charts ship pre-filed), then nothing.
-  const tagsFor = (d: SeedDoc): Bag | null => {
+  // Unlike focus, the SCOPE is never absent: an untagged chunk is invisible to
+  // scoped retrieval, so every seeded document is filed for the four
+  // training-session tools and every species unless it says otherwise.
+  const tagsFor = (d: SeedDoc): Bag => {
     const focus = keptFocus.get(d.slug) ?? (typeof d.tags?.focus === 'string' ? d.tags.focus : '');
-    if (!d.tags && !focus) return null;
     const bag: Bag = { ...(d.tags ?? {}) };
     if (focus) bag.focus = focus;
+    bag.tools = keptTools.get(d.slug) ?? normalizeKnowledgeTools(d.tags?.tools);
+    bag.species = keptSpecies.get(d.slug) ?? normalizeKnowledgeSpecies(d.tags?.species);
     return bag;
   };
   const citationFor = (d: SeedDoc): string | null =>
@@ -258,7 +308,7 @@ async function seed(ctx: AdminCtx): Promise<Response> {
         content: d.content,
         metadata: {
           ...d.metadata,
-          ...(tags ? { tags } : {}),
+          tags,
           ...(citation ? { citation } : {}),
         },
         source: 'code-seed',
@@ -300,7 +350,7 @@ async function seed(ctx: AdminCtx): Promise<Response> {
           tags: {
             category: d.category,
             ...d.metadata,
-            ...(tagsFor(d) ?? {}),
+            ...tagsFor(d),
           },
           citation: citationFor(d),
           embedding: `[${embeddings[i].join(',')}]`,
@@ -441,12 +491,14 @@ async function restore(ctx: AdminCtx, slug: string): Promise<Response> {
 }
 
 /**
- * Edit a document's cataloguing (title / category / focus area / citation).
+ * Edit a document's cataloguing (title / category / focus / citation / scope).
  *
  * Deliberately does NOT touch `content` or embeddings — this is the cheap
  * "file it correctly" path, distinct from re-ingesting. It DOES rewrite the
- * document's chunk tags, because retrieval filters on chunk tags: a focus
- * change that stopped at the document row would be invisible at query time.
+ * document's chunk tags, because retrieval filters on chunk tags: a focus or
+ * scope change that stopped at the document row would be invisible at query
+ * time, which is the most expensive kind of wrong here (an admin would see
+ * "Fecal Scan only" in the UI while roleplay kept quoting the document).
  */
 async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Response> {
   const slug = String(body.slug ?? '').trim();
@@ -457,6 +509,38 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
   if (hasFocus && focusInput !== null && !isFocusAreaKey(focusInput)) {
     return errorResponse(400, `Unknown focus area: ${focusInput}`);
   }
+
+  // Scope. Unlike focus, "none" is not a meaningful answer: a document with an
+  // empty tools list can never be retrieved by anything, which is a delete
+  // wearing a disguise. Absent → leave whatever is stored untouched.
+  const scopeOrError = (
+    key: 'tools' | 'species',
+    label: string,
+    isKey: (v: unknown) => boolean,
+    normalize: (v: unknown, fallback?: readonly string[]) => string[],
+  ): string[] | null | Response => {
+    if (!Object.prototype.hasOwnProperty.call(body, key)) return null;
+    const raw = body[key];
+    if (!Array.isArray(raw)) return errorResponse(400, `${label} must be a list`);
+    const unknown = raw.find((v) => !isKey(v));
+    if (unknown !== undefined) {
+      return errorResponse(400, `Unknown ${label.toLowerCase()}: ${String(unknown)}`);
+    }
+    if (raw.length === 0) {
+      return errorResponse(400, `${label}: choose at least one, or delete the document instead.`);
+    }
+    return normalize(raw);
+  };
+
+  const nextTools = scopeOrError('tools', 'Tool', isKnowledgeToolKey, normalizeKnowledgeTools);
+  if (nextTools instanceof Response) return nextTools;
+  const nextSpecies = scopeOrError(
+    'species',
+    'Species',
+    isKnowledgeSpeciesKey,
+    normalizeKnowledgeSpecies,
+  );
+  if (nextSpecies instanceof Response) return nextSpecies;
 
   const { data: doc, error: readErr } = await ctx.sb
     .from('knowledge_documents')
@@ -489,7 +573,7 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
 
   const meta: Bag = doc.metadata && typeof doc.metadata === 'object' ? { ...(doc.metadata as Bag) } : {};
   const nextFocus = hasFocus ? focusInput : readFocus(meta.tags);
-  meta.tags = applyFocus(meta.tags, nextFocus);
+  meta.tags = applyScope(applyFocus(meta.tags, nextFocus), nextTools, nextSpecies);
 
   const hasCitation = Object.prototype.hasOwnProperty.call(body, 'citation');
   let citation: string | null = typeof meta.citation === 'string' ? meta.citation : null;
@@ -532,7 +616,7 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
   for (let i = 0; i < rows.length; i += BATCH) {
     const results = await Promise.all(
       rows.slice(i, i + BATCH).map(async (row) => {
-        const tags = applyFocus(row.tags, nextFocus);
+        const tags = applyScope(applyFocus(row.tags, nextFocus), nextTools, nextSpecies);
         tags.category = nextCategory;
         const rowPatch: Record<string, unknown> = { tags };
         if (hasCitation) rowPatch.citation = citation;
@@ -551,6 +635,9 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
     slug,
     focus: nextFocus,
     citation,
+    tools: nextTools ?? readScopeList(meta.tags, 'tools', (v) => normalizeKnowledgeTools(v)),
+    species:
+      nextSpecies ?? readScopeList(meta.tags, 'species', (v) => normalizeKnowledgeSpecies(v)),
     chunks_updated: chunksUpdated,
     chunk_failures: chunkFailures,
   });

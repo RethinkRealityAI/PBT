@@ -4,6 +4,10 @@ import { Glass } from '../../design-system/Glass';
 import { COLORS, RADII } from '../../design-system/tokens';
 import { useTheme } from '../../app/providers/ThemeProvider';
 import { useT } from '../../i18n/useT';
+import {
+  knowledgeSpeciesLabel,
+  knowledgeToolLabel,
+} from '../../shared/knowledge/knowledgeScopes';
 import type { FecalScanRetrieval } from '../../shared/ai/fecalScan';
 import { Eyebrow, MonoPill } from './fecalUi';
 
@@ -128,22 +132,42 @@ export function GroundingPanel({ retrieval }: GroundingPanelProps) {
             >
               {retrieval.query}
             </div>
+            {/*
+              The scope, not the slug list, is what actually decided what could
+              come back: the search ran inside `tool × species` and that wall is
+              never relaxed. Saying "Fecal Scan · Adult dog" tells the tech the
+              answer could not have been grounded in a cat passage — which a
+              list of document ids does not.
+            */}
+            <div
+              style={{
+                marginTop: 7,
+                fontFamily: 'var(--pbt-font-mono)',
+                fontSize: 9.5,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: 'var(--pbt-text-muted)',
+              }}
+            >
+              {t('fecalScan.grounding.scope', {
+                tool: knowledgeToolLabel(retrieval.scope.tool) ?? retrieval.scope.tool,
+                species: knowledgeSpeciesLabel(retrieval.scope.species) ?? retrieval.scope.species,
+              })}
+            </div>
             {retrieval.docSlugs.length > 0 && (
               <div
                 style={{
-                  marginTop: 7,
+                  marginTop: 4,
                   fontFamily: 'var(--pbt-font-mono)',
                   fontSize: 9.5,
-                  letterSpacing: '0.12em',
+                  letterSpacing: '0.10em',
                   color: 'var(--pbt-text-muted)',
+                  opacity: 0.8,
                 }}
               >
-                {/* Label is shouted; the slugs keep their real casing — they
-                    are identifiers an admin can paste into the knowledge base. */}
-                <span style={{ textTransform: 'uppercase' }}>
-                  {t('fecalScan.grounding.docs')}
-                </span>{' '}
-                · {retrieval.docSlugs.join(' · ')}
+                {/* The slugs keep their real casing — they are identifiers an
+                    admin can paste into the knowledge base. */}
+                {retrieval.docSlugs.join(' · ')}
               </div>
             )}
           </div>
@@ -252,6 +276,25 @@ function ChunkRow({
               {t('fecalScan.chartSheet.scoreAria', { score: s })}
             </MonoPill>
           ))}
+        </div>
+      )}
+
+      {/*
+        Which document this passage came from. An admin supplement filed under
+        Fecal Scan reads the same as the chart unless it is named, and the tech
+        deserves to know when the answer leaned on the clinic's own material
+        rather than on Royal Canin's chart.
+      */}
+      {chunk.docTitle && (
+        <div
+          style={{
+            fontSize: 11,
+            lineHeight: 1.45,
+            marginBottom: 4,
+            color: 'var(--pbt-text-muted)',
+          }}
+        >
+          {chunk.docTitle}
         </div>
       )}
 

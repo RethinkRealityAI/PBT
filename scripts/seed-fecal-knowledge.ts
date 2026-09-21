@@ -7,11 +7,13 @@
  * (or a fresh environment) before anyone logs into the admin dashboard.
  *
  * It writes exactly what the admin seeder writes — same slugs, same content,
- * same citation + tags — then PROVES the loop works: it embeds a query that
- * describes a score-3.5 stool and checks that `match_knowledge_chunks`
- * returns that passage first. A green run means retrieval is live; a red one
- * means the corpus or the RPC is wrong, and `ai-fecal-scan` would silently
- * fall back to its bundled chart.
+ * same citation + scope tags — then PROVES the loop works: it embeds a query
+ * describing a score-3.5 stool and runs it twice through
+ * `match_knowledge_chunks`, once scoped to dogs and once to cats. The dog run
+ * must rank that passage first; the cat run must return cat chunks only. A
+ * green run means retrieval AND the species boundary are live; a red one means
+ * the corpus, the scope backfill or the RPC is wrong, and `ai-fecal-scan`
+ * would silently fall back to its bundled chart.
  *
  *   npm run seed:fecal
  *
@@ -77,7 +79,18 @@ async function main(): Promise<void> {
         title: FECAL_CHARTS[species].title,
         category: 'clinical',
         content,
-        metadata: { citation, tags: { focus: 'gi', topic: 'fecal-scoring', species } },
+        // Scoped to the Fecal Scan and this chart's species — HARD filters at
+        // retrieval time, so a cat chunk can never ground a dog scan and no
+        // chart can ever surface in a roleplay.
+        metadata: {
+          citation,
+          tags: {
+            focus: 'gi',
+            topic: 'fecal-scoring',
+            tools: ['fecal-scan'],
+            species: [species],
+          },
+        },
         source: 'code-seed',
         updated_by: null,
         deleted_at: null,
@@ -109,7 +122,13 @@ async function main(): Promise<void> {
         chunk_idx: i,
         content: text,
         token_estimate: estimateTokens(text),
-        tags: { category: 'clinical', focus: 'gi', topic: 'fecal-scoring', species },
+        tags: {
+          category: 'clinical',
+          focus: 'gi',
+          topic: 'fecal-scoring',
+          tools: ['fecal-scan'],
+          species: [species],
+        },
         citation,
         embedding: toPgvectorLiteral(embeddings[i]),
       })),
@@ -122,35 +141,75 @@ async function main(): Promise<void> {
     );
   }
 
-  // ── Verification: does the RAG loop actually answer? ──────────────────
-  console.log(`\nVerifying retrieval with: "${PROBE}"`);
-  const [probeEmbedding] = await embedTexts([PROBE], 'RETRIEVAL_QUERY');
-  const { data, error } = await sb.rpc('match_knowledge_chunks', {
-    query_embedding: toPgvectorLiteral(probeEmbedding),
-    match_count: 3,
-    filter: {},
-    doc_slugs: [fecalKnowledgeSlug('dog')],
-  });
-  if (error) throw new Error(`match_knowledge_chunks failed — ${error.message}`);
+  // ── Verification: does the RAG loop actually answer, IN SCOPE? ─────────
+  //
+  // The search is targeted the way `ai-fecal-scan` targets it: by SCOPE
+  // (tools + species), not by document slug. That makes this a test of the
+  // isolation as well as the ranking — the dog probe must return only dog
+  // chunks even though the cat and puppy charts sit in the same table, which
+  // is exactly what the `20260922000000_knowledge_scopes.sql` backfill
+  // guarantees.
+  type Row = { content: string; similarity: number; doc_slug?: string };
+
+  async function probe(species: 'dog' | 'cat'): Promise<Row[]> {
+    const [embedding] = await embedTexts([PROBE], 'RETRIEVAL_QUERY');
+    const { data, error } = await sb.rpc('match_knowledge_chunks', {
+      query_embedding: toPgvectorLiteral(embedding),
+      match_count: 3,
+      filter: { tools: ['fecal-scan'], species: [species] },
+    });
+    if (error) throw new Error(`match_knowledge_chunks (${species}) failed — ${error.message}`);
+    const rows = (data ?? []) as Row[];
+    if (rows.length === 0) {
+      throw new Error(
+        `match_knowledge_chunks returned no rows for species "${species}" — is ` +
+          '20260922000000_knowledge_scopes.sql applied? (unscoped chunks are invisible)',
+      );
+    }
+    rows.forEach((r, i) => {
+      // Every chunk opens with the same chart header, so print the first 80
+      // chars of the SCORE paragraph — otherwise all three lines read alike.
+      const body = r.content.split(/\n\s*\n/).pop() ?? r.content;
+      console.log(
+        `  ${i + 1}. ${r.similarity.toFixed(4)}  [${r.doc_slug ?? '?'}]  ` +
+          body.replace(/\s+/g, ' ').slice(0, 72),
+      );
+    });
+    return rows;
+  }
+
+  console.log(`\nVerifying retrieval — scope { tools:[fecal-scan], species:[dog] }`);
+  console.log(`  query: "${PROBE}"`);
+  const dogRows = await probe('dog');
 
   // All three rows are printed, not just the winner: with one chunk per score
   // the RANKING is the evidence that retrieval is doing real work. If the top
   // three came back at identical similarity, the corpus was chunked wrong.
-  const rows = (data ?? []) as Array<{ content: string; similarity: number }>;
-  if (rows.length === 0) throw new Error('match_knowledge_chunks returned no rows');
-  rows.forEach((r, i) => {
-    // Every chunk opens with the same chart header, so print the first 80
-    // chars of the SCORE paragraph — otherwise all three lines read alike.
-    const body = r.content.split(/\n\s*\n/).pop() ?? r.content;
-    console.log(`  ${i + 1}. ${r.similarity.toFixed(4)}  ${body.replace(/\s+/g, ' ').slice(0, 80)}`);
-  });
-
-  if (!rows[0].content.includes(PROBE_EXPECT)) {
+  if (!dogRows[0].content.includes(PROBE_EXPECT)) {
     throw new Error(
       `Top match does not mention "${PROBE_EXPECT}" — the corpus or the embedding is wrong.`,
     );
   }
-  console.log(`\nOK — top match is the ${PROBE_EXPECT} chunk.`);
+  const dogSlug = fecalKnowledgeSlug('dog');
+  const strayDog = dogRows.find((r) => r.doc_slug && r.doc_slug !== dogSlug);
+  if (strayDog) {
+    throw new Error(`Dog scope leaked a chunk from ${strayDog.doc_slug} — the species tag is wrong.`);
+  }
+
+  console.log(`\nVerifying isolation — scope { tools:[fecal-scan], species:[cat] }`);
+  const catRows = await probe('cat');
+  const catSlug = fecalKnowledgeSlug('cat');
+  const stray = catRows.find((r) => r.doc_slug && r.doc_slug !== catSlug);
+  if (stray) {
+    throw new Error(
+      `Cat scope returned a chunk from ${stray.doc_slug} — species scoping is not being applied.`,
+    );
+  }
+
+  console.log(
+    `\nOK — top dog match is the ${PROBE_EXPECT} chunk, and the cat scope returns ` +
+      `only ${catSlug} chunks.`,
+  );
 }
 
 main().catch((err: unknown) => {

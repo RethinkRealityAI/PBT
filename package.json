@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:admin-mock": "node scripts/dev-admin-mock.js",
     "build": "vite build",
     "postbuild": "node scripts/copy-static.js",
     "preview": "vite preview",

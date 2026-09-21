@@ -136,6 +136,38 @@ Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL
 
 **Voice pipeline:** `src/services/voiceSession.ts` — the ordering is load-bearing: mic **permission first** (`acquireMic()` is the first await in `start()`, inside the Begin tap — nothing connects or plays until granted), then playback `AudioContext`, then **`POST ai-voice-token`** (the server builds the voice system prompt with server-loaded config/overrides/RAG and mints a single-use token whose model + system prompt + tools are locked — `uses: 1`, new-session window 2 min, session life 15 min > the 5-min cap), then `ai.live.connect` on a client created with that token and `httpOptions: { apiVersion: 'v1alpha' }`; the capture processor is wired inside `onopen`. The browser never builds or sees the voice system prompt. Re-entrancy guard runs synchronously before any await (double-Begin must not open two sockets). A playback-end watchdog force-exits `aiSpeaking` if `source.onended` is missed — a stuck `aiSpeaking` mutes the mic for the rest of the session. Avoid calling `session.close()` twice (guarded).
 
+### Knowledge scopes (RAG isolation)
+
+Every consumer reads one `knowledge_chunks` table, so scope is a property of
+the DOCUMENT. Vocabulary: `src/shared/knowledge/knowledgeScopes.ts`.
+
+- **`tags.tools[]`** — WHO may retrieve it: `roleplay` · `scoring` · `coach` ·
+  `scenario-builder` · `fecal-scan`. Default = the four training-session
+  tools; **Fecal Scan is never a default** (file it there on purpose).
+- **`tags.species[]`** — `dog` · `puppy` · `cat`. Default = all three.
+- Both are copied onto every chunk and matched with jsonb containment
+  (`tags @> '{"tools":["fecal-scan"]}'` = "array contains").
+
+`netlify/functions/_shared/retrieval.ts`: `tool` + `species` are **HARD** —
+present on every RPC call including the zero-row and RPC-error retries.
+`focus` is **SOFT** (dropped on a zero-row retry); `docSlugs` replace `focus`
+and run *inside* the scope. `retrieveChunksDetailed()` also returns the
+applied filter + `focusRelaxed`; `buildScopeFilter()` is the pure builder.
+
+Per-consumer tool: `ai-roleplay` / `ai-voice-token` / browser `useTextChat` →
+`roleplay`; `ai-evaluate` → `scoring`; `admin-scenario-ai` →
+`scenario-builder`; `ai-fecal-scan` → `fecal-scan` + species (no docSlugs).
+Admin tester: `admin-knowledge-search` (permission `knowledge.read`) runs the
+same retrieval and echoes the exact filter — that is how you *prove* a cat
+document cannot reach a dog scan. Scope is editable per document via
+`admin-knowledge { op: 'update', tools, species }` (built-ins too) and set on
+seed / ingest.
+
+Migration **`20260922000000_knowledge_scopes.sql`** backfills the tags and
+re-creates `match_knowledge_chunks` with `doc_slug` / `doc_title`. **Apply it
+with (or before) the deploy** — un-scoped chunks are invisible to scoped
+retrieval (fail-open: ungrounded prompts, not errors).
+
 ## Scenario builder (`CreateScreen`)
 
 - **Build / Library** tabs — library lists `SEED_SCENARIOS` with quick Start.
@@ -178,9 +210,12 @@ verbatim in `src/data/knowledge/fecalCharts.ts` (+ reference photos in
 
 Pipeline (`netlify/functions/ai-fecal-scan.ts`, mirrors `ai-vision`):
 1. **Observe** — multimodal JSON, chart-free neutral description.
-2. **Retrieve** — `retrieveChunks(observationText, { docSlugs: ['fecal:<species>'] })`
-   against `knowledge_chunks` (pgvector). Each chart score is its own chunk
-   (`fecalChartChunks`), so the top-k are the nearest *scores*.
+2. **Retrieve** — `retrieveChunks(observationText, { filters: { tool:
+   'fecal-scan', species } })` against `knowledge_chunks` (pgvector) — a HARD
+   scope, not a slug list, so an admin can add a supplement without opening
+   the scan to the rest of the corpus (see "Knowledge scopes"). Each chart
+   score is its own chunk (`fecalChartChunks`), so the top-k are the nearest
+   *scores*.
 3. **Ground** — hits → `retrieval.source = 'rag'`; nothing → the same chart
    text from the code module, `source = 'bundled'` (never model priors).
 4. **Score** — multimodal JSON with ONLY those passages;

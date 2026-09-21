@@ -3,8 +3,14 @@
  * flags-resolve; serves anonymous consumer sessions).
  *
  *   POST { query: string, k?: number,
- *          filters?: { focus?: string, docSlugs?: string[] } }
- *   → { results: [{ content, citation, tags, similarity }] }
+ *          filters?: { focus?: string, docSlugs?: string[],
+ *                      tool?: string, species?: string } }
+ *   → { results: [{ content, citation, tags, similarity, docSlug?, docTitle? }] }
+ *
+ * `tool` / `species` are the knowledge scope (HARD filters — see
+ * `_shared/retrieval.ts`). The browser sends `tool: 'roleplay'`; an unknown
+ * key is dropped rather than rejected, which widens the search but can never
+ * be used to reach a scope the caller did not name.
  *
  * Thin HTTP wrapper over `_shared/retrieval.ts` (`retrieveChunks`), which
  * holds the embedding + pgvector RPC + cache + fallback semantics so the

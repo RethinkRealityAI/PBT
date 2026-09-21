@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The fetchers are thin wrappers over the api module; mocking it keeps this
+// file what it is — a unit test of the pure presentation vocabulary.
+const { postJson } = vi.hoisted(() => ({ postJson: vi.fn() }));
+vi.mock('../../lib/api', () => ({ postJson, apiFetch: vi.fn() }));
+
 import {
   batchOutcomeMessage,
   categoryLabel,
@@ -6,7 +12,11 @@ import {
   docCitation,
   filterKnowledgeDocs,
   resolveDocFocus,
+  resolveDocScope,
   scenariosUsingDoc,
+  scopeSpeciesSummary,
+  scopeToolsSummary,
+  searchKnowledge,
   sourceLabel,
 } from '../knowledgeActions';
 import type { KnowledgeDocument } from '../types';
@@ -236,5 +246,126 @@ describe('batchOutcomeMessage', () => {
     });
     expect(out.message).toContain('2 skipped');
     expect(out.tone).toBe('success');
+  });
+});
+
+// ─── Scopes (who may retrieve a document, and for which animals) ────────────
+
+describe('resolveDocScope', () => {
+  it('defaults an untagged document to the training tools and every species', () => {
+    expect(resolveDocScope(null)).toEqual({
+      tools: ['roleplay', 'scoring', 'coach', 'scenario-builder'],
+      species: ['dog', 'puppy', 'cat'],
+    });
+  });
+
+  it('reads the nested tag bag written by the uploader', () => {
+    expect(resolveDocScope({ tags: { tools: ['fecal-scan'], species: ['cat'] } })).toEqual({
+      tools: ['fecal-scan'],
+      species: ['cat'],
+    });
+  });
+
+  it('reads a flat tag bag and promotes a scalar species', () => {
+    expect(resolveDocScope({ tools: ['fecal-scan'], species: 'dog' })).toEqual({
+      tools: ['fecal-scan'],
+      species: ['dog'],
+    });
+  });
+
+  it('drops keys outside the vocabulary', () => {
+    expect(resolveDocScope({ tags: { tools: ['wizard'], species: ['dragon'] } })).toEqual({
+      tools: ['roleplay', 'scoring', 'coach', 'scenario-builder'],
+      species: ['dog', 'puppy', 'cat'],
+    });
+  });
+});
+
+describe('scope summaries', () => {
+  it('collapses the default training set to one chip', () => {
+    expect(scopeToolsSummary(['roleplay', 'scoring', 'coach', 'scenario-builder'])).toBe(
+      'Training (4)',
+    );
+  });
+
+  it('names a fecal-only document', () => {
+    expect(scopeToolsSummary(['fecal-scan'])).toBe('Fecal Scan');
+  });
+
+  it('lists a mixed scope in short words', () => {
+    expect(scopeToolsSummary(['roleplay', 'fecal-scan'])).toBe('Roleplay · Fecal Scan');
+  });
+
+  it('says "All species" only when every species is ticked', () => {
+    expect(scopeSpeciesSummary(['dog', 'puppy', 'cat'])).toBe('All species');
+    expect(scopeSpeciesSummary(['dog'])).toBe('Adult dog');
+    expect(scopeSpeciesSummary(['dog', 'puppy'])).toBe('Adult dog · Puppy');
+  });
+});
+
+describe('filterKnowledgeDocs — scope filters', () => {
+  const scoped = [
+    doc({
+      id: 'fecal',
+      slug: 'fecal:dog',
+      title: 'Fecal scoring — dog',
+      category: 'clinical',
+      metadata: { tags: { tools: ['fecal-scan'], species: ['dog'] } },
+    }),
+    doc({
+      id: 'study',
+      slug: 'study:davies',
+      title: 'Owner preferences',
+      category: 'clinical',
+      metadata: { tags: { focus: 'weight' } },
+    }),
+  ];
+
+  it('matches a document whose scope CONTAINS the requested tool', () => {
+    expect(filterKnowledgeDocs(scoped, { tool: 'fecal-scan' }).map((d) => d.id)).toEqual([
+      'fecal',
+    ]);
+    expect(filterKnowledgeDocs(scoped, { tool: 'roleplay' }).map((d) => d.id)).toEqual(['study']);
+  });
+
+  it('matches a document whose scope CONTAINS the requested species', () => {
+    expect(filterKnowledgeDocs(scoped, { species: 'cat' }).map((d) => d.id)).toEqual(['study']);
+    expect(filterKnowledgeDocs(scoped, { species: 'dog' }).map((d) => d.id)).toEqual([
+      'fecal',
+      'study',
+    ]);
+  });
+
+  it("'all' leaves both filters off", () => {
+    expect(filterKnowledgeDocs(scoped, { tool: 'all', species: 'all' })).toHaveLength(2);
+  });
+
+  it('searches the scope labels, not just the raw keys', () => {
+    expect(filterKnowledgeDocs(scoped, { query: 'fecal scan' }).map((d) => d.id)).toEqual([
+      'fecal',
+    ]);
+    expect(filterKnowledgeDocs(scoped, { query: 'adult dog' }).map((d) => d.id)).toEqual(['fecal']);
+  });
+});
+
+describe('searchKnowledge', () => {
+  it('POSTs the request straight to admin-knowledge-search', async () => {
+    const body = { results: [], appliedFilter: {}, focusRelaxed: false, latencyMs: 12 };
+    postJson.mockResolvedValueOnce(body);
+
+    const res = await searchKnowledge({
+      query: 'loose stool',
+      tool: 'fecal-scan',
+      species: 'dog',
+      k: 4,
+    });
+
+    expect(res).toBe(body);
+    expect(postJson).toHaveBeenCalledWith('admin-knowledge-search', {
+      query: 'loose stool',
+      tool: 'fecal-scan',
+      species: 'dog',
+      k: 4,
+    });
   });
 });

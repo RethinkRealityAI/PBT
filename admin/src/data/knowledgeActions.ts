@@ -11,6 +11,17 @@
  */
 import { apiFetch, postJson } from '../lib/api';
 import { focusAreaLabel } from '../../../src/shared/knowledge/focusAreas';
+import {
+  ALL_KNOWLEDGE_SPECIES,
+  DEFAULT_KNOWLEDGE_TOOLS,
+  knowledgeSpeciesLabel,
+  readKnowledgeScope,
+  type KnowledgeScope,
+} from '../../../src/shared/knowledge/knowledgeScopes';
+import type {
+  KnowledgeSearchRequest,
+  KnowledgeSearchResponse,
+} from '../../../src/shared/knowledge/knowledgeSearch';
 import type { KnowledgeDocument } from './types';
 
 // ─── Presentation vocabulary ────────────────────────────────────────────────
@@ -69,6 +80,48 @@ export function resolveDocFocus(metadata: Bag | null | undefined): string | null
   return null;
 }
 
+/**
+ * The document's scope — WHO may retrieve it (`tools`) and for WHICH animals
+ * (`species`). Read leniently from either tag shape, and never empty: an
+ * untagged document reads as the four training tools and every species, which
+ * is exactly what retrieval does with it.
+ */
+export function resolveDocScope(metadata: Bag | null | undefined): KnowledgeScope {
+  return readKnowledgeScope(metadata);
+}
+
+/**
+ * Short names for the list column. The full labels ("Roleplay customer") are
+ * right in a form where there is room to read them; in a table cell four of
+ * them are a paragraph, so the compact chip uses one word each.
+ */
+const TOOL_SHORT_LABELS: Record<string, string> = {
+  roleplay: 'Roleplay',
+  scoring: 'Scoring',
+  coach: 'Coach',
+  'scenario-builder': 'Builder',
+  'fecal-scan': 'Fecal Scan',
+};
+
+const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((k) => b.includes(k));
+
+/**
+ * One line for a document's tool scope. The default four collapse to
+ * "Training (4)" — the interesting fact about a document is that it is NOT
+ * the default, so the default should not shout.
+ */
+export function scopeToolsSummary(tools: readonly string[]): string {
+  if (sameSet(tools, DEFAULT_KNOWLEDGE_TOOLS)) return `Training (${DEFAULT_KNOWLEDGE_TOOLS.length})`;
+  return tools.map((k) => TOOL_SHORT_LABELS[k] ?? k).join(' · ');
+}
+
+/** Same for species: unrestricted reads as "All species", not as a list. */
+export function scopeSpeciesSummary(species: readonly string[]): string {
+  if (sameSet(species, ALL_KNOWLEDGE_SPECIES)) return 'All species';
+  return species.map((k) => knowledgeSpeciesLabel(k) ?? k).join(' · ');
+}
+
 /** The document's citation line, or null. */
 export function docCitation(metadata: Bag | null | undefined): string | null {
   if (!metadata || typeof metadata !== 'object') return null;
@@ -85,6 +138,13 @@ export interface KnowledgeFilters {
   focus?: string;
   /** Category key, or 'all'. */
   category?: string;
+  /**
+   * Tool key, or 'all'. A document matches when its scope CONTAINS the key —
+   * the same "array contains" rule the database containment filter uses.
+   */
+  tool?: string;
+  /** Species key, or 'all'. Same containment rule. */
+  species?: string;
 }
 
 /**
@@ -101,12 +161,17 @@ export function filterKnowledgeDocs(
   const q = (filters.query ?? '').trim().toLowerCase();
   const focus = filters.focus ?? 'all';
   const category = filters.category ?? 'all';
+  const tool = filters.tool ?? 'all';
+  const species = filters.species ?? 'all';
 
   const out = docs.filter((doc) => {
     const docFocus = resolveDocFocus(doc.metadata);
+    const scope = resolveDocScope(doc.metadata);
     if (focus === 'none' && docFocus) return false;
     if (focus !== 'all' && focus !== 'none' && docFocus !== focus) return false;
     if (category !== 'all' && doc.category !== category) return false;
+    if (tool !== 'all' && !scope.tools.includes(tool)) return false;
+    if (species !== 'all' && !scope.species.includes(species)) return false;
     if (!q) return true;
     const haystack = [
       doc.title,
@@ -114,6 +179,10 @@ export function filterKnowledgeDocs(
       categoryLabel(doc.category),
       focusAreaLabel(docFocus) ?? '',
       docCitation(doc.metadata) ?? '',
+      // Scope reads as words on screen ("Fecal Scan", "Adult dog"), so it has
+      // to be searchable as words too.
+      scopeToolsSummary(scope.tools),
+      scopeSpeciesSummary(scope.species),
     ]
       .join(' ')
       .toLowerCase();
@@ -165,6 +234,15 @@ export interface UpdateKnowledgeBody {
   focus?: string | null;
   /** Citation line, or null to clear. Omit to leave unchanged. */
   citation?: string | null;
+  /**
+   * Which tools may retrieve this document. Editable on built-ins too (the
+   * scope is the admin's decision, not the seed's). Omit to leave unchanged;
+   * never send an empty array — a document nothing can retrieve is a document
+   * that silently stops working.
+   */
+  tools?: string[];
+  /** Which species it applies to. Same rules. */
+  species?: string[];
 }
 
 export interface UpdateKnowledgeResult {
@@ -190,6 +268,20 @@ export function updateKnowledgeDocument(
   body: UpdateKnowledgeBody,
 ): Promise<UpdateKnowledgeResult> {
   return postJson<UpdateKnowledgeResult>('admin-knowledge', { op: 'update', ...body });
+}
+
+/**
+ * Run the real retrieval with an explicit scope and hand back the ranked
+ * passages ("Try a search").
+ *
+ * This is the same `retrieveChunks` a session runs, not a lookalike — which
+ * is the whole point: it is how an admin PROVES that a cat document cannot
+ * surface for a dog scan, rather than being told so.
+ */
+export function searchKnowledge(
+  body: KnowledgeSearchRequest,
+): Promise<KnowledgeSearchResponse> {
+  return postJson<KnowledgeSearchResponse>('admin-knowledge-search', body);
 }
 
 /** A soft-deleted document, as listed by `GET admin-knowledge?trash=1`. */

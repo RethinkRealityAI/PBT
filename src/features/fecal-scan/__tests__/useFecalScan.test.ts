@@ -47,6 +47,7 @@ const retrieval: FecalScanRetrieval = {
   source: 'rag',
   query: 'moist stool no cracks distinct shape',
   docSlugs: ['fecal:dog'],
+  scope: { tool: 'fecal-scan', species: 'dog' },
   referenceScores: [3, 3.5, 4],
     exactReference: null,
     mostSimilarReference: null,

@@ -93,6 +93,33 @@ describe('retrieveContext (scenario filters)', () => {
     expect(bodyOf(fetchMock).filters).toEqual({ docSlugs: ['a-doc', 'b-doc'] });
   });
 
+  it('sends the knowledge scope (tool/species) in the request body', async () => {
+    const fetchMock = mockOk();
+    await retrieveContext('q', {
+      cacheKey: 'f-scope',
+      filters: { focus: 'gi', tool: 'roleplay', species: 'dog' },
+    });
+    expect(bodyOf(fetchMock).filters).toEqual({
+      focus: 'gi',
+      tool: 'roleplay',
+      species: 'dog',
+    });
+  });
+
+  it('folds the tool into the cache key — two tools are two results', async () => {
+    const fetchMock = mockOk();
+    await retrieveContext('q', { cacheKey: 'f-tool', filters: { tool: 'roleplay' } });
+    await retrieveContext('q', { cacheKey: 'f-tool', filters: { tool: 'coach' } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await retrieveContext('q', { cacheKey: 'f-tool', filters: { tool: 'coach' } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await retrieveContext('q', {
+      cacheKey: 'f-tool',
+      filters: { tool: 'coach', species: 'cat' },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('sends an empty filter object when the scenario has no targeting', async () => {
     const fetchMock = mockOk();
     await retrieveContext('q', { cacheKey: 'f-none' });
@@ -208,5 +235,16 @@ describe('scenarioRetrievalFilters', () => {
 
   it('returns undefined for an unlinked scenario', () => {
     expect(scenarioRetrievalFilters({})).toBeUndefined();
+  });
+
+  it('stays scope-free — the tool is added by the caller that owns it', () => {
+    // Scenario targeting and knowledge scope are different questions: the
+    // same scenario is retrieved as `roleplay` by the customer and as
+    // `scoring` by the scorer, so this helper must not pick one.
+    expect(scenarioRetrievalFilters({ focusArea: 'gi' })).not.toHaveProperty('tool');
+    expect({ ...scenarioRetrievalFilters({ focusArea: 'gi' }), tool: 'roleplay' }).toEqual({
+      focus: 'gi',
+      tool: 'roleplay',
+    });
   });
 });

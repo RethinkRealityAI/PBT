@@ -156,11 +156,14 @@ const scoringTurn = (call: number): Part[] => turnsOf(call).at(-1)!.parts;
 const fetchedPaths = (): string[] =>
   mocks.fetch.mock.calls.map((c) => new URL(String(c[0])).pathname);
 
-const ragChunk = (content: string, similarity: number) => ({
+const ragChunk = (content: string, similarity: number, over: Record<string, unknown> = {}) => ({
   content,
   citation: 'Royal Canin — Fecal Scoring System for Dogs, VGI/064/0324',
-  tags: { focus: 'gi', topic: 'fecal-scoring', species: 'dog' },
+  tags: { focus: 'gi', topic: 'fecal-scoring', tools: ['fecal-scan'], species: ['dog'] },
   similarity,
+  docSlug: 'fecal:dog',
+  docTitle: FECAL_CHARTS.dog.title,
+  ...over,
 });
 
 function scan(body: Record<string, unknown>, init?: Parameters<typeof jsonRequest>[2]) {
@@ -243,6 +246,7 @@ describe('ai-fecal-scan — not a stool photo', () => {
       query: '',
       docSlugs: ['fecal:dog'],
       chunks: [],
+      scope: { tool: 'fecal-scan', species: 'dog' },
     });
     expect(mocks.retrieveChunks).not.toHaveBeenCalled();
     expect(mocks.generateContent).toHaveBeenCalledTimes(1);
@@ -265,7 +269,10 @@ describe('ai-fecal-scan — grounded scoring', () => {
     const [query, opts] = mocks.retrieveChunks.mock.calls[0];
     expect(query).toContain('no visible cracks');
     expect(query).toContain('moist');
-    expect(opts).toMatchObject({ k: 6, filters: { docSlugs: ['fecal:dog'] } });
+    // Scoped by TOOL + SPECIES, not by document slug: an admin supplement
+    // filed for the fecal scan must be retrievable alongside the chart.
+    expect(opts).toMatchObject({ k: 6, filters: { tool: 'fecal-scan', species: 'dog' } });
+    expect(opts.filters.docSlugs).toBeUndefined();
     expect(opts.sb).toBeDefined();
 
     // The SECOND model call is the scorer; its prompt carries the passage.
@@ -277,7 +284,12 @@ describe('ai-fecal-scan — grounded scoring', () => {
     // The observer never saw the chart.
     expect(mocks.generateContent.mock.calls[0][0].config.systemInstruction).not.toContain(passage);
 
-    expect(body.retrieval).toMatchObject({ source: 'rag', docSlugs: ['fecal:dog'] });
+    expect(body.retrieval).toMatchObject({
+      source: 'rag',
+      // Reported from the hits' own provenance now, not hard-wired.
+      docSlugs: ['fecal:dog'],
+      scope: { tool: 'fecal-scan', species: 'dog' },
+    });
     expect(body.retrieval.query).toBe(query);
     expect(body.retrieval.chunks).toHaveLength(1);
     expect(body.retrieval.chunks[0]).toMatchObject({
@@ -285,6 +297,7 @@ describe('ai-fecal-scan — grounded scoring', () => {
       excerpt: passage,
       scores: [3.5],
       citation: 'Royal Canin — Fecal Scoring System for Dogs, VGI/064/0324',
+      docTitle: FECAL_CHARTS.dog.title,
     });
 
     expect(body.result).toMatchObject({
@@ -353,7 +366,7 @@ describe('ai-fecal-scan — grounded scoring', () => {
     const big = await scan({ species: 'puppy', breedSize: 'large-giant' });
     expect((await big.json()).result).toMatchObject({ score: 3, band: 'normal' });
     expect(mocks.retrieveChunks.mock.calls[0][1]).toMatchObject({
-      filters: { docSlugs: ['fecal:puppy'] },
+      filters: { tool: 'fecal-scan', species: 'puppy' },
     });
 
     mocks.generateContent
@@ -361,6 +374,73 @@ describe('ai-fecal-scan — grounded scoring', () => {
       .mockResolvedValueOnce(scoreOk({ score: 3 }));
     const small = await scan({ species: 'puppy', breedSize: 'small-medium' });
     expect((await small.json()).result).toMatchObject({ score: 3, band: 'tooSoft' });
+  });
+});
+
+/**
+ * An admin can now file a document "Fecal Scan · dog" and it is retrieved
+ * alongside the chart. Those supplements must be visible to the tech WITHOUT
+ * narrowing what the scorer is allowed to answer.
+ */
+describe('ai-fecal-scan — admin supplements inside the scope', () => {
+  const SUPPLEMENT =
+    'Clinic note: photograph the sample on a neutral background in daylight; ' +
+    'consistency reads differently under warm indoor light.';
+
+  const supplementChunk = (similarity: number) =>
+    ragChunk(SUPPLEMENT, similarity, {
+      citation: 'Clinic handout, 2026',
+      docSlug: 'custom:photo-tips',
+      docTitle: 'Photographing a stool sample',
+      tags: { tools: ['fecal-scan'], species: ['dog'] },
+    });
+
+  it('reports every document the passages came from, de-duplicated', async () => {
+    mocks.retrieveChunks.mockResolvedValueOnce([
+      ragChunk(dogParagraph(3.5), 0.93),
+      supplementChunk(0.71),
+      ragChunk(dogParagraph(3), 0.66),
+    ]);
+    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
+
+    const body = await (await scan({})).json();
+    expect(body.retrieval.docSlugs).toEqual(['fecal:dog', 'custom:photo-tips']);
+    expect(body.retrieval.scope).toEqual({ tool: 'fecal-scan', species: 'dog' });
+    expect(body.retrieval.chunks.map((c: { docTitle: string | null }) => c.docTitle)).toEqual([
+      FECAL_CHARTS.dog.title,
+      'Photographing a stool sample',
+      FECAL_CHARTS.dog.title,
+    ]);
+  });
+
+  it('a scoreless supplement does not shrink the grounded scores', async () => {
+    mocks.retrieveChunks.mockResolvedValueOnce([
+      ragChunk(dogParagraph(3.5), 0.93),
+      supplementChunk(0.71),
+    ]);
+    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
+
+    const body = await (await scan({})).json();
+    // 3.5 came from the chart chunk; the supplement contributed nothing and
+    // took nothing away, so the answer is NOT treated as ungrounded.
+    expect(body.result.score).toBe(3.5);
+    expect(body.result.confidence).toBe(0.82);
+    expect(body.retrieval.referenceScores).toEqual([3.5]);
+    // The supplement still reaches the scorer verbatim.
+    expect(mocks.generateContent.mock.calls[1][0].config.systemInstruction).toContain(SUPPLEMENT);
+  });
+
+  it('falls back to the whole chart when every passage is scoreless', async () => {
+    mocks.retrieveChunks.mockResolvedValueOnce([supplementChunk(0.8)]);
+    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
+
+    const body = await (await scan({})).json();
+    expect(body.retrieval.source).toBe('rag');
+    expect(body.retrieval.docSlugs).toEqual(['custom:photo-tips']);
+    // Nothing named a score, so the chart itself is the only constraint.
+    expect(body.retrieval.referenceScores).toEqual([1, 2, 2.5, 3, 3.5, 4, 4.5, 5]);
+    expect(body.result.score).toBe(3.5);
+    expect(body.result.confidence).toBe(0.82);
   });
 });
 

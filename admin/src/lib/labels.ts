@@ -10,6 +10,8 @@
  * source so the two stay in step:
  *
  *   SCREEN_LABELS      ← `Screen` union, src/app/routes.ts
+ *   KNOWLEDGE_TOOL_LABELS    ← KNOWLEDGE_TOOLS,   src/shared/knowledge/knowledgeScopes.ts
+ *   KNOWLEDGE_SPECIES_LABELS ← KNOWLEDGE_SPECIES, src/shared/knowledge/knowledgeScopes.ts
  *   EVENT_TYPE_LABELS  ← `NavEventType`, src/lib/analytics.ts
  *   ACTION_LABELS      ← `target` values passed to logEvent() across src/
  *   CALL_TYPE_LABELS   ← `CallType`, src/services/aiTelemetry.ts
@@ -21,6 +23,10 @@
  * screen shipped by the consumer app before this map is updated) degrades to a
  * readable title-cased string instead of rendering a raw key or vanishing.
  */
+import {
+  KNOWLEDGE_SPECIES,
+  KNOWLEDGE_TOOLS,
+} from '../../../src/shared/knowledge/knowledgeScopes';
 
 /** Trainee-app screens, named the way a practice manager would describe them. */
 export const SCREEN_LABELS: Record<string, string> = {
@@ -100,6 +106,20 @@ export const FOCUS_AREA_LABELS: Record<string, string> = {
   aging: 'Senior care',
   communication: 'Client communication',
 };
+
+/**
+ * Which tool may retrieve a knowledge document — derived from the shared
+ * vocabulary rather than re-typed, so a new tool key can never reach the
+ * screen as a raw identifier.
+ */
+export const KNOWLEDGE_TOOL_LABELS: Record<string, string> = Object.fromEntries(
+  KNOWLEDGE_TOOLS.map((t) => [t.key, t.label]),
+);
+
+/** Which animals a knowledge document applies to. Same source, same rule. */
+export const KNOWLEDGE_SPECIES_LABELS: Record<string, string> = Object.fromEntries(
+  KNOWLEDGE_SPECIES.map((s) => [s.key, s.label]),
+);
 
 /** Knowledge document categories as stored on knowledge_documents.category. */
 export const KNOWLEDGE_CATEGORY_LABELS: Record<string, string> = {
