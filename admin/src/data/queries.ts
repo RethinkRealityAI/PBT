@@ -330,6 +330,12 @@ export interface IngestKnowledgeBody {
   title?: string;
   category: 'clinical' | 'custom';
   tags?: Record<string, unknown>;
+  /**
+   * Citation line stored on the document. The PDF path extracts its own; the
+   * text path takes this one — which is how a PDF the assistant already
+   * extracted is ingested as text without losing its citation.
+   */
+  citation?: string;
 }
 
 export interface IngestResult {

@@ -220,6 +220,29 @@ three triggers:
   `admin-knowledge` op=`seed` and `admin-knowledge-ingest` op=`ingest-bundled`
   still work off the same modules as JWT-only fallbacks.
 
+### Tag assistant (AI pre-fill when filing a document)
+
+`netlify/functions/admin-knowledge-analyze` (POST, `knowledge.write`; contract
+`src/shared/knowledge/knowledgeAnalyze.ts`) reads a document and proposes
+title, summary, category, focus, **Used by** (tools), species, citation,
+topics, confidence, one-sentence `reasons` and `warnings` — the admin edits,
+then the existing ingest / update ops save. Exactly one input: `pdfBase64`
+(≤ `MAX_PDF_BYTES`; `extractPdf` runs ONCE and the result comes back as
+`extractedMarkdown` / `extractedCitation`, so the UI ingests as **text** with
+the new optional `citation` on `admin-knowledge-ingest` op=ingest — never a
+second extraction), `text` (≤ 200k chars) or `slug` (stored content —
+"Suggest with AI"; 404 when missing). One `MODEL_TEXT` JSON call whose system
+prompt (`_shared/knowledgeAnalyze.ts::buildKnowledgeAnalyzeSystemPrompt`)
+lists every focus / tool / species key **with its description** straight from
+the vocabularies, so a vocabulary edit is live without touching the prompt.
+The answer is normalised back INTO those vocabularies
+(`normalizeKnowledgeAnalysis`: unknown tool dropped → defaults, unknown focus
+→ null, confidence clamped, ≤ 6 topics); content past ~40k chars is cut for
+the model and flagged in `warnings`. Nothing is written and no telemetry is
+recorded (mirrors `admin-scenario-ai`). Errors use the admin `{ error }`
+shape: 400 / 404 / 502 (Gemini). Tests:
+`netlify/functions/__tests__/adminKnowledgeAnalyze.test.ts`.
+
 ## Scenario builder (`CreateScreen`)
 
 - **Build / Library** tabs — library lists `SEED_SCENARIOS` with quick Start.

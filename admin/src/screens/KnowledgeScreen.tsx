@@ -16,7 +16,7 @@
  * on a 1280×800 screen without scrolling, and every explanation is an inline
  * line rather than a "?" someone has to find.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Glass } from '../primitives/Glass';
 import {
   Collapsible,
@@ -62,6 +62,19 @@ import {
   type DeletedKnowledgeDocument,
 } from '../data/knowledgeActions';
 import { KnowledgeSearchCard } from './KnowledgeSearchCard';
+import {
+  ASSISTANT_MIN_CHARS,
+  KnowledgeAssistantPanel,
+  Sparkle,
+  SuggestedFieldFrame,
+  SuggestedTag,
+  readAutoSuggest,
+  sanitizeSuggestion,
+  useKnowledgeAssistant,
+  useSuggestedFields,
+  writeAutoSuggest,
+  type SuggestedKey,
+} from './KnowledgeAssistantPanel';
 import { LIBRARY_MANIFEST } from '../data/scenarioManifest';
 import { FOCUS_AREAS } from '../../../src/shared/knowledge/focusAreas';
 import {
@@ -340,10 +353,13 @@ function ScopeChips({
 function ModalSection({
   title,
   hint,
+  action,
   children,
 }: {
   title: string;
   hint: string;
+  /** Sits on the heading row — a control that belongs to the section itself. */
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -358,11 +374,14 @@ function ModalSection({
         background: 'rgba(255,255,255,0.55)',
       }}
     >
-      <div>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: COLOR.ink }}>{title}</h3>
-        <p style={{ margin: '3px 0 0', fontSize: 11.5, lineHeight: 1.45, color: COLOR.inkMute }}>
-          {hint}
-        </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: COLOR.ink }}>{title}</h3>
+          <p style={{ margin: '3px 0 0', fontSize: 11.5, lineHeight: 1.45, color: COLOR.inkMute }}>
+            {hint}
+          </p>
+        </div>
+        {action && <div style={{ flexShrink: 0 }}>{action}</div>}
       </div>
       {children}
     </section>
@@ -408,11 +427,18 @@ function StepSection({
   );
 }
 
-/** The mono eyebrow above a field or a chip row. */
-function FieldLabel({ children }: { children: ReactNode }) {
+/**
+ * The mono eyebrow above a field or a chip row. `suggested` hangs the
+ * "Suggested by the assistant" tag off the right of it — the tag belongs to
+ * the label, not the control, so it reads the same over an input and a chip row.
+ */
+function FieldLabel({ children, suggested }: { children: ReactNode; suggested?: boolean }) {
   return (
     <div
       style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
         fontSize: 10,
         fontWeight: 800,
         textTransform: 'uppercase',
@@ -422,7 +448,8 @@ function FieldLabel({ children }: { children: ReactNode }) {
         marginBottom: 6,
       }}
     >
-      {children}
+      <span>{children}</span>
+      {suggested && <SuggestedTag />}
     </div>
   );
 }
@@ -1230,6 +1257,11 @@ function DocumentModal({
   const [busy, setBusy] = useState<null | 'save' | 'index' | 'delete'>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // The tag assistant reads the STORED document (by slug) and proposes a
+  // filing; Apply only edits these same fields, so "Save changes" stays the
+  // one thing that writes.
+  const assistant = useKnowledgeAssistant();
+  const suggested = useSuggestedFields();
 
   // Seed the editor when a document is opened. Keyed on slug only, NOT on
   // updated_at: saving refreshes the list, and re-seeding from the refreshed
@@ -1245,9 +1277,44 @@ function DocumentModal({
     setSpecies(scope.species);
     setError(null);
     setNote(null);
+    assistant.reset();
+    suggested.reset();
   }, [doc?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!doc) return null;
+
+  function runAssistant() {
+    if (!doc) return;
+    void assistant.run({ slug: doc.slug });
+  }
+
+  /**
+   * Copy the proposal into the fields. Built-ins keep their title and type
+   * (the seed owns those); everything else is the admin's to change, so it
+   * is theirs to overwrite with a suggestion too.
+   */
+  function applySuggestions() {
+    if (!assistant.analysis) return;
+    const s = sanitizeSuggestion(assistant.analysis, assistant.extractedCitation ?? undefined);
+    const marks: SuggestedKey[] = ['focus', 'tools', 'species'];
+    if (!isBuiltIn(doc!)) {
+      if (s.title) {
+        setTitle(s.title);
+        marks.push('title');
+      }
+      setCategory(s.category);
+      marks.push('category');
+    }
+    setFocus(s.focus);
+    setTools(s.tools);
+    setSpecies(s.species);
+    if (s.citation) {
+      setCitation(s.citation);
+      marks.push('citation');
+    }
+    suggested.mark(marks);
+    assistant.hide(true);
+  }
 
   const builtIn = isBuiltIn(doc);
   const searchable = (doc.chunk_count ?? 0) > 0;
@@ -1435,21 +1502,31 @@ function DocumentModal({
               {doc.title}
             </h2>
           ) : (
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              aria-label="Document title"
-              style={{
-                ...inputStyle,
-                padding: '4px 8px',
-                marginLeft: -8,
-                fontSize: 21,
-                fontWeight: 800,
-                letterSpacing: '-0.02em',
-                border: '1px solid transparent',
-                background: 'rgba(255,255,255,0.45)',
-              }}
-            />
+            <SuggestedFieldFrame active={suggested.has('title')} flashKey={suggested.flashKey}>
+              <input
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  suggested.clear('title');
+                }}
+                aria-label="Document title"
+                style={{
+                  ...inputStyle,
+                  padding: '4px 8px',
+                  marginLeft: -8,
+                  fontSize: 21,
+                  fontWeight: 800,
+                  letterSpacing: '-0.02em',
+                  border: '1px solid transparent',
+                  background: 'rgba(255,255,255,0.45)',
+                }}
+              />
+              {suggested.has('title') && (
+                <div style={{ marginTop: 4 }}>
+                  <SuggestedTag />
+                </div>
+              )}
+            </SuggestedFieldFrame>
           )}
           <div
             style={{
@@ -1510,17 +1587,33 @@ function DocumentModal({
           </InlineAlert>
         )}
 
+        {/*
+          The assistant's proposal, when there is one. It sits above the two
+          questions because it answers both — and it is a proposal only:
+          nothing below changes until Apply, nothing saves until Save.
+        */}
+        <KnowledgeAssistantPanel
+          assistant={assistant}
+          onRun={runAssistant}
+          onApply={applySuggestions}
+          source="document"
+          idle="hidden"
+        />
+
         {/* ── The two questions a document has to answer ── */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <ModalSection
             title="What this is"
             hint="How the document is filed. A scenario set to a focus area only pulls from documents filed under the same one."
           >
-            <div>
-              <FieldLabel>Type</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('category')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('category')}>Type</FieldLabel>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                onChange={(e) => {
+                  setCategory(e.target.value);
+                  suggested.clear('category');
+                }}
                 disabled={builtIn}
                 aria-label="Type"
                 style={{ ...inputStyle, opacity: builtIn ? 0.6 : 1 }}
@@ -1534,19 +1627,29 @@ function DocumentModal({
                   </option>
                 ))}
               </select>
-            </div>
+            </SuggestedFieldFrame>
 
-            <div>
-              <FieldLabel>Focus area</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('focus')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('focus')}>Focus area</FieldLabel>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <FocusChipButton label="None" active={focus === null} onClick={() => setFocus(null)} />
+                <FocusChipButton
+                  label="None"
+                  active={focus === null}
+                  onClick={() => {
+                    setFocus(null);
+                    suggested.clear('focus');
+                  }}
+                />
                 {FOCUS_AREAS.map((f) => (
                   <FocusChipButton
                     key={f.key}
                     label={f.label}
                     description={f.description}
                     active={focus === f.key}
-                    onClick={() => setFocus(focus === f.key ? null : f.key)}
+                    onClick={() => {
+                      setFocus(focus === f.key ? null : f.key);
+                      suggested.clear('focus');
+                    }}
                   />
                 ))}
               </div>
@@ -1555,48 +1658,79 @@ function DocumentModal({
                   ? FOCUS_AREAS.find((f) => f.key === focus)?.description
                   : 'Not filed — every scenario that doesn’t restrict itself can use it.'}
               </Hint>
-            </div>
+            </SuggestedFieldFrame>
 
-            <div>
-              <FieldLabel>Citation</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('citation')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('citation')}>Citation</FieldLabel>
               <input
                 value={citation}
-                onChange={(e) => setCitation(e.target.value)}
+                onChange={(e) => {
+                  setCitation(e.target.value);
+                  suggested.clear('citation');
+                }}
                 aria-label="Citation"
                 placeholder="e.g. Davies et al., 2024 — Veterinary Record"
                 style={inputStyle}
               />
               <Hint>Shown to the AI next to anything it quotes.</Hint>
-            </div>
+            </SuggestedFieldFrame>
           </ModalSection>
 
           <ModalSection
             title="Who can use it"
             hint="Two hard limits. Anything not ticked here can never see this document."
+            action={
+              canWrite ? (
+                <button
+                  type="button"
+                  className="pbt-btn"
+                  onClick={runAssistant}
+                  disabled={busy !== null || assistant.status === 'analyzing'}
+                  style={{
+                    ...btnSecondary,
+                    padding: '5px 11px',
+                    fontSize: 12,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    color: COLOR.brand,
+                  }}
+                >
+                  <Sparkle size={12} />
+                  {assistant.status === 'analyzing' ? 'Reading…' : 'Suggest with AI'}
+                </button>
+              ) : undefined
+            }
           >
-            <div>
-              <FieldLabel>Used by</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('tools')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('tools')}>Used by</FieldLabel>
               <ScopeChips
                 testId="doc-scope-tools"
                 options={KNOWLEDGE_TOOLS}
                 selected={tools}
                 vocabulary={KNOWLEDGE_TOOL_KEYS}
-                onChange={setTools}
+                onChange={(next) => {
+                  setTools(next);
+                  suggested.clear('tools');
+                }}
               />
               <Hint>{toolsPhrase(tools)}</Hint>
-            </div>
+            </SuggestedFieldFrame>
 
-            <div>
-              <FieldLabel>Species</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('species')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('species')}>Species</FieldLabel>
               <ScopeChips
                 testId="doc-scope-species"
                 options={KNOWLEDGE_SPECIES}
                 selected={species}
                 vocabulary={KNOWLEDGE_SPECIES_KEYS}
-                onChange={setSpecies}
+                onChange={(next) => {
+                  setSpecies(next);
+                  suggested.clear('species');
+                }}
               />
               <Hint>{speciesPhrase(species)} A cat document never reaches a dog scan.</Hint>
-            </div>
+            </SuggestedFieldFrame>
 
             {scopeProblem ? (
               <InlineAlert tone="warn">{scopeProblem}</InlineAlert>
@@ -1758,8 +1892,94 @@ function AddDocumentModal({
   // deliberately off — it only ever gets what someone filed there on purpose.
   const [tools, setTools] = useState<string[]>([...DEFAULT_KNOWLEDGE_TOOLS]);
   const [species, setSpecies] = useState<string[]>([...ALL_KNOWLEDGE_SPECIES]);
+  const [citation, setCitation] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+    The tag assistant. It has something to read once a PDF is chosen or the
+    pasted text is long enough to be a document rather than a sentence; until
+    then there is no panel at all. It runs on a click, unless the admin has
+    said "always" — a preference kept in this browser only.
+  */
+  const assistant = useKnowledgeAssistant();
+  const suggested = useSuggestedFields();
+  const [autoSuggest, setAutoSuggest] = useState<boolean>(readAutoSuggest);
+  const autoRan = useRef(false);
+  const assistantSource: 'pdf' | 'text' | null =
+    mode === 'pdf'
+      ? file
+        ? 'pdf'
+        : null
+      : text.trim().length >= ASSISTANT_MIN_CHARS
+        ? 'text'
+        : null;
+
+  // A different file (or a different way in) is a different document: the
+  // old proposal — and the old extraction — must not survive it.
+  useEffect(() => {
+    assistant.reset();
+    suggested.reset();
+    autoRan.current = false;
+  }, [file, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!assistantSource) {
+      autoRan.current = false;
+      if (assistant.status !== 'idle') assistant.reset();
+      return;
+    }
+    if (autoSuggest && assistant.status === 'idle' && !autoRan.current) {
+      autoRan.current = true;
+      void runAssistant();
+    }
+  }, [assistantSource, autoSuggest, assistant.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function setAutoSuggestPref(next: boolean) {
+    setAutoSuggest(next);
+    writeAutoSuggest(next);
+  }
+
+  async function runAssistant() {
+    if (assistantSource === 'pdf' && file) {
+      let pdfBase64: string;
+      try {
+        pdfBase64 = await readFileAsBase64(file);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to read file');
+        return;
+      }
+      await assistant.run({ pdfBase64 });
+    } else if (assistantSource === 'text') {
+      const hint = title.trim();
+      await assistant.run({ text: text.trim(), ...(hint ? { title: hint } : {}) });
+    }
+  }
+
+  /**
+   * Copy the proposal into the fields. A title the admin already typed is
+   * theirs and stays; everything else is prefilled and marked, and the mark
+   * comes off the moment they touch the field.
+   */
+  function applySuggestions() {
+    if (!assistant.analysis) return;
+    const s = sanitizeSuggestion(assistant.analysis, assistant.extractedCitation ?? undefined);
+    const marks: SuggestedKey[] = ['category', 'focus', 'tools', 'species'];
+    if (!title.trim() && s.title) {
+      setTitle(s.title);
+      marks.push('title');
+    }
+    setCategory(s.category);
+    setFocus(s.focus);
+    setTools(s.tools);
+    setSpecies(s.species);
+    if (s.citation) {
+      setCitation(s.citation);
+      marks.push('citation');
+    }
+    suggested.mark(marks);
+    assistant.hide(true);
+  }
 
   function reset() {
     setMode('pdf');
@@ -1770,7 +1990,10 @@ function AddDocumentModal({
     setFocus(null);
     setTools([...DEFAULT_KNOWLEDGE_TOOLS]);
     setSpecies([...ALL_KNOWLEDGE_SPECIES]);
+    setCitation('');
     setError(null);
+    assistant.reset();
+    suggested.reset();
   }
 
   function handleClose() {
@@ -1807,22 +2030,41 @@ function AddDocumentModal({
     setError(null);
     try {
       const tags = { ...(focus ? { focus } : {}), tools, species };
+      const citationLine = citation.trim() || undefined;
       let res: IngestResult;
       if (mode === 'pdf') {
         if (!file) throw new Error('Choose a PDF file first.');
-        const pdfBase64 = await readFileAsBase64(file);
-        res = await ingestKnowledge({
-          pdfBase64,
-          title: title.trim() || undefined,
-          category,
-          tags,
-        });
+        if (assistant.extractedMarkdown) {
+          // The assistant already pulled the text out of this PDF, so send
+          // THAT — extracting it a second time would cost another 20 s and
+          // could disagree with what the admin just read the proposal from.
+          res = await ingestKnowledge({
+            text: assistant.extractedMarkdown,
+            title:
+              title.trim() ||
+              (assistant.analysis ? sanitizeSuggestion(assistant.analysis).title : '') ||
+              file.name.replace(/\.pdf$/i, ''),
+            category,
+            tags,
+            citation: citationLine ?? assistant.extractedCitation ?? undefined,
+          });
+        } else {
+          const pdfBase64 = await readFileAsBase64(file);
+          res = await ingestKnowledge({
+            pdfBase64,
+            title: title.trim() || undefined,
+            category,
+            tags,
+            citation: citationLine,
+          });
+        }
       } else {
         res = await ingestKnowledge({
           text: text.trim(),
           title: title.trim(),
           category,
           tags,
+          citation: citationLine,
         });
       }
       reset();
@@ -1912,23 +2154,46 @@ function AddDocumentModal({
           )}
         </StepSection>
 
+        {/*
+          Between "what did you bring" and "how should it be filed": the
+          assistant offers to do the filing. It is a proposal — steps 2 and 3
+          stay the form, and every field it touches says so until edited.
+        */}
+        {assistantSource && (
+          <KnowledgeAssistantPanel
+            assistant={assistant}
+            onRun={() => void runAssistant()}
+            onApply={applySuggestions}
+            source={assistantSource}
+            autoSuggest={{ value: autoSuggest, onChange: setAutoSuggestPref }}
+          />
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <StepSection step={2} title="Name and file it">
-            <div>
-              <FieldLabel>{mode === 'pdf' ? 'Title (optional)' : 'Title'}</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('title')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('title')}>
+                {mode === 'pdf' ? 'Title (optional)' : 'Title'}
+              </FieldLabel>
               <input
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  suggested.clear('title');
+                }}
                 style={inputStyle}
                 placeholder="Document title"
               />
-            </div>
+            </SuggestedFieldFrame>
 
-            <div>
-              <FieldLabel>Type</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('category')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('category')}>Type</FieldLabel>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value as 'clinical' | 'custom')}
+                onChange={(e) => {
+                  setCategory(e.target.value as 'clinical' | 'custom');
+                  suggested.clear('category');
+                }}
                 aria-label="Type"
                 style={inputStyle}
               >
@@ -1938,10 +2203,10 @@ function AddDocumentModal({
                   </option>
                 ))}
               </select>
-            </div>
+            </SuggestedFieldFrame>
 
-            <div>
-              <FieldLabel>Focus area (optional)</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('focus')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('focus')}>Focus area (optional)</FieldLabel>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {FOCUS_AREAS.map((f) => (
                   <FocusChipButton
@@ -1949,7 +2214,10 @@ function AddDocumentModal({
                     label={f.label}
                     description={f.description}
                     active={focus === f.key}
-                    onClick={() => setFocus(focus === f.key ? null : f.key)}
+                    onClick={() => {
+                      setFocus(focus === f.key ? null : f.key);
+                      suggested.clear('focus');
+                    }}
                   />
                 ))}
               </div>
@@ -1958,33 +2226,54 @@ function AddDocumentModal({
                   ? FOCUS_AREAS.find((f) => f.key === focus)?.description
                   : 'Leave blank and every scenario that doesn’t restrict itself can use it.'}
               </Hint>
-            </div>
+            </SuggestedFieldFrame>
+
+            <SuggestedFieldFrame active={suggested.has('citation')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('citation')}>Citation (optional)</FieldLabel>
+              <input
+                value={citation}
+                onChange={(e) => {
+                  setCitation(e.target.value);
+                  suggested.clear('citation');
+                }}
+                aria-label="Citation"
+                placeholder="e.g. Davies et al., 2024 — Veterinary Record"
+                style={inputStyle}
+              />
+              <Hint>Shown to the AI next to anything it quotes.</Hint>
+            </SuggestedFieldFrame>
           </StepSection>
 
           <StepSection step={3} title="Who can use it">
-            <div>
-              <FieldLabel>Used by</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('tools')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('tools')}>Used by</FieldLabel>
               <ScopeChips
                 testId="add-scope-tools"
                 options={KNOWLEDGE_TOOLS}
                 selected={tools}
                 vocabulary={KNOWLEDGE_TOOL_KEYS}
-                onChange={setTools}
+                onChange={(next) => {
+                  setTools(next);
+                  suggested.clear('tools');
+                }}
               />
               <Hint>{toolsPhrase(tools)} Tick Fecal Scan to supplement the stool charts.</Hint>
-            </div>
+            </SuggestedFieldFrame>
 
-            <div>
-              <FieldLabel>Species</FieldLabel>
+            <SuggestedFieldFrame active={suggested.has('species')} flashKey={suggested.flashKey}>
+              <FieldLabel suggested={suggested.has('species')}>Species</FieldLabel>
               <ScopeChips
                 testId="add-scope-species"
                 options={KNOWLEDGE_SPECIES}
                 selected={species}
                 vocabulary={KNOWLEDGE_SPECIES_KEYS}
-                onChange={setSpecies}
+                onChange={(next) => {
+                  setSpecies(next);
+                  suggested.clear('species');
+                }}
               />
               <Hint>{speciesPhrase(species)} A cat document never reaches a dog scan.</Hint>
-            </div>
+            </SuggestedFieldFrame>
 
             {scopeProblem ? (
               <InlineAlert tone="warn">{scopeProblem}</InlineAlert>

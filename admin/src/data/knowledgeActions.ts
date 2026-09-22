@@ -22,6 +22,10 @@ import type {
   KnowledgeSearchRequest,
   KnowledgeSearchResponse,
 } from '../../../src/shared/knowledge/knowledgeSearch';
+import type {
+  KnowledgeAnalyzeRequest,
+  KnowledgeAnalyzeResponse,
+} from '../../../src/shared/knowledge/knowledgeAnalyze';
 import type { KnowledgeDocument } from './types';
 
 // ─── Presentation vocabulary ────────────────────────────────────────────────
@@ -282,6 +286,18 @@ export function searchKnowledge(
   body: KnowledgeSearchRequest,
 ): Promise<KnowledgeSearchResponse> {
   return postJson<KnowledgeSearchResponse>('admin-knowledge-search', body);
+}
+
+/**
+ * The tag assistant: the model reads a PDF, pasted text or a stored document
+ * and proposes what it is and where it should be used. Exactly one of
+ * `pdfBase64` / `text` / `slug` is set. Nothing is written — the caller
+ * applies the proposal to its own form fields.
+ */
+export function analyzeKnowledge(
+  body: KnowledgeAnalyzeRequest,
+): Promise<KnowledgeAnalyzeResponse> {
+  return postJson<KnowledgeAnalyzeResponse>('admin-knowledge-analyze', body);
 }
 
 /** A soft-deleted document, as listed by `GET admin-knowledge?trash=1`. */

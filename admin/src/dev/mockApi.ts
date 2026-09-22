@@ -387,6 +387,147 @@ function knowledgeSearchMock(body: Record<string, unknown>): unknown {
   };
 }
 
+/**
+ * The tag assistant, offline. A real analysis is a model call; this one is a
+ * handful of keyword rules over the same input, so the panel can be reviewed
+ * in every state it has — with a ~1.2 s wait so the "Reading…" state is
+ * actually visible, and a warning when the text is short so the amber list
+ * is on screen too. The rules are the ones an admin would recognise: stool
+ * words file under Fecal Scan for the species named, weight words under
+ * weight management, and anything else stays on the training defaults.
+ */
+const PDF_FIXTURE_MARKDOWN =
+  '# Faecal scoring in adult dogs\n\n' +
+  'A nine-point scale from very hard and dry (1) to watery with no texture (5). ' +
+  'Score 3 to 3.5 is ideal: moist, holds a distinct shape, leaves residue when picked up. ' +
+  'Record colour separately — dark tarry stool and fresh red streaks both need the veterinarian.\n\n' +
+  'Royal Canin — Fecal Scoring System for Dogs, 2025.';
+
+function knowledgeAnalyzeMock(body: Record<string, unknown>): Promise<unknown> {
+  const slugDoc =
+    typeof body.slug === 'string' ? KNOWLEDGE_DOCS.find((d) => d.slug === body.slug) : undefined;
+  const fromPdf = typeof body.pdfBase64 === 'string';
+  const text = fromPdf
+    ? PDF_FIXTURE_MARKDOWN
+    : slugDoc
+      ? `${slugDoc.title}\n\n${slugDoc.content}`
+      : typeof body.text === 'string'
+        ? body.text
+        : '';
+  const titleHint = typeof body.title === 'string' ? body.title : slugDoc?.title ?? '';
+  const hay = `${titleHint}\n${text}`.toLowerCase();
+  const has = (re: RegExp) => re.test(hay);
+
+  const stool = has(/\b(stool|fecal|faecal|faeces|feces|poo|diarrh|constipat)/);
+  const topics: string[] = [];
+  let focus: string | null = null;
+  if (stool) {
+    focus = 'gi';
+    topics.push('stool scoring');
+  } else if (has(/\b(weight|obes|body condition|calorie)/)) {
+    focus = 'weight';
+    topics.push('weight management');
+  } else if (has(/\b(skin|derm|itch|allerg|coat)/)) {
+    focus = 'dermatitis';
+    topics.push('skin and coat');
+  } else if (has(/\b(urinar|crystal|struvite|bladder)/)) {
+    focus = 'urinary';
+    topics.push('urinary health');
+  } else if (has(/\b(senior|ageing|aging|geriatric|mobility)/)) {
+    focus = 'aging';
+    topics.push('senior care');
+  } else if (has(/\b(communicat|empathy|pushback|conversation|client)/)) {
+    focus = 'communication';
+    topics.push('client conversations');
+  }
+
+  const cat = has(/\b(cat|cats|kitten|feline)\b/);
+  const puppy = has(/\b(pupp(y|ies))\b/);
+  const dog = has(/\b(dog|dogs|canine)\b/);
+  const species = stool
+    ? [...(dog || (!cat && !puppy) ? ['dog'] : []), ...(puppy ? ['puppy'] : []), ...(cat ? ['cat'] : [])]
+    : [...ALL_KNOWLEDGE_SPECIES];
+  const tools = stool ? ['fecal-scan'] : [...DEFAULT_KNOWLEDGE_TOOLS];
+
+  if (has(/\bcolou?r\b/)) topics.push('stool colour');
+  if (has(/\bveterinarian|refer\b/)) topics.push('when to refer');
+  if (has(/\bdiet|food|feeding\b/)) topics.push('diet');
+  if (has(/\bowner|client\b/)) topics.push('owner guidance');
+  if (species.length < 3) topics.push(...species.map((s) => (s === 'dog' ? 'adult dogs' : s === 'puppy' ? 'puppies' : 'cats')));
+
+  const citationMatch =
+    /([A-Z][a-z]+ et al\.,? \d{4}[^.\n]*)/.exec(text) ?? /(Royal Canin[^.\n]*\d{4})/.exec(text);
+  const custom = has(/\b(handout|protocol|checklist|our clinic|sop)\b/);
+  const short = text.trim().length < 600;
+
+  const summaryTopic = focus
+    ? {
+        gi: 'stool and digestive health',
+        weight: 'weight management',
+        dermatitis: 'skin and coat health',
+        urinary: 'urinary health',
+        aging: 'senior care',
+        communication: 'talking with clients',
+      }[focus]
+    : 'general veterinary practice';
+  // No hint: the first clause of the first line, the way a person would name it.
+  const firstClause = (text.split(/\n/)[0] ?? '').split(/[.:;(]/)[0].trim().slice(0, 80);
+  const title =
+    titleHint || (fromPdf ? 'Faecal scoring in adult dogs' : firstClause || 'Untitled document');
+
+  const analysis = {
+    title,
+    summary:
+      `A ${custom ? 'clinic document' : 'clinical reference'} about ${summaryTopic}. ` +
+      (stool
+        ? `It describes how stool looks and what each appearance means, so it belongs with the stool charts the scan uses. `
+        : `It gives the kind of background a roleplay customer or the scorer can quote from. `) +
+      `Read ${Math.min(text.length, 40_000).toLocaleString()} characters.`,
+    category: custom ? 'custom' : 'clinical',
+    focus,
+    tools,
+    species,
+    citation: citationMatch ? citationMatch[1].trim() : null,
+    topics: [...new Set(topics)].slice(0, 6),
+    confidence: stool ? 0.86 : focus ? 0.72 : 0.48,
+    reasons: {
+      focus: focus
+        ? `The text is mostly about ${summaryTopic}, which is the ${focus === 'gi' ? 'digestive health' : summaryTopic} area.`
+        : 'No single clinical topic dominates, so it is best left unfiled.',
+      tools: stool
+        ? 'Stool material belongs to Fecal Scan only — a roleplay customer should not quote a stool chart.'
+        : 'Nothing here is specific to one tool, so the four training tools keep it.',
+      species: stool
+        ? species.length === 3
+          ? 'The text does not single out a species.'
+          : `The text only talks about ${species.map((s) => (s === 'dog' ? 'adult dogs' : s === 'puppy' ? 'puppies' : 'cats')).join(' and ')}.`
+        : 'Nothing in the text is species-specific.',
+    },
+    warnings: [
+      ...(short ? ['Only a short passage was read — the suggestions are a best guess.'] : []),
+      ...(stool && species.length === 3
+        ? ['Stool documents are usually for one species — check before saving.']
+        : []),
+    ],
+  };
+
+  return new Promise((resolve) =>
+    setTimeout(
+      () =>
+        resolve(
+          fromPdf
+            ? {
+                analysis,
+                extractedMarkdown: PDF_FIXTURE_MARKDOWN,
+                extractedCitation: 'Royal Canin — Fecal Scoring System for Dogs, 2025',
+              }
+            : { analysis },
+        ),
+      1200,
+    ),
+  );
+}
+
 const ROUTES: Record<string, unknown> = {
   'admin-whoami': {
     user_id: ME,
@@ -557,8 +698,12 @@ const POST_ROUTES: Record<string, unknown> = {
  * write ops because their outcome copy quotes numbers back ("13 documents
  * indexed", "4 sections re-filed") and `{ok:true}` renders those as undefined.
  */
-const POST_HANDLERS: Record<string, (body: Record<string, unknown>) => unknown> = {
+const POST_HANDLERS: Record<
+  string,
+  (body: Record<string, unknown>) => unknown | Promise<unknown>
+> = {
   'admin-knowledge-search': knowledgeSearchMock,
+  'admin-knowledge-analyze': knowledgeAnalyzeMock,
   'admin-knowledge': (body) => {
     switch (body.op) {
       case 'seed':
@@ -608,7 +753,7 @@ export function installAdminMocks(): void {
         } catch {
           parsed = {};
         }
-        return json(handler(parsed));
+        return json(await handler(parsed));
       }
       const posted = POST_ROUTES[name];
       return json(posted === undefined ? { ok: true, status: 'sent' } : posted);

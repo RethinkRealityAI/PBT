@@ -165,6 +165,25 @@ describe('admin-knowledge-ingest — knowledge scope', () => {
     expect((await res.json()).error).toMatch(/astrology/);
   });
 
+  it('text ingest defaults the citation to the title', async () => {
+    const res = await post({ op: 'ingest', text: TEXT, title: 'Handout' });
+    expect(res.status).toBe(200);
+    expect((upsertedDoc().metadata as Bag).citation).toBe('Handout');
+    for (const c of insertedChunks()) expect(c.citation).toBe('Handout');
+  });
+
+  it('text ingest keeps an explicit citation (the tag assistant hands one back)', async () => {
+    const res = await post({
+      op: 'ingest',
+      text: TEXT,
+      title: 'Handout',
+      citation: '  Davies et al., 2024 — JAVMA  ',
+    });
+    expect(res.status).toBe(200);
+    expect((upsertedDoc().metadata as Bag).citation).toBe('Davies et al., 2024 — JAVMA');
+    for (const c of insertedChunks()) expect(c.citation).toBe('Davies et al., 2024 — JAVMA');
+  });
+
   it('re-embed preserves the stored scope', async () => {
     const res = await post({ op: 're-embed', slug: 'custom:existing' });
     expect(res.status).toBe(200);

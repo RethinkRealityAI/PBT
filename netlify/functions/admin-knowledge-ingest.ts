@@ -1,10 +1,12 @@
 /**
  * Admin: ingest documents into the RAG knowledge base (POST only).
  *
- *   { op: 'ingest', pdfBase64?, text?, title?, category?,
+ *   { op: 'ingest', pdfBase64?, text?, title?, citation?, category?,
  *     tags? — { focus?, tools?: string[], species?: string[] } }
  *       PDF → Gemini native PDF understanding extracts structured markdown +
- *       citation metadata; text is used as-is. Content is chunked
+ *       citation metadata; text is used as-is (with the optional `citation`,
+ *       else the title — the tag assistant passes the one it extracted).
+ *       Content is chunked
  *       (~800-token paragraphs), embedded (gemini-embedding-001, 768d,
  *       normalised) and stored as knowledge_documents + knowledge_chunks.
  *   { op: 're-embed', slug }        — re-chunk + re-embed a stored document.
@@ -78,7 +80,14 @@ export default async (req: Request): Promise<Response> => {
       } else if (typeof body.text === 'string' && body.text.trim()) {
         const title = String(body.title ?? '').trim();
         if (!title) return errorResponse(400, 'title required for text ingestion');
-        extracted = { title, citation: title, markdown: body.text.trim() };
+        // The tag assistant (`admin-knowledge-analyze`) extracts a PDF once
+        // and hands the markdown + citation back; the UI then ingests it as
+        // text, so an explicit citation must survive. Absent → the title.
+        const citation =
+          typeof body.citation === 'string' && body.citation.trim()
+            ? body.citation.trim()
+            : title;
+        extracted = { title, citation, markdown: body.text.trim() };
       } else {
         return errorResponse(400, 'pdfBase64 or text required');
       }
