@@ -25,6 +25,14 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Seed the RAG knowledge base automatically. Runs in `onSuccess` (after the
+# deploy is live), skips every context but production / branch-deploy, skips
+# itself when GEMINI_API_KEY or SUPABASE_SERVICE_ROLE_KEY is absent, and can
+# never fail the deploy — the app works without a corpus. Documents are
+# content-hashed, so an unchanged deploy costs a handful of SELECTs.
+[[plugins]]
+  package = "./netlify/plugins/knowledge-sync"
+
 # Local `netlify dev`: Vite is pinned to 3006 in vite.config.ts; without this
 # the CLI waits on Vite's default 5173 and times out.
 [dev]

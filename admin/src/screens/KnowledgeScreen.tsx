@@ -4,13 +4,17 @@
  * Written for the person who uploads documents, not for the person who wrote
  * the search pipeline: types and sources read as words ("Clinical reference",
  * "Built-in"), focus areas come from the shared vocabulary that scenarios
- * filter on, and the technical operations (making a document searchable,
- * loading the built-in set) are still here — just labelled in plain language
- * and explained in-place via InfoTip.
+ * filter on, and the one technical operation left on this screen (making a
+ * document searchable) is labelled in plain language.
  *
- * Everything that is more than one click deep lives in the detail modal:
- * content preview, searchable state, reference name, focus/citation editing,
- * delete.
+ * Built-in knowledge is no longer loaded from a button here — the deploy seeds
+ * it. What remains is a status strip that says whether that happened.
+ *
+ * The two modals answer two questions and nothing else: "what this is" (type,
+ * focus area, citation) and "who can use it" (tools × species, summarised as a
+ * sentence). The document text is folded away behind a disclosure so both fit
+ * on a 1280×800 screen without scrolling, and every explanation is an inline
+ * line rather than a "?" someone has to find.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Glass } from '../primitives/Glass';
@@ -33,10 +37,8 @@ import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { QueryBoundary } from '../primitives/QueryBoundary';
 import {
   deleteKnowledge,
-  ingestBundledStudies,
   ingestKnowledge,
   reembedKnowledge,
-  seedKnowledge,
   useAdminSimulationConfig,
   useKnowledgeDocuments,
   useScenarioOverrides,
@@ -44,7 +46,6 @@ import {
 } from '../data/queries';
 import {
   UPLOAD_CATEGORIES,
-  batchOutcomeMessage,
   deleteConsequences,
   docCitation,
   fetchDeletedKnowledge,
@@ -70,12 +71,13 @@ import {
   KNOWLEDGE_SPECIES_KEYS,
   KNOWLEDGE_TOOLS,
   KNOWLEDGE_TOOL_KEYS,
+  knowledgeToolLabel,
 } from '../../../src/shared/knowledge/knowledgeScopes';
 import type { KnowledgeDocument } from '../data/types';
 import { FOCUS_AREA_LABELS, KNOWLEDGE_CATEGORY_LABELS, labelOf } from '../lib/labels';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
-import { Field, btnPrimary, btnSecondary, inputStyle, textareaStyle } from './FlagsScreen';
+import { btnPrimary, btnSecondary, inputStyle, textareaStyle } from './FlagsScreen';
 
 const MAX_PDF_BYTES = 4 * 1024 * 1024; // 4MB
 const PREVIEW_CHARS = 4000;
@@ -174,24 +176,70 @@ function FocusChipButton({
   );
 }
 
-const INDEXING_HELP = (
-  <>
-    <p style={{ margin: '0 0 10px' }}>
-      Making a document searchable splits it into short sections and files each
-      one so it can be matched by meaning rather than by exact words. When a
-      roleplay starts, the app pulls the handful of sections most relevant to
-      that scenario — its pushback, the pet, the client's communication style —
-      and hands them to the AI for the whole conversation. That is how a session
-      stays grounded in your material instead of the AI's general knowledge.
-    </p>
-    <p style={{ margin: 0 }}>
-      Rebuilding is safe to re-run at any time. It redoes the sections for this
-      one document and leaves everything else alone. You only need it if a
-      document shows “Not searchable yet”, or if some of its sections failed
-      when it was added.
-    </p>
-  </>
-);
+// ─── Plain-English scope sentences ──────────────────────────────────────────
+//
+// The modals explain the scope in words rather than behind a "?" — a chip row
+// tells you what is ticked, it doesn't tell you what that *means*. These
+// builders turn the ticked keys into the sentence a non-technical reader can
+// check against what they intended.
+
+const TOOL_PHRASES: Record<string, string> = {
+  roleplay: 'roleplay sessions',
+  scoring: 'session scoring',
+  coach: 'coach hints',
+  'scenario-builder': 'the scenario builder',
+  'fecal-scan': 'Fecal Scan',
+};
+
+const SPECIES_PHRASES: Record<string, string> = {
+  dog: 'adult dogs',
+  puppy: 'puppies',
+  cat: 'cats',
+};
+
+/** "a", "a and b", "a, b and c" — an Oxford-free list people read out loud. */
+function joinWords(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/** The line under the "Used by" chips: what the ticks mean, in plain words. */
+export function toolsPhrase(tools: readonly string[]): string {
+  if (tools.length === 0) return 'No tool can read this document.';
+  return `Used in ${joinWords(tools.map((t) => TOOL_PHRASES[t] ?? t))}.`;
+}
+
+/** The line under the Species chips. */
+export function speciesPhrase(species: readonly string[]): string {
+  if (species.length === 0) return 'No animals picked.';
+  if (species.length === KNOWLEDGE_SPECIES_KEYS.length) return 'Applies to every animal.';
+  return `Applies to ${joinWords(species.map((s) => SPECIES_PHRASES[s] ?? s))} only.`;
+}
+
+/**
+ * The live one-sentence summary both modals show. Reads as a claim the admin
+ * can agree or disagree with — "This document is used by Fecal Scan, for adult
+ * dogs only." — which is a far better check than two rows of ticked chips.
+ */
+export function scopeSummarySentence(
+  tools: readonly string[],
+  species: readonly string[],
+): string {
+  if (tools.length === 0 || species.length === 0) return '';
+  const toolPart = joinWords(tools.map((t) => knowledgeToolLabel(t) ?? t));
+  const speciesPart =
+    species.length === KNOWLEDGE_SPECIES_KEYS.length
+      ? 'for every animal.'
+      : `for ${joinWords(species.map((s) => SPECIES_PHRASES[s] ?? s))} only.`;
+  return `This document is used by ${toolPart}, ${speciesPart}`;
+}
+
+/** Word count for the content disclosure label. */
+function wordCount(text: string): number {
+  const t = text.trim();
+  return t ? t.split(/\s+/).length : 0;
+}
 
 const FOCUS_HELP = (
   <>
@@ -281,67 +329,191 @@ function ScopeChips({
   );
 }
 
-/** The mono eyebrow + InfoTip pair that heads each scope block. */
-function ScopeHeading({ label, help }: { label: string; help: ReactNode }) {
+// ─── Modal layout vocabulary ────────────────────────────────────────────────
+//
+// Both modals are built from the same three pieces: a titled card with a
+// one-line explanation, a mono field label, and a small muted hint. Nothing in
+// a modal hides behind a "?" any more — the explanation is the line under the
+// heading, where it is read without a click.
+
+/** A titled panel inside a modal: plain-English heading + one-line "why". */
+function ModalSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint: string;
+  children: ReactNode;
+}) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-      <span
-        style={{
-          fontSize: 10,
-          fontWeight: 800,
-          textTransform: 'uppercase',
-          letterSpacing: '0.10em',
-          color: COLOR.inkMute,
-          fontFamily: 'var(--pbt-mono)',
-        }}
-      >
-        {label}
-      </span>
-      <InfoTip title={label}>{help}</InfoTip>
+    <section
+      style={{
+        display: 'grid',
+        gap: 14,
+        alignContent: 'start',
+        padding: 16,
+        borderRadius: 16,
+        border: `1px solid ${COLOR.border}`,
+        background: 'rgba(255,255,255,0.55)',
+      }}
+    >
+      <div>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: COLOR.ink }}>{title}</h3>
+        <p style={{ margin: '3px 0 0', fontSize: 11.5, lineHeight: 1.45, color: COLOR.inkMute }}>
+          {hint}
+        </p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * A numbered step in the add flow. Same card as `ModalSection`; the number is
+ * doing the explaining, so there is no second line of prose to read.
+ */
+function StepSection({
+  step,
+  title,
+  action,
+  children,
+}: {
+  step: number;
+  title: string;
+  /** Sits on the heading row — a control that belongs to the step itself. */
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      style={{
+        display: 'grid',
+        gap: 10,
+        alignContent: 'start',
+        padding: 14,
+        borderRadius: 16,
+        border: `1px solid ${COLOR.border}`,
+        background: 'rgba(255,255,255,0.55)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: COLOR.ink }}>
+          {`${step} · ${title}`}
+        </h3>
+        {action && <div style={{ marginLeft: 'auto' }}>{action}</div>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** The mono eyebrow above a field or a chip row. */
+function FieldLabel({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 10,
+        fontWeight: 800,
+        textTransform: 'uppercase',
+        letterSpacing: '0.10em',
+        color: COLOR.inkMute,
+        fontFamily: 'var(--pbt-mono)',
+        marginBottom: 6,
+      }}
+    >
+      {children}
     </div>
   );
 }
 
-// ─── Bulk-action button (busy state + transient "✓ Done (n)" / error) ──────
+/** A muted one-liner under a control — what it does, or what is selected. */
+function Hint({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ fontSize: 11.5, lineHeight: 1.45, color: COLOR.inkMute, marginTop: 6 }}>
+      {children}
+    </div>
+  );
+}
 
 /**
- * Runs a bulk job and reports through the toast channel. The outcome copy is
- * built by `batchOutcomeMessage`, so a partial failure ("11 of 13 indexed — 2
- * failed") can never render as a clean success — which is exactly how a
- * half-searchable library used to slip through.
+ * The document text, folded away.
+ *
+ * The preview was the single tallest thing in the old modal and the thing
+ * people needed least, so it costs one line until it is asked for — and when
+ * it opens, only this box scrolls.
  */
-function BulkActionButton({
-  label,
-  busyLabel,
-  onRun,
-  info,
+function ContentDisclosure({
+  content,
+  truncatedNote,
+  action,
 }: {
-  label: string;
-  busyLabel: string;
-  onRun: () => Promise<void>;
-  info: { title: string; body: ReactNode };
+  content: string;
+  truncatedNote?: string;
+  /** Rendered on the right of the header — the Rebuild control and its line. */
+  action?: ReactNode;
 }) {
-  const [busy, setBusy] = useState(false);
-
-  async function run() {
-    setBusy(true);
-    try {
-      await onRun();
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  const [open, setOpen] = useState(false);
+  const words = wordCount(content);
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-      <button
-        onClick={() => void run()}
-        disabled={busy}
-        style={{ ...btnSecondary, opacity: busy ? 0.6 : 1 }}
+    <div style={{ borderRadius: 14, border: `1px solid ${COLOR.border}`, background: 'rgba(255,255,255,0.5)' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '9px 12px',
+          flexWrap: 'wrap',
+        }}
       >
-        {busy ? busyLabel : label}
-      </button>
-      <InfoTip title={info.title}>{info.body}</InfoTip>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          style={{
+            ...btnSecondary,
+            padding: '5px 11px',
+            fontSize: 12,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+          }}
+        >
+          <span aria-hidden style={{ transform: open ? 'rotate(90deg)' : 'none', display: 'inline-block' }}>
+            ▶
+          </span>
+          {open
+            ? 'Hide the text'
+            : `Show the text (${words.toLocaleString()} word${words === 1 ? '' : 's'})`}
+        </button>
+        {action}
+      </div>
+      {open && (
+        <div
+          data-testid="doc-content"
+          style={{
+            maxHeight: 220,
+            overflowY: 'auto',
+            margin: '0 12px 12px',
+            padding: 12,
+            borderRadius: 10,
+            border: `1px solid ${COLOR.border}`,
+            background: 'rgba(255,255,255,0.7)',
+            fontFamily: 'var(--pbt-mono)',
+            fontSize: 11.5,
+            lineHeight: 1.65,
+            color: COLOR.inkSoft,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {content || '(empty)'}
+          {truncatedNote && (
+            <div style={{ marginTop: 10, fontFamily: 'var(--pbt-font)', color: COLOR.inkMute }}>
+              {truncatedNote}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -473,6 +645,27 @@ export function KnowledgeScreen({
 
   const openDoc = openSlug ? docs.data.find((d) => d.slug === openSlug) ?? null : null;
 
+  /*
+    Built-in knowledge is re-seeded by the deploy, not by a button on this
+    screen. What the admin still needs is proof that it happened — a count and
+    a timestamp — and a straight answer when it hasn't.
+  */
+  const builtInSeed = useMemo(() => {
+    const seeds = docs.data.filter((d) => d.source === 'code-seed');
+    const latest = seeds.reduce(
+      (max, d) => Math.max(max, new Date(d.updated_at).getTime()),
+      0,
+    );
+    return { count: seeds.length, latest };
+  }, [docs.data]);
+
+  const builtInMissing = builtInSeed.count === 0;
+  const builtInStatus = builtInMissing
+    ? 'Built-in knowledge hasn’t loaded yet — it loads on the next deploy'
+    : `Built-in knowledge loads automatically · ${builtInSeed.count} built-in document${
+        builtInSeed.count === 1 ? '' : 's'
+      } · last updated ${fmtAgo(builtInSeed.latest)}`;
+
   return (
     <>
       <ContextBar
@@ -531,106 +724,38 @@ export function KnowledgeScreen({
           )}
         </div>
 
-        {canWrite && (
-        <Glass padding={18} radius={20}>
+        <Glass padding={16} radius={20}>
           <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-            <BulkActionButton
-              label="Load built-in knowledge"
-              busyLabel="Loading…"
-              info={{
-                title: 'Load built-in knowledge',
-                body: (
-                  <>
-                    <p style={{ margin: '0 0 10px' }}>
-                      Loads the knowledge that ships with the app — the four ECHO
-                      driver personas, the pushback playbook, the ACT method, and
-                      the clinical reference (body condition scoring, calories,
-                      product anchors) — into this library as documents you can
-                      read and tag.
-                    </p>
-                    <p style={{ margin: 0 }}>
-                      Safe to run whenever you like: it rebuilds those built-in
-                      documents from the current app content (keeping any focus
-                      area you filed them under) and never touches documents you
-                      uploaded.
-                    </p>
-                  </>
-                ),
+            {/*
+              A status strip, not a button. Loading the built-in set is the
+              deploy's job now, so the only useful thing this bar can say is
+              whether it happened and when.
+            */}
+            <span
+              data-testid="builtin-status"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 13px',
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 600,
+                lineHeight: 1.35,
+                background: builtInMissing ? COLOR.warnSoft : 'rgba(255,255,255,0.6)',
+                border: `1px solid ${builtInMissing ? 'color-mix(in oklab, oklch(0.62 0.18 70) 26%, transparent)' : COLOR.border}`,
+                color: builtInMissing ? 'oklch(0.42 0.14 70)' : COLOR.inkSoft,
               }}
-              onRun={async () => {
-                try {
-                  const res = await seedKnowledge();
-                  refresh();
-                  const outcome = batchOutcomeMessage({
-                    attempted: res.seeded,
-                    failures: res.failures,
-                    skippedDeleted: res.skipped_deleted,
-                    noun: 'built-in documents',
-                  });
-                  toast(outcome);
-                  setBulkFailures(
-                    res.failures?.length
-                      ? { title: 'Built-in knowledge — documents that could not be made searchable', lines: res.failures }
-                      : null,
-                  );
-                } catch (err) {
-                  toast({
-                    message: `Couldn’t load built-in knowledge — ${err instanceof Error ? err.message : 'unknown error'}`,
-                    tone: 'error',
-                  });
-                }
-              }}
-            />
-            <BulkActionButton
-              label="Load bundled studies"
-              busyLabel="Loading…"
-              info={{
-                title: 'Load bundled studies',
-                body: (
-                  <>
-                    <p style={{ margin: '0 0 10px' }}>
-                      Loads the five veterinary communication and obesity studies
-                      that ship with the app. Each PDF is read, turned into text,
-                      split into sections, and made searchable — the same thing that
-                      happens when you upload a document yourself.
-                    </p>
-                    <p style={{ margin: 0 }}>
-                      Safe to re-run: the studies are replaced rather than
-                      duplicated, and your own uploads are untouched. It takes a
-                      minute or two because each paper is read end to end.
-                    </p>
-                  </>
-                ),
-              }}
-              onRun={async () => {
-                try {
-                  const res = await ingestBundledStudies();
-                  refresh();
-                  const failures = res.failures ?? [];
-                  const outcome = batchOutcomeMessage({
-                    attempted: res.ingested + failures.length,
-                    failures,
-                    noun: 'studies',
-                  });
-                  toast(outcome);
-                  setBulkFailures(
-                    failures.length
-                      ? { title: 'Bundled studies that could not be read', lines: failures }
-                      : null,
-                  );
-                } catch (err) {
-                  toast({
-                    message: `Couldn’t load bundled studies — ${err instanceof Error ? err.message : 'unknown error'}`,
-                    tone: 'error',
-                  });
-                }
-              }}
-            />
-            <span style={{ marginLeft: 'auto' }}>
-              <button style={btnPrimary} onClick={() => setAdding(true)}>
-                + Add document
-              </button>
+            >
+              {builtInStatus}
             </span>
+            {canWrite && (
+              <span style={{ marginLeft: 'auto' }}>
+                <button style={btnPrimary} onClick={() => setAdding(true)}>
+                  + Add document
+                </button>
+              </span>
+            )}
           </div>
           {bulkFailures && (
             <InlineAlert tone="warn" title={bulkFailures.title} style={{ marginTop: 12 }}>
@@ -642,13 +767,12 @@ export function KnowledgeScreen({
                 ))}
               </ul>
               <div style={{ marginTop: 6 }}>
-                These documents are saved but not searchable — open one and press
-                “Rebuild search index”, or run the load again.
+                These sections are saved but not searchable — open the document
+                and press “Rebuild search index”.
               </div>
             </InlineAlert>
           )}
         </Glass>
-        )}
 
         {/*
           Reading permission only: the tester runs a search, it changes nothing.
@@ -764,7 +888,7 @@ export function KnowledgeScreen({
               title={docs.data.length === 0 ? 'No documents yet' : 'Nothing matches those filters'}
               subtitle={
                 docs.data.length === 0
-                  ? 'Start with “Load built-in knowledge”, then add your own studies with “+ Add document”.'
+                  ? 'The built-in knowledge loads on the next deploy. Add your own studies any time with “+ Add document”.'
                   : 'Clear the search box or pick a different focus area.'
               }
             />
@@ -1214,7 +1338,7 @@ function DocumentModal({
     const ok = await confirm({
       title: `Delete “${doc.title}”?`,
       body: builtIn
-        ? 'This document ships with the app. While it sits in Recently deleted, “Load built-in knowledge” skips it rather than bringing it back — restore it from Recently deleted instead.'
+        ? 'This document ships with the app. While it sits in Recently deleted, the automatic knowledge sync leaves it deleted rather than bringing it back — restore it from Recently deleted instead.'
         : undefined,
       consequences: overridesError
         ? [
@@ -1244,69 +1368,161 @@ function DocumentModal({
     }
   }
 
+  /*
+    Closing with unsaved edits routes through the same confirm ladder the
+    delete uses. `onRequestClose` must answer synchronously, so it blocks the
+    close, asks, and closes itself if the answer is yes.
+  */
+  function requestClose(): boolean | void {
+    if (!dirty || busy !== null) return;
+    void (async () => {
+      const ok = await confirm({
+        title: 'Discard your changes?',
+        body: 'This document has edits that have not been saved.',
+        confirmLabel: 'Discard changes',
+        cancelLabel: 'Keep editing',
+        tone: 'danger',
+      });
+      if (ok) onClose();
+    })();
+    return false;
+  }
+
+  function attemptClose() {
+    if (requestClose() === false) return;
+    onClose();
+  }
+
+  const summary = scopeSummarySentence(tools, species);
+  const rebuildButton = canWrite ? (
+    <button
+      onClick={() => void rebuild()}
+      disabled={busy !== null}
+      style={{ ...btnSecondary, padding: '5px 11px', fontSize: 12, opacity: busy ? 0.6 : 1 }}
+    >
+      {busy === 'index' ? 'Rebuilding…' : 'Rebuild search index'}
+    </button>
+  ) : null;
+
+  const saveLabel = busy === 'save' ? 'Saving…' : dirty ? 'Save changes' : 'No changes';
+
   return (
-    <Modal open onClose={onClose} width={720} ariaLabel={doc.title}>
-      <div style={{ padding: 24, overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-              <TypePill category={doc.category} />
-              <SourcePill source={doc.source} />
-            </div>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: COLOR.ink, letterSpacing: '-0.02em' }}>
+    <Modal
+      open
+      onClose={onClose}
+      onRequestClose={requestClose}
+      width={1080}
+      ariaLabel={doc.title}
+    >
+      {/*
+        `overflowY: auto` is a safety valve, not the layout: collapsed, this
+        panel fits at 1280×800 with room to spare. It only ever engages once
+        the content disclosure is opened on a short screen.
+      */}
+      <div style={{ padding: '20px 24px 18px', display: 'grid', gap: 14, overflowY: 'auto' }}>
+        {/* ── Header: what this document is, at a glance ── */}
+        <div style={{ paddingRight: 44 }}>
+          {builtIn ? (
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 21,
+                fontWeight: 800,
+                color: COLOR.ink,
+                letterSpacing: '-0.02em',
+              }}
+            >
               {doc.title}
             </h2>
-          </div>
-          <ModalCloseButton onClose={onClose} />
-        </div>
-
-        <div style={{ display: 'grid', gap: 16, marginTop: 18 }}>
-          {/* Searchable state */}
+          ) : (
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              aria-label="Document title"
+              style={{
+                ...inputStyle,
+                padding: '4px 8px',
+                marginLeft: -8,
+                fontSize: 21,
+                fontWeight: 800,
+                letterSpacing: '-0.02em',
+                border: '1px solid transparent',
+                background: 'rgba(255,255,255,0.45)',
+              }}
+            />
+          )}
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
-              gap: 10,
+              gap: 8,
+              marginTop: 8,
               flexWrap: 'wrap',
-              padding: '10px 14px',
-              borderRadius: 12,
-              background: searchable ? COLOR.successSoft : COLOR.warnSoft,
+              alignItems: 'center',
             }}
           >
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: COLOR.ink }}>
-              {searchable
-                ? `Searchable — split into ${doc.chunk_count} section${doc.chunk_count === 1 ? '' : 's'}`
-                : 'Not searchable yet — no scenario can pull from this document'}
-            </span>
-            <InfoTip title="How a document becomes searchable">{INDEXING_HELP}</InfoTip>
-            {canWrite && (
-              <span style={{ marginLeft: 'auto' }}>
-                <button
-                  onClick={() => void rebuild()}
-                  disabled={busy !== null}
-                  style={{ ...btnSecondary, padding: '6px 12px', fontSize: 12, opacity: busy ? 0.6 : 1 }}
-                >
-                  {busy === 'index' ? 'Rebuilding…' : 'Rebuild search index'}
-                </button>
-              </span>
+            <TypePill category={doc.category} />
+            <SourcePill source={doc.source} />
+            {searchable ? (
+              <StatusPill tone="success" dot={false}>
+                {`Searchable · ${doc.chunk_count} section${doc.chunk_count === 1 ? '' : 's'}`}
+              </StatusPill>
+            ) : (
+              <StatusPill tone="warn" dot={false}>
+                Not searchable
+              </StatusPill>
             )}
+            <span
+              style={{ fontFamily: 'var(--pbt-mono)', fontSize: 10.5, color: COLOR.inkMute }}
+              title="How this document is named behind the scenes — quote it to support."
+            >
+              {doc.slug}
+            </span>
           </div>
+          {builtIn && (
+            <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 7 }}>
+              This one ships with the app, so its title and type are set for you — the
+              rest is yours to change.
+            </div>
+          )}
+        </div>
 
-          {/* Title + type */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 12 }}>
-            <Field label="Title">
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                disabled={builtIn}
-                style={{ ...inputStyle, opacity: builtIn ? 0.6 : 1 }}
-              />
-            </Field>
-            <Field label="Type">
+        {/*
+          The case that actually costs someone a session: saved, but invisible.
+          It gets a banner of its own rather than a line inside a disclosure.
+        */}
+        {!searchable && (
+          <InlineAlert tone="warn" title="Not searchable — no scenario can pull from this yet">
+            <div
+              style={{
+                display: 'flex',
+                gap: 12,
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                marginTop: 4,
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 260 }}>
+                Its text was never split into sections. Rebuilding does that now — it
+                takes a moment and changes nothing else.
+              </span>
+              {rebuildButton}
+            </div>
+          </InlineAlert>
+        )}
+
+        {/* ── The two questions a document has to answer ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <ModalSection
+            title="What this is"
+            hint="How the document is filed. A scenario set to a focus area only pulls from documents filed under the same one."
+          >
+            <div>
+              <FieldLabel>Type</FieldLabel>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 disabled={builtIn}
+                aria-label="Type"
                 style={{ ...inputStyle, opacity: builtIn ? 0.6 : 1 }}
               >
                 {(builtIn
@@ -1318,56 +1534,48 @@ function DocumentModal({
                   </option>
                 ))}
               </select>
-            </Field>
-          </div>
-          {builtIn && (
-            <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: -8 }}>
-              This document comes with the app, so its title and type are rebuilt
-              from the app content each time you load built-in knowledge. You can
-              still set its focus area and citation.
             </div>
-          )}
 
-          {/* Focus area */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 800,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.10em',
-                  color: COLOR.inkMute,
-                  fontFamily: 'var(--pbt-mono)',
-                }}
-              >
-                Focus area
-              </span>
-              <InfoTip title="Focus area">{FOCUS_HELP}</InfoTip>
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <FocusChipButton label="None" active={focus === null} onClick={() => setFocus(null)} />
-              {FOCUS_AREAS.map((f) => (
-                <FocusChipButton
-                  key={f.key}
-                  label={f.label}
-                  description={f.description}
-                  active={focus === f.key}
-                  onClick={() => setFocus(focus === f.key ? null : f.key)}
-                />
-              ))}
-            </div>
-            {focus && (
-              <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 6 }}>
-                {FOCUS_AREAS.find((f) => f.key === focus)?.description}
-              </div>
-            )}
-          </div>
-
-          {/* Scope — the hard walls, editable on built-ins too */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
-              <ScopeHeading label="Used by" help={TOOLS_HELP} />
+              <FieldLabel>Focus area</FieldLabel>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <FocusChipButton label="None" active={focus === null} onClick={() => setFocus(null)} />
+                {FOCUS_AREAS.map((f) => (
+                  <FocusChipButton
+                    key={f.key}
+                    label={f.label}
+                    description={f.description}
+                    active={focus === f.key}
+                    onClick={() => setFocus(focus === f.key ? null : f.key)}
+                  />
+                ))}
+              </div>
+              <Hint>
+                {focus
+                  ? FOCUS_AREAS.find((f) => f.key === focus)?.description
+                  : 'Not filed — every scenario that doesn’t restrict itself can use it.'}
+              </Hint>
+            </div>
+
+            <div>
+              <FieldLabel>Citation</FieldLabel>
+              <input
+                value={citation}
+                onChange={(e) => setCitation(e.target.value)}
+                aria-label="Citation"
+                placeholder="e.g. Davies et al., 2024 — Veterinary Record"
+                style={inputStyle}
+              />
+              <Hint>Shown to the AI next to anything it quotes.</Hint>
+            </div>
+          </ModalSection>
+
+          <ModalSection
+            title="Who can use it"
+            hint="Two hard limits. Anything not ticked here can never see this document."
+          >
+            <div>
+              <FieldLabel>Used by</FieldLabel>
               <ScopeChips
                 testId="doc-scope-tools"
                 options={KNOWLEDGE_TOOLS}
@@ -1375,9 +1583,11 @@ function DocumentModal({
                 vocabulary={KNOWLEDGE_TOOL_KEYS}
                 onChange={setTools}
               />
+              <Hint>{toolsPhrase(tools)}</Hint>
             </div>
+
             <div>
-              <ScopeHeading label="Species" help={SPECIES_HELP} />
+              <FieldLabel>Species</FieldLabel>
               <ScopeChips
                 testId="doc-scope-species"
                 options={KNOWLEDGE_SPECIES}
@@ -1385,149 +1595,132 @@ function DocumentModal({
                 vocabulary={KNOWLEDGE_SPECIES_KEYS}
                 onChange={setSpecies}
               />
+              <Hint>{speciesPhrase(species)} A cat document never reaches a dog scan.</Hint>
             </div>
-          </div>
-          {scopeProblem && (
-            <div style={{ fontSize: 11.5, color: COLOR.danger, fontWeight: 700, marginTop: -8 }}>
-              {scopeProblem}
-            </div>
-          )}
 
-          <Field label="Citation" help="Shown to the AI alongside any passage it quotes from this document.">
-            <input
-              value={citation}
-              onChange={(e) => setCitation(e.target.value)}
-              placeholder="e.g. Davies et al., 2024 — Veterinary Record"
-              style={inputStyle}
-            />
-          </Field>
-
-          {/* Used by scenarios */}
-          {overridesError && (
-            <InlineAlert tone="warn" title="Couldn’t check usage">
-              The scenario list didn’t load ({overridesError}), so we can’t say which
-              scenarios draw on this document. Treat deleting it as riskier than it
-              looks until this loads.
-            </InlineAlert>
-          )}
-          {!overridesError && links.length > 0 && (
-            <div>
+            {scopeProblem ? (
+              <InlineAlert tone="warn">{scopeProblem}</InlineAlert>
+            ) : (
               <div
                 style={{
-                  fontSize: 10,
-                  fontWeight: 800,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.10em',
-                  color: COLOR.inkMute,
-                  fontFamily: 'var(--pbt-mono)',
-                  marginBottom: 6,
+                  padding: '9px 12px',
+                  borderRadius: 12,
+                  background: COLOR.infoSoft,
+                  color: 'oklch(0.40 0.13 245)',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  lineHeight: 1.45,
                 }}
               >
-                Used by scenarios
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {links.slice(0, 12).map((l) => (
-                  <StatusPill key={`${l.scenario_id}-${l.via}`} tone={l.via === 'attached' ? 'info' : 'neutral'} dot={false}>
-                    {l.label}
-                    {l.via === 'focus' ? ' · via focus' : ''}
-                  </StatusPill>
-                ))}
-                {links.length > 12 && (
-                  <span style={{ fontSize: 11.5, color: COLOR.inkMute, alignSelf: 'center' }}>
-                    +{links.length - 12} more
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Content preview */}
-          <div>
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 800,
-                textTransform: 'uppercase',
-                letterSpacing: '0.10em',
-                color: COLOR.inkMute,
-                fontFamily: 'var(--pbt-mono)',
-                marginBottom: 6,
-              }}
-            >
-              Content
-            </div>
-            <div
-              style={{
-                maxHeight: 260,
-                overflowY: 'auto',
-                padding: 14,
-                borderRadius: 12,
-                border: `1px solid ${COLOR.border}`,
-                background: 'rgba(255,255,255,0.6)',
-                fontFamily: 'var(--pbt-mono)',
-                fontSize: 11.5,
-                lineHeight: 1.65,
-                color: COLOR.inkSoft,
-                whiteSpace: 'pre-wrap',
-              }}
-            >
-              {preview || '(empty)'}
-            </div>
-            {truncated && (
-              <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 6 }}>
-                Showing the first {PREVIEW_CHARS.toLocaleString()} characters of{' '}
-                {doc.content.length.toLocaleString()}. Scenarios can draw on the whole
-                document, not just this preview.
+                {summary}
               </div>
             )}
-          </div>
 
-          {note && <div style={{ fontSize: 12.5, color: COLOR.success, fontWeight: 700 }}>{note}</div>}
-          {error && <div style={{ fontSize: 12.5, color: COLOR.danger, fontWeight: 700 }}>{error}</div>}
+            {overridesError ? (
+              <InlineAlert tone="warn" title="Couldn’t check usage">
+                The scenario list didn’t load ({overridesError}), so we can’t say which
+                scenarios draw on this document.
+              </InlineAlert>
+            ) : (
+              links.length > 0 && (
+                <div style={{ fontSize: 11.5, color: COLOR.inkMute, lineHeight: 1.45 }}>
+                  In use by {links.length} scenario{links.length === 1 ? '' : 's'}:{' '}
+                  {links.slice(0, 4).map((l) => l.label).join(', ')}
+                  {links.length > 4 ? ` and ${links.length - 4} more` : ''}.
+                </div>
+              )
+            )}
+          </ModalSection>
+        </div>
 
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* ── The text itself, folded away ── */}
+        <ContentDisclosure
+          content={preview}
+          truncatedNote={
+            truncated
+              ? `Showing the first ${PREVIEW_CHARS.toLocaleString()} characters of ${doc.content.length.toLocaleString()}. Scenarios draw on the whole document, not just this preview.`
+              : undefined
+          }
+          action={
+            searchable && rebuildButton ? (
+              <div
+                style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span style={{ fontSize: 11.5, color: COLOR.inkMute }}>
+                  Re-split this document if you changed it elsewhere — safe to re-run.
+                </span>
+                {rebuildButton}
+              </div>
+            ) : undefined
+          }
+        />
+
+        {note && <div style={{ fontSize: 12.5, color: COLOR.success, fontWeight: 700 }}>{note}</div>}
+        {error && <div style={{ fontSize: 12.5, color: COLOR.danger, fontWeight: 700 }}>{error}</div>}
+
+        {/* ── Footer ── */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            borderTop: `1px solid ${COLOR.border}`,
+            paddingTop: 14,
+          }}
+        >
+          {canWrite && (
+            <button
+              onClick={() => void remove()}
+              disabled={busy !== null}
+              style={{
+                ...btnSecondary,
+                border: '1px solid transparent',
+                background: 'transparent',
+                color: COLOR.danger,
+              }}
+            >
+              {busy === 'delete' ? 'Deleting…' : 'Delete'}
+            </button>
+          )}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
+            <button onClick={attemptClose} disabled={busy !== null} style={btnSecondary}>
+              Cancel
+            </button>
             {canWrite && (
               <button
                 onClick={() => void save()}
                 disabled={busy !== null || !dirty || scopeProblem !== null}
-                style={{
-                  ...btnPrimary,
-                  opacity: busy !== null || !dirty || scopeProblem !== null ? 0.5 : 1,
-                }}
+                style={
+                  // Nothing to save reads as "nothing to do", not as a broken
+                  // primary: a faded red button looks like a failure state.
+                  dirty
+                    ? {
+                        ...btnPrimary,
+                        opacity: busy !== null || scopeProblem !== null ? 0.5 : 1,
+                      }
+                    : { ...btnSecondary, color: COLOR.inkMute, cursor: 'default' }
+                }
               >
-                {busy === 'save' ? 'Saving…' : 'Save changes'}
+                {saveLabel}
               </button>
             )}
-            <button onClick={onClose} disabled={busy !== null} style={btnSecondary}>
-              Close
-            </button>
-            {canWrite && (
-              <span style={{ marginLeft: 'auto' }}>
-                <button
-                  onClick={() => void remove()}
-                  disabled={busy !== null}
-                  style={{ ...btnSecondary, color: COLOR.danger }}
-                >
-                  {busy === 'delete' ? 'Deleting…' : 'Delete'}
-                </button>
-              </span>
-            )}
-          </div>
-
-          <div
-            style={{
-              fontSize: 10.5,
-              color: COLOR.inkMute,
-              borderTop: `1px solid ${COLOR.border}`,
-              paddingTop: 10,
-            }}
-          >
-            Short name: <span style={{ fontFamily: 'var(--pbt-mono)' }}>{doc.slug}</span> — how
-            this document is named behind the scenes. Quote it if you need to describe
-            the document to support.
           </div>
         </div>
+      </div>
+
+      {/*
+        Last in the DOM so the first thing focus lands on when the dialog opens
+        is the first field, not the way out.
+      */}
+      <div style={{ position: 'absolute', top: 18, right: 18 }}>
+        <ModalCloseButton onClose={onClose} />
       </div>
     </Modal>
   );
@@ -1641,183 +1834,213 @@ function AddDocumentModal({
     }
   }
 
-  return (
-    <Modal open={open} onClose={handleClose} width={580} ariaLabel="Add document">
-      <div style={{ padding: 24, overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: COLOR.ink }}>Add document</h2>
-          <ModalCloseButton onClose={handleClose} />
-        </div>
-        <div style={{ display: 'grid', gap: 14 }}>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              onClick={() => setMode('pdf')}
-              style={{
-                ...(mode === 'pdf' ? btnPrimary : btnSecondary),
-                fontSize: 12.5,
-                padding: '6px 12px',
-              }}
-            >
-              Upload PDF
-            </button>
-            <button
-              onClick={() => setMode('text')}
-              style={{
-                ...(mode === 'text' ? btnPrimary : btnSecondary),
-                fontSize: 12.5,
-                padding: '6px 12px',
-              }}
-            >
-              Paste text
-            </button>
-          </div>
+  const summary = scopeSummarySentence(tools, species);
+  const scopeProblem =
+    tools.length === 0
+      ? 'Pick at least one tool — a document no tool is allowed to read can never be retrieved.'
+      : species.length === 0
+        ? 'Pick at least one species — a document with no species can never be retrieved.'
+        : null;
 
+  return (
+    <Modal open={open} onClose={handleClose} width={880} ariaLabel="Add document">
+      <div style={{ padding: '18px 22px 16px', display: 'grid', gap: 12, overflowY: 'auto' }}>
+        <div style={{ paddingRight: 44, display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: COLOR.ink, letterSpacing: '-0.02em' }}>
+            Add document
+          </h2>
+          <span style={{ fontSize: 12, color: COLOR.inkMute }}>
+            Three steps. Everything here can be changed afterwards.
+          </span>
+        </div>
+
+        <StepSection
+          step={1}
+          title="Choose the file or paste text"
+          action={
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                onClick={() => setMode('pdf')}
+                style={{
+                  ...(mode === 'pdf' ? btnPrimary : btnSecondary),
+                  fontSize: 12.5,
+                  padding: '5px 12px',
+                }}
+              >
+                Upload PDF
+              </button>
+              <button
+                onClick={() => setMode('text')}
+                style={{
+                  ...(mode === 'text' ? btnPrimary : btnSecondary),
+                  fontSize: 12.5,
+                  padding: '5px 12px',
+                }}
+              >
+                Paste text
+              </button>
+            </div>
+          }
+        >
           {mode === 'pdf' ? (
-            <Field label="PDF file" help="Up to 4MB. Leave the title blank and we'll take it from the paper.">
+            <div>
               <input
                 type="file"
                 accept="application/pdf"
+                aria-label="PDF file"
                 onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
                 style={inputStyle}
               />
-              {file && (
-                <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 4 }}>
-                  {file.name} ({(file.size / 1024).toFixed(0)} KB)
-                </div>
-              )}
-            </Field>
+              <Hint>
+                {file
+                  ? `${file.name} (${(file.size / 1024).toFixed(0)} KB)`
+                  : 'Up to 4MB. Leave the title blank and we’ll take it from the paper.'}
+              </Hint>
+            </div>
           ) : (
-            <Field label="Text" help="Paste protocols, handouts, or notes — anything the AI should be able to quote.">
+            <div>
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                rows={8}
+                rows={4}
+                aria-label="Text"
                 style={textareaStyle}
                 placeholder="Paste the document text…"
               />
-            </Field>
+              <Hint>Protocols, handouts or notes — anything the AI should be able to quote.</Hint>
+            </div>
           )}
+        </StepSection>
 
-          <Field label={mode === 'pdf' ? 'Title (optional)' : 'Title'}>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              style={inputStyle}
-              placeholder="Document title"
-            />
-          </Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <StepSection step={2} title="Name and file it">
+            <div>
+              <FieldLabel>{mode === 'pdf' ? 'Title (optional)' : 'Title'}</FieldLabel>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                style={inputStyle}
+                placeholder="Document title"
+              />
+            </div>
 
-          <Field label="Type">
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value as 'clinical' | 'custom')}
-              style={inputStyle}
-            >
-              {UPLOAD_CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </Field>
+            <div>
+              <FieldLabel>Type</FieldLabel>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as 'clinical' | 'custom')}
+                aria-label="Type"
+                style={inputStyle}
+              >
+                {UPLOAD_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <span
+            <div>
+              <FieldLabel>Focus area (optional)</FieldLabel>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {FOCUS_AREAS.map((f) => (
+                  <FocusChipButton
+                    key={f.key}
+                    label={f.label}
+                    description={f.description}
+                    active={focus === f.key}
+                    onClick={() => setFocus(focus === f.key ? null : f.key)}
+                  />
+                ))}
+              </div>
+              <Hint>
+                {focus
+                  ? FOCUS_AREAS.find((f) => f.key === focus)?.description
+                  : 'Leave blank and every scenario that doesn’t restrict itself can use it.'}
+              </Hint>
+            </div>
+          </StepSection>
+
+          <StepSection step={3} title="Who can use it">
+            <div>
+              <FieldLabel>Used by</FieldLabel>
+              <ScopeChips
+                testId="add-scope-tools"
+                options={KNOWLEDGE_TOOLS}
+                selected={tools}
+                vocabulary={KNOWLEDGE_TOOL_KEYS}
+                onChange={setTools}
+              />
+              <Hint>{toolsPhrase(tools)} Tick Fecal Scan to supplement the stool charts.</Hint>
+            </div>
+
+            <div>
+              <FieldLabel>Species</FieldLabel>
+              <ScopeChips
+                testId="add-scope-species"
+                options={KNOWLEDGE_SPECIES}
+                selected={species}
+                vocabulary={KNOWLEDGE_SPECIES_KEYS}
+                onChange={setSpecies}
+              />
+              <Hint>{speciesPhrase(species)} A cat document never reaches a dog scan.</Hint>
+            </div>
+
+            {scopeProblem ? (
+              <InlineAlert tone="warn">{scopeProblem}</InlineAlert>
+            ) : (
+              <div
                 style={{
-                  fontSize: 10,
-                  fontWeight: 800,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.10em',
-                  color: COLOR.inkMute,
-                  fontFamily: 'var(--pbt-mono)',
+                  padding: '9px 12px',
+                  borderRadius: 12,
+                  background: COLOR.infoSoft,
+                  color: 'oklch(0.40 0.13 245)',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  lineHeight: 1.45,
                 }}
               >
-                Focus area (optional)
-              </span>
-              <InfoTip title="Focus area">
-                <p style={{ margin: 0 }}>
-                  Scenarios set to a focus area only pull documents tagged with
-                  the same area. Leave blank to make this document available to
-                  every scenario.
-                </p>
-              </InfoTip>
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {FOCUS_AREAS.map((f) => (
-                <FocusChipButton
-                  key={f.key}
-                  label={f.label}
-                  description={f.description}
-                  active={focus === f.key}
-                  onClick={() => setFocus(focus === f.key ? null : f.key)}
-                />
-              ))}
-            </div>
-            {focus && (
-              <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 6 }}>
-                {FOCUS_AREAS.find((f) => f.key === focus)?.description}
+                {summary}
               </div>
             )}
-          </div>
-
-          <div>
-            <ScopeHeading label="Used by" help={TOOLS_HELP} />
-            <ScopeChips
-              testId="add-scope-tools"
-              options={KNOWLEDGE_TOOLS}
-              selected={tools}
-              vocabulary={KNOWLEDGE_TOOL_KEYS}
-              onChange={setTools}
-            />
-            <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 6 }}>
-              Tick this to supplement the fecal charts. Choose the species it
-              applies to.
-            </div>
-          </div>
-
-          <div>
-            <ScopeHeading label="Species" help={SPECIES_HELP} />
-            <ScopeChips
-              testId="add-scope-species"
-              options={KNOWLEDGE_SPECIES}
-              selected={species}
-              vocabulary={KNOWLEDGE_SPECIES_KEYS}
-              onChange={setSpecies}
-            />
-          </div>
-
-          <div
-            style={{
-              fontSize: 12,
-              color: COLOR.inkSoft,
-              lineHeight: 1.55,
-              padding: '10px 12px',
-              borderRadius: 12,
-              background: 'rgba(255,255,255,0.6)',
-              border: `1px solid ${COLOR.border}`,
-            }}
-          >
-            <strong style={{ fontWeight: 800 }}>What happens next:</strong> we’ll
-            extract the text, split it into short sections, and make them
-            searchable so scenarios can pull from them — usually under a minute.
-          </div>
-
-          {error && <div style={{ fontSize: 12.5, color: COLOR.danger, fontWeight: 600 }}>{error}</div>}
-
-          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-            <button
-              style={{ ...btnPrimary, opacity: canSubmit ? 1 : 0.5 }}
-              disabled={!canSubmit}
-              onClick={submit}
-            >
-              {busy ? 'Adding…' : 'Add document'}
-            </button>
-            <button style={btnSecondary} onClick={handleClose}>
-              Cancel
-            </button>
-          </div>
+          </StepSection>
         </div>
+
+        {error && <div style={{ fontSize: 12.5, color: COLOR.danger, fontWeight: 700 }}>{error}</div>}
+
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            borderTop: `1px solid ${COLOR.border}`,
+            paddingTop: 12,
+          }}
+        >
+          <span style={{ flex: 1, minWidth: 300, fontSize: 11.5, color: COLOR.inkMute, lineHeight: 1.45 }}>
+            <strong style={{ fontWeight: 800 }}>What happens next:</strong> we read the text,
+            split it into short sections and make them searchable — usually under a minute.
+          </span>
+          <button style={btnSecondary} onClick={handleClose}>
+            Cancel
+          </button>
+          <button
+            style={
+              canSubmit || busy
+                ? { ...btnPrimary, opacity: busy ? 0.6 : 1 }
+                : { ...btnSecondary, color: COLOR.inkMute, cursor: 'default' }
+            }
+            disabled={!canSubmit}
+            onClick={submit}
+          >
+            {busy ? 'Adding…' : 'Add document'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ position: 'absolute', top: 18, right: 18 }}>
+        <ModalCloseButton onClose={handleClose} />
       </div>
     </Modal>
   );

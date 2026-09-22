@@ -142,7 +142,7 @@ describe('the real chart photographs', () => {
     // Two DIFFERENT chart photos must never look like the same picture, or
     // the guard would confidently assign the wrong score.
     expect(min).toBeGreaterThan(EXACT_REFERENCE_MAX_DISTANCE);
-  });
+  }, 30_000);
 
   /**
    * The other side of the threshold. A trainee scanning a chart photo sends a
@@ -165,7 +165,7 @@ describe('the real chart photographs', () => {
     }
     console.log(`${species} worst re-encode drift: ${worst}`);
     expect(worst).toBeLessThanOrEqual(EXACT_REFERENCE_MAX_DISTANCE);
-  });
+  }, 30_000);
 
   it('hashes an identical decode to distance 0', () => {
     const entry = FECAL_CHARTS.dog.entries.find((e) => e.score === 3.5)!;

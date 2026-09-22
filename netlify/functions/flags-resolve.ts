@@ -21,6 +21,7 @@
  * the flag's default_value is returned.
  */
 import { errorResponse, getServiceClient, jsonResponse } from './_shared/admin';
+import { triggerKnowledgeSync } from './_shared/knowledgeTrigger';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -257,6 +258,13 @@ export default async (req: Request): Promise<Response> => {
       _rules?: RuleRow[];
     };
     const resolved = resolveFlags(snap._flags ?? [], snap._rules ?? [], who);
+
+    // Every app boot passes through here, which makes this the one place that
+    // can keep the built-in knowledge base seeded without anyone asking.
+    // Fire-and-forget, once per instance, and outside the try/catch's concern
+    // — it cannot throw and it is never awaited, so the flags response is
+    // byte-identical whether it fires or not.
+    triggerKnowledgeSync(req);
 
     return jsonResponse(
       {

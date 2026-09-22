@@ -11,181 +11,35 @@
  *   { op: 'ingest-bundled' }        — ingest the study PDFs shipped in
  *       public/studies/ (fetched from this deploy's own origin). Idempotent:
  *       upserts by slug.
+ *       NOTE: the bundled studies are now part of the automatic deploy sync
+ *       (`netlify/plugins/knowledge-sync` → `npm run knowledge:sync`), which
+ *       reads the PDFs from disk and skips unchanged ones by source hash.
+ *       This op stays as the JWT-only fallback; both share `extractPdf` +
+ *       `storeKnowledgeDoc` from `_shared/knowledgeIngest.ts`.
  *
  * PDF cap: 4MB raw (Netlify body limit ~6MB; base64 inflates ~33%).
  */
 import { errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import {
-  ALL_KNOWLEDGE_SPECIES,
-  DEFAULT_KNOWLEDGE_TOOLS,
-  normalizeKnowledgeSpecies,
-  normalizeKnowledgeTools,
-} from '../../src/shared/knowledge/knowledgeScopes';
-import { embedTexts, getGeminiClient } from './_shared/gemini';
-import { chunkMarkdown } from '../../src/services/ragShared';
-import { estimateTokens } from '../../src/services/aiTelemetry';
-
-const EXTRACT_MODEL = 'gemini-3-flash-preview';
-const MAX_PDF_BYTES = 4 * 1024 * 1024;
+  BUNDLED_STUDIES,
+  MAX_PDF_BYTES,
+  extractPdf,
+  storeKnowledgeDoc,
+  withKnowledgeScope,
+  type Extracted,
+  type StoreDocArgs,
+} from './_shared/knowledgeIngest';
 
 /**
- * The Dr. Coe studies shipped in public/studies/ (served at /studies/*).
+ * Chunk + embed + store a document, as this admin.
  *
- * Every entry carries a `focus` from the shared vocabulary — retrieval filters
- * chunks on `tags @> { focus }`, so a study tagged only `topic` (as the two
- * communication papers were) can never be reached by a focus-targeted
- * scenario. `topic` is kept alongside for back-compat with anything that read
- * the old shape.
+ * Thin wrapper over the shared implementation — the sync script
+ * (`scripts/knowledge-sync.ts`) calls the same function with a service-role
+ * client and a null actor.
  */
-const STUDY_SCOPE = {
-  tools: DEFAULT_KNOWLEDGE_TOOLS,
-  species: ALL_KNOWLEDGE_SPECIES,
-} as const;
-
-const BUNDLED_STUDIES: Array<{ file: string; slug: string; tags: Record<string, unknown> }> = [
-  { file: 'davies-2024-dog-owner-preferences-obesity.pdf', slug: 'study:davies-2024', tags: { focus: 'weight', ...STUDY_SCOPE } },
-  { file: 'sutherland-2024-cat-owner-preferences-obesity.pdf', slug: 'study:sutherland-2024-cat', tags: { focus: 'weight', ...STUDY_SCOPE } },
-  { file: 'sutherland-2024-client-obesity-communication.pdf', slug: 'study:sutherland-2024-client', tags: { focus: 'weight', ...STUDY_SCOPE } },
-  {
-    file: 'macmartin-2015-nutritional-history-question-design.pdf',
-    slug: 'study:macmartin-2015',
-    tags: { focus: 'communication', topic: 'communication', ...STUDY_SCOPE },
-  },
-  {
-    file: 'macmartin-2023-client-resistance-conversation-analysis.pdf',
-    slug: 'study:macmartin-2023',
-    tags: { focus: 'communication', topic: 'communication', ...STUDY_SCOPE },
-  },
-];
-
-/**
- * Stamp a knowledge scope onto a tag bag: unknown keys dropped, absent or
- * empty → the defaults (the four training-session tools, every species —
- * never the Fecal Scan, which has to be chosen on purpose).
- *
- * Applied in `storeDoc`, so EVERY write path — upload, bundled study,
- * re-embed — produces a document that scoped retrieval can actually see.
- */
-function withKnowledgeScope(tags: Record<string, unknown>): Record<string, unknown> {
-  return {
-    ...tags,
-    tools: normalizeKnowledgeTools(tags.tools),
-    species: normalizeKnowledgeSpecies(tags.species),
-  };
-}
-
-interface Extracted {
-  title: string;
-  citation: string;
-  markdown: string;
-}
-
-/** Gemini native PDF understanding → structured markdown + citation. */
-async function extractPdf(pdfBase64: string): Promise<Extracted> {
-  const ai = getGeminiClient();
-  const res = await ai.models.generateContent({
-    model: EXTRACT_MODEL,
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
-          {
-            text:
-              'Extract this research paper for a retrieval corpus. Return JSON with: ' +
-              '"title" (paper title), "citation" (short form: "Authors, Year — Journal"), ' +
-              '"markdown" (the full substantive content as clean markdown: abstract, findings, ' +
-              'discussion, practical implications; omit references list, page furniture, and tables ' +
-              'that do not read as prose — summarise key tables in text).',
-          },
-        ],
-      },
-    ],
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'object',
-        required: ['title', 'citation', 'markdown'],
-        properties: {
-          title: { type: 'string' },
-          citation: { type: 'string' },
-          markdown: { type: 'string' },
-        },
-      } as never,
-    },
-  });
-  const parsed = JSON.parse(res.text ?? '{}') as Partial<Extracted>;
-  if (!parsed.markdown?.trim()) throw new Error('PDF extraction returned no content');
-  return {
-    title: parsed.title?.trim() || 'Untitled document',
-    citation: parsed.citation?.trim() || '',
-    markdown: parsed.markdown,
-  };
-}
-
-/** Chunk + embed + store a document. Replaces any existing chunks. */
-async function storeDoc(
-  ctx: AdminCtx,
-  args: {
-    slug: string;
-    title: string;
-    category: string;
-    content: string;
-    citation: string;
-    tags: Record<string, unknown>;
-    /** Preserve 'code-seed' when re-indexing a built-in doc (default 'admin'). */
-    source?: string;
-    /** Full metadata object to write (defaults to `{ citation, tags }`). */
-    metadata?: Record<string, unknown>;
-  },
-): Promise<number> {
-  // One choke point for the scope: document metadata and chunk tags can never
-  // disagree, whichever op got here.
-  const tags = withKnowledgeScope(args.tags);
-  const { data: doc, error: docErr } = await ctx.sb
-    .from('knowledge_documents')
-    .upsert(
-      {
-        slug: args.slug,
-        title: args.title,
-        category: args.category,
-        content: args.content,
-        metadata: args.metadata
-          ? { ...args.metadata, tags }
-          : { citation: args.citation, tags },
-        source: args.source ?? 'admin',
-        updated_by: ctx.user.id,
-        updated_at: new Date().toISOString(),
-        // Ingesting is an explicit (re-)add: if this slug was soft-deleted,
-        // bring it back — unlike seed(), which refreshes content and respects
-        // the admin's delete.
-        deleted_at: null,
-      },
-      { onConflict: 'slug' },
-    )
-    .select('id')
-    .maybeSingle();
-  if (docErr || !doc) throw new Error(docErr?.message ?? 'doc upsert failed');
-
-  const chunks = chunkMarkdown(args.content);
-  const embeddings = await embedTexts(chunks, 'RETRIEVAL_DOCUMENT');
-
-  // Replace chunks wholesale (idempotent re-ingest).
-  await ctx.sb.from('knowledge_chunks').delete().eq('doc_id', doc.id);
-  const { error: chunkErr } = await ctx.sb.from('knowledge_chunks').insert(
-    chunks.map((content, i) => ({
-      doc_id: doc.id,
-      chunk_idx: i,
-      content,
-      token_estimate: estimateTokens(content),
-      tags: { category: args.category, ...tags },
-      citation: args.citation || null,
-      embedding: `[${embeddings[i].join(',')}]`,
-    })),
-  );
-  if (chunkErr) throw new Error(chunkErr.message);
-  return chunks.length;
+function storeDoc(ctx: AdminCtx, args: StoreDocArgs): Promise<number> {
+  return storeKnowledgeDoc(ctx.sb, ctx.user.id, args);
 }
 
 export default async (req: Request): Promise<Response> => {

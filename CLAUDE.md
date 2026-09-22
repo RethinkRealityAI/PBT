@@ -29,7 +29,9 @@ src/
   data/knowledge/ — driverProfiles, pushbackTaxonomy, actGuide, clinicalReference, scoringRubric, promptBuilders
   lib/         — storage (namespaced localStorage), classNames, id
   tests/       — setup
-public/        — static assets (e.g. audio/pcm-capture-processor.js for voice capture)
+public/        — static assets (audio/pcm-capture-processor.js, studies/*.pdf)
+netlify/plugins/ — build plugins (knowledge-sync: auto-seeds the RAG corpus)
+scripts/       — knowledge-sync.ts (`npm run knowledge:sync`), build checks
 supabase/migrations/  — hand-run SQL
 docs/superpowers/specs/ — design spec
 resources/   — design handoff prototype + ECHO source PDFs/transcripts
@@ -168,6 +170,56 @@ re-creates `match_knowledge_chunks` with `doc_slug` / `doc_title`. **Apply it
 with (or before) the deploy** — un-scoped chunks are invisible to scoped
 retrieval (fail-open: ungrounded prompts, not errors).
 
+### Knowledge base seeding (automatic — there is no button)
+
+The built-in corpus — driver personas, pushback taxonomy, ACT guide, clinical
+reference, the three Royal Canin fecal charts, and the five bundled studies in
+`public/studies/` — **seeds itself**. Nobody loads it by hand. One engine,
+`netlify/functions/_shared/knowledgeSyncRun.ts` (`runKnowledgeSync`), behind
+three triggers:
+
+1. **`knowledge-sync-background` (the one that works in production).** A
+   Netlify *background* function (the `-background` suffix buys 202-immediate
+   + a 15-minute budget, which a cold sync needs). POST, no auth. Fired
+   fire-and-forget by `flags-resolve` (every app boot) and by `admin-knowledge`
+   GET, via `_shared/knowledgeTrigger.ts` — once per function instance, never
+   awaited, never in `CONTEXT=dev`. Safe unauthenticated because it can only
+   write code-defined content, and because of a **10-minute cooldown** (recent
+   `metadata.sync.syncedAt` + a dry-run plan showing nothing to do ⇒ exit) plus
+   a 1-call/5-min per-IP `rateLimit`. Never throws. This is the path to use
+   against prod: Netlify masks the service key, so a laptop cannot.
+   PDFs come from the deploy's own origin (`/studies/*`), not disk.
+2. **`netlify/plugins/knowledge-sync`** (`[[plugins]]` in `netlify.toml`) —
+   belt and braces. `onSuccess`, `production`/`branch-deploy` only, skipped
+   without the keys, and **can never fail the deploy**.
+3. **`npm run knowledge:sync`** (service-role env) — the hands-on one.
+   `--dry-run` prints the plan without calling Gemini at all;
+   `--only fecal|builtin|studies` narrows it. After a direct sync it runs the
+   retrieval proof (the dog probe must rank the Score 3.5 passage first; the
+   cat probe must return only `fecal:cat`) and exits non-zero on failure.
+   No service key? `-- --emit-sql <file> --existing <rows.json>` runs the same
+   plan and the same embeddings and writes idempotent `<file>.001.sql`,
+   `…002.sql` parts (~400 KB) to apply in order; the exact `select` that
+   produces `rows.json` is in the script header.
+- **Idempotent by content hash.** Each document stores `metadata.sync =
+  { version, contentHash, sourceHash?, syncedAt }`. Matching hash + non-zero
+  chunk count ⇒ skipped (no re-embed); a study PDF with an unchanged
+  `sourceHash` is never even extracted. Bump `SYNC_VERSION` in
+  `_shared/knowledgeSync.ts` to force a full re-embed.
+- **Admin edits survive.** Focus / citation / tools / species edits and
+  soft-deletes are carried across by `buildSeedCatalogue` in
+  `netlify/functions/_shared/knowledgeSeed.ts` — a soft-deleted built-in has
+  its body refreshed but gets no chunks, so a re-sync is never an undelete.
+- Shared code, one implementation: `_shared/knowledgeSeed.ts` (documents +
+  precedence), `_shared/knowledgeIngest.ts` (`BUNDLED_STUDIES`, `extractPdf`,
+  `writeKnowledgeDoc`), `_shared/knowledgeSync.ts` (hashing +
+  `planKnowledgeSync`), `_shared/knowledgeSyncRun.ts` (`runKnowledgeSync` —
+  the engine; the study PDFs are *injected* so disk and HTTP produce the same
+  `sourceHash`), `_shared/knowledgeSql.ts` (SQL emission),
+  `_shared/knowledgeTrigger.ts` (the fire-and-forget kick).
+  `admin-knowledge` op=`seed` and `admin-knowledge-ingest` op=`ingest-bundled`
+  still work off the same modules as JWT-only fallbacks.
+
 ## Scenario builder (`CreateScreen`)
 
 - **Build / Library** tabs — library lists `SEED_SCENARIOS` with quick Start.
@@ -223,9 +275,9 @@ Pipeline (`netlify/functions/ai-fecal-scan.ts`, mirrors `ai-vision`):
    (confidence capped at 0.4 if the model strayed) and re-derives the band
    from the chart (puppy score 3 splits by `breedSize`).
 
-Knowledge base: the charts are code-seed documents `fecal:dog|cat|puppy`
-(admin Knowledge → "Load built-in knowledge", or `npm run seed:fecal` with the
-service-role env — the script also proves retrieval by checking the 3.5
+Knowledge base: the charts are code-seed documents `fecal:dog|cat|puppy`,
+seeded automatically on every deploy (see "Knowledge base seeding"; by hand:
+`npm run knowledge:sync`, which also proves retrieval by checking the 3.5
 passage ranks first). Netlify masks `SUPABASE_SERVICE_ROLE_KEY` as a secret,
 so local `netlify dev` always reports `source: 'bundled'`; `'rag'` needs a
 deploy or a real key. Migration `20260921000000_fecal_scan.sql` adds the
@@ -516,6 +568,9 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
   stays < 500 kB gzip (spec §13.9; currently ~66 kB) AND that no Google
   API-key-shaped string (`AIza…`) exists in any `dist/**/*.js`.
 - Netlify build command: `npm run build`.
+- Build plugin `netlify/plugins/knowledge-sync` seeds the RAG knowledge base
+  after a successful deploy (see "Knowledge base seeding"). It is fail-open
+  and never blocks or fails a deploy.
 
 ## Database migrations & deploy alignment (REQUIRED)
 

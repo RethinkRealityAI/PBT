@@ -80,10 +80,13 @@ directions). It feeds:
   paragraph per score so each score becomes its own retrievable chunk,
 - the bundled fallback in the function.
 
-Seeding runs through the existing admin "Load built-in knowledge" op, and a
-one-off `scripts/seed-fecal-knowledge.mjs` (service role + Gemini key from
-the linked Netlify env) so the corpus exists for this demo without an admin
-login.
+Seeding is automatic: `netlify/plugins/knowledge-sync` runs
+`scripts/knowledge-sync.ts` after every production / branch deploy, so the
+corpus exists without an admin login and without a button. By hand:
+`npm run knowledge:sync` (service role + Gemini key), which also proves
+retrieval. `admin-knowledge { op: 'seed' }` remains as a JWT-only fallback.
+(Superseded the one-off `scripts/seed-fecal-knowledge.ts` this spec
+originally called for.)
 
 ### Wire contract (`src/shared/ai/contract.ts`)
 

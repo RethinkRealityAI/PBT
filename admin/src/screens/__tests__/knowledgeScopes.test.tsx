@@ -141,6 +141,40 @@ describe('scope filters', () => {
 });
 
 describe('the document editor', () => {
+  /*
+    Two rows of ticked chips do not tell a non-technical reader what they have
+    built. The sentence does, and it is the thing they can agree or disagree
+    with before saving.
+  */
+  it('states the scope as one sentence', () => {
+    renderScreen();
+    fireEvent.click(screen.getByText('Fecal scoring — adult dog'));
+    expect(
+      screen.getByText('This document is used by Fecal Scan, for adult dogs only.'),
+    ).toBeInTheDocument();
+  });
+
+  it('offers nothing to save until something actually changed', () => {
+    renderScreen();
+    fireEvent.click(screen.getByText('Fecal scoring — adult dog'));
+    expect(screen.getByRole('button', { name: 'No changes' })).toBeDisabled();
+
+    fireEvent.click(
+      within(screen.getByTestId('doc-scope-species')).getByRole('button', { name: 'Cat' }),
+    );
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+  });
+
+  // The preview was the tallest thing in the modal and the least-wanted.
+  it('keeps the document text folded away until it is asked for', () => {
+    renderScreen();
+    fireEvent.click(screen.getByText('Fecal scoring — adult dog'));
+    expect(screen.queryByTestId('doc-content')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Show the text/ }));
+    expect(screen.getByTestId('doc-content')).toBeInTheDocument();
+  });
+
   it('saves the tool and species arrays it was given', async () => {
     renderScreen();
     fireEvent.click(screen.getByText('Fecal scoring — adult dog'));
