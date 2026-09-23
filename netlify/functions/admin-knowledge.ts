@@ -3,20 +3,18 @@
  *
  *   GET  /admin-knowledge                 → { documents: [...] }  (live only)
  *   GET  /admin-knowledge?trash=1         → { documents: [...] }  (soft-deleted)
- *   POST /admin-knowledge { op: 'seed' }  → ingest the code knowledge modules
+ *   POST /admin-knowledge { op: 'seed' }  → 410 Gone. The built-in corpus
  *        (driver personas, pushback taxonomy, ACT guide, clinical reference,
- *        fecal charts) as 'code-seed' documents, upserted by slug — re-running
- *        refreshes them after a code change without duplicating.
- *        NOTE: the built-in corpus is now synced automatically on every
- *        deploy (`netlify/plugins/knowledge-sync` → `npm run knowledge:sync`),
- *        which hashes content and skips unchanged documents. This op stays as
- *        the JWT-only fallback and shares the same precedence rules
- *        (`_shared/knowledgeSeed.ts`), so both paths write identical rows.
+ *        fecal charts, bundled studies) is synced automatically by
+ *        `knowledge-sync-background` (`_shared/knowledgeSyncRun.ts`), which
+ *        hashes content, skips unchanged documents, keeps soft deletes, and
+ *        holds a database lease. The old synchronous op undid that
+ *        bookkeeping, so it is gone rather than kept as a second writer.
  *   POST { op: 'update', slug, title?, category?, focus?, citation?,
  *          tools?: string[], species?: string[] }
  *        → edit a stored document's cataloguing WITHOUT re-embedding it.
  *          `title`/`category` are only editable on source='admin' documents
- *          (code-seeded ones are rebuilt by re-seeding); `focus`, `citation`
+ *          (code-seeded ones are rebuilt by the automatic sync); `focus`, `citation`
  *          and the knowledge scope (`tools` / `species`, see
  *          `src/shared/knowledge/knowledgeScopes.ts`) are editable on every
  *          document — filing built-in knowledge is the whole point.
@@ -55,120 +53,28 @@ import {
   normalizeKnowledgeSpecies,
   normalizeKnowledgeTools,
 } from '../../src/shared/knowledge/knowledgeScopes';
-import { embedTexts } from './_shared/gemini';
-import { chunkMarkdown } from '../../src/services/ragShared';
-import { estimateTokens } from '../../src/services/aiTelemetry';
 import {
   applyFocus,
   applyScope,
-  buildSeedCatalogue,
-  buildSeedDocs,
   readFocus,
   readScopeList,
   type Bag,
-  type SeedDoc,
 } from './_shared/knowledgeSeed';
-import { triggerKnowledgeSync } from './_shared/knowledgeTrigger';
+import { triggerKnowledgeSync, type NetlifyContextLike } from './_shared/knowledgeTrigger';
 
 const CATEGORIES = ['driver', 'pushback', 'act', 'clinical', 'custom'];
 
 /**
- * Rebuild the built-in documents from code.
- *
- * Superseded in day-to-day use by `scripts/knowledge-sync.ts` (run
- * automatically on every deploy by the `netlify/plugins/knowledge-sync`
- * plugin), which adds content hashing so unchanged documents are not
- * re-embedded. This op is kept because it is the only seeding path that needs
- * nothing but an admin JWT, and the shared precedence rules
- * (`buildSeedCatalogue`) mean both paths write byte-identical rows.
+ * The retired `seed` op. It rebuilt the built-in documents synchronously and,
+ * in doing so, dropped the automatic sync's `metadata.sync` fingerprints
+ * (forcing a full re-embed on the next sync) and raced it. The automatic sync
+ * (`knowledge-sync-background`, kicked by opening this screen) is now the
+ * only writer of built-in knowledge.
  */
-async function seed(ctx: AdminCtx): Promise<Response> {
-  const docs = buildSeedDocs();
-
-  // Re-seeding rebuilds these documents from code, but an admin's cataloguing
-  // (focus area, citation, knowledge scope) is NOT in the code — carry it
-  // across so a re-seed doesn't silently re-file everything. Soft-deleted
-  // built-ins stay deleted: a re-seed refreshes CONTENT, it is not an
-  // undelete, and silently resurrecting a document the admin removed would
-  // put it back into retrieval behind their back.
-  const { data: existing } = await ctx.sb
-    .from('knowledge_documents')
-    .select('slug, metadata, deleted_at')
-    .eq('source', 'code-seed');
-  const catalogue = buildSeedCatalogue(existing ?? []);
-  const tagsFor = (d: SeedDoc): Bag => catalogue.tagsFor(d);
-  const citationFor = (d: SeedDoc): string | null => catalogue.citationFor(d);
-
-  const { error } = await ctx.sb.from('knowledge_documents').upsert(
-    docs.map((d) => {
-      const tags = tagsFor(d);
-      const citation = citationFor(d);
-      return {
-        slug: d.slug,
-        title: d.title,
-        category: d.category,
-        content: d.content,
-        metadata: {
-          ...d.metadata,
-          tags,
-          ...(citation ? { citation } : {}),
-        },
-        source: 'code-seed',
-        deleted_at: catalogue.deletedAt(d.slug),
-        updated_by: ctx.user.id,
-        updated_at: new Date().toISOString(),
-      };
-    }),
-    { onConflict: 'slug' },
-  );
-  if (error) return errorResponse(500, error.message);
-
-  // Chunk + embed each seeded doc (best-effort per doc so one embedding
-  // failure doesn't fail the whole seed — docs without chunks simply don't
-  // participate in retrieval until re-embedded).
-  const failures: string[] = [];
-  const skippedDeleted: string[] = [];
-  for (const d of docs) {
-    if (catalogue.isDeleted(d.slug)) {
-      skippedDeleted.push(d.slug);
-      continue;
-    }
-    try {
-      const { data: row } = await ctx.sb
-        .from('knowledge_documents')
-        .select('id')
-        .eq('slug', d.slug)
-        .maybeSingle();
-      if (!row) continue;
-      const chunks = d.chunks ?? chunkMarkdown(d.content);
-      const embeddings = await embedTexts(chunks, 'RETRIEVAL_DOCUMENT');
-      await ctx.sb.from('knowledge_chunks').delete().eq('doc_id', row.id);
-      await ctx.sb.from('knowledge_chunks').insert(
-        chunks.map((content, i) => ({
-          doc_id: row.id,
-          chunk_idx: i,
-          content,
-          token_estimate: estimateTokens(content),
-          tags: {
-            category: d.category,
-            ...d.metadata,
-            ...tagsFor(d),
-          },
-          citation: citationFor(d),
-          embedding: `[${embeddings[i].join(',')}]`,
-        })),
-      );
-    } catch (err) {
-      failures.push(`${d.slug}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-  return jsonResponse({
-    ok: true,
-    seeded: docs.length - skippedDeleted.length,
-    skipped_deleted: skippedDeleted,
-    failures,
-  });
-}
+const SEED_GONE =
+  'Seeding is automatic now: the built-in knowledge base is synced by the deploy ' +
+  '(knowledge-sync-background), which runs when the app boots and when this ' +
+  'Knowledge screen is opened. There is nothing to press.';
 
 /** Cap on the document body copied into an audit row (Postgres jsonb payload). */
 const MAX_AUDIT_CONTENT = 100_000;
@@ -445,15 +351,16 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
   });
 }
 
-export default async (req: Request): Promise<Response> => {
+export default async (req: Request, context?: NetlifyContextLike): Promise<Response> => {
   const ctx = await requireAdmin(req, 'knowledge.read');
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
     // Opening the Knowledge screen nudges the background sync — so an admin
     // who wonders "why is the corpus empty?" has already fixed it by looking.
-    // Fire-and-forget, once per instance; it cannot affect this response.
-    triggerKnowledgeSync(req);
+    // Production only, once per instance, aimed at the primary site URL; it
+    // cannot affect this response.
+    triggerKnowledgeSync(context);
 
     // ?trash=1 — the "Recently deleted" drawer. Slim payload: enough to
     // recognise a document and restore it, without shipping every body.
@@ -507,7 +414,7 @@ export default async (req: Request): Promise<Response> => {
     return errorResponse(400, 'Invalid JSON');
   }
 
-  if (body.op === 'seed') return seed(ctx);
+  if (body.op === 'seed') return errorResponse(410, SEED_GONE);
 
   if (body.op === 'update') return update(ctx, body);
 

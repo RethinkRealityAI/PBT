@@ -1,7 +1,9 @@
 // @vitest-environment node
 /**
- * `admin-knowledge { op: 'seed' }` — the fecal charts must arrive in the
- * corpus already filed: one `fecal:<species>` document per chart, chunks
+ * Seeding the built-in corpus — now ONLY through the sync engine
+ * (`runKnowledgeSync`, what `knowledge-sync-background`, the build plugin and
+ * `npm run knowledge:sync` all run; the old `admin-knowledge { op: 'seed' }`
+ * answers 410). The fecal charts must arrive in the corpus already filed: one `fecal:<species>` document per chart, chunks
  * carrying the Royal Canin citation and the gi / fecal-scoring / species
  * tags that `ai-fecal-scan`'s slug-filtered retrieval leans on.
  *
@@ -26,6 +28,7 @@ vi.mock('@google/genai', () => {
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 
 import adminKnowledge from '../admin-knowledge';
+import { runKnowledgeSync } from '../_shared/knowledgeSyncRun';
 import {
   FECAL_CHARTS,
   FECAL_SPECIES,
@@ -75,29 +78,49 @@ beforeEach(() => {
     error: null,
   }));
   sb.setHandler('admin_roles', () => ({ data: [], error: null }));
-  // Empty corpus: no kept focus/citation, nothing soft-deleted. The per-doc
-  // id lookup answers with a deterministic id so chunk rows are traceable.
-  sb.setHandler('knowledge_documents', (call) => {
-    const eqSlug = call.ops.find((o) => o.op === 'eq' && o.args[0] === 'slug');
-    if (eqSlug) return { data: { id: `id:${String(eqSlug.args[1])}` }, error: null };
-    if (call.ops.some((o) => o.op === 'select')) return { data: [], error: null };
-    return { data: null, error: null };
-  });
+  // Empty corpus: no kept focus/citation, nothing soft-deleted. The document
+  // upsert answers with a deterministic id so chunk rows are traceable.
+  sb.setHandler('knowledge_documents', docsHandler([]));
   sb.setHandler('knowledge_chunks', () => ({ data: null, error: null }));
+  sb.setHandler('knowledge_chunk_counts', () => ({ data: [], error: null }));
+  sb.rpc.mockImplementation(async (fn: string) =>
+    fn === 'knowledge_sync_try_lease' ? { data: true, error: null } : { data: null, error: null },
+  );
 });
 
-const seed = () =>
-  adminKnowledge(
-    jsonRequest('admin-knowledge', { op: 'seed' }, { headers: { authorization: 'Bearer admin' } }),
-  );
+function docsHandler(existing: Row[]) {
+  return (call: SbCall) => {
+    const up = call.ops.find((o) => o.op === 'upsert');
+    if (up) return { data: { id: `id:${String((up.args[0] as Row).slug)}` }, error: null };
+    if (call.ops.some((o) => o.op === 'select')) return { data: existing, error: null };
+    return { data: null, error: null };
+  };
+}
 
-describe('admin-knowledge seed — fecal charts', () => {
+/** The built-in documents (studies excluded — they need PDFs + extraction). */
+const seed = () =>
+  runKnowledgeSync({
+    sb: sb.client,
+    groups: ['fecal', 'builtin'],
+    readStudy: () => Promise.reject(new Error('studies are not part of this test')),
+  });
+
+describe('admin-knowledge { op: seed } — retired', () => {
+  it('answers 410 and writes nothing', async () => {
+    const res = await adminKnowledge(
+      jsonRequest('admin-knowledge', { op: 'seed' }, { headers: { authorization: 'Bearer admin' } }),
+    );
+    expect(res.status).toBe(410);
+    expect(sb.callsFor('knowledge_documents')).toEqual([]);
+    expect(mocks.embedContent).not.toHaveBeenCalled();
+  });
+});
+
+describe('knowledge sync — fecal charts', () => {
   it('upserts one pre-filed document per chart', async () => {
-    const res = await seed();
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.ok).toBe(true);
-    expect(body.failures).toEqual([]);
+    const result = await seed();
+    expect(result.skipped).toBeUndefined();
+    expect(result.plan.create.length).toBeGreaterThan(0);
 
     const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
     for (const species of FECAL_SPECIES) {
@@ -221,26 +244,21 @@ describe('admin-knowledge seed — fecal charts', () => {
   });
 
   it('carries an admin-edited scope across a re-seed, like focus and citation', async () => {
-    sb.setHandler('knowledge_documents', (call) => {
-      const eqSlug = call.ops.find((o) => o.op === 'eq' && o.args[0] === 'slug');
-      if (eqSlug) return { data: { id: `id:${String(eqSlug.args[1])}` }, error: null };
-      if (call.ops.some((o) => o.op === 'select')) {
-        return {
-          data: [
-            {
-              slug: 'act:acknowledge',
-              deleted_at: null,
-              metadata: {
-                citation: 'Clinic handbook',
-                tags: { focus: 'communication', tools: ['coach'], species: ['cat'] },
-              },
-            },
-          ],
-          error: null,
-        };
-      }
-      return { data: null, error: null };
-    });
+    sb.setHandler(
+      'knowledge_documents',
+      docsHandler([
+        {
+          id: 'id:act:acknowledge',
+          slug: 'act:acknowledge',
+          deleted_at: null,
+          source: 'code-seed',
+          metadata: {
+            citation: 'Clinic handbook',
+            tags: { focus: 'communication', tools: ['coach'], species: ['cat'] },
+          },
+        },
+      ]),
+    );
 
     await seed();
     const docs = written(sb.callsFor('knowledge_documents'), 'upsert');

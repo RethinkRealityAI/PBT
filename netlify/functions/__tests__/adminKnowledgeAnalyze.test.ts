@@ -29,6 +29,7 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 
 import analyzeFn from '../admin-knowledge-analyze';
 import { EXTRACT_MODEL } from '../_shared/knowledgeIngest';
+import { __resetRateLimits } from '../_shared/ai';
 import { FOCUS_AREA_KEYS } from '../../../src/shared/knowledge/focusAreas';
 import {
   ALL_KNOWLEDGE_SPECIES,
@@ -100,6 +101,7 @@ const post = (body: unknown, headers?: Record<string, string>) =>
 
 beforeEach(() => {
   setFunctionEnv();
+  __resetRateLimits();
   sb = makeFakeSupabase();
   mocks.createClient.mockReset();
   mocks.createClient.mockImplementation(() => sb.client);
@@ -167,6 +169,20 @@ describe('admin-knowledge-analyze — auth + input', () => {
       }),
     );
     expect(res.status).toBe(405);
+  });
+});
+
+describe('admin-knowledge-analyze — spend control', () => {
+  it('rate-limits a caller at 10 analyses a minute', async () => {
+    const headers = adminHeaders();
+    mocks.generateContent.mockResolvedValue({ text: JSON.stringify({}) });
+    for (let i = 0; i < 10; i++) {
+      expect((await post({ text: `doc ${i}` }, headers)).status).toBe(200);
+    }
+    const limited = await post({ text: 'one too many' }, headers);
+    expect(limited.status).toBe(429);
+    expect(typeof (await limited.json()).error).toBe('string');
+    expect(mocks.generateContent).toHaveBeenCalledTimes(10);
   });
 });
 

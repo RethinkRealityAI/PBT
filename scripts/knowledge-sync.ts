@@ -8,11 +8,17 @@
  * seeded automatically by TWO triggers, both of which run the engine in
  * `netlify/functions/_shared/knowledgeSyncRun.ts`:
  *
- *   1. `netlify/functions/knowledge-sync-background.ts` — fired
- *      fire-and-forget from `flags-resolve` (every app boot) and from
- *      `admin-knowledge` GET. This is the one that works in production,
- *      where the service-role key only exists inside the runtime.
- *   2. `netlify/plugins/knowledge-sync` — the build plugin, belt and braces.
+ *   1. `netlify/functions/knowledge-sync-background.ts` — kicked by
+ *      `flags-resolve` (every app boot) and `admin-knowledge` GET, always at
+ *      the site's primary URL and authenticated with `x-pbt-sync-key` (an
+ *      HMAC keyed with the service-role key). This is the one that works in
+ *      production, where the service-role key only exists inside the runtime.
+ *   2. `netlify/plugins/knowledge-sync` — the build plugin (production
+ *      builds only), belt and braces.
+ *
+ * Every writing run takes the database lease `knowledge_sync_try_lease`
+ * (migration 20260923000000_knowledge_sync_lease.sql), so the three never
+ * write at once; a run that finds the lease held prints a skip and exits 0.
  *
  * This script is the third: the hands-on one, for a machine that HAS the
  * keys, plus the `--emit-sql` escape hatch for one that doesn't.
@@ -28,13 +34,16 @@
  * skipped — no embedding spend. A study PDF whose BYTES hash the same is not
  * even sent to Gemini for extraction. An admin's focus / citation / scope
  * edits are carried across, and a soft-deleted document stays deleted and
- * gets no chunks.
+ * gets no chunks. A `code-seed` document the code no longer defines is
+ * soft-deleted ("retired"); an admin's own uploads are never touched.
  *
  * ── Proof ──────────────────────────────────────────────────────────────────
  * After a direct-mode sync the script PROVES the loop works: it embeds a
  * query describing a score-3.5 stool and runs it twice through
- * `match_knowledge_chunks`, once scoped to dogs and once to cats. The dog run
- * must rank that passage first; the cat run must return cat chunks only. A
+ * `match_knowledge_chunks`, once scoped to dogs and once to cats. Among the
+ * dog chart's chunks that passage must rank first; neither run may return
+ * ANOTHER species' chart (admin supplements filed for the Fecal Scan are
+ * legitimate hits and are not flagged). A
  * green run means retrieval AND the species boundary are live; a red one
  * means the corpus, the scope backfill or the RPC is wrong, and
  * `ai-fecal-scan` would silently fall back to its bundled chart.
@@ -82,7 +91,11 @@ import {
 import type { ExistingKnowledgeRow } from '../netlify/functions/_shared/knowledgeSync';
 import { emitKnowledgeSqlFiles } from '../netlify/functions/_shared/knowledgeSql';
 import { toPgvectorLiteral } from '../src/services/ragShared';
-import { fecalKnowledgeSlug } from '../src/data/knowledge/fecalCharts';
+import {
+  FECAL_SPECIES,
+  fecalKnowledgeSlug,
+  type FecalSpecies,
+} from '../src/data/knowledge/fecalCharts';
 
 // ── CLI ────────────────────────────────────────────────────────────────────
 
@@ -248,16 +261,36 @@ async function proveRetrieval(sb: RpcClient): Promise<void> {
     return rows;
   }
 
+  /**
+   * A leak is ANOTHER species' chart in this species' results. Anything else
+   * is legitimate: `ai-fecal-scan` also retrieves admin supplements filed for
+   * the Fecal Scan (and for this species), so a non-chart slug here is a
+   * feature, not a scope failure.
+   */
+  function foreignChart(rows: MatchRow[], species: FecalSpecies): MatchRow | undefined {
+    const others = new Set(
+      FECAL_SPECIES.filter((s) => s !== species).map((s) => fecalKnowledgeSlug(s)),
+    );
+    return rows.find((r) => r.doc_slug && others.has(r.doc_slug));
+  }
+
   console.log('\nVerifying retrieval — scope { tools:[fecal-scan], species:[dog] }');
   console.log(`  query: "${PROBE}"`);
   const dogRows = await probe('dog');
-  if (!dogRows[0].content.includes(PROBE_EXPECT)) {
+  const dogSlug = fecalKnowledgeSlug('dog');
+  // The proof is about the chart: rank-1 among the dog CHART's chunks (an
+  // admin supplement may legitimately outrank it). Rows without provenance
+  // (an RPC predating 20260922000000) are taken at face value.
+  const topChart = dogRows.find((r) => !r.doc_slug || r.doc_slug === dogSlug);
+  if (!topChart) {
+    throw new Error(`No ${dogSlug} chunk in the top ${dogRows.length} — the dog chart is not retrievable.`);
+  }
+  if (!topChart.content.includes(PROBE_EXPECT)) {
     throw new Error(
-      `Top match does not mention "${PROBE_EXPECT}" — the corpus or the embedding is wrong.`,
+      `Top ${dogSlug} match does not mention "${PROBE_EXPECT}" — the corpus or the embedding is wrong.`,
     );
   }
-  const dogSlug = fecalKnowledgeSlug('dog');
-  const strayDog = dogRows.find((r) => r.doc_slug && r.doc_slug !== dogSlug);
+  const strayDog = foreignChart(dogRows, 'dog');
   if (strayDog) {
     throw new Error(`Dog scope leaked a chunk from ${strayDog.doc_slug} — the species tag is wrong.`);
   }
@@ -265,7 +298,7 @@ async function proveRetrieval(sb: RpcClient): Promise<void> {
   console.log('\nVerifying isolation — scope { tools:[fecal-scan], species:[cat] }');
   const catRows = await probe('cat');
   const catSlug = fecalKnowledgeSlug('cat');
-  const stray = catRows.find((r) => r.doc_slug && r.doc_slug !== catSlug);
+  const stray = foreignChart(catRows, 'cat');
   if (stray) {
     throw new Error(
       `Cat scope returned a chunk from ${stray.doc_slug} — species scoping is not being applied.`,
@@ -273,8 +306,8 @@ async function proveRetrieval(sb: RpcClient): Promise<void> {
   }
 
   console.log(
-    `\nOK — top dog match is the ${PROBE_EXPECT} chunk, and the cat scope returns ` +
-      `only ${catSlug} chunks.`,
+    `\nOK — top ${dogSlug} match is the ${PROBE_EXPECT} chunk, and the cat scope returns ` +
+      `no other species' chart (only ${catSlug} or Fecal-Scan supplements).`,
   );
 }
 
@@ -334,7 +367,12 @@ async function main(): Promise<void> {
   }
 
   if (emitting) {
-    const files = emitKnowledgeSqlFiles(result.sqlDocs, opts.emitSql!);
+    const files = emitKnowledgeSqlFiles(
+      result.sqlDocs,
+      opts.emitSql!,
+      undefined,
+      result.retiredSlugs,
+    );
     mkdirSync(path.dirname(path.resolve(process.cwd(), opts.emitSql!)), { recursive: true });
     for (const file of files) {
       writeFileSync(path.resolve(process.cwd(), file.name), file.body, 'utf8');
@@ -347,6 +385,13 @@ async function main(): Promise<void> {
   }
 
   console.log(`\n${result.summary}`);
+
+  if (result.skipped === 'lease-held') {
+    // Another sync (the background function, most likely) is writing right
+    // now; proving retrieval against a half-written corpus would only fail.
+    console.log('Retrieval proof skipped — another sync holds the lease.');
+    return;
+  }
 
   if (!opts.groups.includes('fecal')) {
     console.log('Retrieval proof skipped — it needs the fecal charts (`--only fecal`).');

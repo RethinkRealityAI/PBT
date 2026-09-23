@@ -10,21 +10,16 @@
  *       (~800-token paragraphs), embedded (gemini-embedding-001, 768d,
  *       normalised) and stored as knowledge_documents + knowledge_chunks.
  *   { op: 're-embed', slug }        — re-chunk + re-embed a stored document.
- *   { op: 'ingest-bundled' }        — ingest the study PDFs shipped in
- *       public/studies/ (fetched from this deploy's own origin). Idempotent:
- *       upserts by slug.
- *       NOTE: the bundled studies are now part of the automatic deploy sync
- *       (`netlify/plugins/knowledge-sync` → `npm run knowledge:sync`), which
- *       reads the PDFs from disk and skips unchanged ones by source hash.
- *       This op stays as the JWT-only fallback; both share `extractPdf` +
- *       `storeKnowledgeDoc` from `_shared/knowledgeIngest.ts`.
+ *   { op: 'ingest-bundled' }        — 410 Gone. The study PDFs shipped in
+ *       public/studies/ are synced automatically by `knowledge-sync-background`
+ *       (`_shared/knowledgeSyncRun.ts`), which skips unchanged PDFs by source
+ *       hash and never un-deletes a study an admin removed.
  *
  * PDF cap: 4MB raw (Netlify body limit ~6MB; base64 inflates ~33%).
  */
 import { errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import {
-  BUNDLED_STUDIES,
   MAX_PDF_BYTES,
   extractPdf,
   storeKnowledgeDoc,
@@ -32,6 +27,11 @@ import {
   type Extracted,
   type StoreDocArgs,
 } from './_shared/knowledgeIngest';
+
+const BUNDLED_GONE =
+  'The bundled studies are synced automatically by the deploy ' +
+  '(knowledge-sync-background), which runs when the app boots and when the ' +
+  'Knowledge screen is opened. There is nothing to press.';
 
 /**
  * Chunk + embed + store a document, as this admin.
@@ -145,30 +145,10 @@ export default async (req: Request): Promise<Response> => {
     }
 
     if (body.op === 'ingest-bundled') {
-      let ingested = 0;
-      const failures: string[] = [];
-      for (const study of BUNDLED_STUDIES) {
-        try {
-          const url = new URL(`/studies/${study.file}`, req.url);
-          const res = await fetch(url.toString());
-          if (!res.ok) throw new Error(`fetch ${res.status}`);
-          const buf = Buffer.from(await res.arrayBuffer());
-          if (buf.byteLength > MAX_PDF_BYTES) throw new Error('over 4MB');
-          const extracted = await extractPdf(buf.toString('base64'));
-          await storeDoc(ctx, {
-            slug: study.slug,
-            title: extracted.title,
-            category: 'clinical',
-            content: extracted.markdown,
-            citation: extracted.citation,
-            tags: study.tags,
-          });
-          ingested++;
-        } catch (err) {
-          failures.push(`${study.file}: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-      return jsonResponse({ ok: true, ingested, failures });
+      // Retired: it re-extracted every PDF, dropped the sync fingerprints,
+      // re-filed the studies as source='admin' and un-deleted any the admin
+      // had removed. The automatic sync owns the bundled studies now.
+      return errorResponse(410, BUNDLED_GONE);
     }
 
     return errorResponse(400, `Unknown op: ${String(body.op)}`);

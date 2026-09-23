@@ -197,3 +197,17 @@ describe('admin-knowledge-ingest — knowledge scope', () => {
     }
   });
 });
+
+describe('admin-knowledge-ingest — retired ingest-bundled op', () => {
+  it('answers 410, pointing at the automatic sync, and touches nothing', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const res = await post({ op: 'ingest-bundled' });
+    expect(res.status).toBe(410);
+    expect((await res.json()).error).toMatch(/automatic/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(sb.callsFor('knowledge_documents')).toEqual([]);
+    expect(sb.callsFor('knowledge_chunks')).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+});

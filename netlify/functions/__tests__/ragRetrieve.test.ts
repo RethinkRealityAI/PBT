@@ -22,15 +22,16 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 
 import ragRetrieve from '../rag-retrieve';
 import { __clearRetrievalCache, retrieveChunks } from '../_shared/retrieval';
+import { __resetRateLimits } from '../_shared/ai';
 
 let sb: FakeSupabase;
 
 const ROW = { content: 'Chunk', citation: 'Cite', tags: { focus: 'weight' }, similarity: 0.8 };
 
-function post(body: unknown): Request {
+function post(body: unknown, ip = '203.0.113.7'): Request {
   return new Request('http://localhost/.netlify/functions/rag-retrieve', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-nf-client-connection-ip': ip },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 }
@@ -38,6 +39,7 @@ function post(body: unknown): Request {
 beforeEach(() => {
   setFunctionEnv();
   __clearRetrievalCache();
+  __resetRateLimits();
   sb = makeFakeSupabase();
   mocks.createClient.mockReset();
   mocks.createClient.mockImplementation(() => sb.client);
@@ -61,32 +63,70 @@ describe('rag-retrieve', () => {
     expect(mocks.embedContent).not.toHaveBeenCalled();
   });
 
-  it('returns mapped rows and passes k + filters through to the RPC', async () => {
+  it('returns mapped rows and passes k + focus through, always scoped to roleplay', async () => {
     sb.rpc.mockResolvedValueOnce({ data: [ROW], error: null });
     const res = await ragRetrieve(post({ query: 'weight denial', k: 3, filters: { focus: 'weight' } }));
     expect(await res.json()).toEqual({ results: [ROW] });
     expect(sb.rpc).toHaveBeenCalledWith(
       'match_knowledge_chunks',
-      expect.objectContaining({ match_count: 3, filter: { focus: 'weight' } }),
+      expect.objectContaining({
+        match_count: 3,
+        filter: { tools: ['roleplay'], focus: 'weight' },
+      }),
     );
   });
 
-  it('passes a sanitized knowledge scope through, dropping unknown keys', async () => {
-    sb.rpc.mockResolvedValueOnce({ data: [ROW], error: null });
-    await ragRetrieve(
-      post({
-        query: 'weight denial',
-        filters: { tool: 'roleplay', species: 'dog', focus: 'weight' },
-      }),
-    );
-    expect(sb.rpc.mock.calls[0][1]).toMatchObject({
-      filter: { tools: ['roleplay'], species: ['dog'], focus: 'weight' },
-    });
+  it('ignores a client-supplied tool / species — the public scope is fixed', async () => {
+    for (const filters of [
+      { tool: 'fecal-scan', species: 'dog' },
+      { tool: 'not-a-tool' },
+      { species: 'cat' },
+      {},
+      undefined,
+    ]) {
+      __clearRetrievalCache();
+      sb.rpc.mockReset();
+      sb.rpc.mockResolvedValueOnce({ data: [ROW], error: null });
+      await ragRetrieve(post({ query: 'stool score', filters }));
+      // Exactly the roleplay scope: never the fecal-scan tool, never a
+      // species, and never the unscoped `{}` that used to mean "everything".
+      expect(sb.rpc.mock.calls[0][1]).toMatchObject({ filter: { tools: ['roleplay'] } });
+      expect((sb.rpc.mock.calls[0][1] as { filter: object }).filter).toEqual({
+        tools: ['roleplay'],
+      });
+    }
+  });
 
-    __clearRetrievalCache();
+  it('keeps attached-document targeting inside the roleplay scope', async () => {
     sb.rpc.mockResolvedValueOnce({ data: [ROW], error: null });
-    await ragRetrieve(post({ query: 'weight denial', filters: { tool: 'not-a-tool' } }));
-    expect(sb.rpc.mock.calls[1][1]).toMatchObject({ filter: {} });
+    await ragRetrieve(post({ query: 'q', filters: { docSlugs: ['fecal:dog'], tool: 'fecal-scan' } }));
+    expect(sb.rpc.mock.calls[0][1]).toMatchObject({
+      filter: { tools: ['roleplay'] },
+      doc_slugs: ['fecal:dog'],
+    });
+  });
+
+  it('strips document provenance from the public response', async () => {
+    sb.rpc.mockResolvedValueOnce({
+      data: [{ ...ROW, doc_slug: 'fecal:dog', doc_title: 'Royal Canin dog chart' }],
+      error: null,
+    });
+    const res = await ragRetrieve(post({ query: 'q' }));
+    const body = await res.json();
+    expect(body).toEqual({ results: [ROW] });
+    expect(JSON.stringify(body)).not.toContain('fecal:dog');
+  });
+
+  it('rate-limits a caller at 30 requests a minute', async () => {
+    sb.rpc.mockResolvedValue({ data: [ROW], error: null });
+    for (let i = 0; i < 30; i++) {
+      expect((await ragRetrieve(post({ query: `q${i}` }))).status).toBe(200);
+    }
+    const limited = await ragRetrieve(post({ query: 'one too many' }));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('retry-after')).toBeTruthy();
+    // Another caller is unaffected.
+    expect((await ragRetrieve(post({ query: 'q' }, '198.51.100.9'))).status).toBe(200);
   });
 
   it('retries unfiltered when a focus filter matches nothing', async () => {

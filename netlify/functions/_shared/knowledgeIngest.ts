@@ -142,6 +142,11 @@ export async function extractPdf(pdfBase64: string): Promise<Extracted> {
  */
 export interface KnowledgeDb {
   from(table: string): any;
+  /** Present on a real client; the sync's lease needs it (`knowledgeSyncRun.ts`). */
+  rpc?(fn: string, params?: Record<string, unknown>): PromiseLike<{
+    data: unknown;
+    error: { message: string } | null;
+  }>;
 }
 
 export interface StoreDocArgs {
@@ -212,8 +217,15 @@ export async function writeKnowledgeDoc(
 
   if (chunks === null) return 0;
 
-  // Replace chunks wholesale (idempotent re-ingest).
-  await sb.from('knowledge_chunks').delete().eq('doc_id', doc.id);
+  // Replace chunks wholesale (idempotent re-ingest). A failed delete stops
+  // here: inserting on top of chunks we could not remove would leave the
+  // document with two generations of chunks (duplicate chunk_idx, stale text
+  // still retrievable).
+  const { error: delErr } = await sb.from('knowledge_chunks').delete().eq('doc_id', doc.id);
+  if (delErr) {
+    await forgetSyncFingerprint(sb, doc.id, args.metadata, tags);
+    throw new Error(`Replacing chunks for ${args.slug} failed — ${delErr.message}`);
+  }
   const { error: chunkErr } = await sb.from('knowledge_chunks').insert(
     chunks.map((c) => ({
       doc_id: doc.id,
@@ -225,8 +237,36 @@ export async function writeKnowledgeDoc(
       embedding: `[${c.embedding.join(',')}]`,
     })),
   );
-  if (chunkErr) throw new Error(chunkErr.message);
+  if (chunkErr) {
+    await forgetSyncFingerprint(sb, doc.id, args.metadata, tags);
+    throw new Error(chunkErr.message);
+  }
   return chunks.length;
+}
+
+/**
+ * The document row was already written with a fresh `metadata.sync`
+ * fingerprint, but its chunks were not. Left alone, the next sync would see
+ * "hash matches, chunks present" (the OLD chunks, when the delete failed) and
+ * skip it forever. Dropping the fingerprint makes the next sync redo it.
+ * Best-effort: the caller is already throwing.
+ */
+async function forgetSyncFingerprint(
+  sb: KnowledgeDb,
+  docId: unknown,
+  metadata: Record<string, unknown> | undefined,
+  tags: Record<string, unknown>,
+): Promise<void> {
+  if (!metadata || !('sync' in metadata)) return;
+  const { sync: _drop, ...rest } = metadata;
+  try {
+    await sb
+      .from('knowledge_documents')
+      .update({ metadata: { ...rest, tags } })
+      .eq('id', docId);
+  } catch {
+    // Nothing more to do — the thrown error is what gets logged.
+  }
 }
 
 /** Chunk + embed + store a document. Replaces any existing chunks. */

@@ -21,7 +21,7 @@
  * the flag's default_value is returned.
  */
 import { errorResponse, getServiceClient, jsonResponse } from './_shared/admin';
-import { triggerKnowledgeSync } from './_shared/knowledgeTrigger';
+import { triggerKnowledgeSync, type NetlifyContextLike } from './_shared/knowledgeTrigger';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -207,7 +207,7 @@ function resolveFlags(
   return out;
 }
 
-export default async (req: Request): Promise<Response> => {
+export default async (req: Request, context?: NetlifyContextLike): Promise<Response> => {
   if (req.method !== 'POST' && req.method !== 'GET') {
     return errorResponse(405, 'Method not allowed');
   }
@@ -261,10 +261,11 @@ export default async (req: Request): Promise<Response> => {
 
     // Every app boot passes through here, which makes this the one place that
     // can keep the built-in knowledge base seeded without anyone asking.
-    // Fire-and-forget, once per instance, and outside the try/catch's concern
-    // — it cannot throw and it is never awaited, so the flags response is
-    // byte-identical whether it fires or not.
-    triggerKnowledgeSync(req);
+    // Production only, at most one successful kick per instance, always aimed
+    // at the site's primary URL (never this deploy's own host), and handed to
+    // `context.waitUntil` so it survives the response without delaying it. It
+    // cannot throw, so the flags response is byte-identical either way.
+    triggerKnowledgeSync(context);
 
     return jsonResponse(
       {

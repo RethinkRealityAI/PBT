@@ -162,6 +162,46 @@ describe('planKnowledgeSync', () => {
   });
 });
 
+describe('planKnowledgeSync — retiring removed built-ins', () => {
+  const seedRow = (slug: string, over: Partial<ExistingKnowledgeRow> = {}) =>
+    syncedRow(slug, 'h', { source: 'code-seed', ...over });
+
+  it('retires a live code-seed row the code no longer defines', () => {
+    const plan = planKnowledgeSync([doc('act:acknowledge', 'h')], [
+      seedRow('act:acknowledge'),
+      seedRow('driver:Removed'),
+    ]);
+    expect(plan.retire).toEqual(['driver:Removed']);
+    expect(summarizeSync(plan)).toBe(
+      'knowledge sync: 0 created, 0 updated, 1 unchanged, 0 left deleted, 1 retired',
+    );
+  });
+
+  it('never retires an admin upload, a legacy row without source, or an already-deleted row', () => {
+    const plan = planKnowledgeSync([], [
+      syncedRow('custom:abc', 'h', { source: 'admin' }),
+      syncedRow('study:legacy', 'h', { source: null }),
+      seedRow('driver:Gone', { deleted_at: '2026-09-01T00:00:00.000Z' }),
+    ]);
+    expect(plan.retire).toEqual([]);
+  });
+
+  it('a partial run only retires slugs it owns', () => {
+    const plan = planKnowledgeSync([doc('fecal:dog', 'h')], [
+      seedRow('fecal:dog'),
+      seedRow('fecal:hamster'),
+      seedRow('driver:Activator'),
+    ], { owns: (slug) => slug.startsWith('fecal:') });
+    expect(plan.retire).toEqual(['fecal:hamster']);
+  });
+
+  it('keeps the summary unchanged when nothing is retired', () => {
+    const plan = planKnowledgeSync([doc('a', 'h')], []);
+    expect(plan.retire).toEqual([]);
+    expect(summarizeSync(plan)).toBe('knowledge sync: 1 created, 0 updated, 0 unchanged, 0 left deleted');
+  });
+});
+
 describe('canSkipExtraction', () => {
   it('is false when the slug has never been synced', () => {
     expect(canSkipExtraction(undefined, 'src')).toBe(false);

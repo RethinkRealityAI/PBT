@@ -12,7 +12,8 @@
  *   • the chunks are deleted and re-inserted wholesale.
  *
  * Strings are dollar-quoted with a tag chosen per value, so a body containing
- * `$q$` (or a quote, a backslash, a newline) cannot terminate its own literal.
+ * `$q$`, ending in `$q`, or holding a quote, a backslash or a newline cannot
+ * terminate its own literal.
  *
  * Pure module: values in, SQL text out. No I/O.
  */
@@ -50,15 +51,21 @@ export interface SqlDocument {
 }
 
 /**
- * Dollar-quote a string with a tag that does not occur inside it.
+ * Dollar-quote a string with a tag that cannot end the literal early.
  *
- * Postgres ends a dollar-quoted literal only at the exact delimiter, so the
- * single check "does the body contain this tag" is sufficient — a lone `$`,
- * a quote or a backslash are all ordinary characters inside it.
+ * Postgres ends a dollar-quoted literal at the FIRST occurrence of the exact
+ * delimiter after the opening tag, and that search runs over the body AND the
+ * closing tag together. So "the body does not contain the tag" is not enough:
+ * a body ending in `$q` followed by the closing `$q$` reads as `…$q$q$`, and
+ * the literal closes one character early. The rule that is actually
+ * sufficient: the first occurrence of `tag` in `text + tag` is the closing
+ * tag itself. A lone `$`, a quote or a backslash are all ordinary characters
+ * inside it.
  */
 export function dollarQuote(text: string): string {
+  const safe = (tag: string) => (text + tag).indexOf(tag) === text.length;
   let tag = '$q$';
-  for (let i = 0; text.includes(tag); i++) tag = `$q${i}$`;
+  for (let i = 0; !safe(tag); i++) tag = `$q${i}$`;
   return `${tag}${text}${tag}`;
 }
 
@@ -151,6 +158,20 @@ export function emitDocumentSql(doc: SqlDocument): string[] {
   return statements;
 }
 
+/**
+ * Soft-delete a built-in document the code no longer defines. Guarded exactly
+ * like the direct-write path: only a live `code-seed` row is ever touched.
+ */
+export function emitRetireSql(slug: string): string {
+  return [
+    'update public.knowledge_documents',
+    '  set deleted_at = now(), updated_at = now()',
+    `where slug = ${dollarQuote(slug)}`,
+    `  and source = ${dollarQuote('code-seed')}`,
+    '  and deleted_at is null;',
+  ].join('\n');
+}
+
 /** Default part size. Small enough to paste into the Supabase SQL editor. */
 export const MAX_SQL_FILE_BYTES = 400 * 1024;
 
@@ -198,8 +219,12 @@ export function emitKnowledgeSqlFiles(
   docs: readonly SqlDocument[],
   outPath: string,
   maxBytes: number = MAX_SQL_FILE_BYTES,
+  retireSlugs: readonly string[] = [],
 ): EmittedSqlFile[] {
-  const statements = docs.flatMap((d) => emitDocumentSql(d));
+  const statements = [
+    ...docs.flatMap((d) => emitDocumentSql(d)),
+    ...retireSlugs.map((slug) => emitRetireSql(slug)),
+  ];
   const parts = splitSqlFiles(statements, maxBytes);
   const base = outPath.replace(/\.sql$/i, '');
   return parts.map((body, i) => ({

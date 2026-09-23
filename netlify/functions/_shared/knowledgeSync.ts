@@ -102,7 +102,26 @@ export interface KnowledgeSyncPlan<T extends PlannableDoc> {
    * the admin asked for when they deleted it.
    */
   keepDeleted: T[];
+  /**
+   * Slugs of LIVE `source = 'code-seed'` rows the code no longer defines (a
+   * persona, pushback or study removed from the repo). They are soft-deleted
+   * — never hard-deleted, never anything but `code-seed` — so retrieval stops
+   * quoting knowledge the product no longer ships, and a revert of the code
+   * change brings them back through the normal create/update path.
+   */
+  retire: string[];
 }
+
+export interface PlanOptions {
+  /**
+   * Does this run own `slug`? A partial run (`--only fecal`) must not retire
+   * the documents of the groups it did not look at. Default: owns every slug.
+   */
+  owns?: (slug: string) => boolean;
+}
+
+/** The `source` value the sync writes, and the only one it ever retires. */
+export const CODE_SEED = 'code-seed';
 
 /**
  * Decide, per desired document, what the sync has to do.
@@ -118,11 +137,18 @@ export interface KnowledgeSyncPlan<T extends PlannableDoc> {
 export function planKnowledgeSync<T extends PlannableDoc>(
   desired: readonly T[],
   existing: readonly ExistingKnowledgeRow[],
+  opts: PlanOptions = {},
 ): KnowledgeSyncPlan<T> {
   const rows = new Map<string, ExistingKnowledgeRow>();
   for (const row of existing ?? []) rows.set(row.slug, row);
 
-  const plan: KnowledgeSyncPlan<T> = { create: [], update: [], skip: [], keepDeleted: [] };
+  const plan: KnowledgeSyncPlan<T> = {
+    create: [],
+    update: [],
+    skip: [],
+    keepDeleted: [],
+    retire: [],
+  };
   for (const doc of desired) {
     const row = rows.get(doc.slug);
     if (!row) {
@@ -142,6 +168,16 @@ export function planKnowledgeSync<T extends PlannableDoc>(
     if (fresh) plan.skip.push(doc);
     else plan.update.push(doc);
   }
+
+  const wanted = new Set(desired.map((d) => d.slug));
+  const owns = opts.owns ?? (() => true);
+  for (const row of existing ?? []) {
+    if (row.source !== CODE_SEED) continue; // an admin's upload is never ours to retire
+    if (row.deleted_at) continue;
+    if (wanted.has(row.slug) || !owns(row.slug)) continue;
+    plan.retire.push(row.slug);
+  }
+  plan.retire.sort();
   return plan;
 }
 
@@ -169,6 +205,7 @@ export function canSkipExtraction(
 export function summarizeSync(plan: KnowledgeSyncPlan<PlannableDoc>): string {
   return (
     `knowledge sync: ${plan.create.length} created, ${plan.update.length} updated, ` +
-    `${plan.skip.length} unchanged, ${plan.keepDeleted.length} left deleted`
+    `${plan.skip.length} unchanged, ${plan.keepDeleted.length} left deleted` +
+    (plan.retire.length > 0 ? `, ${plan.retire.length} retired` : '')
   );
 }

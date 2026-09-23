@@ -19,7 +19,20 @@
  * origin to fetch from. Both produce the same bytes, and therefore the same
  * `sourceHash`, so a study extracted by the script is recognised as unchanged
  * by the function and vice versa.
+ *
+ * ── One writer at a time ───────────────────────────────────────────────────
+ * Every run that WRITES (not a dry run, not `--emit-sql`) first takes the
+ * single-row database lease `knowledge_sync_try_lease` (migration
+ * 20260923000000_knowledge_sync_lease.sql, 15-minute TTL) and releases it in
+ * `finally`. A run that cannot take it exits with `skipped: 'lease-held'`
+ * and writes nothing. Without it, the cold `flags-resolve` instances of a new
+ * deploy would each start a full sync — multiplied Gemini spend, and one
+ * run's chunk delete-then-insert interleaving with another's. The rows are
+ * (re-)read AFTER the lease is held, so the plan reflects whatever a previous
+ * holder just wrote. If the lease function is missing (migration not applied)
+ * the run fails closed with an error naming the migration.
  */
+import { randomUUID } from 'node:crypto';
 import {
   buildSeedCatalogue,
   buildSeedDocs,
@@ -35,6 +48,7 @@ import {
   type PreparedChunkRow,
 } from './knowledgeIngest';
 import {
+  CODE_SEED,
   canSkipExtraction,
   planKnowledgeSync,
   readSyncMeta,
@@ -74,7 +88,10 @@ export interface ResolvedDoc {
   chunks?: string[];
 }
 
-export type SyncAction = 'created' | 'updated' | 'unchanged' | 'left deleted';
+export type SyncAction = 'created' | 'updated' | 'unchanged' | 'left deleted' | 'retired';
+
+/** Lease lifetime — a background function's 15-minute ceiling. */
+export const SYNC_LEASE_TTL_SECONDS = 15 * 60;
 
 export interface SyncLine {
   slug: string;
@@ -105,7 +122,45 @@ export interface RunKnowledgeSyncResult {
   summary: string;
   /** Populated only when `collectSql` is set. */
   sqlDocs: SqlDocument[];
+  /** Populated only when `collectSql` is set: code-seed slugs to soft-delete. */
+  retiredSlugs: string[];
   existingRows: ExistingKnowledgeRow[];
+  /** Set when the run did nothing because another sync holds the lease. */
+  skipped?: 'lease-held';
+}
+
+/** The group a stored slug belongs to — decides whether a partial run owns it. */
+export function groupOfSlug(slug: string): KnowledgeGroup {
+  if (isFecalSeedSlug(slug)) return 'fecal';
+  if (slug.startsWith('study:') || BUNDLED_STUDIES.some((s) => s.slug === slug)) return 'studies';
+  return 'builtin';
+}
+
+async function tryAcquireLease(sb: KnowledgeDb, holder: string): Promise<boolean> {
+  if (typeof sb.rpc !== 'function') {
+    throw new Error('Knowledge sync lease unavailable: this client cannot call rpc');
+  }
+  const { data, error } = await sb.rpc('knowledge_sync_try_lease', {
+    p_holder: holder,
+    p_ttl_seconds: SYNC_LEASE_TTL_SECONDS,
+  });
+  if (error) {
+    throw new Error(
+      `knowledge_sync_try_lease failed — ${error.message} ` +
+        '(is 20260923000000_knowledge_sync_lease.sql applied?)',
+    );
+  }
+  return data === true;
+}
+
+async function releaseLease(sb: KnowledgeDb, holder: string): Promise<void> {
+  try {
+    const res = await sb.rpc?.('knowledge_sync_release_lease', { p_holder: holder });
+    if (res?.error) console.warn('[knowledge-sync] lease release failed', res.error.message);
+  } catch (err) {
+    // The TTL frees it anyway.
+    console.warn('[knowledge-sync] lease release threw', err instanceof Error ? err.message : err);
+  }
 }
 
 /**
@@ -302,11 +357,47 @@ async function prepareChunks(
 export async function runKnowledgeSync(
   opts: RunKnowledgeSyncOptions,
 ): Promise<RunKnowledgeSyncResult> {
+  const writing = opts.dryRun !== true && opts.collectSql !== true;
+  if (!writing) return runKnowledgeSyncUnlocked(opts, opts.existingRows);
+
+  const holder = randomUUID();
+  if (!(await tryAcquireLease(opts.sb, holder))) {
+    const empty: KnowledgeSyncPlan<ResolvedDoc> = {
+      create: [],
+      update: [],
+      skip: [],
+      keepDeleted: [],
+      retire: [],
+    };
+    (opts.log ?? (() => {}))('  another knowledge sync holds the lease — nothing to do');
+    return {
+      plan: empty,
+      lines: [],
+      summary: 'knowledge sync: skipped — another sync is running',
+      sqlDocs: [],
+      retiredSlugs: [],
+      existingRows: opts.existingRows ?? [],
+      skipped: 'lease-held',
+    };
+  }
+  try {
+    // Re-read under the lease: rows passed in were read before we held it
+    // and may predate a sync that just finished.
+    return await runKnowledgeSyncUnlocked(opts, undefined);
+  } finally {
+    await releaseLease(opts.sb, holder);
+  }
+}
+
+async function runKnowledgeSyncUnlocked(
+  opts: RunKnowledgeSyncOptions,
+  knownRows: ExistingKnowledgeRow[] | undefined,
+): Promise<RunKnowledgeSyncResult> {
   const log = opts.log ?? (() => {});
   const dryRun = opts.dryRun === true;
   const groups = new Set<KnowledgeGroup>(opts.groups ?? KNOWLEDGE_GROUPS);
 
-  const existingRows = opts.existingRows ?? (await readExistingRows(opts.sb));
+  const existingRows = knownRows ?? (await readExistingRows(opts.sb));
   const rowsBySlug = new Map(existingRows.map((r) => [r.slug, r]));
 
   const desired: ResolvedDoc[] = seedDocsFor(groups);
@@ -315,11 +406,14 @@ export async function runKnowledgeSync(
   }
   desired.sort((a, b) => a.slug.localeCompare(b.slug));
 
-  const plan = planKnowledgeSync(desired, existingRows);
+  const plan = planKnowledgeSync(desired, existingRows, {
+    owns: (slug) => groups.has(groupOfSlug(slug)),
+  });
   const catalogue = buildSeedCatalogue(existingRows);
   const summary = summarizeSync(plan);
   const lines: SyncLine[] = [];
   const sqlDocs: SqlDocument[] = [];
+  const retiredSlugs: string[] = [];
 
   if (dryRun) {
     for (const [docs, action] of [
@@ -330,8 +424,9 @@ export async function runKnowledgeSync(
     ] as Array<[ResolvedDoc[], SyncAction]>) {
       for (const d of docs) lines.push({ slug: d.slug, action, chunks: null });
     }
+    for (const slug of plan.retire) lines.push({ slug, action: 'retired', chunks: null });
     lines.sort((a, b) => a.slug.localeCompare(b.slug));
-    return { plan, lines, summary, sqlDocs, existingRows };
+    return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows };
   }
 
   const write: Array<{ doc: ResolvedDoc; action: SyncAction }> = [
@@ -414,8 +509,28 @@ export async function runKnowledgeSync(
     lines.push({ slug: doc.slug, action: 'left deleted', chunks: null });
   }
 
+  // Built-in documents the code no longer defines: soft-delete, exactly as an
+  // admin delete would (retrieval filters `deleted_at is null`). The filter
+  // repeats the planner's rule so a row that changed hands since the read is
+  // never touched.
+  for (const slug of plan.retire) {
+    if (opts.collectSql) {
+      retiredSlugs.push(slug);
+    } else {
+      const now = new Date().toISOString();
+      const { error } = await opts.sb
+        .from('knowledge_documents')
+        .update({ deleted_at: now, updated_at: now })
+        .eq('slug', slug)
+        .eq('source', CODE_SEED)
+        .is('deleted_at', null);
+      if (error) throw new Error(`Retiring ${slug} failed — ${error.message}`);
+    }
+    lines.push({ slug, action: 'retired', chunks: null });
+  }
+
   for (const doc of plan.skip) lines.push({ slug: doc.slug, action: 'unchanged', chunks: null });
   lines.sort((a, b) => a.slug.localeCompare(b.slug));
 
-  return { plan, lines, summary, sqlDocs, existingRows };
+  return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows };
 }

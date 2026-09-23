@@ -21,13 +21,21 @@
  * ~40k chars is cut for the model and flagged in `warnings`.
  *
  * Nothing is written: the admin confirms and the existing ingest / update ops
- * do the saving. No telemetry (mirrors `admin-scenario-ai`).
+ * do the saving.
+ *
+ * Spend control: rate-limited per IP (10 / min, in-memory), because one call
+ * can be a PDF extraction PLUS an analysis. Not yet in `ai_call_telemetry`:
+ * the table's `call_type` CHECK allows roleplay / evaluate / voice / hint /
+ * vision / retrieval / fecal_scan only, and filing this under one of those
+ * would corrupt the AI Quality numbers. Recording it needs a migration that
+ * adds a call type (e.g. 'knowledge_analyze').
  *
  * Errors use the admin `{ error }` shape: 400 bad input, 404 missing slug,
  * 502 when Gemini (extraction or analysis) fails.
  */
 import type { GoogleGenAI } from '@google/genai';
 import { errorResponse, jsonResponse, requireAdmin } from './_shared/admin';
+import { rateLimit } from './_shared/ai';
 import { getGeminiClient } from './_shared/gemini';
 import { MAX_PDF_BYTES, extractPdf } from './_shared/knowledgeIngest';
 import {
@@ -43,12 +51,17 @@ import {
   type KnowledgeAnalyzeResponse,
 } from '../../src/shared/knowledge/knowledgeAnalyze';
 
+const RATE = { limit: 10, windowMs: 60_000 };
+
 const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 
 export default async (req: Request): Promise<Response> => {
   const ctx = await requireAdmin(req, 'knowledge.write');
   if (ctx instanceof Response) return ctx;
   if (req.method !== 'POST') return errorResponse(405, 'Method not allowed');
+
+  const limited = rateLimit(req, 'knowledge-analyze', RATE);
+  if (limited) return limited;
 
   let body: Record<string, unknown>;
   try {

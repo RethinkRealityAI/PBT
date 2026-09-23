@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   dollarQuote,
   emitDocumentSql,
+  emitRetireSql,
   emitKnowledgeSqlFiles,
   splitSqlFiles,
   vectorLiteral,
@@ -118,7 +119,46 @@ describe('emitDocumentSql', () => {
   });
 });
 
+/**
+ * How Postgres actually reads a dollar-quoted literal: the opening tag, then
+ * everything up to the FIRST occurrence of that tag. Returns the body and
+ * whatever trails the literal (which must be nothing).
+ */
+function pgDollarParse(sql: string): { body: string; rest: string } {
+  const open = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql);
+  if (!open) throw new Error('not a dollar-quoted literal');
+  const tag = open[0];
+  const end = sql.indexOf(tag, tag.length);
+  if (end < 0) throw new Error('unterminated');
+  return { body: sql.slice(tag.length, end), rest: sql.slice(end + tag.length) };
+}
+
 describe('dollarQuote', () => {
+  it('does not close early when the body ENDS in the tag prefix ($q)', () => {
+    for (const body of ['cost $q', 'x$q', '$q', 'a $q0', 'tail $', '$q$q', 'ends $q1']) {
+      const parsed = pgDollarParse(dollarQuote(body));
+      expect(parsed, JSON.stringify(body)).toEqual({ body, rest: '' });
+    }
+    // The specific regression: `$q$cost $q$q$` would read as "cost " + "q$".
+    expect(dollarQuote('cost $q')).not.toBe('$q$cost $q$q$');
+  });
+
+  it('round-trips arbitrary awkward bodies exactly', () => {
+    const bodies = [
+      '',
+      "it's",
+      '$q$',
+      '$q0$ and $q$',
+      'x $q$ y $q0$ z $q1$ w',
+      '$$',
+      'back\\slash',
+      'emoji 🐶 and $q',
+    ];
+    for (const body of bodies) {
+      expect(pgDollarParse(dollarQuote(body)), JSON.stringify(body)).toEqual({ body, rest: '' });
+    }
+  });
+
   it('uses $q$ when the text is ordinary', () => {
     expect(dollarQuote("it's a test")).toBe("$q$it's a test$q$");
   });
@@ -143,6 +183,24 @@ describe('dollarQuote', () => {
     expect(quoted.startsWith('$q0$')).toBe(true);
     expect(quoted.endsWith('$q0$')).toBe(true);
     expect(quoted.slice(4, -4)).toBe(body);
+  });
+});
+
+describe('emitRetireSql', () => {
+  it('soft-deletes only a live code-seed row', () => {
+    const sql = emitRetireSql('driver:Removed');
+    expect(sql).toContain('update public.knowledge_documents');
+    expect(sql).toContain('set deleted_at = now()');
+    expect(sql).toContain('where slug = $q$driver:Removed$q$');
+    expect(sql).toContain('and source = $q$code-seed$q$');
+    expect(sql).toContain('and deleted_at is null;');
+    expect(sql).not.toMatch(/\bdelete\b\s+from/i);
+  });
+
+  it('is appended after the document statements in the emitted files', () => {
+    const files = emitKnowledgeSqlFiles([tinyDoc], 'out/k.sql', undefined, ['driver:Removed']);
+    const body = files.map((f) => f.body).join('\n');
+    expect(body.indexOf('driver:Removed')).toBeGreaterThan(body.indexOf('act:acknowledge'));
   });
 });
 

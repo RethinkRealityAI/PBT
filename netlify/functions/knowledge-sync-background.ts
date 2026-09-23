@@ -14,33 +14,52 @@
  * function would not survive.
  *
  *   POST /.netlify/functions/knowledge-sync-background
+ *   header x-pbt-sync-key: <HMAC — see `_shared/knowledgeTrigger.ts`>
  *
- * Fired fire-and-forget by `flags-resolve` (every app boot) and by
- * `admin-knowledge` GET (opening the Knowledge screen) — see
- * `_shared/knowledgeTrigger.ts`. Also safe to curl by hand after a deploy.
+ * Kicked by `flags-resolve` (every app boot) and by `admin-knowledge` GET
+ * (opening the Knowledge screen) — see `_shared/knowledgeTrigger.ts`. The
+ * kick always targets the site's PRIMARY URL, so the code that runs is the
+ * published production deploy, whichever deploy served the boot.
  *
- * ── Why it is safe without auth ────────────────────────────────────────────
- * There is no JWT check, on purpose: the consumer app boots anonymously and
- * must be able to fire it. Three things make that harmless.
+ * ── Why it is not open to the world ────────────────────────────────────────
+ * This function writes to the production database with the service role, and
+ * Netlify keeps every deploy — previews, branch deploys, every old production
+ * deploy — reachable at its permalink with the same environment variables.
+ * An open endpoint would let anyone make an OLD or PREVIEW deploy write ITS
+ * code's corpus into production (and two live deploys could flip-flop it).
+ * So, in order, a request must pass:
  *
- *   1. It can only ever write CODE-DEFINED content. The document set comes
- *      from `buildSeedDocs()` and `BUNDLED_STUDIES`; nothing in the request
- *      is read at all. An attacker's best outcome is the corpus the repo
- *      already says it wants.
- *   2. Hard cooldown. If the newest `metadata.sync.syncedAt` across the
- *      built-in documents is younger than 10 minutes AND a dry-run plan says
- *      nothing changed, it exits before spending a cent. A dry run does not
- *      call Gemini at all (it hashes the PDFs, it does not extract them), so
- *      the flood case costs five static GETs and two SELECTs.
- *   3. Per-IP rate limit, 1 call / 5 min — a speed bump in front of (2).
- *      In-memory and therefore per-instance, which is why the cooldown in the
- *      database, not this, is the real protection.
+ *   1. The shared key. `x-pbt-sync-key` must equal HMAC-SHA256 of a fixed
+ *      label keyed with SUPABASE_SERVICE_ROLE_KEY (constant-time compare).
+ *      Only code running inside this site's runtime can compute it; there is
+ *      no extra secret to configure. No service-role key → refused. 401.
+ *   2. The deploy. `context.deploy.context` (falling back to CONTEXT) must be
+ *      `production`, and a production deploy Netlify reports as NOT the
+ *      published one is refused too. `dev` (netlify dev) is allowed only with
+ *      PBT_ALLOW_DEV_SYNC=1. 403.
+ *   3. Per-IP rate limit, 1 call / 5 min — an in-memory speed bump.
+ *   4. The database. Inside `runKnowledgeSync`, a single-row lease
+ *      (`knowledge_sync_try_lease`, migration 20260923000000) means only one
+ *      sync writes at a time; a concurrent run exits quietly. On top of that,
+ *      the cooldown below: if the newest built-in `metadata.sync.syncedAt` is
+ *      younger than 10 minutes AND a dry-run plan says nothing changed, it
+ *      exits before spending a cent (a dry run hashes the PDFs, it never
+ *      extracts or embeds).
+ *
+ * Even an authorised caller can only ever write CODE-DEFINED content: the
+ * document set comes from `buildSeedDocs()` and `BUNDLED_STUDIES`; nothing
+ * in the request body is read.
  *
  * Never throws: a failed sync leaves whatever is already stored, retrieval
  * fails open into the prompts' bundled text, and the app is unaffected.
  */
 import { rateLimit } from './_shared/ai';
 import { getServiceClient } from './_shared/admin';
+import {
+  syncAllowedHere,
+  verifyKnowledgeSyncKey,
+  type NetlifyContextLike,
+} from './_shared/knowledgeTrigger';
 import {
   newestSyncedAt,
   readExistingRows,
@@ -59,7 +78,8 @@ const LOG = '[knowledge-sync-background]';
  * A function bundle does not contain `public/`, so disk is not an option —
  * but the deploy serves `/studies/*.pdf` as static assets, and the bytes are
  * identical to the ones the CLI reads, so the `sourceHash` skip works across
- * both triggers.
+ * both triggers. The request's own origin is right here: the trigger always
+ * posts to the primary URL, so this IS the published deploy's static tree.
  */
 function studyReader(req: Request): (file: string) => Promise<Uint8Array> {
   return async (file: string) => {
@@ -70,12 +90,23 @@ function studyReader(req: Request): (file: string) => Promise<Uint8Array> {
   };
 }
 
-export default async (req: Request): Promise<Response> => {
+export default async (req: Request, context?: NetlifyContextLike): Promise<Response> => {
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'content-type': 'application/json', allow: 'POST' },
-    });
+    return refuse(405, 'Method not allowed', { allow: 'POST' });
+  }
+
+  // 1. Only our own trigger (or an operator holding the service-role key)
+  //    can compute this header.
+  if (!verifyKnowledgeSyncKey(req)) {
+    console.warn(`${LOG} refused — missing or invalid x-pbt-sync-key`);
+    return refuse(401, 'Unauthorized');
+  }
+
+  // 2. Only the published production deploy writes the shared corpus.
+  const allowed = syncAllowedHere(context);
+  if (!allowed.ok) {
+    console.warn(`${LOG} refused — ${allowed.reason}`);
+    return refuse(403, 'Knowledge sync only runs on the published production deploy');
   }
 
   const limited = rateLimit(req, 'knowledge-sync-background', RATE);
@@ -106,7 +137,11 @@ export default async (req: Request): Promise<Response> => {
         existingRows,
         dryRun: true,
       });
-      if (probe.plan.create.length === 0 && probe.plan.update.length === 0) {
+      if (
+        probe.plan.create.length === 0 &&
+        probe.plan.update.length === 0 &&
+        probe.plan.retire.length === 0
+      ) {
         console.log(
           `${LOG} cooldown — last sync ${Math.round(age / 1000)}s ago and nothing changed; ` +
             `${probe.summary}`,
@@ -122,6 +157,10 @@ export default async (req: Request): Promise<Response> => {
       existingRows,
       log: (line) => console.log(`${LOG}${line}`),
     });
+    if (result.skipped === 'lease-held') {
+      console.log(`${LOG} another sync is running — exiting`);
+      return accepted('another sync is running');
+    }
     for (const line of result.lines) {
       if (line.action === 'unchanged') continue;
       console.log(`${LOG}   ${line.slug} — ${line.action}${line.chunks === null ? '' : ` (${line.chunks} chunks)`}`);
@@ -143,5 +182,12 @@ function accepted(status: string): Response {
   return new Response(JSON.stringify({ ok: true, status }), {
     status: 202,
     headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+  });
+}
+
+function refuse(status: number, error: string, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers },
   });
 }
