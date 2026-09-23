@@ -237,9 +237,7 @@ three triggers:
   `planKnowledgeSync`), `_shared/knowledgeSyncRun.ts` (`runKnowledgeSync` —
   the engine; the study PDFs are *injected* so disk and HTTP produce the same
   `sourceHash`), `_shared/knowledgeSql.ts` (SQL emission),
-  `_shared/knowledgeTrigger.ts` (the fire-and-forget kick).
-  `admin-knowledge` op=`seed` and `admin-knowledge-ingest` op=`ingest-bundled`
-  still work off the same modules as JWT-only fallbacks.
+  `_shared/knowledgeTrigger.ts` (the fire-and-forget kick + the HMAC key).
 
 ### Tag assistant (AI pre-fill when filing a document)
 
@@ -410,7 +408,7 @@ feedback summaries. **Analytics** — nav_events traffic/engagement + dwell-time
 "where users spend time" heatmap. **AI Quality** doubles as the observability
 layer: alert-threshold banner (`ALERT_THRESHOLDS`), failure-rate/latency/cost
 trends, per-model breakdown. **RAG foundation** — `admin-knowledge` function
-(list/upsert/delete + `seed` from code knowledge modules) and per-session
+(list/upsert/update/delete; the corpus now seeds itself — see "Knowledge base seeding") and per-session
 `rag_chunks` written alongside `rag_documents`.
 
 ## Access control (RBAC)
