@@ -82,6 +82,14 @@ export interface FecalScanRetrievedChunk {
    * bundled fallback path.
    */
   docTitle?: string | null;
+  /**
+   * Where the passage came from, so the UI can say so in plain words and the
+   * scorer can weigh it: `'chart'` = the Royal Canin chart for THIS species
+   * (retrieved or bundled), `'supplement'` = an admin-authored knowledge
+   * document filed under the fecal-scan tool. Set by `ai-fecal-scan`;
+   * optional only for responses from older deployments.
+   */
+  kind?: 'chart' | 'supplement';
 }
 
 export interface FecalScanRetrieval {
