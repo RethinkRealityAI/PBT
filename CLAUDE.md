@@ -207,8 +207,11 @@ three triggers:
    Never throws. PDFs come from the deploy's own origin (`/studies/*`).
    The legacy admin buttons are gone: `admin-knowledge {op:'seed'}` and
    `admin-knowledge-ingest {op:'ingest-bundled'}` answer **410**.
-   *After shipping, rotate the service-role key* — older deploys still carry
-   the pre-hardening, unauthenticated function at their permalinks.
+   **Legacy exposure:** the pre-hardening function (POST, no auth) never
+   reached production; the only deploy that carried it is PR #23's Deploy
+   Preview for commit `eccee53` (earlier previews failed to build). Delete
+   that deploy in Netlify → Deploys — or, failing that, rotate the
+   service-role key — so its permalink cannot write the prod corpus.
 2. **`netlify/plugins/knowledge-sync`** (`[[plugins]]` in `netlify.toml`) —
    belt and braces. `onSuccess`, **`production` context only** (branch deploys
    share the prod database), skipped without the keys, takes the same lease,
