@@ -5,8 +5,10 @@
  * are mocked, so no embedding or model call leaves the process.
  *
  * The load-bearing assertions are the grounding ones: the scoring prompt must
- * contain the retrieved passages VERBATIM, and a score the passages never
- * mentioned must come back coerced with a capped confidence.
+ * contain the retrieved passages VERBATIM and ALWAYS the whole chart (every
+ * score reachable whatever retrieval returned), another species' chart must
+ * never reach the scorer, and the exact-reference shortcut must only ever
+ * fire on the chart's own photograph.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -47,11 +49,22 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 vi.mock('../_shared/retrieval', () => ({ retrieveChunks: mocks.retrieveChunks }));
 vi.mock('jpeg-js', () => ({ decode: mocks.decode }));
 
-import fecalScan, { __resetReferenceImageCache } from '../ai-fecal-scan';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import fecalScan, {
+  __setReferenceDiskRoots,
+  assembleFecalGrounding,
+} from '../ai-fecal-scan';
 import { __resetAiCaches, __resetRateLimits } from '../_shared/ai';
 import { AI_LIMITS } from '../../../src/shared/ai/contract';
-import { MODEL_TEXT } from '../../../src/shared/ai/models';
-import { fecalEntryParagraph, FECAL_CHARTS } from '../../../src/data/knowledge/fecalCharts';
+import { MODEL_EMBEDDING, MODEL_TEXT } from '../../../src/shared/ai/models';
+import {
+  fecalChartChunks,
+  fecalChartScores,
+  fecalEntryParagraph,
+  FECAL_CHARTS,
+  type FecalSpecies,
+} from '../../../src/data/knowledge/fecalCharts';
 
 const PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -81,62 +94,94 @@ const scoreOk = (over: Record<string, unknown> = {}) => ({
     confidence: 0.82,
     rationale: 'Moist stool with no cracks; the components stick to one another.',
     alternates: [{ score: 3, confidence: 0.3 }],
-    notVisible: ['volume'],
+    notVisible: ['odour', 'volume'],
     caution: 'Involve the veterinarian if this persists.',
     ...over,
   }),
   usageMetadata: { promptTokenCount: 400, candidatesTokenCount: 60 },
 });
 
-const dogParagraph = (score: number) =>
-  fecalEntryParagraph('dog', FECAL_CHARTS.dog.entries.find((e) => e.score === score)!);
+const paragraph = (species: FecalSpecies, score: number) =>
+  fecalEntryParagraph(species, FECAL_CHARTS[species].entries.find((e) => e.score === score)!);
+const dogParagraph = (score: number) => paragraph('dog', score);
+
+const DOG_SCORES = [1, 2, 2.5, 3, 3.5, 4, 4.5, 5];
 
 /**
- * Each chart photo is stubbed as a one-byte JPEG whose byte identifies the
- * score (3.5 → 35), so the decoder stub below can turn it into a distinct
- * image and the perceptual-hash guard can be exercised for real.
+ * Each chart photo is stubbed as a tiny "JPEG" (the real FF D8 FF magic, then
+ * one byte that identifies the score: 3.5 → 35), so the decoder stub below
+ * can turn it into a distinct image and the exact-reference guard can be
+ * exercised for real.
  */
 const seedOf = (score: number) => Math.round(score * 10);
-const jpegFor = (score: number) => Uint8Array.from([seedOf(score)]);
+const jpegFor = (score: number) => Uint8Array.from([0xff, 0xd8, 0xff, seedOf(score)]);
 const b64For = (score: number) => Buffer.from(jpegFor(score)).toString('base64');
+/** An upload whose dHash equals the 3.5 photo's but whose pixels do not. */
+const HASH_TWIN_OF_35 = Buffer.from(Uint8Array.from([0xff, 0xd8, 0xff, 235])).toString('base64');
 
-/** Serves every /fecal-scan/**.jpg request; `missing` 404s instead. */
-function stubFetch(missing: string[] = []) {
+type FetchMode = 'ok' | 'missing' | 'html' | 'bad-bytes';
+
+/** Serves every /fecal-scan/**.jpg request; `modes` overrides per path suffix. */
+function stubFetch(modes: Record<string, FetchMode> = {}) {
   mocks.fetch.mockImplementation((url: string) => {
     const score = Number(new URL(url).pathname.split('/').pop()!.replace('.jpg', ''));
-    if (missing.some((m) => url.endsWith(m))) {
-      return Promise.resolve({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) });
+    const mode = Object.entries(modes).find(([suffix]) => url.endsWith(suffix))?.[1] ?? 'ok';
+    if (mode === 'missing') {
+      return Promise.resolve(new Response(new Uint8Array(0), { status: 404 }));
     }
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      arrayBuffer: async () => jpegFor(score).buffer,
-    });
+    if (mode === 'html') {
+      // What the SPA fallback really does for a missing static file.
+      return Promise.resolve(
+        new Response('<!doctype html><html></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        }),
+      );
+    }
+    const bytes = mode === 'bad-bytes' ? Uint8Array.from([0x3c, 0x21, 0x64, 0x6f]) : jpegFor(score);
+    return Promise.resolve(
+      new Response(bytes, { status: 200, headers: { 'content-type': 'image/jpeg' } }),
+    );
   });
 }
 
+/** Deterministic 32×32 noise for a seed. */
+function noiseImage(seed: number): { width: number; height: number; data: Uint8Array } {
+  const width = 32;
+  const height = 32;
+  const data = new Uint8Array(width * height * 4);
+  let s = (seed * 2654435761) >>> 0;
+  for (let i = 0; i < width * height; i++) {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    const v = s >>> 24;
+    data[i * 4] = v;
+    data[i * 4 + 1] = v;
+    data[i * 4 + 2] = v;
+    data[i * 4 + 3] = 255;
+  }
+  return { width, height, data };
+}
+
 /**
- * Fake JPEG decoder: byte 0 of the buffer seeds deterministic noise, so two
- * different stub images are ~32 bits apart and the same stub image hashes
- * identically. Keeps the real dHash in the loop — only the decode is faked.
+ * Fake JPEG decoder: the LAST byte of the buffer seeds deterministic noise,
+ * so two different stub images are far apart and the same stub image
+ * fingerprints identically. Seed 235 is the 3.5 photo with its contrast
+ * halved — the same dHash, different pixels. Keeps the real dHash + pixel
+ * check in the loop — only the decode is faked.
  */
 function stubDecode() {
   mocks.decode.mockImplementation((buf: Uint8Array | Buffer) => {
     const bytes = Uint8Array.from(buf);
     if (bytes.length === 0) throw new Error('not a JPEG');
-    const width = 32;
-    const height = 32;
-    const data = new Uint8Array(width * height * 4);
-    let s = (bytes[0] * 2654435761) >>> 0;
-    for (let i = 0; i < width * height; i++) {
-      s = (s * 1664525 + 1013904223) >>> 0;
-      const v = s >>> 24;
-      data[i * 4] = v;
-      data[i * 4 + 1] = v;
-      data[i * 4 + 2] = v;
-      data[i * 4 + 3] = 255;
+    const seed = bytes[bytes.length - 1];
+    if (seed === 235) {
+      const img = noiseImage(35);
+      for (let i = 0; i < img.data.length; i += 4) {
+        for (let c = 0; c < 3; c++) img.data[i + c] = 128 + (img.data[i + c] - 128) / 2;
+      }
+      return img;
     }
-    return { width, height, data };
+    return noiseImage(seed);
   });
 }
 
@@ -153,6 +198,10 @@ const referenceTurns = (call: number): Turn[] => turnsOf(call).slice(0, -1);
 /** The final turn: "PHOTO TO SCORE:" + the user image + observations. */
 const scoringTurn = (call: number): Part[] => turnsOf(call).at(-1)!.parts;
 
+/** The scorer's system prompt (the SECOND model call of a scan). */
+const scorerPrompt = (call = 1): string =>
+  mocks.generateContent.mock.calls[call][0].config.systemInstruction as string;
+
 const fetchedPaths = (): string[] =>
   mocks.fetch.mock.calls.map((c) => new URL(String(c[0])).pathname);
 
@@ -166,6 +215,13 @@ const ragChunk = (content: string, similarity: number, over: Record<string, unkn
   ...over,
 });
 
+/** Every ai_call_telemetry row inserted, in order. */
+const telemetryRows = (): Array<Record<string, unknown>> =>
+  sb
+    .callsFor('ai_call_telemetry')
+    .flatMap((c) => c.ops.filter((o) => o.op === 'insert').map((o) => o.args[0] as Record<string, unknown>));
+const telemetryRow = (callType: string) => telemetryRows().find((r) => r.call_type === callType);
+
 function scan(body: Record<string, unknown>, init?: Parameters<typeof jsonRequest>[2]) {
   return fecalScan(
     jsonRequest('ai-fecal-scan', { imageBase64: PNG, mimeType: 'image/jpeg', species: 'dog', ...body }, init),
@@ -176,6 +232,8 @@ let sb: FakeSupabase;
 
 beforeEach(() => {
   setFunctionEnv();
+  delete process.env.DEPLOY_URL;
+  delete process.env.URL;
   __resetRateLimits();
   __resetAiCaches();
   sb = makeFakeSupabase();
@@ -189,13 +247,17 @@ beforeEach(() => {
   vi.stubGlobal('fetch', mocks.fetch);
   mocks.decode.mockReset();
   stubDecode();
-  __resetReferenceImageCache();
+  // HTTP only by default, so the stubs above are what gets loaded.
+  __setReferenceDiskRoots([]);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'info').mockImplementation(() => {});
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  __setReferenceDiskRoots(null);
 });
 
 describe('ai-fecal-scan — request validation', () => {
@@ -250,8 +312,18 @@ describe('ai-fecal-scan — not a stool photo', () => {
     });
     expect(mocks.retrieveChunks).not.toHaveBeenCalled();
     expect(mocks.generateContent).toHaveBeenCalledTimes(1);
-    const insert = sb.firstOp('ai_call_telemetry', 'insert')?.args[0] as Record<string, unknown>;
-    expect(insert).toMatchObject({ call_type: 'fecal_scan' });
+    // No retrieval ran, so no retrieval row.
+    expect(telemetryRows().map((r) => r.call_type)).toEqual(['fecal_scan']);
+  });
+
+  it('never returns the English observer text to a French caller', async () => {
+    mocks.generateContent.mockResolvedValueOnce(
+      observeOk({ isStool: false, notVisible: ['everything — this is not a stool'] }),
+    );
+    const body = await (await scan({ locale: 'fr' })).json();
+    expect(body.result.isStool).toBe(false);
+    expect(body.result.observations.form).toBe('Non décrit');
+    expect(body.result.notVisible).toEqual([]);
   });
 });
 
@@ -271,7 +343,7 @@ describe('ai-fecal-scan — grounded scoring', () => {
     expect(query).toContain('moist');
     // Scoped by TOOL + SPECIES, not by document slug: an admin supplement
     // filed for the fecal scan must be retrievable alongside the chart.
-    expect(opts).toMatchObject({ k: 6, filters: { tool: 'fecal-scan', species: 'dog' } });
+    expect(opts).toMatchObject({ k: 8, filters: { tool: 'fecal-scan', species: 'dog' } });
     expect(opts.filters.docSlugs).toBeUndefined();
     expect(opts.sb).toBeDefined();
 
@@ -286,18 +358,26 @@ describe('ai-fecal-scan — grounded scoring', () => {
 
     expect(body.retrieval).toMatchObject({
       source: 'rag',
-      // Reported from the hits' own provenance now, not hard-wired.
+      // Reported from the hits' own provenance, not hard-wired.
       docSlugs: ['fecal:dog'],
       scope: { tool: 'fecal-scan', species: 'dog' },
     });
     expect(body.retrieval.query).toBe(query);
-    expect(body.retrieval.chunks).toHaveLength(1);
+    // The retrieved passage first (with its relevance), then the rest of the
+    // chart the scorer was also given.
+    expect(body.retrieval.chunks).toHaveLength(2);
     expect(body.retrieval.chunks[0]).toMatchObject({
       similarity: 0.93,
       excerpt: passage,
       scores: [3.5],
       citation: 'Royal Canin — Fecal Scoring System for Dogs, VGI/064/0324',
       docTitle: FECAL_CHARTS.dog.title,
+      kind: 'chart',
+    });
+    expect(body.retrieval.chunks[1]).toMatchObject({
+      similarity: null,
+      kind: 'chart',
+      scores: [1, 2, 2.5, 3, 4, 4.5, 5],
     });
 
     expect(body.result).toMatchObject({
@@ -307,18 +387,27 @@ describe('ai-fecal-scan — grounded scoring', () => {
       band: 'tooSoft',
       confidence: 0.82,
     });
+    // English keeps the observer's own words.
     expect(body.result.observations).toMatchObject(OBSERVATIONS);
-    expect(body.result.notVisible).toEqual(expect.arrayContaining(['odour', 'volume']));
+    // ONE source for notVisible: the scorer's.
+    expect(body.result.notVisible).toEqual(['odour', 'volume']);
 
-    const insert = sb.firstOp('ai_call_telemetry', 'insert')?.args[0] as Record<string, unknown>;
-    expect(insert).toMatchObject({
+    const scanRow = telemetryRow('fecal_scan');
+    expect(scanRow).toMatchObject({
       call_type: 'fecal_scan',
       model_id: MODEL_TEXT,
-      // One row for the whole request, tokens summed across both calls.
+      // One row for the scan, tokens summed across both model calls…
       tokens_in: 500,
       tokens_out: 80,
     });
-    expect(sb.callsFor('ai_call_telemetry')).toHaveLength(1);
+    // …plus the retrieval row the spec promises.
+    expect(telemetryRow('retrieval')).toMatchObject({
+      call_type: 'retrieval',
+      model_id: MODEL_EMBEDDING,
+      tokens_out: 0,
+      error: null,
+    });
+    expect(telemetryRows()).toHaveLength(2);
   });
 
   it('falls back to the bundled chart when retrieval returns nothing', async () => {
@@ -327,16 +416,17 @@ describe('ai-fecal-scan — grounded scoring', () => {
     const res = await scan({});
     const body = await res.json();
 
-    const scorer = mocks.generateContent.mock.calls[1][0];
-    expect(scorer.config.systemInstruction).toContain('Score 2.5');
-    expect(scorer.config.systemInstruction).toContain('CLEARLY DEFINED SHAPE WITH VISIBLE CRACKS');
+    const prompt = scorerPrompt();
+    for (const score of DOG_SCORES) expect(prompt).toContain(dogParagraph(score));
+    expect(prompt).toContain('CLEARLY DEFINED SHAPE WITH VISIBLE CRACKS');
     expect(body.retrieval.source).toBe('bundled');
+    expect(body.retrieval.docSlugs).toEqual(['fecal:dog']);
     expect(body.retrieval.chunks).toHaveLength(1);
-    expect(body.retrieval.chunks[0].similarity).toBeNull();
+    expect(body.retrieval.chunks[0]).toMatchObject({ similarity: null, kind: 'chart', scores: DOG_SCORES });
     expect(body.retrieval.chunks[0].citation).toContain('VGI/064/0324');
   });
 
-  it('still answers 200 bundled when retrieval throws', async () => {
+  it('still answers 200 bundled when retrieval throws, and records the retrieval error', async () => {
     mocks.retrieveChunks.mockRejectedValueOnce(new Error('pgvector down'));
     mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
     const res = await scan({});
@@ -344,18 +434,7 @@ describe('ai-fecal-scan — grounded scoring', () => {
     const body = await res.json();
     expect(body.retrieval.source).toBe('bundled');
     expect(body.result.score).toBe(3.5);
-  });
-
-  it('coerces a score the passages never mentioned and caps the confidence', async () => {
-    mocks.retrieveChunks.mockResolvedValueOnce([ragChunk(dogParagraph(3.5), 0.9)]);
-    mocks.generateContent
-      .mockResolvedValueOnce(observeOk())
-      .mockResolvedValueOnce(scoreOk({ score: 1, confidence: 0.97 }));
-    const res = await scan({});
-    const body = await res.json();
-    expect(body.result.score).toBe(3.5);
-    expect(body.result.confidence).toBeLessThanOrEqual(0.4);
-    expect(body.result.band).toBe('tooSoft');
+    expect(telemetryRow('retrieval')).toMatchObject({ error: 'pgvector down' });
   });
 
   it('bands puppy score 3 by breed size', async () => {
@@ -378,9 +457,78 @@ describe('ai-fecal-scan — grounded scoring', () => {
 });
 
 /**
- * An admin can now file a document "Fecal Scan · dog" and it is retrieved
- * alongside the chart. Those supplements must be visible to the tech WITHOUT
- * narrowing what the scorer is allowed to answer.
+ * The bug: retrieval (k = 6) used to decide which scores the scorer could
+ * answer, so on an 8-score dog chart two scores were unreachable on EVERY
+ * scan — and a right answer outside the retrieved six was "coerced" to a
+ * wrong one at 0.4.
+ */
+describe('ai-fecal-scan — the whole chart is always offered', () => {
+  const sixMiddle = () =>
+    mocks.retrieveChunks.mockResolvedValueOnce(
+      [2, 2.5, 3, 3.5, 4, 4.5].map((s, i) => ragChunk(dogParagraph(s), 0.9 - i * 0.05)),
+    );
+
+  it.each(DOG_SCORES)(
+    'dog score %s is reachable even when retrieval returns six other passages',
+    async (score) => {
+      sixMiddle();
+      mocks.generateContent
+        .mockResolvedValueOnce(observeOk())
+        .mockResolvedValueOnce(scoreOk({ score, confidence: 0.77, alternates: [] }));
+      const body = await (await scan({})).json();
+      expect(body.result.score).toBe(score);
+      // Not treated as ungrounded: the confidence is the model's own.
+      expect(body.result.confidence).toBe(0.77);
+
+      // The scorer saw every score's wording and every chart photo.
+      const prompt = scorerPrompt();
+      for (const s of DOG_SCORES) expect(prompt).toContain(dogParagraph(s));
+      expect(body.retrieval.referenceScores).toEqual(DOG_SCORES);
+      expect(referenceTurns(1)).toHaveLength(8);
+    },
+  );
+
+  it('ranks the retrieved passages in the trail and bundles only the missing scores', async () => {
+    sixMiddle();
+    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
+    const body = await (await scan({})).json();
+    const chunks = body.retrieval.chunks as Array<{ similarity: number | null; scores: number[] }>;
+    expect(chunks).toHaveLength(7);
+    expect(chunks.slice(0, 6).map((c) => c.scores[0])).toEqual([2, 2.5, 3, 3.5, 4, 4.5]);
+    expect(chunks.slice(0, 6).every((c) => typeof c.similarity === 'number')).toBe(true);
+    expect(chunks[6]).toMatchObject({ similarity: null, scores: [1, 5] });
+    expect(body.retrieval.source).toBe('rag');
+  });
+
+  it('shows the chart to the scorer as a scale, not in retrieval order', async () => {
+    mocks.retrieveChunks.mockResolvedValueOnce([
+      ragChunk(dogParagraph(4), 0.95),
+      ragChunk(dogParagraph(2), 0.9),
+    ]);
+    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
+    await scan({});
+    const prompt = scorerPrompt();
+    const at = (s: number) => prompt.indexOf(dogParagraph(s));
+    for (let i = 1; i < DOG_SCORES.length; i++) {
+      expect(at(DOG_SCORES[i - 1])).toBeLessThan(at(DOG_SCORES[i]));
+    }
+  });
+
+  it('still snaps an answer that is not a chart score at all', async () => {
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(scoreOk({ score: 3.2 }));
+    const body = await (await scan({})).json();
+    expect(body.result.score).toBe(3);
+    expect(body.result.band).toBe('acceptable');
+  });
+});
+
+/**
+ * An admin can file a document "Fecal Scan · dog" and it is retrieved
+ * alongside the chart. Those supplements must be visible to the tech, must be
+ * labelled as lower authority to the scorer, and must never displace the
+ * chart.
  */
 describe('ai-fecal-scan — admin supplements inside the scope', () => {
   const SUPPLEMENT =
@@ -395,7 +543,7 @@ describe('ai-fecal-scan — admin supplements inside the scope', () => {
       tags: { tools: ['fecal-scan'], species: ['dog'] },
     });
 
-  it('reports every document the passages came from, de-duplicated', async () => {
+  it('reports every document the passages came from, de-duplicated, with kinds', async () => {
     mocks.retrieveChunks.mockResolvedValueOnce([
       ragChunk(dogParagraph(3.5), 0.93),
       supplementChunk(0.71),
@@ -406,14 +554,17 @@ describe('ai-fecal-scan — admin supplements inside the scope', () => {
     const body = await (await scan({})).json();
     expect(body.retrieval.docSlugs).toEqual(['fecal:dog', 'custom:photo-tips']);
     expect(body.retrieval.scope).toEqual({ tool: 'fecal-scan', species: 'dog' });
-    expect(body.retrieval.chunks.map((c: { docTitle: string | null }) => c.docTitle)).toEqual([
+    const chunks = body.retrieval.chunks as Array<{ docTitle: string | null; kind: string }>;
+    expect(chunks.map((c) => c.docTitle)).toEqual([
       FECAL_CHARTS.dog.title,
       'Photographing a stool sample',
       FECAL_CHARTS.dog.title,
+      null, // the bundled rest of the chart
     ]);
+    expect(chunks.map((c) => c.kind)).toEqual(['chart', 'supplement', 'chart', 'chart']);
   });
 
-  it('a scoreless supplement does not shrink the grounded scores', async () => {
+  it('labels chart and supplement passages by authority in the scoring prompt', async () => {
     mocks.retrieveChunks.mockResolvedValueOnce([
       ragChunk(dogParagraph(3.5), 0.93),
       supplementChunk(0.71),
@@ -421,65 +572,127 @@ describe('ai-fecal-scan — admin supplements inside the scope', () => {
     mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
 
     const body = await (await scan({})).json();
-    // 3.5 came from the chart chunk; the supplement contributed nothing and
-    // took nothing away, so the answer is NOT treated as ungrounded.
+    const prompt = scorerPrompt();
+    expect(prompt).toContain(`[ROYAL CANIN CHART]\n${dogParagraph(3.5)}`);
+    expect(prompt).toContain(
+      `[CLINIC SUPPLEMENT (lower authority — the chart decides) — Photographing a stool sample]\n${SUPPLEMENT}`,
+    );
+    // The supplement contributed context and took nothing away.
     expect(body.result.score).toBe(3.5);
     expect(body.result.confidence).toBe(0.82);
-    expect(body.retrieval.referenceScores).toEqual([3.5]);
-    // The supplement still reaches the scorer verbatim.
-    expect(mocks.generateContent.mock.calls[1][0].config.systemInstruction).toContain(SUPPLEMENT);
+    expect(body.retrieval.referenceScores).toEqual(DOG_SCORES);
   });
 
-  it('falls back to the whole chart when every passage is scoreless', async () => {
+  it('supplement-only retrieval still grounds on the whole chart text', async () => {
     mocks.retrieveChunks.mockResolvedValueOnce([supplementChunk(0.8)]);
     mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
 
     const body = await (await scan({})).json();
+    // A passage came from retrieval → 'rag'; the chart came from code.
     expect(body.retrieval.source).toBe('rag');
-    expect(body.retrieval.docSlugs).toEqual(['custom:photo-tips']);
-    // Nothing named a score, so the chart itself is the only constraint.
-    expect(body.retrieval.referenceScores).toEqual([1, 2, 2.5, 3, 3.5, 4, 4.5, 5]);
+    expect(body.retrieval.docSlugs).toEqual(['custom:photo-tips', 'fecal:dog']);
+    expect(body.retrieval.chunks.map((c: { kind: string }) => c.kind)).toEqual([
+      'supplement',
+      'chart',
+    ]);
+    const prompt = scorerPrompt();
+    for (const s of DOG_SCORES) expect(prompt).toContain(`[ROYAL CANIN CHART]\n${dogParagraph(s)}`);
+    expect(prompt).toContain(SUPPLEMENT);
+    expect(body.retrieval.referenceScores).toEqual(DOG_SCORES);
     expect(body.result.score).toBe(3.5);
     expect(body.result.confidence).toBe(0.82);
   });
 });
 
-describe('ai-fecal-scan — chart reference photos', () => {
-  /**
-   * The bug this pins: scanning the chart's OWN 3.5 photo came back as a 4 at
-   * 0.9. Chart text alone can't settle a visual judgement, so the scorer now
-   * sees the reference photographs for the grounded scores.
-   */
-  const threeScores = [dogParagraph(3), dogParagraph(3.5), dogParagraph(4)];
-
-  const threeHits = () =>
+/**
+ * An admin can re-scope the `fecal:dog` document to species ['dog','cat'];
+ * retrieval then honestly returns it for a cat scan. The function must refuse
+ * it anyway — a cat score must never stand on dog wording.
+ */
+describe('ai-fecal-scan — cross-species guard', () => {
+  it("drops another species' chart chunk whatever its tags say", async () => {
+    const dogWording = dogParagraph(4); // "MOIST STOOL WITH LITTLE CONSISTENCY…"
     mocks.retrieveChunks.mockResolvedValueOnce([
-      ragChunk(threeScores[1], 0.95),
-      ragChunk(threeScores[0], 0.8),
-      ragChunk(threeScores[2], 0.7),
+      ragChunk(dogWording, 0.97, { tags: { tools: ['fecal-scan'], species: ['dog', 'cat'] } }),
+      ragChunk(paragraph('cat', 4), 0.8, {
+        docSlug: 'fecal:cat',
+        docTitle: FECAL_CHARTS.cat.title,
+        citation: 'Royal Canin — Fecal Scoring System for Cats, VGI/064/0324',
+      }),
     ]);
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(scoreOk({ score: 4 }));
 
-  it('sends each reference as its own numbered turn, labelled before AND after', async () => {
-    threeHits();
+    const body = await (await scan({ species: 'cat' })).json();
+    expect(scorerPrompt()).not.toContain(dogWording);
+    expect(scorerPrompt()).not.toContain('Fecal Scoring System for Dogs');
+    expect(body.retrieval.docSlugs).toEqual(['fecal:cat']);
+    expect(body.retrieval.chunks.map((c: { excerpt: string }) => c.excerpt)).not.toContain(dogWording);
+    expect(body.retrieval.chunks[0]).toMatchObject({ similarity: 0.8, kind: 'chart', scores: [4] });
+    expect(body.result).toMatchObject({ species: 'cat', score: 4 });
+  });
+
+  it('never grounds a puppy on the adult dog chart (or vice versa)', () => {
+    const g = assembleFecalGrounding('puppy', [
+      ragChunk(dogParagraph(3), 0.9) as never,
+      ragChunk(paragraph('puppy', 3), 0.8, { docSlug: 'fecal:puppy' }) as never,
+    ]);
+    expect(g.dropped).toBe(1);
+    expect(g.passages.every((p) => !p.text.includes('Fecal Scoring System for Dogs'))).toBe(true);
+    expect(g.chunks[0]).toMatchObject({ similarity: 0.8, kind: 'chart' });
+  });
+
+  it('recognises a chart chunk by its title when the RPC returned no provenance', () => {
+    const [dogChunk] = fecalChartChunks('dog');
+    const [catChunk] = fecalChartChunks('cat');
+    const g = assembleFecalGrounding('cat', [
+      { content: dogChunk, citation: null, tags: null, similarity: 0.9 },
+      { content: catChunk, citation: null, tags: null, similarity: 0.8 },
+    ]);
+    expect(g.dropped).toBe(1);
+    expect(g.chunks[0]).toMatchObject({ excerpt: catChunk, kind: 'chart' });
+    expect(g.docSlugs).toEqual(['fecal:cat']);
+  });
+
+  it('keeps a supplement that merely names another chart in passing', () => {
+    const g = assembleFecalGrounding('cat', [
+      {
+        content: 'Our cats are scored on the cat chart, not the Fecal Scoring System for Dogs.',
+        citation: 'Clinic SOP',
+        tags: null,
+        similarity: 0.5,
+        docSlug: 'custom:sop',
+        docTitle: 'Clinic SOP',
+      },
+    ]);
+    expect(g.dropped).toBe(0);
+    expect(g.chunks[0]).toMatchObject({ kind: 'supplement' });
+  });
+});
+
+describe('ai-fecal-scan — chart reference photos', () => {
+  it('sends every chart photo as its own numbered turn, labelled before AND after', async () => {
+    mocks.retrieveChunks.mockResolvedValueOnce([ragChunk(dogParagraph(3.5), 0.95)]);
     mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
 
     const res = await scan({});
     expect(res.status).toBe(200);
     const body = await res.json();
 
-    // One turn per reference, plus the scoring turn.
+    // One turn per chart photo, plus the scoring turn.
     const refs = referenceTurns(1);
-    expect(refs).toHaveLength(3);
-    expect(turnsOf(1)).toHaveLength(4);
+    expect(refs).toHaveLength(8);
+    expect(turnsOf(1)).toHaveLength(9);
 
-    [3, 3.5, 4].forEach((score, i) => {
+    DOG_SCORES.forEach((score, i) => {
       const parts = refs[i].parts;
       expect(refs[i].role).toBe('user');
       expect(parts).toHaveLength(3);
       // Label, image, label again — the model confused which caption went
       // with which image when they were all interleaved in one turn.
       expect(parts[0].text).toBe(
-        `REFERENCE PHOTO ${i + 1} of 3 — Score ${score} (${
+        `REFERENCE PHOTO ${i + 1} of 8 — Score ${score} (${
           FECAL_CHARTS.dog.entries.find((e) => e.score === score)!.label
         })`,
       );
@@ -493,38 +706,91 @@ describe('ai-fecal-scan — chart reference photos', () => {
     expect(scoring[1].inlineData).toEqual({ mimeType: 'image/jpeg', data: PNG });
     expect(scoring[2].text).toContain('distinct cylindrical shape');
 
-    expect(body.retrieval.referenceScores).toEqual([3, 3.5, 4]);
-  });
-
-  it('shows the whole chart on the bundled path, capped at 8 photos', async () => {
-    mocks.retrieveChunks.mockResolvedValueOnce([]);
-    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
-    const body = await (await scan({})).json();
-    // The dog chart has exactly 8 scores — the cap, not a coincidence.
-    expect(body.retrieval.referenceScores).toEqual([1, 2, 2.5, 3, 3.5, 4, 4.5, 5]);
-    expect(referenceTurns(1)).toHaveLength(8);
+    expect(body.retrieval.referenceScores).toEqual(DOG_SCORES);
   });
 
   it('omits only the photo that fails to load and still scores', async () => {
-    stubFetch(['/fecal-scan/dog/3.5.jpg']);
-    mocks.retrieveChunks.mockResolvedValueOnce([
-      ragChunk(threeScores[0], 0.9),
-      ragChunk(threeScores[1], 0.85),
-      ragChunk(threeScores[2], 0.7),
-    ]);
+    stubFetch({ '/fecal-scan/dog/3.5.jpg': 'missing' });
     mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
 
     const res = await scan({});
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.retrieval.referenceScores).toEqual([3, 4]);
-    expect(referenceTurns(1)).toHaveLength(2);
-    // 3.5 is still a grounded, allowed score — only its picture is missing.
+    expect(body.retrieval.referenceScores).toEqual([1, 2, 2.5, 3, 4, 4.5, 5]);
+    expect(referenceTurns(1)).toHaveLength(7);
+    // 3.5 is still an allowed score — only its picture is missing.
     expect(body.result.score).toBe(3.5);
   });
 
+  it('refuses an SPA-fallback index.html (200, text/html) and does not cache it', async () => {
+    stubFetch({ '/fecal-scan/dog/4.jpg': 'html', '/fecal-scan/dog/2.jpg': 'bad-bytes' });
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(scoreOk())
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(scoreOk());
+
+    const body = await (await scan({})).json();
+    // Neither the HTML page nor a mislabelled non-JPEG ever reaches Gemini.
+    expect(body.retrieval.referenceScores).toEqual([1, 2.5, 3, 3.5, 4.5, 5]);
+    for (const turn of referenceTurns(1)) {
+      expect(turn.parts[1].inlineData!.mimeType).toBe('image/jpeg');
+      expect(Buffer.from(turn.parts[1].inlineData!.data, 'base64')[0]).toBe(0xff);
+    }
+
+    // The deploy is fixed; the failures were NOT remembered, so the next
+    // request fetches exactly those two again (and nothing else).
+    stubFetch();
+    mocks.fetch.mockClear();
+    const again = await (await scan({})).json();
+    expect(fetchedPaths().sort()).toEqual(['/fecal-scan/dog/2.jpg', '/fecal-scan/dog/4.jpg']);
+    expect(again.retrieval.referenceScores).toEqual(DOG_SCORES);
+  });
+
+  it('bounds every photo fetch with a timeout', async () => {
+    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
+    await scan({});
+    expect(mocks.fetch).toHaveBeenCalledTimes(8);
+    for (const call of mocks.fetch.mock.calls) {
+      expect((call[1] as RequestInit | undefined)?.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it("fetches from the deploy's own URL and caches by pathname, never by request host", async () => {
+    process.env.DEPLOY_URL = 'https://deploy-123--pbt.netlify.app';
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(scoreOk())
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(scoreOk());
+
+    await scan({}, { headers: { host: 'attacker.example' } });
+    expect(mocks.fetch.mock.calls.map((c) => new URL(String(c[0])).host)).toEqual(
+      Array(8).fill('deploy-123--pbt.netlify.app'),
+    );
+    // A second request (any host) is served from the pathname-keyed cache.
+    await fecalScan(
+      new Request('http://other-host.example/.netlify/functions/ai-fecal-scan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-nf-client-connection-ip': '203.0.113.9' },
+        body: JSON.stringify({ imageBase64: PNG, mimeType: 'image/jpeg', species: 'dog' }),
+      }),
+    );
+    expect(mocks.fetch).toHaveBeenCalledTimes(8);
+  });
+
+  it('loads the photos from the function bundle on disk when they are there', async () => {
+    __setReferenceDiskRoots([process.cwd()]);
+    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
+    const body = await (await scan({})).json();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(body.retrieval.referenceScores).toEqual(DOG_SCORES);
+    const onDisk = readFileSync(join(process.cwd(), 'public/fecal-scan/dog/3.5.jpg')).toString('base64');
+    expect(referenceTurns(1)[4].parts[1].inlineData!.data).toBe(onDisk);
+  });
+
   it('prefetches the whole chart during OBSERVE and memoises it across requests', async () => {
-    mocks.retrieveChunks.mockResolvedValue([ragChunk(threeScores[1], 0.9)]);
+    mocks.retrieveChunks.mockResolvedValue([ragChunk(dogParagraph(3.5), 0.9)]);
     mocks.generateContent
       .mockResolvedValueOnce(observeOk())
       .mockResolvedValueOnce(scoreOk())
@@ -539,8 +805,7 @@ describe('ai-fecal-scan — chart reference photos', () => {
 
     await scan({});
     expect(fetchedPaths()).toHaveLength(8); // …and nothing refetched.
-    // Only the grounded score's photo is actually shown to the scorer.
-    expect(referenceTurns(3)).toHaveLength(1);
+    expect(referenceTurns(3)).toHaveLength(8);
   });
 
   it('reports no reference photos when the image is not a stool', async () => {
@@ -555,16 +820,15 @@ describe('ai-fecal-scan — chart reference photos', () => {
   });
 });
 
-describe('ai-fecal-scan — near-duplicate guard', () => {
+describe('ai-fecal-scan — exact-reference guard', () => {
   /**
    * The live failure this fixes: dog/3.5.jpg — the chart's OWN photo — came
    * back as "score 4 @ 0.99, visually identical to the reference photo for
-   * Score 4". A perceptual hash settles that without asking the model.
+   * Score 4". A deterministic comparison settles that without asking the
+   * model. The inverse failure — the guard firing on a real clinic photo —
+   * is pinned against real JPEGs in `src/shared/ai/__tests__/imageHash.test.ts`.
    */
-  const allEight = () => mocks.retrieveChunks.mockResolvedValueOnce([]);
-
   it('overrides the model when the photo IS a chart photo', async () => {
-    allEight();
     mocks.generateContent
       .mockResolvedValueOnce(observeOk())
       .mockResolvedValueOnce(scoreOk({ score: 4, confidence: 0.99, rationale: 'Looks like a 4.' }));
@@ -589,7 +853,6 @@ describe('ai-fecal-scan — near-duplicate guard', () => {
   });
 
   it('raises a low model confidence rather than lowering a high one', async () => {
-    allEight();
     mocks.generateContent
       .mockResolvedValueOnce(observeOk())
       .mockResolvedValueOnce(scoreOk({ score: 1, confidence: 0.2 }));
@@ -599,17 +862,39 @@ describe('ai-fecal-scan — near-duplicate guard', () => {
   });
 
   it('does not fire on a photo that is not in the chart', async () => {
-    allEight();
     mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
-    const notAChartPhoto = Buffer.from(Uint8Array.from([200])).toString('base64');
+    const notAChartPhoto = Buffer.from(Uint8Array.from([0xff, 0xd8, 0xff, 200])).toString('base64');
     const body = await (await scan({ imageBase64: notAChartPhoto, mimeType: 'image/jpeg' })).json();
     expect(body.retrieval.exactReference).toBeNull();
     expect(body.result.score).toBe(3.5); // the model's own answer, untouched
     expect(body.result.confidence).toBe(0.82);
+    expect(body.result.rationale).not.toContain("chart's own reference photo");
+  });
+
+  it('does not fire on a dHash twin whose pixels differ (the silhouette failure)', async () => {
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(scoreOk({ score: 4, confidence: 0.7 }));
+    const body = await (await scan({ imageBase64: HASH_TWIN_OF_35, mimeType: 'image/jpeg' })).json();
+    expect(body.retrieval.exactReference).toBeNull();
+    expect(body.result.score).toBe(4);
+    expect(body.result.confidence).toBe(0.7);
+    expect(referenceTurns(1)).toHaveLength(8);
+  });
+
+  it("only ever matches inside the selected species' chart", async () => {
+    // Stub photos are keyed by score, so the dog 4.5 photo exists only on
+    // the dog and puppy charts — a cat scan of it must not match anything.
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(scoreOk({ score: 4, confidence: 0.6 }));
+    const cat = await (await scan({ species: 'cat', imageBase64: b64For(4.5) })).json();
+    expect(cat.retrieval.exactReference).toBeNull();
+    expect(cat.result).toMatchObject({ score: 4, confidence: 0.6 });
+    expect(fetchedPaths().every((p) => p.startsWith('/fecal-scan/cat/'))).toBe(true);
   });
 
   it('skips the guard for png and webp, which the client never sends', async () => {
-    allEight();
     mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
     // Same bytes as the 3.5 reference, but declared as a PNG.
     const body = await (await scan({ imageBase64: b64For(3.5), mimeType: 'image/png' })).json();
@@ -619,7 +904,9 @@ describe('ai-fecal-scan — near-duplicate guard', () => {
   });
 
   it('survives an undecodable upload', async () => {
-    allEight();
+    // Decode the eight references first (cached), then break the decoder.
+    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
+    await scan({});
     mocks.decode.mockImplementation(() => {
       throw new Error('corrupt jpeg');
     });
@@ -636,15 +923,10 @@ describe('ai-fecal-scan — near-duplicate guard', () => {
 
 describe('ai-fecal-scan — visual vs wording disagreement', () => {
   it('maps mostSimilarReference to a score and caps confidence on a split', async () => {
-    mocks.retrieveChunks.mockResolvedValueOnce([
-      ragChunk(dogParagraph(3), 0.9),
-      ragChunk(dogParagraph(3.5), 0.85),
-      ragChunk(dogParagraph(4), 0.7),
-    ]);
     mocks.generateContent
       .mockResolvedValueOnce(observeOk())
-      // Says "reference 3" (= Score 4) but writes down 3.5.
-      .mockResolvedValueOnce(scoreOk({ score: 3.5, mostSimilarReference: 3, confidence: 0.95 }));
+      // Says "reference 6" (= Score 4) but writes down 3.5.
+      .mockResolvedValueOnce(scoreOk({ score: 3.5, mostSimilarReference: 6, confidence: 0.95 }));
 
     const body = await (await scan({})).json();
     expect(body.retrieval.mostSimilarReference).toBe(4);
@@ -656,21 +938,27 @@ describe('ai-fecal-scan — visual vs wording disagreement', () => {
   });
 
   it('leaves an agreeing answer alone', async () => {
-    mocks.retrieveChunks.mockResolvedValueOnce([
-      ragChunk(dogParagraph(3), 0.9),
-      ragChunk(dogParagraph(3.5), 0.85),
-    ]);
     mocks.generateContent
       .mockResolvedValueOnce(observeOk())
-      .mockResolvedValueOnce(scoreOk({ score: 3.5, mostSimilarReference: 2, confidence: 0.9 }));
+      .mockResolvedValueOnce(scoreOk({ score: 3.5, mostSimilarReference: 5, confidence: 0.9 }));
     const body = await (await scan({})).json();
     expect(body.retrieval.mostSimilarReference).toBe(3.5);
     expect(body.result.confidence).toBe(0.9);
     expect(body.result.rationale).not.toContain('visual match pointed');
   });
 
+  it('compares against the SNAPPED score, so snapping cannot invent a split', async () => {
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      // 3.4 is not a chart score; it snaps to 3.5, which IS reference 5.
+      .mockResolvedValueOnce(scoreOk({ score: 3.4, mostSimilarReference: 5, confidence: 0.8 }));
+    const body = await (await scan({})).json();
+    expect(body.result.score).toBe(3.5);
+    expect(body.result.confidence).toBe(0.8);
+    expect(body.result.rationale).not.toContain('visual match pointed');
+  });
+
   it('treats 0 and an out-of-range index as "no visual match"', async () => {
-    mocks.retrieveChunks.mockResolvedValueOnce([ragChunk(dogParagraph(3.5), 0.9)]);
     mocks.generateContent
       .mockResolvedValueOnce(observeOk())
       .mockResolvedValueOnce(scoreOk({ mostSimilarReference: 9 }));
@@ -680,7 +968,6 @@ describe('ai-fecal-scan — visual vs wording disagreement', () => {
   });
 
   it('asks the model for the index and thinks at low effort on both calls', async () => {
-    mocks.retrieveChunks.mockResolvedValueOnce([]);
     mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
     await scan({});
     const scorer = mocks.generateContent.mock.calls[1][0];
@@ -688,11 +975,64 @@ describe('ai-fecal-scan — visual vs wording disagreement', () => {
       type: 'INTEGER',
     });
     expect(scorer.config.responseSchema.required).toContain('mostSimilarReference');
+    // English keeps the observer's words, so the scorer is not asked for them.
+    expect(scorer.config.responseSchema.required).not.toContain('observations');
     // Latency: two multimodal calls must fit inside Netlify's sync timeout.
     expect(mocks.generateContent.mock.calls[0][0].config.thinkingConfig).toEqual({
       thinkingLevel: 'LOW',
     });
     expect(scorer.config.thinkingConfig).toEqual({ thinkingLevel: 'LOW' });
+  });
+});
+
+describe('ai-fecal-scan — French', () => {
+  const FR_OBSERVATIONS = {
+    form: 'forme cylindrique distincte',
+    moisture: 'humide',
+    surface: 'aucune craquelure visible',
+    residue: 'laisserait des résidus',
+    homogeneity: 'homogène',
+  };
+
+  it('returns localized observations and notVisible from the scorer, and keeps an English query', async () => {
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(
+        scoreOk({
+          observations: FR_OBSERVATIONS,
+          notVisible: ['odeur', 'volume'],
+          rationale: 'Selles humides sans craquelures.',
+        }),
+      );
+    const body = await (await scan({ locale: 'fr' })).json();
+
+    // The observer ran in English — its words are the embedding query.
+    const observer = mocks.generateContent.mock.calls[0][0];
+    expect(observer.config.systemInstruction).not.toMatch(/FRENCH/i);
+    expect(body.retrieval.query).toContain('no visible cracks');
+
+    // The scorer was told to write French and must hand the observations back.
+    const scorer = mocks.generateContent.mock.calls[1][0];
+    expect(scorer.config.systemInstruction).toMatch(/CANADIAN FRENCH/);
+    expect(scorer.config.responseSchema.required).toContain('observations');
+
+    expect(body.result.observations).toEqual(FR_OBSERVATIONS);
+    // One source, one language — no English 'odour' mixed in.
+    expect(body.result.notVisible).toEqual(['odeur', 'volume']);
+    expect(body.result.rationale).toBe('Selles humides sans craquelures.');
+  });
+
+  it('falls back to the localized default, never the English observer text', async () => {
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce(
+        scoreOk({ observations: { form: 'forme distincte' }, notVisible: [] }),
+      );
+    const body = await (await scan({ locale: 'fr' })).json();
+    expect(body.result.observations.form).toBe('forme distincte');
+    expect(body.result.observations.moisture).toBe('Non décrit');
+    expect(Object.values(body.result.observations).join(' ')).not.toMatch(/moist|cylindrical|cracks/);
+    expect(body.result.notVisible).toEqual([]);
   });
 });
 
@@ -702,13 +1042,40 @@ describe('ai-fecal-scan — failure + preview', () => {
     const res = await scan({});
     expect(res.status).toBe(502);
     expect(await res.json()).toMatchObject({ code: 'upstream' });
-    const insert = sb.firstOp('ai_call_telemetry', 'insert')?.args[0] as Record<string, unknown>;
-    expect(insert).toMatchObject({ call_type: 'fecal_scan', error: 'vision down' });
+    expect(telemetryRow('fecal_scan')).toMatchObject({ call_type: 'fecal_scan', error: 'vision down' });
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['a string', '3.5'],
+  ])('answers 502 — never a fabricated mid-chart score — when the score is %s', async (_label, score) => {
+    const raw = JSON.parse(scoreOk().text);
+    if (score === undefined) delete raw.score;
+    else raw.score = score;
+    mocks.generateContent
+      .mockResolvedValueOnce(observeOk())
+      .mockResolvedValueOnce({ text: JSON.stringify(raw), usageMetadata: {} });
+    const res = await scan({});
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body).toMatchObject({ code: 'upstream' });
+    expect(body.result).toBeUndefined();
+    expect(telemetryRow('fecal_scan')?.error).toMatch(/no numeric score/);
+    // The retrieval that did run is still accounted for.
+    expect(telemetryRow('retrieval')).toBeDefined();
   });
 
   it('writes no telemetry in preview', async () => {
     mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
     const res = await scan({ preview: true });
+    expect(res.status).toBe(200);
+    expect(sb.callsFor('ai_call_telemetry')).toHaveLength(0);
+  });
+
+  it('writes no telemetry when the trainee opted out', async () => {
+    mocks.generateContent.mockResolvedValueOnce(observeOk()).mockResolvedValueOnce(scoreOk());
+    const res = await scan({ allowTelemetry: false });
     expect(res.status).toBe(200);
     expect(sb.callsFor('ai_call_telemetry')).toHaveLength(0);
   });
@@ -719,5 +1086,23 @@ describe('ai-fecal-scan — failure + preview', () => {
     for (let i = 0; i < 9; i++) last = await scan({}, { ip: '198.51.100.44' });
     expect(last!.status).toBe(429);
     expect(mocks.generateContent).toHaveBeenCalledTimes(8);
+  });
+});
+
+describe('assembleFecalGrounding', () => {
+  it.each(['dog', 'puppy', 'cat'] as const)('%s — offers every chart score with no hits', (species) => {
+    const g = assembleFecalGrounding(species, []);
+    expect(g.source).toBe('bundled');
+    const text = g.passages.map((p) => p.text).join('\n');
+    for (const s of fecalChartScores(species)) expect(text).toContain(paragraph(species, s));
+    expect(g.passages.every((p) => p.kind === 'chart')).toBe(true);
+  });
+
+  it('skips a chart chunk that only repeats scores already covered', () => {
+    const g = assembleFecalGrounding('dog', [
+      ragChunk(dogParagraph(3), 0.9) as never,
+      ragChunk(`${dogParagraph(3)} (again)`, 0.8) as never,
+    ]);
+    expect(g.chunks.filter((c) => c.similarity !== null)).toHaveLength(1);
   });
 });

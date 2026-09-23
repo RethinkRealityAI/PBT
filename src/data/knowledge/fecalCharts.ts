@@ -7,8 +7,10 @@
  *   • `admin-knowledge` seeds it into the RAG knowledge base as one
  *     `fecal:<species>` document per chart (one paragraph per score, so each
  *     score becomes its own retrievable chunk — see `buildFecalChartMarkdown`);
- *   • `ai-fecal-scan` uses the same paragraphs as its bundled fallback when
- *     retrieval returns nothing, so the model is never left to its priors.
+ *   • `ai-fecal-scan` ALWAYS hands the scorer the whole chart for the
+ *     selected species: retrieved chunks verbatim where retrieval returned
+ *     them, these paragraphs for every score it did not — so every chart
+ *     score is always reachable and the model is never left to its priors.
  *
  * Text is verbatim from the charts (VGI/064/0324 dogs + cats, VGI/066/0324
  * puppies; © Royal Canin SAS 2024). Reference photos are the JPEGs embedded
@@ -309,6 +311,29 @@ export function fecalKnowledgeSlug(species: FecalSpecies): string {
   return `fecal:${species}`;
 }
 
+/**
+ * The species a `fecal:<x>` knowledge-document slug belongs to — the raw `x`
+ * (which may not be a valid species if an admin authored a stray slug), or
+ * null for any slug that is not a chart slug at all (an admin supplement).
+ */
+export function fecalChartSlugSpecies(slug: string | null | undefined): string | null {
+  if (typeof slug !== 'string') return null;
+  const m = /^fecal:(.*)$/.exec(slug.trim());
+  return m ? m[1] : null;
+}
+
+/**
+ * The chart a passage of TEXT was cut from, by its printed title (every
+ * seeded chunk repeats the chart header), or null when it names none. Used
+ * only when a retrieved chunk carries no document slug (a pre-scopes RPC).
+ */
+export function fecalChartSpeciesInText(text: string): FecalSpecies | null {
+  for (const species of FECAL_SPECIES) {
+    if (text.includes(FECAL_CHARTS[species].title)) return species;
+  }
+  return null;
+}
+
 /** Human-readable citation for a chart, used on chunks and in the UI. */
 export function fecalChartCitation(species: FecalSpecies): string {
   const c = FECAL_CHARTS[species];
@@ -366,10 +391,10 @@ export function fecalChartChunks(species: FecalSpecies): string[] {
 }
 
 /**
- * The knowledge-base DOCUMENT body for a chart (and the bundled fallback the
- * function hands the scorer when retrieval comes back empty). Paragraphs are
- * separated by blank lines, one per score. This is the human-readable whole;
- * for the embedding units see `fecalChartChunks`.
+ * The knowledge-base DOCUMENT body for a chart. Paragraphs are separated by
+ * blank lines, one per score (`fecalEntryParagraph` — the same paragraphs
+ * `ai-fecal-scan` fills in for any score retrieval did not return). This is
+ * the human-readable whole; for the embedding units see `fecalChartChunks`.
  */
 export function buildFecalChartMarkdown(species: FecalSpecies): string {
   const chart = FECAL_CHARTS[species];

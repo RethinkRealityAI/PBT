@@ -16,6 +16,8 @@ import {
   fecalChartChunks,
   fecalChartCitation,
   fecalChartScores,
+  fecalChartSlugSpecies,
+  fecalChartSpeciesInText,
   nearestFecalScore,
   scoresMentionedIn,
 } from '../fecalCharts';
@@ -158,5 +160,36 @@ describe('scoresMentionedIn', () => {
     // 3.5 is not on the cat chart.
     expect(scoresMentionedIn('Score 3.5 and Score 3', 'cat')).toEqual([3]);
     expect(scoresMentionedIn('no scores here', 'dog')).toEqual([]);
+  });
+});
+
+/**
+ * `ai-fecal-scan` refuses a retrieved chunk from ANOTHER species' chart by
+ * these two helpers (slug first, printed title when the RPC returned no
+ * provenance) — tags are admin-editable, the slug and the chart text are not.
+ */
+describe('chart provenance helpers', () => {
+  it('reads the species out of a fecal:<x> slug and nothing else', () => {
+    expect(fecalChartSlugSpecies('fecal:dog')).toBe('dog');
+    expect(fecalChartSlugSpecies('fecal:puppy')).toBe('puppy');
+    expect(fecalChartSlugSpecies(' fecal:cat ')).toBe('cat');
+    // A stray chart-like slug still reads as a chart — and never as THIS one.
+    expect(fecalChartSlugSpecies('fecal:horse')).toBe('horse');
+    expect(fecalChartSlugSpecies('custom:photo-tips')).toBeNull();
+    expect(fecalChartSlugSpecies('')).toBeNull();
+    expect(fecalChartSlugSpecies(null)).toBeNull();
+    expect(fecalChartSlugSpecies(undefined)).toBeNull();
+  });
+
+  it.each(FECAL_SPECIES)('%s — every seeded chunk names its own chart and no other', (species) => {
+    for (const chunk of fecalChartChunks(species)) {
+      expect(fecalChartSpeciesInText(chunk)).toBe(species);
+    }
+    // Dogs vs Puppies must not be confused by a shared prefix.
+    expect(FECAL_CHARTS.dog.title).not.toBe(FECAL_CHARTS.puppy.title);
+  });
+
+  it('finds no chart in text that does not print a chart title', () => {
+    expect(fecalChartSpeciesInText('Photograph the sample in daylight.')).toBeNull();
   });
 });

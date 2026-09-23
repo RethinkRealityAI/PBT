@@ -101,7 +101,7 @@ export const fecalCharts: FecalChartsOverlay = {
 
   puppy: {
     title: 'Système de cotation fécale pour chiots',
-    subtitle: 'À partir de huit semaines',
+    subtitle: 'Pour les chiots âgés de 8 semaines ou plus',
     directions: DIRECTIVES,
     entries: {
       '1': {

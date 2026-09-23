@@ -7,8 +7,9 @@
 -- the admin AI Quality screen.
 --
 -- The knowledge side needs no schema: the fecal charts are ordinary
--- knowledge_documents / knowledge_chunks rows seeded by admin-knowledge
--- (op: 'seed') or scripts/seed-fecal-knowledge.ts.
+-- knowledge_documents / knowledge_chunks rows seeded from
+-- netlify/functions/_shared/knowledgeSeed.ts — automatically on deploy by the
+-- knowledge-sync build plugin, or on demand by admin-knowledge (op: 'seed').
 
 -- ────────────────────────────────────────────────────────────
 -- ai_call_telemetry.call_type — add 'fecal_scan'

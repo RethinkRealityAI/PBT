@@ -150,7 +150,7 @@ is capped at 0.4. Tests pin all of this (see Testing).
 `ai_call_telemetry.call_type` gains `'fecal_scan'` via
 `supabase/migrations/20260921000000_fecal_scan.sql` (CHECK extended). Until
 applied, `recordCallServer` fails soft (warn) — the feature still works.
-Retrieval calls already record as `'retrieval'`.
+`ai-fecal-scan` also records one `'retrieval'` row per scan (the embed + search: `gemini-embedding-001`, latency, estimated tokens, and the error if retrieval threw), gated on `allowTelemetry` / `preview` exactly like the `'fecal_scan'` row.
 
 ## UI / UX
 

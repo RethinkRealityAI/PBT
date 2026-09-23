@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DISAGREEMENT_CONFIDENCE_CAP,
   EXACT_REFERENCE_CONFIDENCE,
+  FECAL_CHART_PASSAGE_LABEL,
+  FECAL_SUPPLEMENT_PASSAGE_LABEL,
   exactReferenceNote,
   visualDisagreementNote,
   FECAL_OBSERVE_SYSTEM_INSTRUCTION,
@@ -17,6 +19,7 @@ import {
   normalizeFecalScanResult,
   observationsToQuery,
   type FecalObservations,
+  type FecalScorePassage,
 } from '../fecalScan';
 import { buildFecalChartMarkdown, fecalEntryParagraph, FECAL_CHARTS } from '../../../data/knowledge/fecalCharts';
 
@@ -30,6 +33,8 @@ const OBS: FecalObservations = {
 
 const dogParagraph = (score: number) =>
   fecalEntryParagraph('dog', FECAL_CHARTS.dog.entries.find((e) => e.score === score)!);
+
+const chart = (text: string): FecalScorePassage => ({ kind: 'chart', text });
 
 describe('FECAL_OBSERVE_SYSTEM_INSTRUCTION', () => {
   it('asks for neutral observation only — no scoring, no diagnosis', () => {
@@ -47,12 +52,12 @@ describe('FECAL_OBSERVE_SYSTEM_INSTRUCTION', () => {
 });
 
 describe('buildFecalScoreSystemInstruction', () => {
-  const passages = [dogParagraph(3), dogParagraph(3.5)];
+  const passages = [chart(dogParagraph(3)), chart(dogParagraph(3.5))];
 
   it('includes the chart directions and the passages verbatim under REFERENCE PASSAGES', () => {
     const s = buildFecalScoreSystemInstruction('dog', null, passages, 'en');
     expect(s).toContain('REFERENCE PASSAGES');
-    for (const p of passages) expect(s).toContain(p);
+    for (const p of passages) expect(s).toContain(p.text);
     expect(s).toContain(FECAL_CHARTS.dog.directions);
     expect(s).toContain(FECAL_CHARTS.dog.title);
     // The passages section must come after the rules, and the rules must bind
@@ -68,8 +73,13 @@ describe('buildFecalScoreSystemInstruction', () => {
     expect(s).toContain('REFERENCE PHOTOS');
     expect(s).toContain('PHOTO TO SCORE');
     expect(s).toMatch(/reference photo AND passage/);
-    // An exact chart image must come back as that score, near-certain.
-    expect(s).toMatch(/confidence ≥ 0\.95/);
+    // DELIBERATE change: the old "near-identical → confidence ≥ 0.95" line is
+    // gone (the model is not a reliable judge of "near-identical"; the
+    // deterministic exact-reference check is). Confidence must be calibrated
+    // and ambiguity between neighbouring scores must lower it.
+    expect(s).not.toMatch(/0\.95/);
+    expect(s).toMatch(/CALIBRATED/);
+    expect(s).toMatch(/Ambiguity between\s+neighbouring scores MUST lower it/);
     // The label-confusion fix: pick the numbered photo first, and read the
     // label that belongs to THAT photo.
     expect(s).toMatch(/mostSimilarReference/);
@@ -78,7 +88,7 @@ describe('buildFecalScoreSystemInstruction', () => {
   });
 
   it('states the non-diagnostic, non-commercial posture and a generic caution', () => {
-    const s = buildFecalScoreSystemInstruction('cat', null, [dogParagraph(1)], 'en');
+    const s = buildFecalScoreSystemInstruction('cat', null, [chart(dogParagraph(1))], 'en');
     expect(s).toMatch(/not a diagnosis/i);
     expect(s).toMatch(/no (?:product|brand)|do not (?:name|recommend)/i);
     expect(s).toContain('involve the veterinarian if');
@@ -98,13 +108,40 @@ describe('buildFecalScoreSystemInstruction', () => {
     expect(fr).toMatch(/CANADIAN FRENCH/i);
     expect(fr).toMatch(/Do NOT translate/i);
     // The chart passages stay verbatim in both.
-    for (const p of passages) expect(fr).toContain(p);
+    for (const p of passages) expect(fr).toContain(p.text);
+    // The scorer hands the (English) observations back in French, and owns
+    // notVisible — the function takes both from it for a French caller.
+    expect(fr).toMatch(/observations: restate the observations/);
+    expect(fr).toMatch(/notVisible: every item, including the ones already noted, in French/);
   });
 
   it('falls back to the bundled chart wording when given no passages', () => {
-    const s = buildFecalScoreSystemInstruction('dog', null, [buildFecalChartMarkdown('dog')], 'en');
+    const s = buildFecalScoreSystemInstruction('dog', null, [chart(buildFecalChartMarkdown('dog'))], 'en');
     expect(s).toContain('Score 2.5');
     expect(s).toContain('CLEARLY DEFINED SHAPE WITH VISIBLE CRACKS');
+  });
+
+  it('labels every passage by authority — the chart decides, a supplement never does', () => {
+    const supplement: FecalScorePassage = {
+      kind: 'supplement',
+      text: 'Photograph the sample in daylight.',
+      source: 'Clinic photo tips',
+    };
+    const s = buildFecalScoreSystemInstruction('dog', null, [...passages, supplement], 'en');
+    const section = s.slice(s.indexOf('# REFERENCE PASSAGES'));
+    expect(FECAL_CHART_PASSAGE_LABEL).toBe('ROYAL CANIN CHART');
+    expect(FECAL_SUPPLEMENT_PASSAGE_LABEL).toBe(
+      'CLINIC SUPPLEMENT (lower authority — the chart decides)',
+    );
+    // Each chart passage is directly preceded by its label…
+    for (const p of passages) expect(section).toContain(`[ROYAL CANIN CHART]\n${p.text}`);
+    // …and the supplement by its own, naming its source.
+    expect(section).toContain(
+      '[CLINIC SUPPLEMENT (lower authority — the chart decides) — Clinic photo tips]\nPhotograph the sample in daylight.',
+    );
+    // The rules bind the SCORE to chart passages only.
+    expect(s).toMatch(/Choose ONLY a score that appears in the ROYAL CANIN CHART passages/);
+    expect(s).toMatch(/can\s+never add a score/);
   });
 });
 
@@ -212,12 +249,22 @@ describe('normalizeFecalScanResult', () => {
   });
 
   it('clamps confidence into 0–1 and defaults a missing score onto the chart', () => {
-    const high = normalizeFecalScanResult({ confidence: 4 }, opts);
-    expect(high.confidence).toBeLessThanOrEqual(1);
+    const high = normalizeFecalScanResult({ score: 3, confidence: 4 }, opts);
+    expect(high.confidence).toBe(1);
     const low = normalizeFecalScanResult({ score: 3, confidence: -2 }, opts);
     expect(low.confidence).toBe(0);
     const missing = normalizeFecalScanResult({}, { ...opts, allowedScores: [] });
     expect(FECAL_CHARTS.dog.entries.map((e) => e.score)).toContain(missing.score);
+  });
+
+  it('never lets a defaulted (missing / non-numeric) score keep the model confidence', () => {
+    for (const score of [undefined, Number.NaN, '3.5', null, Infinity]) {
+      const out = normalizeFecalScanResult(
+        { score, confidence: 0.93 },
+        { ...opts, allowedScores: [] },
+      );
+      expect(out.confidence).toBe(0);
+    }
   });
 
   it('filters alternates to chart scores, drops the main score, and keeps at most two', () => {

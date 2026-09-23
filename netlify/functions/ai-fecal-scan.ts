@@ -4,25 +4,37 @@
  * Mirrors `ai-vision` (same limits, same error codes, same telemetry shape)
  * and adds the retrieval stage that makes the RAG loop visible:
  *
- *   1. OBSERVE   multimodal JSON → neutral visual observations. The observer
- *                never sees the chart, so its words are an independent
- *                description rather than a rationalisation of a score.
- *   2. RETRIEVE  the observation text is embedded and matched against the
- *                `fecal:<species>` knowledge document only.
- *   3. GROUND    hits → source 'rag'. Nothing (corpus not seeded, embedder
- *                down) → the SAME chart text from the code module, source
- *                'bundled'. The model is never left to its priors.
- *   4. SCORE     multimodal JSON with the image + observations + ONLY those
- *                passages, then `normalizeFecalScanResult` snaps the answer
- *                back onto the passages' scores and re-derives the band.
+ *   1. OBSERVE   multimodal JSON → neutral visual observations, in English
+ *                (they are the embedding query). The observer never sees the
+ *                chart, so its words are an independent description rather
+ *                than a rationalisation of a score.
+ *   2. RETRIEVE  the observation text is embedded and matched inside the
+ *                `fecal-scan` × species scope. Retrieval RANKS the chart
+ *                passages (the relevance shown in the grounding trail) and
+ *                ADDS admin supplements; it never decides which scores the
+ *                scorer may answer. A chunk from ANOTHER species' chart is
+ *                dropped here whatever its tags say.
+ *   3. GROUND    the scorer ALWAYS gets the whole chart for the species:
+ *                retrieved chart chunks verbatim, the code module's paragraph
+ *                for every score retrieval did not return, and every chart
+ *                photo. Each passage is labelled ROYAL CANIN CHART or
+ *                CLINIC SUPPLEMENT (lower authority — the chart decides).
+ *                source 'rag' = at least one passage was retrieved.
+ *   4. SCORE     multimodal JSON with the image + observations + passages,
+ *                then `normalizeFecalScanResult` snaps the answer onto the
+ *                chart and re-derives the band. No score → 502, never a
+ *                fabricated mid-chart one.
  *
  * The raw image is NEVER persisted: browser → here → Gemini in memory, and
  * only the structured result comes back. No product recommendations; the
  * result is a discussion aid, not a diagnosis.
  *
- * ONE telemetry row per request (`call_type: 'fecal_scan'`), tokens summed
- * across both model calls — a scan is one user-visible action.
+ * Telemetry: one `'fecal_scan'` row per request (tokens summed across both
+ * model calls — a scan is one user-visible action) plus one `'retrieval'` row
+ * for the embed + search, both gated on allowTelemetry / preview.
  */
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { ThinkingLevel, Type, type GoogleGenAI, type ThinkingConfig } from '@google/genai';
 import { decode as decodeJpeg } from 'jpeg-js';
 import { getGeminiClient } from './_shared/gemini';
@@ -38,7 +50,7 @@ import {
   recordCallServer,
 } from './_shared/ai';
 import { retrieveChunks } from './_shared/retrieval';
-import { MODEL_TEXT } from '../../src/shared/ai/models';
+import { MODEL_EMBEDDING, MODEL_TEXT } from '../../src/shared/ai/models';
 import {
   AI_LIMITS,
   type FecalScanRequest,
@@ -56,28 +68,37 @@ import {
   type FecalObservations,
   type FecalScanRetrieval,
   type FecalScanRetrievedChunk,
+  type FecalScorePassage,
   type RawFecalScanResult,
 } from '../../src/shared/ai/fecalScan';
 import {
-  EXACT_REFERENCE_MAX_DISTANCE,
-  dHash,
-  hammingDistance,
+  compareFingerprints,
+  fingerprint,
+  type ImageFingerprint,
   type RgbaImage,
 } from '../../src/shared/ai/imageHash';
 import {
-  buildFecalChartMarkdown,
+  FECAL_CHARTS,
   fecalChartCitation,
-  fecalChartEntry,
   fecalChartScores,
+  fecalChartSlugSpecies,
+  fecalChartSpeciesInText,
+  fecalEntryParagraph,
   fecalKnowledgeSlug,
   isFecalBreedSize,
   isFecalSpecies,
+  nearestFecalScore,
   scoresMentionedIn,
   type FecalBreedSize,
   type FecalScore,
   type FecalSpecies,
 } from '../../src/data/knowledge/fecalCharts';
-import { estimateCostUsd, estimateTokens } from '../../src/shared/ai/telemetryHeuristics';
+import {
+  estimateCostUsd,
+  estimateTokens,
+  type AiCallRecord,
+} from '../../src/shared/ai/telemetryHeuristics';
+import type { RetrievedChunk } from '../../src/services/ragShared';
 
 /** Base64 of a 4.2M-char image plus JSON framing (same as `ai-vision`). */
 const MAX_BODY_BYTES = 6 * 1024 * 1024;
@@ -87,13 +108,13 @@ export const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/web
 const BASE64_RX = /^[A-Za-z0-9+/]+={0,2}$/;
 
 /**
- * Chunks to ground on. The charts are seeded ONE CHUNK PER SCORE (see
- * `fecalChartChunks`), so this returns the 6 scores nearest the observation
- * text rather than "the chart" — and `normalizeFecalScanResult` coercing the
- * answer onto exactly those scores is what makes the grounding real rather
- * than decorative.
+ * Chunks to retrieve. The charts are seeded ONE CHUNK PER SCORE (see
+ * `fecalChartChunks`), and the retrieval module caps k at 8. Retrieval no
+ * longer bounds what the scorer may answer — the whole chart is always
+ * supplied — so k only decides how many passages get a relevance ranking
+ * and how much room admin supplements have.
  */
-const RETRIEVAL_K = 6;
+const RETRIEVAL_K = 8;
 
 const OBSERVE_SCHEMA = {
   type: Type.OBJECT,
@@ -124,138 +145,231 @@ const OBSERVE_SCHEMA = {
  */
 const THINKING: ThinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
 
-const SCORE_SCHEMA = {
-  type: Type.OBJECT,
-  required: [
-    'mostSimilarReference',
-    'score',
-    'confidence',
-    'rationale',
-    'alternates',
-    'notVisible',
-    'caution',
-  ],
-  properties: {
-    mostSimilarReference: {
-      type: Type.INTEGER,
-      description:
-        'The NUMBER of the REFERENCE PHOTO the PHOTO TO SCORE most resembles (1-based), or 0 if none of them does.',
-    },
-    score: {
-      type: Type.NUMBER,
-      description: 'A score that appears in REFERENCE PASSAGES.',
-    },
-    confidence: { type: Type.NUMBER, description: '0.0–1.0' },
-    rationale: { type: Type.STRING },
-    alternates: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ['score', 'confidence'],
-        properties: {
-          score: { type: Type.NUMBER },
-          confidence: { type: Type.NUMBER, description: '0.0–1.0' },
-        },
+const SCORE_PROPERTIES = {
+  mostSimilarReference: {
+    type: Type.INTEGER,
+    description:
+      'The NUMBER of the REFERENCE PHOTO the PHOTO TO SCORE most resembles (1-based), or 0 if none of them does.',
+  },
+  score: {
+    type: Type.NUMBER,
+    description: 'A score that appears in the ROYAL CANIN CHART passages.',
+  },
+  confidence: {
+    type: Type.NUMBER,
+    description: '0.0–1.0, calibrated — lower when the photo sits between neighbouring scores.',
+  },
+  rationale: { type: Type.STRING },
+  alternates: {
+    type: Type.ARRAY,
+    items: {
+      type: Type.OBJECT,
+      required: ['score', 'confidence'],
+      properties: {
+        score: { type: Type.NUMBER },
+        confidence: { type: Type.NUMBER, description: '0.0–1.0' },
       },
     },
-    notVisible: { type: Type.ARRAY, items: { type: Type.STRING } },
-    caution: { type: Type.STRING },
   },
+  notVisible: { type: Type.ARRAY, items: { type: Type.STRING } },
+  caution: { type: Type.STRING },
 } as const;
 
-/**
- * Cap on reference photos put in front of the scorer. `RETRIEVAL_K` already
- * bounds the RAG path at 6; the bundled path would otherwise send a whole
- * chart, and the dog chart has 8 scores.
- */
-const MAX_REFERENCE_IMAGES = 8;
+const SCORE_REQUIRED = [
+  'mostSimilarReference',
+  'score',
+  'confidence',
+  'rationale',
+  'alternates',
+  'notVisible',
+  'caution',
+] as const;
 
 /**
- * Chart reference photos, base64, keyed by served path.
+ * The scorer's schema. English keeps the observer's own (independent)
+ * observations, so it is not asked for them; every other locale needs the
+ * scorer to hand them back in the output language — the observer describes
+ * in English because its words are the embedding query.
+ */
+function scoreSchemaFor(locale: string) {
+  if (locale === 'en') {
+    return { type: Type.OBJECT, required: [...SCORE_REQUIRED], properties: SCORE_PROPERTIES };
+  }
+  return {
+    type: Type.OBJECT,
+    required: [...SCORE_REQUIRED, 'observations'],
+    properties: {
+      ...SCORE_PROPERTIES,
+      observations: OBSERVE_SCHEMA.properties.observations,
+    },
+  };
+}
+
+// ─── Reference photos ──────────────────────────────────────────────────────
+
+/** A JPEG starts FF D8 FF — an HTML SPA fallback never does. */
+function isJpegBytes(buf: Uint8Array): boolean {
+  return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+}
+
+/** Budget for one same-origin reference-photo fetch (the HTTP fallback). */
+const REFERENCE_FETCH_TIMEOUT_MS = 4000;
+
+/**
+ * Chart reference photos, keyed by the photo's URL PATHNAME only (never the
+ * request host, so a spoofed Host header cannot address the cache). Only a
+ * photo that loaded as a real, decodable JPEG is cached — a failure is
+ * retried on the next request rather than remembered.
  *
  * These are a handful of small JPEGs that ship with the deploy and cannot
- * change under a running instance, so one fetch per path per instance is
- * both safe and worth it — a cold scan would otherwise pay 6–8 same-origin
- * round trips before the scoring call.
+ * change under a running instance, so one load per path per instance is both
+ * safe and worth it.
  */
-const referenceImageCache = new Map<string, { data: string; hash: string | null }>();
+const referenceImageCache = new Map<string, { data: string; fp: ImageFingerprint }>();
 
 /** Test hook — the reference-photo memo is module state. */
 export function __resetReferenceImageCache(): void {
   referenceImageCache.clear();
 }
 
+/**
+ * Directories whose `public/fecal-scan/**` are tried before HTTP. On Netlify
+ * the photos are bundled with the function via `included_files`
+ * (netlify.toml); `netlify dev` runs from the repo root, where `public/`
+ * exists as-is. null = the defaults.
+ */
+let referenceDiskRootsOverride: string[] | null = null;
+
+/** Test hook — point the disk loader somewhere else ([] = HTTP only). */
+export function __setReferenceDiskRoots(roots: string[] | null): void {
+  referenceDiskRootsOverride = roots;
+  referenceImageCache.clear();
+}
+
+function referenceDiskRoots(): string[] {
+  if (referenceDiskRootsOverride) return referenceDiskRootsOverride;
+  const roots = [process.cwd()];
+  const taskRoot = process.env.LAMBDA_TASK_ROOT;
+  if (taskRoot) roots.push(taskRoot);
+  return [...new Set(roots)];
+}
+
+/**
+ * The deploy's own origin for the HTTP fallback. `DEPLOY_URL` / `URL` are set
+ * by Netlify, so the fetch goes to THIS deploy's static files whatever Host
+ * the request carried; `req.url` is only the last resort (local tests).
+ */
+function referenceOrigin(req: Request): string {
+  return process.env.DEPLOY_URL || process.env.URL || req.url;
+}
+
 interface ReferenceImage {
+  species: FecalSpecies;
   score: FecalScore;
   label: string;
   /** base64, no data-URL prefix. */
   data: string;
-  /** Perceptual hash, or null when the JPEG would not decode. */
-  hash: string | null;
+  /** Aspect / dHash / thumbnail — what the exact-reference check compares. */
+  fp: ImageFingerprint;
 }
 
 /**
- * Perceptual hash of a JPEG, or null if it will not decode.
+ * Decode a JPEG and fingerprint it, or null if it will not decode.
  *
  * `maxMemoryUsageInMB` bounds a decompression bomb: the payload is already
  * size-limited as base64, but a small JPEG can declare enormous dimensions.
  */
-function hashJpeg(buf: Buffer, label: string): string | null {
+function fingerprintJpeg(buf: Buffer, label: string): ImageFingerprint | null {
   try {
     const raw = decodeJpeg(buf, { useTArray: true, maxMemoryUsageInMB: 64 });
-    return dHash(raw as RgbaImage);
+    return fingerprint(raw as RgbaImage);
   } catch (err) {
     console.warn(`[ai-fecal-scan] could not decode ${label}`, errorMessage(err));
     return null;
   }
 }
 
-/**
- * Load the chart's own photographs for `scores` from this deploy's origin
- * (same trick `admin-knowledge-ingest` uses for `/studies/*`).
- *
- * Fail-soft per image: a photo that will not load is simply left out and the
- * scorer still gets that score's text passage. Losing every photo degrades
- * the feature to text-only grounding — worse, but never broken.
- */
-async function loadReferenceImages(
-  req: Request,
-  species: FecalSpecies,
-  scores: readonly FecalScore[],
-): Promise<ReferenceImage[]> {
-  const wanted = [...scores].sort((a, b) => a - b).slice(0, MAX_REFERENCE_IMAGES);
-  const out: ReferenceImage[] = [];
-  for (const score of wanted) {
-    const entry = fecalChartEntry(species, score);
-    if (!entry) continue;
+/** Logged once per instance, so a missing `included_files` is visible. */
+let loggedHttpFallback = false;
+
+/** The bytes of one chart photo: disk first, then this deploy over HTTP. */
+async function readReferenceBytes(req: Request, pathname: string): Promise<Buffer> {
+  const relative = pathname.replace(/^\/+/, '');
+  for (const root of referenceDiskRoots()) {
     try {
-      let cached = referenceImageCache.get(entry.imagePath);
-      if (cached === undefined) {
-        const res = await fetch(new URL(entry.imagePath, req.url).toString());
-        if (!res.ok) throw new Error(`fetch ${res.status}`);
-        const buf = Buffer.from(await res.arrayBuffer());
-        cached = { data: buf.toString('base64'), hash: hashJpeg(buf, entry.imagePath) };
-        referenceImageCache.set(entry.imagePath, cached);
-      }
-      out.push({ score, label: entry.label, data: cached.data, hash: cached.hash });
-    } catch (err) {
-      console.warn(
-        `[ai-fecal-scan] reference photo ${entry.imagePath} unavailable`,
-        errorMessage(err),
-      );
+      const buf = await readFile(join(root, 'public', relative));
+      if (isJpegBytes(buf)) return buf;
+    } catch {
+      // not bundled here — try the next root, then HTTP
     }
   }
-  return out;
+  if (!loggedHttpFallback) {
+    loggedHttpFallback = true;
+    console.info(
+      `[ai-fecal-scan] chart photos not bundled (tried ${referenceDiskRoots().join(', ') || 'no roots'}); ` +
+        'loading over HTTP',
+    );
+  }
+  const res = await fetch(new URL(pathname, referenceOrigin(req)).toString(), {
+    signal: AbortSignal.timeout(REFERENCE_FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`fetch ${res.status}`);
+  // A missing photo is answered by the SPA fallback with index.html and a
+  // 200 — that must never reach Gemini labelled image/jpeg.
+  const type = (res.headers?.get('content-type') ?? '').toLowerCase();
+  if (!type.startsWith('image/jpeg')) throw new Error(`unexpected content-type "${type}"`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (!isJpegBytes(buf)) throw new Error('not a JPEG');
+  return buf;
 }
 
 /**
- * Is the submitted photo one of the chart's OWN photographs?
+ * Load the selected chart's own photographs — ALL of them (a chart has at
+ * most 8, and every score must stay reachable).
  *
- * This is the deterministic fix for the failure that motivated the whole
- * guard: shown `dog/3.5.jpg`, the model answered "Score 4, visually identical
- * to the reference photo for Score 4" at 0.99. A perceptual hash settles the
- * question without asking anyone, and the threshold is tight enough that a
- * real clinic photo can never trip it (see `EXACT_REFERENCE_MAX_DISTANCE`).
+ * Fail-soft per image: a photo that will not load (or is not a decodable
+ * JPEG) is simply left out and the scorer still gets that score's text
+ * passage. Losing every photo degrades the feature to text-only grounding —
+ * worse, but never broken.
+ */
+async function loadReferenceImages(req: Request, species: FecalSpecies): Promise<ReferenceImage[]> {
+  const entries = [...FECAL_CHARTS[species].entries].sort((a, b) => a.score - b.score);
+  const loaded = await Promise.all(
+    entries.map(async (entry): Promise<ReferenceImage | null> => {
+      const pathname = new URL(entry.imagePath, 'http://reference.invalid').pathname;
+      try {
+        let cached = referenceImageCache.get(pathname);
+        if (cached === undefined) {
+          const buf = await readReferenceBytes(req, pathname);
+          const fp = fingerprintJpeg(buf, pathname);
+          if (!fp) throw new Error('undecodable JPEG');
+          cached = { data: buf.toString('base64'), fp };
+          referenceImageCache.set(pathname, cached);
+        }
+        return { species, score: entry.score, label: entry.label, data: cached.data, fp: cached.fp };
+      } catch (err) {
+        console.warn(`[ai-fecal-scan] reference photo ${pathname} unavailable`, errorMessage(err));
+        return null;
+      }
+    }),
+  );
+  return loaded.filter((r): r is ReferenceImage => r !== null);
+}
+
+/**
+ * Is the submitted photo one of the SELECTED chart's own photographs?
+ *
+ * The deterministic fix for: shown `dog/3.5.jpg`, the model answered "Score
+ * 4, visually identical to the reference photo for Score 4" at 0.99. It
+ * exists so a demo that uploads the chart's photos scores correctly — and it
+ * must be impossible to trigger with a real clinic photo, because it then
+ * overrides the model at 0.99. So a match needs ALL of: same aspect ratio
+ * (±10 %), a dHash near-duplicate, AND a pixel-level thumbnail match (see
+ * `compareFingerprints` for the measured thresholds). A dHash alone matched
+ * half of a corpus of plain dark ellipses on white.
+ *
+ * Only ever compared within `species`: the dog 4.5 and cat 5 chart photos
+ * are the same picture.
  *
  * Only JPEG is checked: the client always re-encodes to JPEG before upload,
  * so png/webp means a caller we do not control and the guard stays out of it.
@@ -264,23 +378,153 @@ async function loadReferenceImages(
 function matchExactReference(
   imageBase64: string,
   mimeType: string,
+  species: FecalSpecies,
   references: readonly ReferenceImage[],
 ): FecalScore | null {
   if (mimeType !== 'image/jpeg') return null;
-  const hash = hashJpeg(Buffer.from(imageBase64, 'base64'), 'the submitted photo');
-  if (!hash) return null;
+  const upload = fingerprintJpeg(Buffer.from(imageBase64, 'base64'), 'the submitted photo');
+  if (!upload) return null;
 
-  let best: { score: FecalScore; distance: number } | null = null;
+  let best: { score: FecalScore; pixelMad: number; hashDistance: number } | null = null;
   for (const ref of references) {
-    if (!ref.hash) continue;
-    const distance = hammingDistance(hash, ref.hash);
-    if (!best || distance < best.distance) best = { score: ref.score, distance };
+    if (ref.species !== species) continue;
+    const verdict = compareFingerprints(upload, ref.fp);
+    if (!verdict.match) continue;
+    if (!best || verdict.pixelMad < best.pixelMad) {
+      best = { score: ref.score, pixelMad: verdict.pixelMad, hashDistance: verdict.hashDistance };
+    }
   }
-  if (!best || best.distance > EXACT_REFERENCE_MAX_DISTANCE) return null;
+  if (!best) return null;
   console.log(
-    `[ai-fecal-scan] exact reference match: score ${best.score} (distance ${best.distance})`,
+    `[ai-fecal-scan] exact reference match: ${species} score ${best.score} ` +
+      `(dHash ${best.hashDistance}, pixel MAD ${best.pixelMad.toFixed(2)})`,
   );
   return best.score;
+}
+
+// ─── Grounding ─────────────────────────────────────────────────────────────
+
+export interface FecalGrounding {
+  source: FecalScanRetrieval['source'];
+  /** What the scorer is given, chart first (in scale order), then supplements. */
+  passages: FecalScorePassage[];
+  /** The grounding trail: retrieved (relevance order), then the bundled rest. */
+  chunks: FecalScanRetrievedChunk[];
+  docSlugs: string[];
+  /** Chunks refused because they belong to ANOTHER species' chart. */
+  dropped: number;
+}
+
+/**
+ * Which chart a retrieved chunk belongs to: the `x` of a `fecal:<x>` slug;
+ * null for any other slug (an admin supplement); and, only when the RPC
+ * returned no provenance, the chart whose title the text carries.
+ */
+function chartOfHit(hit: RetrievedChunk): string | null {
+  const fromSlug = fecalChartSlugSpecies(hit.docSlug);
+  if (fromSlug !== null) return fromSlug;
+  if (typeof hit.docSlug === 'string' && hit.docSlug.trim()) return null;
+  return fecalChartSpeciesInText(hit.content);
+}
+
+/**
+ * Turn retrieval hits into what the scorer sees. Pure, exported for tests.
+ *
+ *  • HARD species guard: a chunk from another species' chart is dropped,
+ *    whatever its tags say — an admin can re-scope `fecal:dog` to
+ *    `species: ['dog','cat']`, and a cat score must never stand on dog
+ *    wording. (Puppy is its own chart: `fecal:dog` never grounds a puppy.)
+ *  • The WHOLE chart is always present: retrieved chart chunks verbatim, the
+ *    code module's paragraph for every score they did not cover.
+ *  • Supplements ride along, labelled as lower authority.
+ */
+export function assembleFecalGrounding(
+  species: FecalSpecies,
+  hits: readonly RetrievedChunk[],
+): FecalGrounding {
+  const chartSlug = fecalKnowledgeSlug(species);
+  const covered = new Set<FecalScore>();
+  const chartPassages: Array<{ text: string; scores: FecalScore[] }> = [];
+  const supplementPassages: FecalScorePassage[] = [];
+  const chunks: FecalScanRetrievedChunk[] = [];
+  const docSlugs: string[] = [];
+  const seen = new Set<string>();
+  let dropped = 0;
+
+  for (const hit of hits) {
+    if (!hit || typeof hit.content !== 'string' || !hit.content.trim()) continue;
+    const chartOf = chartOfHit(hit);
+    if (chartOf !== null && chartOf !== species) {
+      dropped++;
+      console.warn(
+        `[ai-fecal-scan] dropped a ${chartOf} chart chunk from a ${species} scan ` +
+          `(doc ${hit.docSlug ?? 'unknown'}) — check that document's species scope`,
+      );
+      continue;
+    }
+    const text = hit.content;
+    if (seen.has(text)) continue;
+    const kind: 'chart' | 'supplement' = chartOf === species ? 'chart' : 'supplement';
+    const scores = scoresMentionedIn(text, species);
+    if (kind === 'chart') {
+      // A chunk that only repeats scores already covered adds nothing.
+      if (scores.length > 0 && scores.every((s) => covered.has(s))) continue;
+      scores.forEach((s) => covered.add(s));
+      chartPassages.push({ text, scores });
+    } else {
+      supplementPassages.push({
+        kind,
+        text,
+        source: hit.docTitle ?? hit.citation ?? null,
+      });
+    }
+    seen.add(text);
+    chunks.push({
+      citation: hit.citation,
+      similarity: hit.similarity,
+      excerpt: text,
+      scores,
+      docTitle: hit.docTitle ?? null,
+      kind,
+    });
+    const slug = typeof hit.docSlug === 'string' && hit.docSlug ? hit.docSlug : kind === 'chart' ? chartSlug : null;
+    if (slug && !docSlugs.includes(slug)) docSlugs.push(slug);
+  }
+
+  const retrieved = chunks.length > 0;
+
+  // Every score retrieval did not bring back comes from the code module.
+  const missing = FECAL_CHARTS[species].entries.filter((e) => !covered.has(e.score));
+  if (missing.length > 0) {
+    const paragraphs = missing.map((e) => fecalEntryParagraph(species, e));
+    missing.forEach((e, i) => chartPassages.push({ text: paragraphs[i], scores: [e.score] }));
+    chunks.push({
+      citation: fecalChartCitation(species),
+      similarity: null,
+      excerpt: paragraphs.join('\n\n'),
+      scores: missing.map((e) => e.score),
+      docTitle: null,
+      kind: 'chart',
+    });
+  }
+  // The chart is always part of the grounding, retrieved or bundled.
+  if (!docSlugs.includes(chartSlug)) docSlugs.push(chartSlug);
+
+  // The scorer reads the chart as a scale (1 → 5), not in retrieval order:
+  // relevance is shown to the tech, not used to anchor the model.
+  const lowest = (p: { scores: FecalScore[] }) => (p.scores.length ? Math.min(...p.scores) : 0);
+  chartPassages.sort((a, b) => lowest(a) - lowest(b));
+
+  return {
+    source: retrieved ? 'rag' : 'bundled',
+    passages: [
+      ...chartPassages.map((p): FecalScorePassage => ({ kind: 'chart', text: p.text })),
+      ...supplementPassages,
+    ],
+    chunks,
+    docSlugs,
+    dropped,
+  };
 }
 
 /** One part of a score-call turn: a caption or an inline image. */
@@ -335,12 +579,11 @@ export default async (req: Request): Promise<Response> => {
   const allowTelemetry = body.allowTelemetry !== false;
   const docSlug = fecalKnowledgeSlug(species);
   /**
-   * The knowledge scope this scan retrieves in. HARD on both axes: only
-   * documents an admin filed for the Fecal Scan AND for this species can be
-   * returned, on every fallback path inside `retrieveChunks`. It replaces the
-   * old hard-wired `docSlugs: ['fecal:<species>']`, so an admin supplement
-   * ("photograph the sample in daylight") is retrievable beside the chart
-   * while a cat passage still cannot reach a dog scan.
+   * The knowledge scope this scan retrieves in. HARD on both axes inside
+   * `retrieveChunks`: only documents an admin filed for the Fecal Scan AND
+   * for this species can be returned. Tags are admin-editable, so
+   * `assembleFecalGrounding` re-checks the one thing that must never slip —
+   * another species' chart — by document slug.
    */
   const scope = { tool: 'fecal-scan', species } as const;
 
@@ -356,6 +599,9 @@ export default async (req: Request): Promise<Response> => {
   const t0 = performance.now();
   let tokensIn = 0;
   let tokensOut = 0;
+  // The retrieval row is written concurrently with the scoring call and
+  // awaited before responding (a serverless instance may freeze after).
+  let retrievalTelemetry: Promise<void> = Promise.resolve();
 
   const record = (error?: string) =>
     recordCallServer(
@@ -374,13 +620,15 @@ export default async (req: Request): Promise<Response> => {
     );
 
   try {
-    // Start loading the WHOLE chart's photos now, so the fetches overlap the
-    // OBSERVE call instead of sitting in front of SCORE. They are memoised,
-    // so this costs nothing from the second request on, and the set is
-    // narrowed to the grounded scores once retrieval has run.
-    const allReferences = loadReferenceImages(req, species, fecalChartScores(species));
+    // Start loading the chart's photos now, so the loads overlap the OBSERVE
+    // call instead of sitting in front of SCORE. They are memoised, so this
+    // costs nothing from the second request on.
+    const referencesPromise = loadReferenceImages(req, species);
 
     // ── 1. OBSERVE ────────────────────────────────────────────────────────
+    // Always in English, whatever the locale: these words are the retrieval
+    // query, and the chart corpus is English. The scorer hands localized
+    // observations back to a non-English caller.
     const observeRes = await ai.models.generateContent({
       model: MODEL_TEXT,
       contents: [
@@ -408,18 +656,22 @@ export default async (req: Request): Promise<Response> => {
     const observed = JSON.parse(observeRaw) as ObserveOut;
     const observations = (observed.observations ?? {}) as Partial<FecalObservations>;
     const observedNotVisible = strings(observed.notVisible);
+    const english = locale === 'en';
 
     // Not a stool photo → no point retrieving or scoring; the UI asks for a
-    // clearer photo. Everything else is defaulted by the normaliser.
+    // clearer photo. The observer wrote English, so a non-English caller gets
+    // the normaliser's localized defaults rather than mixed languages.
     if (observed.isStool === false) {
       const result = normalizeFecalScanResult(
-        { isStool: false, observations, notVisible: observedNotVisible },
+        english
+          ? { isStool: false, observations, notVisible: observedNotVisible }
+          : { isStool: false },
         { species, breedSize, allowedScores: [], locale },
       );
       await record();
       // The prefetch is already in flight; let it finish into the cache so
       // the retry (the UI asks for a clearer photo) is fast.
-      void allReferences;
+      void referencesPromise;
       const payload: FecalScanResponse = {
         result,
         retrieval: {
@@ -438,7 +690,9 @@ export default async (req: Request): Promise<Response> => {
 
     // ── 2. RETRIEVE ───────────────────────────────────────────────────────
     const query = observationsToQuery(observations as FecalObservations);
-    let hits: Awaited<ReturnType<typeof retrieveChunks>> = [];
+    let hits: RetrievedChunk[] = [];
+    const retrievalT0 = performance.now();
+    let retrievalError: string | null = null;
     try {
       hits = await retrieveChunks(query, {
         k: RETRIEVAL_K,
@@ -448,72 +702,54 @@ export default async (req: Request): Promise<Response> => {
     } catch (err) {
       // retrieveChunks fails open already; this is belt-and-braces so a RAG
       // outage can never fail a scan.
-      console.warn('[ai-fecal-scan] retrieval failed', errorMessage(err));
+      retrievalError = errorMessage(err);
+      console.warn('[ai-fecal-scan] retrieval failed', retrievalError);
       hits = [];
     }
+    const retrievalTokens = estimateTokens(query);
+    retrievalTelemetry = recordCallServer(
+      caller.sb,
+      {
+        userId: caller.userId,
+        callType: 'retrieval',
+        modelId: MODEL_EMBEDDING,
+        latencyMs: Math.round(performance.now() - retrievalT0),
+        tokensIn: retrievalTokens,
+        tokensOut: 0,
+        costUsd: estimateCostUsd(MODEL_EMBEDDING, retrievalTokens, 0),
+        error: retrievalError,
+      },
+      { allowTelemetry, preview },
+    );
 
     // ── 3. GROUND ─────────────────────────────────────────────────────────
-    let source: FecalScanRetrieval['source'];
-    let passages: string[];
-    let chunks: FecalScanRetrievedChunk[];
-    // The documents the answer is actually standing on. Derived from the hits
-    // rather than assumed, because the scope can now return an admin
-    // supplement as well as (or instead of) the chart.
-    let docSlugs: string[];
-    if (hits.length > 0) {
-      source = 'rag';
-      passages = hits.map((h) => h.content);
-      chunks = hits.map((h) => ({
-        citation: h.citation,
-        similarity: h.similarity,
-        excerpt: h.content,
-        scores: scoresMentionedIn(h.content, species),
-        docTitle: h.docTitle ?? null,
-      }));
-      docSlugs = [...new Set(hits.map((h) => h.docSlug).filter((s): s is string => !!s))];
-      // A pre-scopes RPC returns no provenance; naming the chart is still
-      // truer than naming nothing.
-      if (docSlugs.length === 0) docSlugs = [docSlug];
-    } else {
-      source = 'bundled';
-      const markdown = buildFecalChartMarkdown(species);
-      passages = [markdown];
-      chunks = [
-        {
-          citation: fecalChartCitation(species),
-          similarity: null,
-          excerpt: markdown,
-          scores: scoresMentionedIn(markdown, species),
-          docTitle: null,
-        },
-      ];
-      docSlugs = [docSlug];
-    }
-    const mentioned = new Set<FecalScore>(passages.flatMap((p) => scoresMentionedIn(p, species)));
-    const allowedScores: FecalScore[] = mentioned.size
-      ? [...mentioned].sort((a, b) => a - b)
-      : fecalChartScores(species);
+    const grounding = assembleFecalGrounding(species, Array.isArray(hits) ? hits : []);
+    // The whole chart, always: retrieval ranks and supplements, it never
+    // narrows what the scorer may answer.
+    const allowedScores = fecalChartScores(species);
 
     // ── 4. SCORE ──────────────────────────────────────────────────────────
     const systemInstruction = buildFecalScoreSystemInstruction(
       species,
       breedSize,
-      passages,
+      grounding.passages,
       locale,
     );
-    // The chart's own photographs for the grounded scores. Text alone cannot
-    // settle a visual judgement — without these, the chart's OWN 3.5 photo
-    // came back as a 4.
-    const grounded = (await allReferences).filter((r) => allowedScores.includes(r.score));
+    // Every chart photograph for this species. Text alone cannot settle a
+    // visual judgement — without these, the chart's OWN 3.5 photo came back
+    // as a 4.
+    const allReferences = (await referencesPromise).filter((r) => r.species === species);
 
-    // Run the near-duplicate guard BEFORE the scoring call, because it
+    // Run the exact-reference check BEFORE the scoring call, because it
     // changes what that call needs. When the upload IS a chart photograph
     // the score is already settled, so the scorer is shown that one photo
     // (it still writes the rationale) instead of the whole chart — which is
     // the difference between ~19 s and fitting inside the function timeout.
-    const exactReference = matchExactReference(imageBase64, mimeType, grounded);
+    const exactReference = matchExactReference(imageBase64, mimeType, species, allReferences);
     const references =
-      exactReference === null ? grounded : grounded.filter((r) => r.score === exactReference);
+      exactReference === null
+        ? allReferences
+        : allReferences.filter((r) => r.score === exactReference);
 
     // Each reference gets its OWN user turn, captioned before and after the
     // image. Interleaving all of them in one turn made the model attach the
@@ -552,7 +788,7 @@ export default async (req: Request): Promise<Response> => {
       config: {
         systemInstruction,
         responseMimeType: 'application/json',
-        responseSchema: SCORE_SCHEMA,
+        responseSchema: scoreSchemaFor(locale),
         thinkingConfig: THINKING,
       },
     });
@@ -567,9 +803,14 @@ export default async (req: Request): Promise<Response> => {
     };
 
     // ── 5. RECONCILE ──────────────────────────────────────────────────────
-    // Three sources can disagree about the score; they are settled in order
-    // of how much they can be trusted.
-    let score = typeof scored.score === 'number' ? scored.score : Number.NaN;
+    // A stool photo with no numeric score is a failed call, not a result:
+    // defaulting it onto the chart would present a fabricated mid-chart score
+    // with the model's confidence attached. Honest failure → 502 → retry.
+    if (typeof scored.score !== 'number' || !Number.isFinite(scored.score)) {
+      throw new Error('The scoring model returned no numeric score');
+    }
+    // Snap first, so every comparison below is between chart scores.
+    let score: FecalScore = nearestFecalScore(species, scored.score);
     let confidence = typeof scored.confidence === 'number' ? scored.confidence : 0;
     const rationaleParts = [typeof scored.rationale === 'string' ? scored.rationale.trim() : ''];
 
@@ -580,8 +821,8 @@ export default async (req: Request): Promise<Response> => {
     const mostSimilarReference: FecalScore | null =
       refIndex >= 1 && refIndex <= references.length ? references[refIndex - 1].score : null;
 
-    // (b) The deterministic near-duplicate check (computed above, before the
-    //     scoring call). It beats everything: if the upload IS the chart's
+    // (b) The exact-reference check (computed above, before the scoring
+    //     call). It beats everything: if the upload IS the chart's
     //     photograph, there is nothing left to judge.
     if (exactReference !== null) {
       score = exactReference;
@@ -591,32 +832,37 @@ export default async (req: Request): Promise<Response> => {
       // The model's eyes and its reading disagree. Keep what it wrote down,
       // but a split verdict must not reach the tech as near-certainty.
       confidence = Math.min(confidence, DISAGREEMENT_CONFIDENCE_CAP);
-      rationaleParts.push(
-        visualDisagreementNote(mostSimilarReference, score as FecalScore, locale),
-      );
+      rationaleParts.push(visualDisagreementNote(mostSimilarReference, score, locale));
     }
 
+    // Observations: English keeps the observer's independent words; any
+    // other locale takes the scorer's translation (never a mix — a field the
+    // scorer left out falls back to the localized "not described").
+    // notVisible: ONE source, the scorer's (it was shown the observer's list
+    // and told to carry it over, in the output language).
+    const scorerNotVisible = strings(scored.notVisible);
     const result = normalizeFecalScanResult(
       {
         ...scored,
         score,
         confidence,
         rationale: rationaleParts.filter(Boolean).join(' '),
-        observations,
-        notVisible: [...new Set([...observedNotVisible, ...strings(scored.notVisible)])],
+        observations: english ? observations : scored.observations,
+        notVisible:
+          scorerNotVisible.length > 0 || !english ? scorerNotVisible : observedNotVisible,
       },
       { species, breedSize, allowedScores, locale },
     );
 
-    await record();
+    await Promise.all([record(), retrievalTelemetry]);
     const payload: FecalScanResponse = {
       result,
       retrieval: {
-        source,
+        source: grounding.source,
         query,
         scope,
-        docSlugs,
-        chunks,
+        docSlugs: grounding.docSlugs,
+        chunks: grounding.chunks,
         referenceScores: references.map((r) => r.score),
         exactReference,
         mostSimilarReference,
@@ -625,7 +871,7 @@ export default async (req: Request): Promise<Response> => {
     return ok(payload);
   } catch (err) {
     console.error('[ai-fecal-scan] scan failed', errorMessage(err));
-    await record(errorMessage(err));
+    await Promise.all([record(errorMessage(err)), retrievalTelemetry]);
     return aiError(502, 'upstream', 'The photo could not be scored right now. Please try again.');
   }
 };

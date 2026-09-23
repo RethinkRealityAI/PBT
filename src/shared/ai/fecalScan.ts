@@ -4,13 +4,15 @@
  *
  * A supportive stool-assessment aid, NOT a diagnostic: the tech photographs a
  * stool, the function OBSERVES it, RETRIEVES the matching Royal Canin chart
- * passages from the knowledge base, and SCORES it using only those passages.
- * The raw image is never persisted. No product recommendations.
+ * passages (plus any admin supplements) from the knowledge base, and SCORES
+ * it against the WHOLE chart for the selected species. The raw image is never
+ * persisted. No product recommendations.
  *
  * Two prompts live here, one per pipeline stage: the observer never sees the
- * chart (so it cannot anchor on a score), and the scorer only ever sees the
- * grounded passages. `normalizeFecalScanResult` is the code half of the
- * grounding guarantee — see its doc comment.
+ * chart (so it cannot anchor on a score), and the scorer sees every score of
+ * the selected chart — retrieval ranks the passages and adds supplements, it
+ * never decides which scores are reachable. `normalizeFecalScanResult` is the
+ * code half of the grounding guarantee — see its doc comment.
  */
 import {
   FECAL_CHARTS,
@@ -94,9 +96,12 @@ export interface FecalScanRetrievedChunk {
 
 export interface FecalScanRetrieval {
   /**
-   * 'rag'     — passages came from `knowledge_chunks` via pgvector.
-   * 'bundled' — retrieval returned nothing (corpus not seeded, embedder down)
-   *             and the same chart text was supplied from the code module.
+   * 'rag'     — at least one passage came from `knowledge_chunks` via
+   *             pgvector (any chart score retrieval did not return is filled
+   *             in from the code module, so the scorer always has the whole
+   *             chart).
+   * 'bundled' — retrieval returned nothing usable (corpus not seeded,
+   *             embedder down) and the chart came only from the code module.
    */
   source: 'rag' | 'bundled';
   /** The observation text that was embedded and searched. */
@@ -114,18 +119,25 @@ export interface FecalScanRetrieval {
    * The bundled fallback reports the chart's own slug.
    */
   docSlugs: string[];
+  /**
+   * Every passage the scorer was given: the retrieved ones first, in
+   * relevance order (with `similarity`), then — as one bundled chunk with
+   * `similarity: null` — the chart scores retrieval did not return.
+   */
   chunks: FecalScanRetrievedChunk[];
   /**
    * The scores whose CHART REFERENCE PHOTOS were actually put in front of the
-   * scorer, so the UI can say "compared against N chart photos". Empty when
-   * the photo wasn't a stool (nothing was scored) or when the images could
-   * not be loaded — the text passages still ground the answer either way.
+   * scorer, so the UI can say "compared against N chart photos" — normally
+   * the whole chart, or just the matched photo on an exact-reference match.
+   * Empty when the photo wasn't a stool (nothing was scored) or when the
+   * images could not be loaded — the text passages still ground the answer.
    */
   referenceScores: FecalScore[];
   /**
-   * Set when the submitted photo IS one of the chart's own photographs (a
-   * perceptual-hash near-duplicate). The score is then decided by that match,
-   * not by the model — see `EXACT_REFERENCE_MAX_DISTANCE`.
+   * Set when the submitted photo IS one of the selected chart's own
+   * photographs (same aspect ratio, dHash near-duplicate AND a pixel-level
+   * thumbnail match — see `compareFingerprints` in `imageHash.ts`). The score
+   * is then decided by that match, not by the model.
    */
   exactReference: FecalScore | null;
   /**
@@ -186,6 +198,33 @@ export function observationsToQuery(obs: FecalObservations): string {
 // ─── Stage 2 — SCORE ───────────────────────────────────────────────────────
 
 /**
+ * One passage handed to the scorer. `kind` decides its label in the prompt:
+ * the Royal Canin chart is the authority; an admin-authored supplement may add
+ * context but can never override it.
+ */
+export interface FecalScorePassage {
+  kind: 'chart' | 'supplement';
+  /** Verbatim passage text. */
+  text: string;
+  /** Supplements only: the document title (or citation) to name it by. */
+  source?: string | null;
+}
+
+/** Prompt label for a chart passage. */
+export const FECAL_CHART_PASSAGE_LABEL = 'ROYAL CANIN CHART';
+/** Prompt label for an admin supplement. */
+export const FECAL_SUPPLEMENT_PASSAGE_LABEL =
+  'CLINIC SUPPLEMENT (lower authority — the chart decides)';
+
+function passageBlock(p: FecalScorePassage): string {
+  const label =
+    p.kind === 'chart'
+      ? `[${FECAL_CHART_PASSAGE_LABEL}]`
+      : `[${FECAL_SUPPLEMENT_PASSAGE_LABEL}${p.source ? ` — ${p.source}` : ''}]`;
+  return `${label}\n${p.text}`;
+}
+
+/**
  * Locale addendum for the scoring prompt — same posture as Pet Vision: the
  * clinical scaffolding and the chart passages stay in English (they are the
  * source of truth and must not be paraphrased), only the free text switches.
@@ -197,21 +236,27 @@ function fecalScanLanguageAddendum(locale: Locale): string {
 # OUTPUT LANGUAGE — CANADIAN FRENCH
 Write every free-text field in Canadian French (Québec register, professional
 clinic voice): rationale, caution, the observations fields and notVisible.
+- observations: restate the observations provided for this photo (they arrive
+  in English) faithfully in Canadian French, one short phrase per field — a
+  translation, not a new reading of the photo.
+- notVisible: every item, including the ones already noted, in French.
 Do NOT translate: the score and confidence numbers, the alternates' numbers,
 or the chart wording you quote — when you cite the chart, quote the English
 heading as printed and explain it in French.`;
 }
 
 /**
- * The scoring prompt. `passages` are inserted VERBATIM and are the only
- * knowledge the model is allowed to use — they come either from
- * `knowledge_chunks` (RAG) or from `buildFecalChartMarkdown` (bundled
- * fallback), never from the model's priors.
+ * The scoring prompt. `passages` are inserted VERBATIM, each labelled
+ * `ROYAL CANIN CHART` or `CLINIC SUPPLEMENT (lower authority — the chart
+ * decides)`, and are the only knowledge the model is allowed to use. The
+ * function always supplies the whole chart for the species (retrieved chunks
+ * where it has them, the bundled paragraphs otherwise), never the model's
+ * priors.
  */
 export function buildFecalScoreSystemInstruction(
   species: FecalSpecies,
   breedSize: FecalBreedSize | null | undefined,
-  passages: readonly string[],
+  passages: readonly FecalScorePassage[],
   locale: Locale,
 ): string {
   const chart = FECAL_CHARTS[species];
@@ -235,23 +280,31 @@ a visual match first, not a reading-comprehension exercise.
 - FIRST decide which numbered reference photo the PHOTO TO SCORE most
 resembles, and return that number as mostSimilarReference (0 if none does).
 - Then choose the score whose reference photo AND passage it resembles most.
-- If the photo is visually identical or near-identical to a reference photo,
-choose that score with confidence ≥ 0.95.
 - Read each label carefully: reference N's score is the one printed in ITS
 own message, never the score of a neighbouring reference.
 - When no reference photo is supplied, set mostSimilarReference to 0 and fall
 back to the passages alone.
 
 # RULES
-- Choose ONLY a score that appears in the REFERENCE PASSAGES below. If none
-  of them fits what you see, choose the nearest one that does appear and
-  lower the confidence accordingly.
+- Choose ONLY a score that appears in the ${FECAL_CHART_PASSAGE_LABEL} passages
+  below. If none of them fits what you see, choose the nearest one that does
+  appear and lower the confidence accordingly.
+- ${FECAL_CHART_PASSAGE_LABEL} passages are the authority. A
+  ${FECAL_SUPPLEMENT_PASSAGE_LABEL} passage is clinic context only: it can
+  never add a score, change what a score means, or outweigh the chart.
 - Never invent chart wording, chart scores, or bands. If you quote the chart,
   quote a passage below.
-- rationale: say which passage's wording the photo matches, in that passage's
-  own words.
-- alternates: at most two other scores from the passages, most likely first.
-- notVisible: what this single photo cannot show.
+- rationale: say which chart passage's wording the photo matches, in that
+  passage's own words.
+- confidence: a CALIBRATED probability (0.0–1.0) that someone reading this
+  chart would record exactly this score from this photo. Ambiguity between
+  neighbouring scores MUST lower it — when the photo sits between two scores,
+  say so with a lower confidence and name the neighbour in alternates. Poor
+  framing, lighting, focus, or a texture you cannot see also lower it. Do not
+  default to a high number.
+- alternates: at most two other chart scores, most likely first.
+- notVisible: what this single photo cannot show — include anything already
+  noted as not visible.
 - caution must be generic — phrase it as "involve the veterinarian if …"
   (persistent change, other signs, a young or unwell animal). Never name a
   disease, a cause or a treatment.
@@ -261,7 +314,7 @@ back to the passages alone.
   downstream, not from you.
 
 # REFERENCE PASSAGES
-${passages.join('\n\n')}
+${passages.map(passageBlock).join('\n\n')}
 `.trim() + fecalScanLanguageAddendum(locale);
 }
 
@@ -319,16 +372,17 @@ export interface NormalizeFecalScanOptions {
   /** Puppies only — decides the score-3 band. */
   breedSize?: FecalBreedSize | null;
   /**
-   * The scores the grounded passages actually mention. A score outside this
-   * set means the model strayed from its grounding: it is pulled back to the
-   * nearest allowed score and its confidence capped. Empty = unknown, so no
-   * coercion happens (the chart is then the only constraint).
+   * The scores the model may answer. `ai-fecal-scan` always passes the WHOLE
+   * chart for the species (every score is always reachable); a score outside
+   * this set is pulled back to the nearest allowed score and its confidence
+   * capped. Empty = unknown, so no coercion happens (the chart is then the
+   * only constraint).
    */
   allowedScores: readonly number[];
   locale: Locale;
 }
 
-/** Confidence ceiling for a score the grounded passages never mentioned. */
+/** Confidence ceiling for a score outside `allowedScores`. */
 export const UNGROUNDED_CONFIDENCE_CAP = 0.4;
 
 const clamp01 = (n: unknown): number => {
@@ -352,10 +406,10 @@ function nearestOf(scores: readonly FecalScore[], value: number): FecalScore {
  * Coerce whatever stage 2 returned into a well-formed `FecalScanResult`.
  *
  * This is the code half of the grounding guarantee (the prompt is the other
- * half): the score is snapped onto the chart, then onto the scores the
- * grounded passages actually mention — and when that coercion has to happen
- * the confidence is capped, so an ungrounded answer can never present itself
- * as a confident one. The band is ALWAYS re-derived from the chart.
+ * half): the score is snapped onto the chart, then onto `allowedScores` —
+ * and when that coercion has to happen the confidence is capped, so an
+ * ungrounded answer can never present itself as a confident one. A missing
+ * score gets confidence 0. The band is ALWAYS re-derived from the chart.
  */
 export function normalizeFecalScanResult(
   parsed: RawFecalScanResult | null | undefined,
@@ -370,7 +424,11 @@ export function normalizeFecalScanResult(
 
   // Only scores this chart defines can be a coercion target.
   const allowed = chartScores.filter((s) => opts.allowedScores.includes(s));
-  let confidence = clamp01(p.confidence);
+  // A missing / non-numeric score has been DEFAULTED onto the chart above,
+  // not read: it must never carry the model's confidence with it. (The
+  // function refuses such a result outright with a 502; this is the backstop
+  // for any other caller.)
+  let confidence = Number.isFinite(raw) ? clamp01(p.confidence) : 0;
   if (allowed.length > 0 && !allowed.includes(score)) {
     score = nearestOf(allowed, score);
     confidence = Math.min(confidence, UNGROUNDED_CONFIDENCE_CAP);

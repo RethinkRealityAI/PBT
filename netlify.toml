@@ -36,6 +36,12 @@
 [[plugins]]
   package = "./netlify/plugins/knowledge-sync"
 
+# Fecal Scan compares the stool photo against the chart's reference photos.
+# Bundle them with the function so it reads them from disk; if they are ever
+# missing it falls back to a guarded fetch from the deploy's own origin.
+[functions."ai-fecal-scan"]
+  included_files = ["public/fecal-scan/**"]
+
 # Local `netlify dev`: Vite is pinned to 3006 in vite.config.ts; without this
 # the CLI waits on Vite's default 5173 and times out.
 [dev]

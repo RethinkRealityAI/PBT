@@ -13,7 +13,9 @@ export type CallType =
   | 'voice'
   | 'hint'
   | 'vision'
-  | 'fecal_scan';
+  | 'fecal_scan'
+  /** Embedding lookup for a RAG consumer (logged by `ai-fecal-scan`). */
+  | 'retrieval';
 
 export interface AiCallRecord {
   sessionId?: string | null;
