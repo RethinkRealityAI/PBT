@@ -2,6 +2,7 @@ import { Glass } from '../../design-system/Glass';
 import { Icon } from '../../design-system/Icon';
 import { RADII } from '../../design-system/tokens';
 import { useLanguage } from '../../app/providers/LanguageProvider';
+import { formatScore } from '../../i18n/format';
 import {
   FECAL_CHARTS,
   fecalBandFor,
@@ -132,7 +133,7 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
             >
               <img
                 src={entry.imagePath}
-                alt={t('fecalScan.chartSheet.imageAlt', { score: entry.score })}
+                alt={t('fecalScan.chartSheet.imageAlt', { score: formatScore(entry.score, locale) })}
                 loading="lazy"
                 style={{
                   width: 66,
@@ -147,7 +148,7 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="flex flex-wrap items-center gap-2" style={{ marginBottom: 5 }}>
                   <span
-                    aria-label={t('fecalScan.chartSheet.scoreAria', { score: entry.score })}
+                    aria-label={t('fecalScan.chartSheet.scoreAria', { score: formatScore(entry.score, locale) })}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -164,7 +165,7 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
                       ...subtleSurface,
                     }}
                   >
-                    {entry.score}
+                    {formatScore(entry.score, locale)}
                   </span>
                   <BandChip band={band} label={t(BAND_KEY[band])} size="sm" />
                 </div>

@@ -5,6 +5,7 @@ import { Icon } from '../../design-system/Icon';
 import { PillButton } from '../../design-system/PillButton';
 import { RADII } from '../../design-system/tokens';
 import { useLanguage } from '../../app/providers/LanguageProvider';
+import { formatScore } from '../../i18n/format';
 import { localizedFecalEntry } from '../../i18n/dataL10n/fecalCharts';
 import type { CatalogKey } from '../../i18n/catalog';
 import { fecalChartEntry } from '../../data/knowledge/fecalCharts';
@@ -133,7 +134,7 @@ export function ResultCard({ result, species, previewUrl, onScanAnother }: Resul
         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
           <div
             role="img"
-            aria-label={t('fecalScan.result.scoreAria', { score: result.score })}
+            aria-label={t('fecalScan.result.scoreAria', { score: formatScore(result.score, locale) })}
             style={{
               display: 'flex',
               alignItems: 'baseline',
@@ -152,7 +153,7 @@ export function ResultCard({ result, species, previewUrl, onScanAnother }: Resul
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {result.score}
+              {formatScore(result.score, locale)}
             </span>
             {/* Numeric scale suffix, not prose — every chart runs 1–5. */}
             <span
@@ -222,11 +223,11 @@ export function ResultCard({ result, species, previewUrl, onScanAnother }: Resul
               <div style={squareImage} />
             )}
           </Pane>
-          <Pane label={t('fecalScan.result.chartReference', { score: result.score })}>
+          <Pane label={t('fecalScan.result.chartReference', { score: formatScore(result.score, locale) })}>
             {entry ? (
               <img
                 src={entry.imagePath}
-                alt={t('fecalScan.chartSheet.imageAlt', { score: result.score })}
+                alt={t('fecalScan.chartSheet.imageAlt', { score: formatScore(result.score, locale) })}
                 style={squareImage}
               />
             ) : (
@@ -330,7 +331,7 @@ export function ResultCard({ result, species, previewUrl, onScanAnother }: Resul
                     {altEntry && (
                       <img
                         src={altEntry.imagePath}
-                        alt={t('fecalScan.chartSheet.imageAlt', { score: alt.score })}
+                        alt={t('fecalScan.chartSheet.imageAlt', { score: formatScore(alt.score, locale) })}
                         style={{
                           width: 36,
                           height: 36,
@@ -348,7 +349,7 @@ export function ResultCard({ result, species, previewUrl, onScanAnother }: Resul
                         color: 'var(--pbt-text)',
                       }}
                     >
-                      {t('fecalScan.chartSheet.scoreAria', { score: alt.score })}
+                      {t('fecalScan.chartSheet.scoreAria', { score: formatScore(alt.score, locale) })}
                     </span>
                   </div>
                 );

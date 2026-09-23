@@ -7,7 +7,8 @@ import { Segmented } from '../design-system/Segmented';
 import { RADII } from '../design-system/tokens';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
-import { useT } from '../i18n/useT';
+import { useLanguage } from '../app/providers/LanguageProvider';
+import { formatScore } from '../i18n/format';
 import { useFecalScan } from '../features/fecal-scan/useFecalScan';
 import { CaptureCard } from '../features/fecal-scan/CaptureCard';
 import { ChartSheet } from '../features/fecal-scan/ChartSheet';
@@ -56,7 +57,7 @@ function isNarrow(): boolean {
  */
 export function FecalScanScreen() {
   const scan = useFecalScan();
-  const t = useT();
+  const { t, locale } = useLanguage();
   const reduce = useReducedMotion();
   const [chartOpen, setChartOpen] = useState(false);
   const captureRef = useRef<HTMLDivElement>(null);
@@ -115,7 +116,7 @@ export function FecalScanScreen() {
   const announcement = done
     ? result.isStool
       ? t('fecalScan.result.announce', {
-          score: result.score,
+          score: formatScore(result.score, locale),
           band: t(BAND_KEY[result.band] ?? 'fecalScan.band.acceptable'),
         })
       : t('fecalScan.result.notStool')

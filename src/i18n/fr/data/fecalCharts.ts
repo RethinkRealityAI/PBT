@@ -5,8 +5,9 @@ import type { FecalChartsOverlay } from '../../dataL10n/fecalCharts';
  *
  * Décisions de terminologie :
  * - Le texte de la charte CHIOTS est repris VERBATIM de l'édition française
- *   de la charte (VGI/066/0324) : titres de cotes, descriptions et directives
- *   d'utilisation. Ne pas le reformuler.
+ *   de la charte (VGI/066/0324) : titres de cotes, descriptions, sous-titre
+ *   et consignes d'utilisation (dont « score le plus élevé », tel quel sur
+ *   la charte). Ne pas le reformuler.
  * - Les chartes CHIENS et CHATS n'existent qu'en anglais dans la source
  *   fournie ; elles sont traduites dans le même registre que la charte des
  *   chiots (« selles », « craquelures », « aucune consistance »).

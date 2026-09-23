@@ -13,6 +13,7 @@ import { RADII } from '../../design-system/tokens';
 import { useT } from '../../i18n/useT';
 import { useLanguage } from '../../app/providers/LanguageProvider';
 import { LOCALE_BCP47 } from '../../i18n/locales';
+import { formatScore } from '../../i18n/format';
 import type { CatalogKey } from '../../i18n/catalog';
 import type { FecalScanRetrieval } from '../../shared/ai/fecalScan';
 import {
@@ -174,7 +175,7 @@ function ChunkRow({
   citationShown: boolean;
   restOfChart: boolean;
 }) {
-  const t = useT();
+  const { t, locale } = useLanguage();
   const [expanded, setExpanded] = useState(false);
   // Only offer "Read more" when the clamp actually hides text.
   const excerptRef = useRef<HTMLSpanElement>(null);
@@ -270,7 +271,7 @@ function ChunkRow({
 
       <div className="flex flex-wrap items-center" style={{ gap: 6, marginTop: 8 }}>
         {chunk.scores.map((s) => (
-          <MonoPill key={s}>{t('fecalScan.chartSheet.scoreAria', { score: s })}</MonoPill>
+          <MonoPill key={s}>{t('fecalScan.chartSheet.scoreAria', { score: formatScore(s, locale) })}</MonoPill>
         ))}
         {(clamped || expanded) && (
           <button
