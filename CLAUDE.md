@@ -159,6 +159,10 @@ applied filter + `focusRelaxed`; `buildScopeFilter()` is the pure builder.
 Per-consumer tool: `ai-roleplay` / `ai-voice-token` / browser `useTextChat` →
 `roleplay`; `ai-evaluate` → `scoring`; `admin-scenario-ai` →
 `scenario-builder`; `ai-fecal-scan` → `fecal-scan` + species (no docSlugs).
+The public `rag-retrieve` endpoint (browser `useTextChat`) **forces**
+`tool: 'roleplay'` whatever the body says, strips provenance (slug/title)
+from its response, and is rate-limited 30/min per IP — a caller cannot use it
+to read fecal-scan or scoring-only documents.
 Admin tester: `admin-knowledge-search` (permission `knowledge.read`) runs the
 same retrieval and echoes the exact filter — that is how you *prove* a cat
 document cannot reach a dog scan. Scope is editable per document via
@@ -180,18 +184,35 @@ three triggers:
 
 1. **`knowledge-sync-background` (the one that works in production).** A
    Netlify *background* function (the `-background` suffix buys 202-immediate
-   + a 15-minute budget, which a cold sync needs). POST, no auth. Fired
-   fire-and-forget by `flags-resolve` (every app boot) and by `admin-knowledge`
-   GET, via `_shared/knowledgeTrigger.ts` — once per function instance, never
-   awaited, never in `CONTEXT=dev`. Safe unauthenticated because it can only
-   write code-defined content, and because of a **10-minute cooldown** (recent
-   `metadata.sync.syncedAt` + a dry-run plan showing nothing to do ⇒ exit) plus
-   a 1-call/5-min per-IP `rateLimit`. Never throws. This is the path to use
-   against prod: Netlify masks the service key, so a laptop cannot.
-   PDFs come from the deploy's own origin (`/studies/*`), not disk.
+   + a 15-minute budget, which a cold sync needs). Fired fire-and-forget by
+   `flags-resolve` (every app boot) and by `admin-knowledge` GET, via
+   `_shared/knowledgeTrigger.ts` — once per function instance, never awaited
+   (`context.waitUntil`), and ALWAYS at the site's primary URL
+   (`process.env.URL`), so the code that runs is the published production
+   deploy whichever deploy served the boot. **It is not open:** every deploy
+   (previews, branch deploys, old production deploys) stays reachable at its
+   permalink with the same env vars and the same database, so an open
+   endpoint would let an old or preview deploy write ITS corpus into prod.
+   Gates, in order: (a) `x-pbt-sync-key` must equal HMAC-SHA256 of a fixed
+   label keyed with `SUPABASE_SERVICE_ROLE_KEY` (constant-time; nothing extra
+   to configure) → 401; (b) `syncAllowedHere()` — deploy context must be
+   `production` AND the published deploy; `dev` only with
+   `PBT_ALLOW_DEV_SYNC=1` → 403; (c) 1 call / 5 min per-IP `rateLimit`;
+   (d) inside the engine, the single-row **database lease**
+   (`knowledge_sync_try_lease`, 15-min TTL, migration
+   `20260923000000_knowledge_sync_lease.sql`) so concurrent cold instances
+   can't interleave delete-then-insert, plus a **10-minute cooldown** (recent
+   `metadata.sync.syncedAt` + a dry-run plan showing nothing to do ⇒ exit).
+   The request body is never read — it can only write code-defined content.
+   Never throws. PDFs come from the deploy's own origin (`/studies/*`).
+   The legacy admin buttons are gone: `admin-knowledge {op:'seed'}` and
+   `admin-knowledge-ingest {op:'ingest-bundled'}` answer **410**.
+   *After shipping, rotate the service-role key* — older deploys still carry
+   the pre-hardening, unauthenticated function at their permalinks.
 2. **`netlify/plugins/knowledge-sync`** (`[[plugins]]` in `netlify.toml`) —
-   belt and braces. `onSuccess`, `production`/`branch-deploy` only, skipped
-   without the keys, and **can never fail the deploy**.
+   belt and braces. `onSuccess`, **`production` context only** (branch deploys
+   share the prod database), skipped without the keys, takes the same lease,
+   and **can never fail the deploy**.
 3. **`npm run knowledge:sync`** (service-role env) — the hands-on one.
    `--dry-run` prints the plan without calling Gemini at all;
    `--only fecal|builtin|studies` narrows it. After a direct sync it runs the
@@ -352,6 +373,12 @@ Migrations:
   may set them. **Must be applied before deploying the server-side AI
   functions** — until it is, the client-side forgery hole stays open (the app
   still works either way)
+- `20260923000000_knowledge_sync_lease.sql` — `knowledge_sync_lease`
+  (single row, RLS on with no policies) + `knowledge_sync_try_lease` /
+  `knowledge_sync_release_lease` (SECURITY DEFINER, execute = service_role
+  only) and an explicit `match_knowledge_chunks` grant to service_role. The
+  sync fails closed (logs, keeps the stored corpus) until it exists. Applied
+  to prod 2026-09-23
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -592,8 +619,8 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
   API-key-shaped string (`AIza…`) exists in any `dist/**/*.js`.
 - Netlify build command: `npm run build`.
 - Build plugin `netlify/plugins/knowledge-sync` seeds the RAG knowledge base
-  after a successful deploy (see "Knowledge base seeding"). It is fail-open
-  and never blocks or fails a deploy.
+  after a successful **production** deploy (see "Knowledge base seeding"). It
+  is fail-open and never blocks or fails a deploy.
 
 ## Database migrations & deploy alignment (REQUIRED)
 
