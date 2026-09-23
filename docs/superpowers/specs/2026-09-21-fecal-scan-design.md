@@ -11,8 +11,15 @@ conversation — explicitly **not** a diagnosis and never the source of truth.
 
 The second goal is demonstrative: the feature must make the platform's RAG
 loop visible and verifiable. Every result shows what was retrieved, from
-which document, with what similarity — and the tests prove the model was
-only allowed to answer from those passages.
+which document, with what similarity — and the tests prove the model only
+ever answers from the Royal Canin chart for the chosen species.
+
+> **Revised 2026-09-23 (logic audit).** The first build let retrieval decide
+> which scores the model could pick (top-k = 6 passages). The adult-dog chart
+> has 8 scores, so 1–2 scores were unreachable on every scan. The scorer now
+> always receives the WHOLE chart for the species; retrieval ranks passages
+> for the grounding trail and admits admin supplements, but never narrows the
+> answer. The sections below describe the revised design.
 
 ## Source data (the only knowledge the feature uses)
 
@@ -52,17 +59,26 @@ FecalScanScreen ── useFecalScan ── fecalScanService.postAi('ai-fecal-sca
                                        observations: form, moisture, surface,
                                        residue, homogeneity, notVisible[]
                          3. RETRIEVE  retrieveChunks(observationText, {
-                                         k: 6, filters: { docSlugs: ['fecal:<species>'] } })
-                                       → chunks from knowledge_chunks (pgvector)
-                         4. GROUND    if retrieval returned chunks → source 'rag'
-                                       else → the same chart text from the code
-                                       module, source 'bundled' (honest fallback,
-                                       still strictly chart data)
+                                         k: 8, filters: { tool: 'fecal-scan',
+                                         species } })  — HARD scope (tags)
+                                       → chunks from knowledge_chunks (pgvector);
+                                       any fecal:<other species> chunk dropped
+                         4. GROUND    retrieved chart passages verbatim + every
+                                       chart score retrieval missed, filled from
+                                       the code module (one null-similarity
+                                       chunk). source 'rag' if anything was
+                                       retrieved, else 'bundled'. Each passage
+                                       labelled ROYAL CANIN CHART or CLINIC
+                                       SUPPLEMENT (lower authority)
                          5. SCORE     Gemini (multimodal, JSON) with the image +
-                                       observations + ONLY the grounded passages;
-                                       must pick a score that appears in the
-                                       passages; returns confidence, rationale,
-                                       alternates, caution
+                                       observations + the whole chart (scale
+                                       order) + every chart photo; returns
+                                       score, calibrated confidence, rationale,
+                                       alternates, caution (+ translated
+                                       observations for fr)
+                         (0. EXACT    a byte-for-byte chart photo — aspect,
+                                       dHash ≤ 6 AND 32×32 pixel MAD ≤ 2 — is
+                                       answered from the chart, species-scoped)
                          6. respond { result, retrieval } + telemetry
 ```
 
@@ -130,12 +146,14 @@ interface FecalScanRetrieval {
 
 ### Grounding guarantee
 
-The scoring prompt contains the grounded passages verbatim and the rule:
-"Choose only from the scores present in REFERENCE PASSAGES. If none fits,
-choose the nearest and lower the confidence." The function additionally
-verifies the returned score is one of the passages' scores; if the model
-strays, the result is coerced to the nearest passage score and the confidence
-is capped at 0.4. Tests pin all of this (see Testing).
+The scoring prompt contains the whole chart for the species (retrieved
+passages verbatim, the rest from the code module) and the rule that a clinic
+supplement can never add or override a score. `allowedScores` is the full
+chart; an answer that is not a chart score (e.g. 3.2) is snapped to the
+nearest one with confidence capped at 0.4, and a missing or non-numeric
+score is a 502 `upstream` — never a defaulted answer. Confidence is
+calibrated: ambiguity between neighbouring scores, poor framing or lighting
+must lower it. Tests pin all of this (see Testing).
 
 ### Failure posture
 
@@ -205,21 +223,25 @@ model's free-text output follows the locale addendum pattern from Pet Vision.
   scores, derives band (incl. puppy breed-size split), caps confidence when
   the score is not in the grounded passages.
 - `netlify/functions/__tests__/fecalScan.test.ts` — handler: 405/400/413
-  paths; happy path calls `retrieveChunks` with `docSlugs:['fecal:dog']` and
-  the observation text; the scoring prompt contains the retrieved chunk text;
-  `retrieval.source === 'rag'`; when retrieval returns `[]` the prompt
-  contains the bundled chart and `source === 'bundled'`; a model score
-  outside the passages is coerced; telemetry row `call_type: 'fecal_scan'`;
-  admin-knowledge seed now emits `fecal:*` docs.
+  paths; happy path calls `retrieveChunks` with `{ tool: 'fecal-scan',
+  species }` and the observation text; the scoring prompt contains the
+  retrieved chunk text AND every other chart score (all 8 dog scores
+  reachable when retrieval returns 6); supplement-only retrieval still
+  carries the chart; cross-species chunks dropped; French observations
+  localized; missing/NaN score → 502; reference-photo loader refuses SPA
+  HTML / non-JPEG and never caches a failure; telemetry rows
+  `'fecal_scan'` + `'retrieval'`.
 - `src/features/fecal-scan/__tests__/useFecalScan.test.ts` — status machine,
   not-image / too-large errors, stale-request guard.
 - `src/screens/__tests__/FecalScanScreen.test.tsx` — renders picker, result
   with reference image path, grounding panel with similarity, disclaimer.
 - i18n parity + schema-parity tests pass unchanged.
-- **Live RAG verification** (manual, recorded in the PR): after seeding,
-  `POST rag-retrieve { query: "moist stool no cracks distinct shape",
-  filters: { docSlugs: ['fecal:dog'] } }` returns the 3.5 passage first;
-  a real scan through `netlify dev` returns `retrieval.source === 'rag'`.
+- **Live RAG verification**: `npm run knowledge:sync` runs the retrieval
+  proof after a sync (the dog probe must rank the Score 3.5 passage first;
+  the cat probe must return only `fecal:cat`), and the admin Knowledge
+  **search tester** (`admin-knowledge-search`) runs the same scoped retrieval
+  and echoes the filter. (`rag-retrieve` is forced to the `roleplay` tool and
+  cannot see fecal documents — by design.)
 
 ## Out of scope
 

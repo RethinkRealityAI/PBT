@@ -308,14 +308,28 @@ Pipeline (`netlify/functions/ai-fecal-scan.ts`, mirrors `ai-vision`):
    'fecal-scan', species } })` against `knowledge_chunks` (pgvector) — a HARD
    scope, not a slug list, so an admin can add a supplement without opening
    the scan to the rest of the corpus (see "Knowledge scopes"). Each chart
-   score is its own chunk (`fecalChartChunks`), so the top-k are the nearest
-   *scores*.
-3. **Ground** — hits → `retrieval.source = 'rag'`; nothing → the same chart
-   text from the code module, `source = 'bundled'` (never model priors).
-4. **Score** — multimodal JSON with ONLY those passages;
-   `normalizeFecalScanResult` snaps the score onto the passages' scores
-   (confidence capped at 0.4 if the model strayed) and re-derives the band
-   from the chart (puppy score 3 splits by `breedSize`).
+   score is its own chunk (`fecalChartChunks`), so the top-k (k = 8) are the
+   nearest *scores*. Any `fecal:<other species>` chunk is dropped whatever
+   its tags say.
+3. **Ground** — the scorer ALWAYS gets the whole chart: retrieved passages
+   verbatim + every score retrieval missed from the code module (one
+   `similarity: null` chunk). Retrieval ranks and admits supplements; it
+   never narrows the answer (k < chart size once made scores unreachable).
+   Passages are labelled chart vs clinic supplement (`kind`); a supplement
+   can never add or override a score. `source` = `'rag'` if anything was
+   retrieved, else `'bundled'`.
+4. **Score** — multimodal JSON, calibrated-confidence prompt;
+   `normalizeFecalScanResult` snaps a non-chart answer to the nearest chart
+   score (confidence ≤ 0.4) and re-derives the band from the chart (puppy
+   score 3 splits by `breedSize`). A missing/NaN score is a 502 `upstream`.
+   French: the scorer returns translated observations.
+- **Exact-reference shortcut** (`src/shared/ai/imageHash.ts`): a photo that
+  IS a chart photo is answered from the chart — needs aspect ±10 %, dHash ≤ 6
+  AND 32×32 luma MAD ≤ 2 (dHash alone matched 62/108 plain silhouettes).
+- Reference photos load from disk (`[functions."ai-fecal-scan"]
+  included_files` in `netlify.toml`), with a guarded HTTP fallback (200 +
+  `image/jpeg` + JPEG magic, 4 s timeout, `DEPLOY_URL` origin).
+- Telemetry: one `'fecal_scan'` row + one `'retrieval'` row per scan.
 
 Knowledge base: the charts are code-seed documents `fecal:dog|cat|puppy`,
 seeded automatically on every deploy (see "Knowledge base seeding"; by hand:
