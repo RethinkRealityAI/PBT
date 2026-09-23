@@ -48,7 +48,7 @@ export function ScanProgress({ settled = false }: ScanProgressProps) {
     <Glass radius={RADII.lg} padding={18} glow={null} style={{ marginBottom: 14 }}>
       <div role="status" aria-live="polite" aria-busy={!settled}>
         <span className="sr-only">{t('fecalScan.analyzing.aria')}</span>
-        <Eyebrow color="var(--pbt-driver-primary)" style={{ marginBottom: 14 }}>
+        <Eyebrow accent style={{ marginBottom: 12 }}>
           {t('fecalScan.analyzing.eyebrow')}
         </Eyebrow>
 
@@ -128,7 +128,7 @@ export function ScanProgress({ settled = false }: ScanProgressProps) {
             height: 3,
             borderRadius: 9999,
             overflow: 'hidden',
-            background: 'color-mix(in oklab, var(--pbt-driver-primary) 14%, transparent)',
+            background: 'var(--fecal-track)',
           }}
         >
           <motion.div

@@ -9,8 +9,11 @@ import type { fecalScan as enFecalScan } from '../en/fecalScan';
  *   françaises, qui parlent de « système de cotation fécale »).
  * - « stool » → « selles » (pluriel, comme sur la charte FR).
  * - « knowledge base » → « base de connaissances ».
- * - « pgvector · knowledge_chunks » reste tel quel : ce sont des identifiants
- *   techniques (extension Postgres + nom de table), pas de la prose.
+ * - « pgvector · knowledge_chunks » reste tel quel dans les détails
+ *   techniques : ce sont des identifiants (extension Postgres + nom de
+ *   table), pas de la prose.
+ * - Provenance des passages : « Charte Royal Canin » / « Complément de la
+ *   clinique » ; « Extrait » quand la source est inconnue.
  */
 export const fecalScan: Record<keyof typeof enFecalScan, string> = {
   // ── Chrome de l'écran ─────────────────────────────────────
@@ -39,7 +42,6 @@ export const fecalScan: Record<keyof typeof enFecalScan, string> = {
   'fecalScan.capture.title': 'Prenez ou téléversez une photo',
   'fecalScan.capture.body':
     "Photographiez les selles sur un fond uni, à bonne lumière. La photo n'est jamais conservée.",
-  'fecalScan.capture.hint': 'Cadrez les selles de près, sur un fond uni.',
   'fecalScan.capture.takePhoto': 'Prendre une photo',
   'fecalScan.capture.uploadPhoto': 'Téléverser une photo',
   'fecalScan.capture.retake': 'Reprendre',
@@ -58,6 +60,7 @@ export const fecalScan: Record<keyof typeof enFecalScan, string> = {
   'fecalScan.camera.failed':
     "Impossible d'ouvrir la caméra. Téléversez plutôt une photo.",
   'fecalScan.camera.hint': 'Cadrez les selles de près, sur un fond uni.',
+  'fecalScan.camera.starting': 'Démarrage de la caméra…',
 
   // ── Étapes de l'analyse ───────────────────────────────────
   'fecalScan.analyzing.eyebrow': 'En cours',
@@ -67,13 +70,16 @@ export const fecalScan: Record<keyof typeof enFecalScan, string> = {
   'fecalScan.analyzing.step.match': 'Appariement avec la cote de la charte',
 
   // ── Résultat ──────────────────────────────────────────────
-  'fecalScan.result.eyebrow': 'Score fécal',
+  'fecalScan.result.eyebrow': 'Cote fécale',
   'fecalScan.result.noScore': 'Aucune cote',
   'fecalScan.result.scoreAria': 'Cote fécale de {score} sur 5',
-  'fecalScan.result.confidence': 'confiance de {pct}',
-  'fecalScan.result.confidenceAria': 'Degré de confiance du modèle',
+  'fecalScan.result.announce': 'Cote fécale de {score} sur 5 : {band}.',
+  'fecalScan.result.confidence.high': 'Confiance élevée',
+  'fecalScan.result.confidence.moderate': 'Confiance modérée',
+  'fecalScan.result.confidence.low': 'Confiance faible',
+  'fecalScan.result.confidence.qualifier': 'Estimation de l’IA',
   'fecalScan.result.yourPhoto': 'Votre photo',
-  'fecalScan.result.chartReference': 'Référence de la charte {score}',
+  'fecalScan.result.chartReference': 'Charte · cote {score}',
   'fecalScan.result.observations': 'Ce que montre la photo',
   'fecalScan.result.obs.form': 'Forme',
   'fecalScan.result.obs.moisture': 'Humidité',
@@ -82,7 +88,7 @@ export const fecalScan: Record<keyof typeof enFecalScan, string> = {
   'fecalScan.result.obs.homogeneity': 'Consistance',
   'fecalScan.result.rationale': 'Pourquoi cette cote',
   'fecalScan.result.alternates': 'Cotes voisines possibles',
-  'fecalScan.result.notVisible': 'Une photo ne peut pas montrer : {items}.',
+  'fecalScan.result.notVisibleLabel': 'Ce qu’une photo ne peut pas montrer',
   'fecalScan.result.caution': 'Quand consulter le vétérinaire',
   'fecalScan.result.notStool':
     "Cette image ne semble pas montrer des selles. Essayez une photo nette, bien éclairée, prise à la verticale sur un fond uni.",
@@ -93,27 +99,39 @@ export const fecalScan: Record<keyof typeof enFecalScan, string> = {
   'fecalScan.band.acceptable': 'Acceptables',
   'fecalScan.band.optimal': 'Optimales',
   'fecalScan.band.normal': 'Normales',
+  'fecalScan.band.meaning.tooHard': 'Plus fermes que la plage idéale de la charte',
+  'fecalScan.band.meaning.tooSoft': 'Plus molles que la plage idéale de la charte',
+  'fecalScan.band.meaning.acceptable': 'Acceptables, juste hors de la plage idéale',
+  'fecalScan.band.meaning.optimal': 'Dans la plage idéale de la charte',
+  'fecalScan.band.meaning.normal': 'Dans la plage normale de la charte',
 
-  // ── Panneau de provenance (la piste RAG) ──────────────────
-  'fecalScan.grounding.eyebrow': 'Extrait de la base de connaissances',
-  'fecalScan.grounding.source.rag': 'pgvector · knowledge_chunks',
-  'fecalScan.grounding.source.bundled': 'charte intégrée',
-  'fecalScan.grounding.sourceAria': "D'où proviennent les passages",
+  // ── Panneau de provenance (« d'où vient cette cote ») ──
+  'fecalScan.grounding.eyebrow': "D'où vient cette cote",
   'fecalScan.grounding.referencePhotos': 'Comparé à {n} photos de la charte',
   'fecalScan.grounding.referencePhotosOne': 'Comparé à 1 photo de la charte',
-  'fecalScan.grounding.passage': 'Passage {n}',
-  'fecalScan.grounding.similarity': 'Similarité',
-  'fecalScan.grounding.similarityNone': 'Non mesurée',
-  'fecalScan.grounding.scores': 'Cotes citées',
-  'fecalScan.grounding.expand': 'Lire le passage complet',
-  'fecalScan.grounding.collapse': 'Replier le passage',
-  'fecalScan.grounding.queryLabel': 'Requête vectorisée',
-  'fecalScan.grounding.docs': 'Documents interrogés',
-  /** {tool} et {species} proviennent du vocabulaire partagé des portées. */
-  'fecalScan.grounding.scope': 'Portée · {tool} · {species}',
+  'fecalScan.grounding.kind.chart': 'Charte Royal Canin',
+  'fecalScan.grounding.kind.supplement': 'Complément de la clinique',
+  'fecalScan.grounding.kind.restOfChart': 'Reste de la charte',
+  'fecalScan.grounding.match.alsoConsidered': 'Aussi pris en compte',
+  'fecalScan.grounding.kind.unknown': 'Extrait',
+  'fecalScan.grounding.match.strong': 'Correspondance forte',
+  'fecalScan.grounding.match.good': 'Bonne correspondance',
+  'fecalScan.grounding.match.partial': 'Correspondance partielle',
+  'fecalScan.grounding.expand': 'Lire la suite',
+  'fecalScan.grounding.collapse': 'Afficher moins',
   'fecalScan.grounding.empty': "Aucun passage n'a été retourné pour cette analyse.",
   'fecalScan.grounding.idle':
-    "Analysez une photo et les passages de la charte qui fondent la cote s'afficheront ici.",
+    "Après une analyse, les passages de la charte qui fondent la cote s'affichent ici, pour que vous voyiez exactement sur quoi elle repose.",
+  'fecalScan.grounding.technical': 'Détails techniques',
+  'fecalScan.grounding.tech.retrieval': 'Récupération',
+  'fecalScan.grounding.source.rag': 'Recherche vectorielle · pgvector · knowledge_chunks',
+  'fecalScan.grounding.source.bundled':
+    "Texte de la charte intégrée (la recherche n'a retourné aucun passage)",
+  'fecalScan.grounding.tech.scope': 'Portée de la recherche',
+  'fecalScan.grounding.queryLabel': 'Requête de recherche (vectorisée)',
+  'fecalScan.grounding.docs': 'Documents sources',
+  'fecalScan.grounding.similarity': 'Scores de correspondance (similarité cosinus)',
+  'fecalScan.grounding.tech.confidence': 'Confiance du modèle (autoévaluation, 0–1)',
 
   // ── Charte complète ───────────────────────────────────────
   'fecalScan.chartSheet.eyebrow': 'Charte de référence',
@@ -127,6 +145,7 @@ export const fecalScan: Record<keyof typeof enFecalScan, string> = {
   'fecalScan.footer.disclaimer':
     "Une référence de soutien tirée des chartes de cotation fécale Royal Canin — une aide à la discussion entre la clinique et le client, jamais un diagnostic ni la source de vérité.",
   'fecalScan.footer.scanAnother': 'Analyser une autre photo',
+  'fecalScan.footer.tryAnotherPhoto': 'Essayer une autre photo',
   'fecalScan.footer.tryAgain': 'Réessayer',
 
   // ── Renvoi depuis l'Analyseur d'animaux ───────────────────

@@ -48,7 +48,7 @@ const retrieval: FecalScanRetrieval = {
   query: 'moist stool no cracks distinct shape',
   docSlugs: ['fecal:dog'],
   scope: { tool: 'fecal-scan', species: 'dog' },
-  referenceScores: [3, 3.5, 4],
+  referenceScores: [1, 2, 2.5, 3, 3.5, 4, 4.5, 5],
     exactReference: null,
     mostSimilarReference: null,
   chunks: [
@@ -57,6 +57,14 @@ const retrieval: FecalScanRetrieval = {
       similarity: 0.84,
       excerpt: 'Score 3.5 (Fecal Scoring System for Dogs): MOIST STOOL WITH NO CRACKS.',
       scores: [3.5],
+      kind: 'chart',
+    },
+    {
+      citation: 'Royal Canin — Fecal Scoring System for Dogs, VGI/064/0324',
+      similarity: null,
+      excerpt: 'Score 1 (Fecal Scoring System for Dogs): VERY HARD AND DRY.',
+      scores: [1],
+      kind: 'chart',
     },
   ],
 };
@@ -206,6 +214,64 @@ describe('useFecalScan', () => {
     });
 
     expect(hook.current.result?.score).toBe(2.5);
+  });
+
+  it('a rejected pick supersedes an earlier scan still in flight', async () => {
+    let resolveFirst: (v: unknown) => void = () => {};
+    analyzeStoolPhoto.mockImplementationOnce(
+      () =>
+        new Promise((res) => {
+          resolveFirst = res;
+        }),
+    );
+    const { result: hook } = renderHook(() => useFecalScan());
+
+    let firstCall: Promise<unknown> = Promise.resolve(null);
+    act(() => {
+      firstCall = hook.current.analyzeFile(fakeFile('image/jpeg', 1024, 'a.jpg'));
+    });
+    await waitFor(() => expect(analyzeStoolPhoto).toHaveBeenCalledTimes(1));
+
+    // The user then picks a PDF: its validation error is the latest intent.
+    await act(async () => {
+      await hook.current.analyzeFile(fakeFile('application/pdf', 1024, 'b.pdf'));
+    });
+    expect(hook.current.status).toBe('error');
+
+    await act(async () => {
+      resolveFirst({ result: result({ score: 5 }), retrieval });
+      await firstCall;
+    });
+
+    // The stale scan must not overwrite the error with its result.
+    expect(hook.current.status).toBe('error');
+    expect(hook.current.error).toBe('Please choose an image file.');
+    expect(hook.current.result).toBeNull();
+  });
+
+  it('logs the band and score only for a real stool reading', async () => {
+    analyzeStoolPhoto.mockResolvedValueOnce({ result: result(), retrieval });
+    const { result: hook } = renderHook(() => useFecalScan());
+    await act(async () => {
+      await hook.current.analyzeFile(fakeFile('image/jpeg', 1024));
+    });
+    expect(logEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        meta: expect.objectContaining({ isStool: true, score: 3.5, band: 'tooSoft' }),
+      }),
+    );
+
+    analyzeStoolPhoto.mockResolvedValueOnce({
+      result: result({ isStool: false }),
+      retrieval,
+    });
+    await act(async () => {
+      await hook.current.analyzeFile(fakeFile('image/jpeg', 1024));
+    });
+    const meta = logEvent.mock.calls.at(-1)?.[0].meta as Record<string, unknown>;
+    expect(meta.isStool).toBe(false);
+    expect(meta).not.toHaveProperty('score');
+    expect(meta).not.toHaveProperty('band');
   });
 
   it('reset() clears everything and revokes the preview URL', async () => {

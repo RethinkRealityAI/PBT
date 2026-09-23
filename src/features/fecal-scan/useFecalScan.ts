@@ -115,19 +115,27 @@ export function useFecalScan(): UseFecalScan {
 
   const analyzeFile = useCallback(
     async (file: File) => {
+      // Claim a request id BEFORE validating: a rejected pick is still the
+      // user's latest intent, so an earlier scan that is still in flight must
+      // not land afterwards and replace this error with a stale result.
+      const reqId = ++reqIdRef.current;
+      const isCurrent = () => reqId === reqIdRef.current;
+
       if (!file.type.startsWith('image/')) {
         setError(translate(locale, 'fecalScan.error.notImage'));
+        setResult(null);
+        setRetrieval(null);
         setStatus('error');
         return null;
       }
       if (file.size > MAX_IMAGE_BYTES) {
         setError(translate(locale, 'fecalScan.error.tooLarge'));
+        setResult(null);
+        setRetrieval(null);
         setStatus('error');
         return null;
       }
 
-      const reqId = ++reqIdRef.current;
-      const isCurrent = () => reqId === reqIdRef.current;
       const scanSpecies = speciesRef.current;
       const scanBreedSize = breedSizeRef.current;
 
@@ -187,12 +195,21 @@ export function useFecalScan(): UseFecalScan {
           type: 'custom',
           screen: 'fecalScan',
           target: 'fecal_scan',
-          meta: {
-            species: scanSpecies,
-            score: res.result.score,
-            band: res.result.band,
-            source: res.retrieval?.source ?? null,
-          },
+          // A rejected (non-stool) photo has no score — logging the
+          // placeholder score/band would count it as a real reading.
+          meta: res.result.isStool
+            ? {
+                species: scanSpecies,
+                isStool: true,
+                score: res.result.score,
+                band: res.result.band,
+                source: res.retrieval?.source ?? null,
+              }
+            : {
+                species: scanSpecies,
+                isStool: false,
+                source: res.retrieval?.source ?? null,
+              },
         });
         return res.result;
       } catch (err) {

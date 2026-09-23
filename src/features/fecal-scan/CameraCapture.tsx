@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '../../design-system/Icon';
-import { COLORS, RADII } from '../../design-system/tokens';
-import { useTheme } from '../../app/providers/ThemeProvider';
+import { RADII } from '../../design-system/tokens';
 import { useT } from '../../i18n/useT';
 import type { CatalogKey } from '../../i18n/catalog';
-import { tinted } from './fecalUi';
+import { DRIVER_GRADIENT, ErrorNote, subtleSurface } from './fecalUi';
 
 /** Longest edge of the captured frame — matches `lib/imagePrep`'s target. */
 const MAX_EDGE_PX = 1600;
@@ -47,13 +46,21 @@ export function CameraCapture({
   onUnavailable,
 }: CameraCaptureProps) {
   const t = useT();
-  const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme === 'dark';
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [facing, setFacing] = useState<'environment' | 'user'>('environment');
   const [errorKey, setErrorKey] = useState<CatalogKey | null>(null);
   const [ready, setReady] = useState(false);
+  // The stream can be live before the first frame is decoded (videoWidth 0).
+  // Shooting then would send a blank JPEG — a wasted scan that comes back as
+  // "not a stool" — so the shutter waits for real pixels.
+  const [hasFrame, setHasFrame] = useState(false);
+  const canShoot = ready && hasFrame;
+
+  const checkFrame = useCallback(() => {
+    const video = videoRef.current;
+    setHasFrame(Boolean(video && video.videoWidth > 0 && video.videoHeight > 0));
+  }, []);
 
   const stopStream = useCallback(() => {
     const stream = streamRef.current;
@@ -76,6 +83,7 @@ export function CameraCapture({
 
     setErrorKey(null);
     setReady(false);
+    setHasFrame(false);
 
     void (async () => {
       try {
@@ -101,6 +109,7 @@ export function CameraCapture({
           });
         }
         setReady(true);
+        checkFrame();
       } catch (err) {
         if (cancelled) return;
         const name = err instanceof Error ? err.name : '';
@@ -122,23 +131,35 @@ export function CameraCapture({
     // `onUnavailable` is a parent callback; re-running on its identity would
     // restart the camera on every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facing, stopStream]);
+  }, [facing, stopStream, checkFrame]);
 
   const shoot = useCallback(() => {
     const video = videoRef.current;
-    const width = video?.videoWidth || 1280;
-    const height = video?.videoHeight || 720;
+    // Never send a frame-less image: no decoded frame means no photo.
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+    const width = video.videoWidth;
+    const height = video.videoHeight;
     const scale = Math.min(1, MAX_EDGE_PX / Math.max(width, height));
 
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(width * scale));
     canvas.height = Math.max(1, Math.round(height * scale));
+    let drawn = false;
     try {
       const ctx = canvas.getContext('2d');
-      if (ctx && video) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        drawn = true;
+      }
     } catch {
-      /* no 2D context (very old WebView) — toBlob still yields a frame-less
-         JPEG rather than dropping the user's tap on the floor */
+      drawn = false;
+    }
+    if (!drawn) {
+      // No 2D context (very old WebView): a blank JPEG would still cost a
+      // scan and come back as "not a stool". Say so; upload still works.
+      setErrorKey('fecalScan.camera.failed');
+      stopStream();
+      return;
     }
 
     canvas.toBlob(
@@ -166,19 +187,7 @@ export function CameraCapture({
   if (errorKey) {
     return (
       <div>
-        <div
-          role="alert"
-          style={{
-            padding: '11px 13px',
-            borderRadius: RADII.sm,
-            fontSize: 13,
-            lineHeight: 1.55,
-            color: 'var(--pbt-text)',
-            ...tinted(COLORS.score.ok, dark),
-          }}
-        >
-          {t(errorKey)}
-        </div>
+        <ErrorNote>{t(errorKey)}</ErrorNote>
         <div style={{ marginTop: 10 }}>
           <GhostButton onClick={cancel}>{t('fecalScan.camera.cancel')}</GhostButton>
         </div>
@@ -196,7 +205,7 @@ export function CameraCapture({
           borderRadius: RADII.md,
           overflow: 'hidden',
           background: '#0b0b0f',
-          border: `1.5px dashed color-mix(in oklab, var(--pbt-driver-primary) 45%, rgba(255,255,255,0.4))`,
+          border: '2px solid color-mix(in oklab, var(--pbt-driver-primary) 70%, transparent)',
         }}
       >
         <video
@@ -204,6 +213,9 @@ export function CameraCapture({
           autoPlay
           playsInline
           muted
+          onLoadedData={checkFrame}
+          onPlaying={checkFrame}
+          onResize={checkFrame}
           aria-label={t('fecalScan.camera.hint')}
           style={{
             width: '100%',
@@ -213,10 +225,60 @@ export function CameraCapture({
             // Selfie cameras are mirrored in every other app; matching that
             // makes framing feel right.
             transform: facing === 'user' ? 'scaleX(-1)' : undefined,
-            opacity: ready ? 1 : 0.4,
+            opacity: canShoot ? 1 : 0.4,
             transition: 'opacity 0.3s ease',
           }}
         />
+        {/* Framing guide — four driver-coloured corners. */}
+        <span
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: '16px 16px 34px',
+            pointerEvents: 'none',
+            filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.45))',
+          }}
+        >
+          {(['tl', 'tr', 'bl', 'br'] as const).map((c) => (
+            <span
+              key={c}
+              style={{
+                position: 'absolute',
+                width: 22,
+                height: 22,
+                borderColor: 'var(--pbt-driver-primary)',
+                borderStyle: 'solid',
+                borderWidth: 0,
+                ...(c[0] === 't' ? { top: 0, borderTopWidth: 3 } : { bottom: 0, borderBottomWidth: 3 }),
+                ...(c[1] === 'l' ? { left: 0, borderLeftWidth: 3 } : { right: 0, borderRightWidth: 3 }),
+                borderTopLeftRadius: c === 'tl' ? 8 : 0,
+                borderTopRightRadius: c === 'tr' ? 8 : 0,
+                borderBottomLeftRadius: c === 'bl' ? 8 : 0,
+                borderBottomRightRadius: c === 'br' ? 8 : 0,
+              }}
+            />
+          ))}
+        </span>
+        {!canShoot && (
+          <span
+            role="status"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: 'var(--pbt-font-mono)',
+              fontSize: 10,
+              letterSpacing: '0.16em',
+              textTransform: 'uppercase',
+              color: 'rgba(255,255,255,0.85)',
+              pointerEvents: 'none',
+            }}
+          >
+            {t('fecalScan.camera.starting')}
+          </span>
+        )}
         <span
           aria-hidden
           style={{
@@ -253,18 +315,22 @@ export function CameraCapture({
         <button
           type="button"
           onClick={shoot}
+          disabled={!canShoot}
           aria-label={t('fecalScan.camera.shutterAria')}
           style={{
-            width: 56,
-            height: 56,
+            width: 64,
+            height: 64,
             flexShrink: 0,
             borderRadius: '50%',
-            border: '3px solid rgba(255,255,255,0.9)',
-            cursor: 'pointer',
-            background:
-              'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+            border: '4px solid var(--fecal-fill)',
+            outline: '2px solid color-mix(in oklab, var(--pbt-driver-primary) 55%, transparent)',
+            outlineOffset: 0,
+            cursor: canShoot ? 'pointer' : 'not-allowed',
+            opacity: canShoot ? 1 : 0.45,
+            background: DRIVER_GRADIENT,
             boxShadow:
-              '0 6px 18px -6px color-mix(in oklab, var(--pbt-driver-primary) 60%, transparent), 0 1px 0 rgba(255,255,255,0.4) inset',
+              '0 8px 20px -8px color-mix(in oklab, var(--pbt-driver-primary) 65%, transparent), 0 1px 0 rgba(255,255,255,0.4) inset',
+            transition: 'opacity 0.25s ease, transform 0.15s ease',
           }}
         />
 
@@ -273,8 +339,8 @@ export function CameraCapture({
           onClick={() => setFacing((f) => (f === 'environment' ? 'user' : 'environment'))}
           aria-label={t('fecalScan.camera.flipAria')}
           style={{
-            width: 40,
-            height: 40,
+            width: 48,
+            height: 48,
             flexShrink: 0,
             borderRadius: '50%',
             display: 'inline-flex',
@@ -282,11 +348,10 @@ export function CameraCapture({
             justifyContent: 'center',
             cursor: 'pointer',
             color: 'var(--pbt-text)',
-            background: dark ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.38)',
-            border: '1px solid var(--pbt-glass-border)',
+            ...subtleSurface,
           }}
         >
-          <Icon.flipCamera style={{ width: 17, height: 17 }} />
+          <Icon.flipCamera style={{ width: 19, height: 19 }} />
         </button>
       </div>
     </div>
@@ -300,26 +365,22 @@ function GhostButton({
   children: React.ReactNode;
   onClick: () => void;
 }) {
-  const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme === 'dark';
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        height: 38,
-        padding: '0 16px',
+        height: 48,
+        minWidth: 96,
+        padding: '0 18px',
         borderRadius: 9999,
         cursor: 'pointer',
         fontSize: 14,
         fontWeight: 600,
         fontFamily: 'var(--pbt-font-body)',
         letterSpacing: '-0.01em',
-        color: dark ? '#fff' : 'oklch(0.30 0.10 20)',
-        background: 'transparent',
-        border: dark
-          ? '1px solid rgba(255,255,255,0.2)'
-          : '1px solid color-mix(in oklab, var(--pbt-driver-primary) 28%, transparent)',
+        color: 'var(--pbt-text)',
+        ...subtleSurface,
       }}
     >
       {children}

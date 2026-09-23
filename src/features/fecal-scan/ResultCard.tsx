@@ -1,25 +1,24 @@
+import type { CSSProperties, ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Glass } from '../../design-system/Glass';
-import { COLORS, RADII } from '../../design-system/tokens';
-import { useTheme } from '../../app/providers/ThemeProvider';
+import { Icon } from '../../design-system/Icon';
+import { PillButton } from '../../design-system/PillButton';
+import { RADII } from '../../design-system/tokens';
 import { useLanguage } from '../../app/providers/LanguageProvider';
-import { formatPercent } from '../../i18n/format';
 import { localizedFecalEntry } from '../../i18n/dataL10n/fecalCharts';
 import type { CatalogKey } from '../../i18n/catalog';
 import { fecalChartEntry } from '../../data/knowledge/fecalCharts';
-import type {
-  FecalScanResult,
-  FecalSpecies,
-} from '../../shared/ai/fecalScan';
-import { BAND_COLOR, BAND_KEY, Eyebrow, tinted } from './fecalUi';
-
-/**
- * Confidence is how sure the model is, NOT how healthy the stool is: an
- * emphatic 'too soft' reading is a confident one. Colouring it by band made a
- * high-confidence bad result look like a broken meter, so it is always the
- * positive token.
- */
-const CONFIDENCE_COLOR = COLORS.score.good;
+import type { FecalScanResult, FecalSpecies } from '../../shared/ai/fecalScan';
+import {
+  BAND_KEY,
+  BAND_MEANING_KEY,
+  BandChip,
+  Eyebrow,
+  LevelMeter,
+  confidenceLevel,
+  subtleSurface,
+  type Level,
+} from './fecalUi';
 
 const OBSERVATION_ROWS: {
   key: keyof FecalScanResult['observations'];
@@ -32,42 +31,75 @@ const OBSERVATION_ROWS: {
   { key: 'homogeneity', label: 'fecalScan.result.obs.homogeneity' },
 ];
 
+const CONFIDENCE_KEY: Record<Level, CatalogKey> = {
+  3: 'fecalScan.result.confidence.high',
+  2: 'fecalScan.result.confidence.moderate',
+  1: 'fecalScan.result.confidence.low',
+};
+
+const SPECIES_KEY: Record<FecalSpecies, CatalogKey> = {
+  dog: 'fecalScan.species.dog',
+  puppy: 'fecalScan.species.puppy',
+  cat: 'fecalScan.species.cat',
+};
+
 export interface ResultCardProps {
   result: FecalScanResult;
   species: FecalSpecies;
   previewUrl: string | null;
+  /** Clears this result and returns to capture. */
+  onScanAnother?: () => void;
 }
 
 /**
- * The scored result: the chart match, side by side with the photo it came
- * from. The score numeral is the loudest thing on the screen; everything
- * under it exists to let a technician disagree with it out loud — the chart's
- * own wording, the observations behind it, the runner-up scores, and what a
- * photo simply cannot show.
+ * The scored result, built to be read in one glance at the exam table:
+ *
+ *   score · band · what the band means · how sure the AI is
+ *
+ * then the photo beside the chart's own reference photo, then — quieter — the
+ * reasoning a technician needs to disagree with it out loud: the chart's
+ * wording, the observations, the runner-up scores, and what a photo simply
+ * cannot show.
+ *
+ * Colour: the band is a small semantic dot on a neutral chip (the label
+ * carries the meaning); everything else accents in the user's ECHO driver
+ * colour. Confidence is a coarse three-step estimate, never "86%": the number
+ * is the model's self-assessment, not a measured accuracy.
  */
-export function ResultCard({ result, species, previewUrl }: ResultCardProps) {
-  const { resolvedTheme } = useTheme();
+export function ResultCard({ result, species, previewUrl, onScanAnother }: ResultCardProps) {
   const { t, locale } = useLanguage();
   const reduce = useReducedMotion();
-  const dark = resolvedTheme === 'dark';
+
+  const enter = {
+    initial: reduce ? false : ({ opacity: 0, y: 10 } as const),
+    animate: { opacity: 1, y: 0 },
+    transition: { duration: 0.4, ease: 'easeOut' as const },
+  };
 
   if (!result.isStool) {
     return (
-      <Glass radius={RADII.lg} padding={18} glow={null} style={{ marginBottom: 14 }}>
-        <Eyebrow style={{ marginBottom: 10 }}>{t('fecalScan.result.noScore')}</Eyebrow>
-        <div
-          style={{
-            padding: '12px 14px',
-            borderRadius: RADII.sm,
-            fontSize: 13.5,
-            lineHeight: 1.55,
-            color: 'var(--pbt-text)',
-            ...tinted(COLORS.score.ok, dark),
-          }}
-        >
-          {t('fecalScan.result.notStool')}
-        </div>
-      </Glass>
+      <motion.div {...enter}>
+        <Glass radius={RADII.lg} padding={18} glow={null} style={{ marginBottom: 14 }}>
+          <Eyebrow accent as="h2" style={{ marginBottom: 12 }}>
+            {t('fecalScan.result.noScore')}
+          </Eyebrow>
+          <Note icon={<Icon.info style={iconStyle} aria-hidden />}>
+            <div style={{ fontSize: 13.5, lineHeight: 1.55, color: 'var(--pbt-text)' }}>
+              {t('fecalScan.result.notStool')}
+            </div>
+          </Note>
+          {onScanAnother && (
+            <PillButton
+              fullWidth
+              onClick={onScanAnother}
+              icon={<Icon.camera style={{ width: 17, height: 17 }} />}
+              style={{ marginTop: 14 }}
+            >
+              {t('fecalScan.footer.tryAnotherPhoto')}
+            </PillButton>
+          )}
+        </Glass>
+      </motion.div>
     );
   }
 
@@ -75,95 +107,101 @@ export function ResultCard({ result, species, previewUrl }: ResultCardProps) {
   const chartText = entry
     ? localizedFecalEntry(locale, species, entry)
     : { label: '', description: '' };
-  const bandColor = BAND_COLOR[result.band] ?? COLORS.score.ok;
-  const confidencePct = Math.max(0, Math.min(100, Math.round(result.confidence * 100)));
+  const level = confidenceLevel(result.confidence);
 
   return (
-    <motion.div
-      initial={reduce ? false : { opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
-    >
+    <motion.div {...enter}>
       <Glass
         radius={RADII.hero}
         padding={20}
-        glow={CONFIDENCE_COLOR}
+        glow="var(--pbt-driver-primary)"
         style={{ marginBottom: 14 }}
       >
-        <Eyebrow style={{ marginBottom: 14 }}>{t('fecalScan.result.eyebrow')}</Eyebrow>
+        <div
+          className="flex items-center justify-between gap-3"
+          style={{ marginBottom: 14 }}
+        >
+          <Eyebrow accent as="h2">
+            {t('fecalScan.result.eyebrow')}
+          </Eyebrow>
+          <Eyebrow as="span" style={{ fontSize: 9.5, letterSpacing: '0.14em', textAlign: 'right' }}>
+            {t(SPECIES_KEY[species] ?? 'fecalScan.species.dog')}
+          </Eyebrow>
+        </div>
 
-        {/* ── Hero: numeral + band + confidence ── */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+        {/* ── Hero: the one-glance answer ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
           <div
+            role="img"
             aria-label={t('fecalScan.result.scoreAria', { score: result.score })}
             style={{
-              fontSize: 60,
-              lineHeight: 0.92,
-              fontWeight: 400,
-              letterSpacing: '-0.035em',
-              color: 'var(--pbt-text)',
+              display: 'flex',
+              alignItems: 'baseline',
               flexShrink: 0,
-              fontVariantNumeric: 'tabular-nums',
+              color: 'var(--pbt-text)',
             }}
           >
-            {result.score}
-          </div>
-          <div style={{ minWidth: 0, flex: 1, paddingTop: 8 }}>
             <span
+              data-testid="fecal-score"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '5px 12px',
-                borderRadius: 9999,
-                fontFamily: 'var(--pbt-font-mono)',
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
+                fontSize: 68,
+                lineHeight: 0.9,
+                fontWeight: 400,
+                letterSpacing: '-0.04em',
                 color: 'var(--pbt-text)',
-                ...tinted(bandColor, dark),
+                fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {t(BAND_KEY[result.band] ?? 'fecalScan.band.acceptable')}
+              {result.score}
             </span>
+            {/* Numeric scale suffix, not prose — every chart runs 1–5. */}
+            <span
+              aria-hidden
+              style={{
+                marginLeft: 4,
+                fontSize: 18,
+                fontWeight: 400,
+                color: 'var(--pbt-text-muted)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              /5
+            </span>
+          </div>
 
-            {/* Confidence meter */}
-            <div style={{ marginTop: 12 }}>
-              <div
-                aria-hidden
-                style={{
-                  height: 4,
-                  borderRadius: 9999,
-                  overflow: 'hidden',
-                  background: `color-mix(in oklab, ${CONFIDENCE_COLOR} 16%, transparent)`,
-                }}
-              >
-                <motion.div
-                  style={{
-                    height: '100%',
-                    borderRadius: 9999,
-                    background: CONFIDENCE_COLOR,
-                  }}
-                  initial={reduce ? false : { width: 0 }}
-                  animate={{ width: `${confidencePct}%` }}
-                  transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
-                />
-              </div>
-              <div
-                aria-label={t('fecalScan.result.confidenceAria')}
-                style={{
-                  marginTop: 6,
-                  fontFamily: 'var(--pbt-font-mono)',
-                  fontSize: 10,
-                  letterSpacing: '0.1em',
-                  fontWeight: 700,
-                  color: CONFIDENCE_COLOR,
-                }}
-              >
-                {t('fecalScan.result.confidence', {
-                  pct: formatPercent(confidencePct, locale),
-                })}
-              </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <BandChip
+              band={result.band}
+              label={t(BAND_KEY[result.band] ?? 'fecalScan.band.acceptable')}
+            />
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 15,
+                fontWeight: 600,
+                lineHeight: 1.35,
+                letterSpacing: '-0.01em',
+                color: 'var(--pbt-text)',
+              }}
+            >
+              {t(BAND_MEANING_KEY[result.band] ?? 'fecalScan.band.meaning.acceptable')}
+            </div>
+            <div
+              style={{
+                marginTop: 9,
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '4px 8px',
+              }}
+            >
+              <LevelMeter level={level} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pbt-text)' }}>
+                {t(CONFIDENCE_KEY[level])}
+              </span>
+              <span style={{ fontSize: 11.5, color: 'var(--pbt-text-muted)' }}>
+                {t('fecalScan.result.confidence.qualifier')}
+              </span>
             </div>
           </div>
         </div>
@@ -171,7 +209,7 @@ export function ResultCard({ result, species, previewUrl }: ResultCardProps) {
         {/* ── Photo ↔ chart reference ── */}
         <div
           style={{
-            marginTop: 18,
+            marginTop: 20,
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
             gap: 10,
@@ -179,24 +217,20 @@ export function ResultCard({ result, species, previewUrl }: ResultCardProps) {
         >
           <Pane label={t('fecalScan.result.yourPhoto')}>
             {previewUrl ? (
-              <img
-                src={previewUrl}
-                alt={t('fecalScan.capture.photoAlt')}
-                style={squareImage}
-              />
+              <img src={previewUrl} alt={t('fecalScan.capture.photoAlt')} style={squareImage} />
             ) : (
-              <div style={{ ...squareImage, background: 'rgba(127,127,127,0.12)' }} />
+              <div style={squareImage} />
             )}
           </Pane>
-          <Pane
-            label={t('fecalScan.result.chartReference', { score: result.score })}
-          >
-            {entry && (
+          <Pane label={t('fecalScan.result.chartReference', { score: result.score })}>
+            {entry ? (
               <img
                 src={entry.imagePath}
                 alt={t('fecalScan.chartSheet.imageAlt', { score: result.score })}
                 style={squareImage}
               />
+            ) : (
+              <div style={squareImage} />
             )}
           </Pane>
         </div>
@@ -219,7 +253,7 @@ export function ResultCard({ result, species, previewUrl }: ResultCardProps) {
             {chartText.description && (
               <p
                 style={{
-                  margin: '6px 0 0',
+                  margin: '5px 0 0',
                   fontSize: 12.5,
                   lineHeight: 1.55,
                   color: 'var(--pbt-text-muted)',
@@ -231,21 +265,27 @@ export function ResultCard({ result, species, previewUrl }: ResultCardProps) {
           </div>
         )}
 
+        {/* ── Rationale ── */}
+        {result.rationale && (
+          <Section label={t('fecalScan.result.rationale')}>
+            <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: 'var(--pbt-text)' }}>
+              {result.rationale}
+            </p>
+          </Section>
+        )}
+
         {/* ── Observations ── */}
-        <div style={{ marginTop: 18 }}>
-          <Eyebrow style={{ marginBottom: 8 }}>
-            {t('fecalScan.result.observations')}
-          </Eyebrow>
+        <Section label={t('fecalScan.result.observations')}>
           <dl style={{ margin: 0, display: 'grid', gap: 0 }}>
             {OBSERVATION_ROWS.map(({ key, label }, i) => (
               <div
                 key={key}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'minmax(78px, 26%) 1fr',
+                  gridTemplateColumns: 'minmax(84px, 28%) 1fr',
                   gap: 10,
-                  padding: '7px 0',
-                  borderTop: i === 0 ? 'none' : '1px solid var(--pbt-glass-border)',
+                  padding: '8px 0',
+                  borderTop: i === 0 ? 'none' : '1px solid var(--fecal-hairline)',
                 }}
               >
                 <dt
@@ -260,50 +300,20 @@ export function ResultCard({ result, species, previewUrl }: ResultCardProps) {
                 >
                   {t(label)}
                 </dt>
-                <dd
-                  style={{
-                    margin: 0,
-                    fontSize: 12.5,
-                    lineHeight: 1.5,
-                    color: 'var(--pbt-text)',
-                  }}
-                >
+                <dd style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--pbt-text)' }}>
                   {result.observations[key]}
                 </dd>
               </div>
             ))}
           </dl>
-        </div>
-
-        {/* ── Rationale ── */}
-        {result.rationale && (
-          <div style={{ marginTop: 16 }}>
-            <Eyebrow style={{ marginBottom: 6 }}>
-              {t('fecalScan.result.rationale')}
-            </Eyebrow>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 13,
-                lineHeight: 1.6,
-                color: 'var(--pbt-text)',
-              }}
-            >
-              {result.rationale}
-            </p>
-          </div>
-        )}
+        </Section>
 
         {/* ── Alternates ── */}
         {result.alternates.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <Eyebrow style={{ marginBottom: 8 }}>
-              {t('fecalScan.result.alternates')}
-            </Eyebrow>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Section label={t('fecalScan.result.alternates')}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {result.alternates.slice(0, 2).map((alt) => {
                 const altEntry = fecalChartEntry(species, alt.score);
-                const altPct = Math.max(0, Math.min(100, Math.round(alt.confidence * 100)));
                 return (
                   <div
                     key={alt.score}
@@ -311,11 +321,10 @@ export function ResultCard({ result, species, previewUrl }: ResultCardProps) {
                       display: 'flex',
                       alignItems: 'center',
                       gap: 9,
-                      padding: 6,
+                      padding: 5,
                       paddingRight: 12,
                       borderRadius: RADII.sm,
-                      border: '1px solid var(--pbt-glass-border)',
-                      background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.3)',
+                      ...subtleSurface,
                     }}
                   >
                     {altEntry && (
@@ -323,86 +332,145 @@ export function ResultCard({ result, species, previewUrl }: ResultCardProps) {
                         src={altEntry.imagePath}
                         alt={t('fecalScan.chartSheet.imageAlt', { score: alt.score })}
                         style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 10,
+                          width: 36,
+                          height: 36,
+                          borderRadius: 9,
                           objectFit: 'cover',
                           display: 'block',
                         }}
                       />
                     )}
-                    <div style={{ lineHeight: 1.25 }}>
-                      <div
-                        style={{
-                          fontFamily: 'var(--pbt-font-mono)',
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: 'var(--pbt-text)',
-                        }}
-                      >
-                        {t('fecalScan.chartSheet.scoreAria', { score: alt.score })}
-                      </div>
-                      <div
-                        style={{
-                          fontFamily: 'var(--pbt-font-mono)',
-                          fontSize: 9.5,
-                          letterSpacing: '0.1em',
-                          color: 'var(--pbt-text-muted)',
-                        }}
-                      >
-                        {formatPercent(altPct, locale)}
-                      </div>
-                    </div>
+                    <span
+                      style={{
+                        fontFamily: 'var(--pbt-font-mono)',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: 'var(--pbt-text)',
+                      }}
+                    >
+                      {t('fecalScan.chartSheet.scoreAria', { score: alt.score })}
+                    </span>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </Section>
         )}
 
-        {/* ── Caveats + caution ── */}
+        {/* ── What a photo can't show ── */}
         {result.notVisible.length > 0 && (
-          <p
-            style={{
-              margin: '16px 0 0',
-              fontSize: 11.5,
-              lineHeight: 1.55,
-              color: 'var(--pbt-text-muted)',
-            }}
-          >
-            {t('fecalScan.result.notVisible', { items: result.notVisible.join(', ') })}
-          </p>
+          <Section label={t('fecalScan.result.notVisibleLabel')}>
+            <ul
+              style={{
+                listStyle: 'none',
+                margin: 0,
+                padding: 0,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 6,
+              }}
+            >
+              {result.notVisible.map((item) => (
+                <li
+                  key={item}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 9999,
+                    fontSize: 12,
+                    lineHeight: 1.4,
+                    color: 'var(--pbt-text-muted)',
+                    ...subtleSurface,
+                  }}
+                >
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </Section>
         )}
 
+        {/* ── When to involve the veterinarian ── */}
         {result.caution && (
-          <div
-            style={{
-              marginTop: 14,
-              padding: '11px 13px',
-              borderRadius: RADII.sm,
-              ...tinted(COLORS.score.ok, dark),
-            }}
-          >
-            <Eyebrow style={{ marginBottom: 5 }}>{t('fecalScan.result.caution')}</Eyebrow>
-            <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--pbt-text)' }}>
-              {result.caution}
-            </div>
+          <div style={{ marginTop: 18 }}>
+            <Note icon={<Icon.info style={iconStyle} aria-hidden />}>
+              <Eyebrow style={{ marginBottom: 4 }}>{t('fecalScan.result.caution')}</Eyebrow>
+              <div style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--pbt-text)' }}>
+                {result.caution}
+              </div>
+            </Note>
           </div>
+        )}
+
+        {onScanAnother && (
+          <PillButton
+            fullWidth
+            onClick={onScanAnother}
+            icon={<Icon.camera style={{ width: 17, height: 17 }} />}
+            style={{ marginTop: 18 }}
+          >
+            {t('fecalScan.footer.scanAnother')}
+          </PillButton>
         )}
       </Glass>
     </motion.div>
   );
 }
 
-const squareImage: React.CSSProperties = {
+const iconStyle: CSSProperties = {
+  width: 16,
+  height: 16,
+  flexShrink: 0,
+  color: 'var(--fecal-accent-ink)',
+  marginTop: 1,
+};
+
+const squareImage: CSSProperties = {
   width: '100%',
   aspectRatio: '1 / 1',
   objectFit: 'cover',
   display: 'block',
   borderRadius: RADII.sm,
+  ...subtleSurface,
 };
 
-function Pane({ label, children }: { label: string; children: React.ReactNode }) {
+/** Secondary block: hairline above, muted eyebrow, content. */
+function Section({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        paddingTop: 14,
+        borderTop: '1px solid var(--fecal-hairline)',
+      }}
+    >
+      <Eyebrow as="h3" style={{ marginBottom: 8 }}>
+        {label}
+      </Eyebrow>
+      {children}
+    </div>
+  );
+}
+
+/** Neutral note with a driver-coloured icon. */
+function Note({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 10,
+        alignItems: 'flex-start',
+        padding: '12px 14px',
+        borderRadius: RADII.sm,
+        ...subtleSurface,
+      }}
+    >
+      {icon}
+      <div style={{ minWidth: 0 }}>{children}</div>
+    </div>
+  );
+}
+
+function Pane({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ minWidth: 0 }}>
       <div

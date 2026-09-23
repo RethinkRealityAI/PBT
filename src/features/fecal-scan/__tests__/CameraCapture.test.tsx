@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
@@ -55,7 +55,26 @@ beforeEach(() => {
   HTMLCanvasElement.prototype.toBlob = function toBlob(cb: BlobCallback) {
     cb(new Blob(['jpeg-bytes'], { type: 'image/jpeg' }));
   } as HTMLCanvasElement['toBlob'];
+  HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
+    drawImage,
+  })) as unknown as HTMLCanvasElement['getContext'];
+  drawImage.mockReset();
+  // A decoded frame by default; the "no frame yet" tests override this.
+  setVideoSize(1280, 720);
 });
+
+const drawImage = vi.fn();
+
+function setVideoSize(width: number, height: number) {
+  Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', {
+    configurable: true,
+    get: () => width,
+  });
+  Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', {
+    configurable: true,
+    get: () => height,
+  });
+}
 
 afterEach(() => {
   // @ts-expect-error — remove the shim so other suites see a camera-less env
@@ -80,8 +99,11 @@ describe('CameraCapture', () => {
     const user = userEvent.setup();
     renderCamera();
     await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+    const shutter = screen.getByRole('button', { name: 'Take the photo' });
+    await waitFor(() => expect(shutter).toBeEnabled());
 
-    await user.click(screen.getByRole('button', { name: 'Take the photo' }));
+    await user.click(shutter);
+    expect(drawImage).toHaveBeenCalledTimes(1);
 
     await waitFor(() => expect(onCapture).toHaveBeenCalledTimes(1));
     const file = onCapture.mock.calls[0][0] as File;
@@ -89,6 +111,43 @@ describe('CameraCapture', () => {
     expect(file.type).toBe('image/jpeg');
     expect(file.name).toMatch(/^stool-\d+\.jpg$/);
     expect(stop).toHaveBeenCalled();
+  });
+
+  it('keeps the shutter disabled until the video has a frame', async () => {
+    setVideoSize(0, 0);
+    renderCamera();
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+
+    const shutter = screen.getByRole('button', { name: 'Take the photo' });
+    expect(shutter).toBeDisabled();
+    expect(screen.getByText('Starting camera…')).toBeInTheDocument();
+
+    // First frame decodes → the video fires loadeddata → shutter unlocks.
+    setVideoSize(1280, 720);
+    fireEvent.loadedData(document.querySelector('video') as HTMLVideoElement);
+    await waitFor(() => expect(shutter).toBeEnabled());
+    expect(screen.queryByText('Starting camera…')).toBeNull();
+  });
+
+  it('never sends a frame-less image', async () => {
+    setVideoSize(0, 0);
+    renderCamera();
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+    // Even a forced click on the disabled shutter must not produce a file.
+    fireEvent.click(screen.getByRole('button', { name: 'Take the photo' }));
+    expect(onCapture).not.toHaveBeenCalled();
+    expect(drawImage).not.toHaveBeenCalled();
+  });
+
+  it('reports a failure instead of sending a blank JPEG when there is no 2D context', async () => {
+    const user = userEvent.setup();
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as unknown as HTMLCanvasElement['getContext'];
+    renderCamera();
+    const shutter = screen.getByRole('button', { name: 'Take the photo' });
+    await waitFor(() => expect(shutter).toBeEnabled());
+    await user.click(shutter);
+    expect(onCapture).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not open the camera');
   });
 
   it('flipping restarts the stream on the front camera', async () => {

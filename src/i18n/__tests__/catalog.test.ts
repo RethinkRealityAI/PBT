@@ -49,8 +49,6 @@ const IDENTICAL_ALLOWED = new Set<string>([
   'resources.sources.label', // 'Sources' — same word in fr-CA
   'analyzer.vision.bcsLead', // 'BCS {score}/9.' — clinical initialism + token
   'analyzer.vision.context.pet', // '{breed}, {age}.' — two tokens + punctuation
-  'fecalScan.grounding.source.rag', // 'pgvector · knowledge_chunks' — Postgres extension + table name
-  'fecalScan.grounding.passage', // 'Passage {n}' — same word in fr-CA, plus a bare token
 ]);
 
 const CATALOGS = { en, fr } as const;

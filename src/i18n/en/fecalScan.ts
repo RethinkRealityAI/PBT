@@ -35,7 +35,6 @@ export const fecalScan = {
   'fecalScan.capture.title': 'Take or upload a photo',
   'fecalScan.capture.body':
     'Photograph the stool on a plain background in good light. The photo is never stored.',
-  'fecalScan.capture.hint': 'Fill the frame with the stool on a plain background.',
   'fecalScan.capture.takePhoto': 'Take photo',
   'fecalScan.capture.uploadPhoto': 'Upload photo',
   'fecalScan.capture.retake': 'Retake',
@@ -52,6 +51,8 @@ export const fecalScan = {
   'fecalScan.camera.unavailable': 'No camera on this device — upload a photo instead.',
   'fecalScan.camera.failed': 'Could not open the camera. Upload a photo instead.',
   'fecalScan.camera.hint': 'Fill the frame with the stool on a plain background.',
+  /** Shown over the viewfinder until the first frame arrives (shutter disabled). */
+  'fecalScan.camera.starting': 'Starting camera…',
 
   // ── Analyzing stepper ─────────────────────────────────────
   'fecalScan.analyzing.eyebrow': 'Working',
@@ -65,9 +66,17 @@ export const fecalScan = {
   /** Eyebrow for the variant where no score is claimed (not a stool photo). */
   'fecalScan.result.noScore': 'No score',
   'fecalScan.result.scoreAria': 'Fecal score {score} out of 5',
-  /** {pct} is pre-formatted by `src/i18n/format.ts#formatPercent`. */
-  'fecalScan.result.confidence': '{pct} confident',
-  'fecalScan.result.confidenceAria': 'Model confidence',
+  /** Screen-reader announcement when a result lands. {band} is a band label. */
+  'fecalScan.result.announce': 'Fecal score {score} out of 5: {band}.',
+  /**
+   * Coarse confidence — the model's self-estimate, deliberately NOT shown as
+   * a percentage (it would read as measured accuracy). ≥0.75 high, ≥0.5 moderate.
+   */
+  'fecalScan.result.confidence.high': 'High confidence',
+  'fecalScan.result.confidence.moderate': 'Moderate confidence',
+  'fecalScan.result.confidence.low': 'Low confidence',
+  /** Qualifier next to the confidence label. */
+  'fecalScan.result.confidence.qualifier': 'AI estimate',
   'fecalScan.result.yourPhoto': 'Your photo',
   'fecalScan.result.chartReference': 'Chart reference {score}',
   'fecalScan.result.observations': 'What the photo shows',
@@ -78,7 +87,7 @@ export const fecalScan = {
   'fecalScan.result.obs.homogeneity': 'Consistency',
   'fecalScan.result.rationale': 'Why this score',
   'fecalScan.result.alternates': 'Close alternatives',
-  'fecalScan.result.notVisible': "A photo can't show: {items}.",
+  'fecalScan.result.notVisibleLabel': "What a photo can't show",
   'fecalScan.result.caution': 'When to involve the veterinarian',
   'fecalScan.result.notStool':
     "That doesn't look like a stool sample. Try a clear, well-lit photo taken straight down onto a plain background.",
@@ -89,33 +98,51 @@ export const fecalScan = {
   'fecalScan.band.acceptable': 'Acceptable',
   'fecalScan.band.optimal': 'Optimal',
   'fecalScan.band.normal': 'Normal',
+  /** One plain line under the band chip saying what the band means. */
+  'fecalScan.band.meaning.tooHard': "Firmer than the chart's ideal range",
+  'fecalScan.band.meaning.tooSoft': "Softer than the chart's ideal range",
+  'fecalScan.band.meaning.acceptable': 'Acceptable, just outside the ideal range',
+  'fecalScan.band.meaning.optimal': "In the chart's ideal range",
+  'fecalScan.band.meaning.normal': "In the chart's normal range",
 
-  // ── Grounding panel (the RAG trail) ───────────────────────
-  'fecalScan.grounding.eyebrow': 'Retrieved from knowledge base',
-  /** Technical provenance label — the pgvector table the chunks came from. */
-  'fecalScan.grounding.source.rag': 'pgvector · knowledge_chunks',
-  'fecalScan.grounding.source.bundled': 'bundled chart',
-  'fecalScan.grounding.sourceAria': 'Where the passages came from',
+  // ── Grounding panel ("where this score came from") ─────
+  'fecalScan.grounding.eyebrow': 'Where this score came from',
   /** Chart reference photos the scorer was shown. Singular form below. */
   'fecalScan.grounding.referencePhotos': 'Compared against {n} chart photos',
   'fecalScan.grounding.referencePhotosOne': 'Compared against 1 chart photo',
-  'fecalScan.grounding.passage': 'Passage {n}',
-  'fecalScan.grounding.similarity': 'Similarity',
-  'fecalScan.grounding.similarityNone': 'Not scored',
-  'fecalScan.grounding.scores': 'Scores cited',
-  'fecalScan.grounding.expand': 'Read the full passage',
-  'fecalScan.grounding.collapse': 'Collapse the passage',
-  'fecalScan.grounding.queryLabel': 'Embedded query',
-  'fecalScan.grounding.docs': 'Documents searched',
+  /** Source of each passage, from the chunk's `kind`. */
+  'fecalScan.grounding.kind.chart': 'Royal Canin chart',
+  'fecalScan.grounding.kind.supplement': 'Clinic supplement',
   /**
-   * The retrieval scope that was actually applied — the hard wall the search
-   * ran inside. {tool} and {species} come from the shared knowledge-scope
-   * vocabulary, so they read as "Fecal Scan" / "Adult dog", never as keys.
+   * The trailing chunk with no similarity: the chart scores retrieval did not
+   * return, which the scorer still saw. Never labelled as a match strength.
    */
-  'fecalScan.grounding.scope': 'Scope · {tool} · {species}',
+  'fecalScan.grounding.kind.restOfChart': 'Rest of the chart',
+  'fecalScan.grounding.match.alsoConsidered': 'Also considered',
+  /** Older responses carry no `kind` — a neutral label. */
+  'fecalScan.grounding.kind.unknown': 'Passage',
+  /** Coarse relevance of each passage (cosine ≥0.75 strong, ≥0.6 good). */
+  'fecalScan.grounding.match.strong': 'Strong match',
+  'fecalScan.grounding.match.good': 'Good match',
+  'fecalScan.grounding.match.partial': 'Partial match',
+  'fecalScan.grounding.expand': 'Read more',
+  'fecalScan.grounding.collapse': 'Show less',
   'fecalScan.grounding.empty': 'No passages were returned for this scan.',
   'fecalScan.grounding.idle':
-    'Scan a photo and the chart passages the score was grounded in appear here.',
+    'After a scan, the chart passages behind the score appear here, so you can see exactly what it was based on.',
+  // Technical details (collapsed disclosure) — for admins and the curious.
+  'fecalScan.grounding.technical': 'Technical details',
+  'fecalScan.grounding.tech.retrieval': 'Retrieval',
+  /** Technical provenance — the Postgres extension + table the passages came from. */
+  'fecalScan.grounding.source.rag': 'Vector search · pgvector · knowledge_chunks',
+  'fecalScan.grounding.source.bundled':
+    'Bundled chart text (the search returned no passages)',
+  /** The hard wall the search ran inside, e.g. "Fecal scan · Adult dog". */
+  'fecalScan.grounding.tech.scope': 'Search scope',
+  'fecalScan.grounding.queryLabel': 'Search query (embedded)',
+  'fecalScan.grounding.docs': 'Source documents',
+  'fecalScan.grounding.similarity': 'Match scores (cosine similarity)',
+  'fecalScan.grounding.tech.confidence': 'Model confidence (self-estimate, 0–1)',
 
   // ── Full-chart sheet ──────────────────────────────────────
   'fecalScan.chartSheet.eyebrow': 'Reference chart',
@@ -129,6 +156,8 @@ export const fecalScan = {
   'fecalScan.footer.disclaimer':
     'A supportive reference from the Royal Canin fecal scoring charts — a discussion aid for the clinic and the owner, never a diagnosis and never the source of truth.',
   'fecalScan.footer.scanAnother': 'Scan another',
+  /** Action under the "not a stool" message. */
+  'fecalScan.footer.tryAnotherPhoto': 'Try another photo',
   'fecalScan.footer.tryAgain': 'Try again',
 
   // ── Cross-link from the Pet Analyzer ──────────────────────

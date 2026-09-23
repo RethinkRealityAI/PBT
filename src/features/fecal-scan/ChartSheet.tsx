@@ -1,7 +1,6 @@
 import { Glass } from '../../design-system/Glass';
 import { Icon } from '../../design-system/Icon';
-import { COLORS, RADII } from '../../design-system/tokens';
-import { useTheme } from '../../app/providers/ThemeProvider';
+import { RADII } from '../../design-system/tokens';
 import { useLanguage } from '../../app/providers/LanguageProvider';
 import {
   FECAL_CHARTS,
@@ -16,7 +15,7 @@ import type {
   FecalBreedSize,
   FecalSpecies,
 } from '../../shared/ai/fecalScan';
-import { BAND_COLOR, BAND_KEY, Eyebrow, tinted } from './fecalUi';
+import { BAND_KEY, BandChip, Eyebrow, subtleSurface } from './fecalUi';
 
 export interface ChartSheetProps {
   species: FecalSpecies;
@@ -33,9 +32,7 @@ export interface ChartSheetProps {
  * the first place.
  */
 export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
-  const { resolvedTheme } = useTheme();
   const { t, locale } = useLanguage();
-  const dark = resolvedTheme === 'dark';
   const chart = FECAL_CHARTS[species];
   const meta = localizedFecalChartMeta(locale, species);
 
@@ -50,7 +47,7 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
     >
       <div className="flex items-start justify-between gap-3" style={{ marginBottom: 12 }}>
         <div style={{ minWidth: 0 }}>
-          <Eyebrow style={{ marginBottom: 6 }}>
+          <Eyebrow accent as="h2" style={{ marginBottom: 8 }}>
             {t('fecalScan.chartSheet.eyebrow')}
           </Eyebrow>
           <div
@@ -76,16 +73,17 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
           aria-label={t('fecalScan.chartSheet.close')}
           style={{
             flexShrink: 0,
-            width: 32,
-            height: 32,
+            width: 44,
+            height: 44,
+            marginTop: -6,
+            marginRight: -6,
             borderRadius: '50%',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
             color: 'var(--pbt-text)',
-            background: dark ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.38)',
-            border: '1px solid var(--pbt-glass-border)',
+            ...subtleSurface,
           }}
         >
           <Icon.close style={{ width: 15, height: 15 }} />
@@ -98,7 +96,7 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
           padding: '10px 12px',
           borderRadius: RADII.sm,
           marginBottom: 12,
-          ...tinted(COLORS.score.ok, dark),
+          ...subtleSurface,
         }}
       >
         <Eyebrow style={{ marginBottom: 4 }}>
@@ -122,7 +120,6 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
         {chart.entries.map((entry, i) => {
           const text = localizedFecalEntry(locale, species, entry);
           const band = fecalBandFor(species, entry.score, breedSize);
-          const bandColor = BAND_COLOR[band];
           return (
             <li
               key={entry.score}
@@ -130,7 +127,7 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
                 display: 'flex',
                 gap: 12,
                 padding: '12px 0',
-                borderTop: i === 0 ? 'none' : '1px solid var(--pbt-glass-border)',
+                borderTop: i === 0 ? 'none' : '1px solid var(--fecal-hairline)',
               }}
             >
               <img
@@ -144,6 +141,7 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
                   borderRadius: RADII.sm,
                   objectFit: 'cover',
                   display: 'block',
+                  ...subtleSurface,
                 }}
               />
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -159,32 +157,16 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
                       padding: '0 8px',
                       borderRadius: 8,
                       fontFamily: 'var(--pbt-font-mono)',
-                      fontSize: 11.5,
+                      fontSize: 12,
                       fontWeight: 700,
-                      color: '#fff',
-                      background: bandColor,
+                      color: 'var(--pbt-text)',
                       fontVariantNumeric: 'tabular-nums',
+                      ...subtleSurface,
                     }}
                   >
                     {entry.score}
                   </span>
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      padding: '3px 9px',
-                      borderRadius: 9999,
-                      fontFamily: 'var(--pbt-font-mono)',
-                      fontSize: 9,
-                      fontWeight: 700,
-                      letterSpacing: '0.13em',
-                      textTransform: 'uppercase',
-                      color: 'var(--pbt-text)',
-                      ...tinted(bandColor, dark),
-                    }}
-                  >
-                    {t(BAND_KEY[band])}
-                  </span>
+                  <BandChip band={band} label={t(BAND_KEY[band])} size="sm" />
                 </div>
                 <div
                   style={{
@@ -220,7 +202,7 @@ export function ChartSheet({ species, breedSize, onClose }: ChartSheetProps) {
         style={{
           marginTop: 12,
           paddingTop: 10,
-          borderTop: '1px solid var(--pbt-glass-border)',
+          borderTop: '1px solid var(--fecal-hairline)',
           fontFamily: 'var(--pbt-font-mono)',
           fontSize: 9,
           letterSpacing: '0.1em',

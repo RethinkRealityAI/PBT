@@ -8,6 +8,7 @@ import { LanguageProvider } from '../../app/providers/LanguageProvider';
 import { FECAL_CHARTS } from '../../data/knowledge/fecalCharts';
 import { COLORS } from '../../design-system/tokens';
 import type { UseFecalScan } from '../../features/fecal-scan/useFecalScan';
+import { FECAL_NEUTRAL_PALETTE } from '../../features/fecal-scan/fecalUi';
 import type {
   FecalScanResult,
   FecalScanRetrieval,
@@ -54,7 +55,8 @@ const RETRIEVAL: FecalScanRetrieval = {
   query: 'moist stool no cracks distinct shape',
   docSlugs: ['fecal:dog'],
   scope: { tool: 'fecal-scan', species: 'dog' },
-  referenceScores: [3, 3.5, 4],
+  // Normally the whole chart for the species.
+  referenceScores: [1, 2, 2.5, 3, 3.5, 4, 4.5, 5],
     exactReference: null,
     mostSimilarReference: null,
   chunks: [
@@ -65,6 +67,16 @@ const RETRIEVAL: FecalScanRetrieval = {
       excerpt:
         'Score 3.5 (Fecal Scoring System for Dogs): MOIST STOOL WITH NO CRACKS. The stool has a distinct shape.',
       scores: [3.5],
+      kind: 'chart',
+    },
+    // The chart scores retrieval did not return — seen by the scorer, no similarity.
+    {
+      citation: CITATION,
+      similarity: null,
+      docTitle: 'Fecal scoring — adult dog',
+      excerpt: 'Score 1 (Fecal Scoring System for Dogs): VERY HARD AND DRY.',
+      scores: [1],
+      kind: 'chart',
     },
   ],
 };
@@ -139,7 +151,7 @@ describe('FecalScanScreen', () => {
     expect(setSpecies).toHaveBeenCalledWith('cat');
   });
 
-  it('shows the score, band and the matching chart reference image', () => {
+  it('shows the score, band, its meaning and the matching chart reference image', () => {
     scan = baseScan({
       status: 'done',
       result: RESULT,
@@ -148,10 +160,10 @@ describe('FecalScanScreen', () => {
     });
     const { container } = renderScreen();
 
-    expect(screen.getByText('3.5')).toBeInTheDocument();
+    expect(screen.getByTestId('fecal-score')).toHaveTextContent('3.5');
+    expect(screen.getByRole('img', { name: 'Fecal score 3.5 out of 5' })).toBeInTheDocument();
     expect(screen.getByText('Too soft')).toBeInTheDocument();
-    expect(screen.getByText('82% confident')).toBeInTheDocument();
-    // The card is titled by its eyebrow; the old duplicate label under it is gone.
+    expect(screen.getByText("Softer than the chart's ideal range")).toBeInTheDocument();
     expect(screen.getByText('Fecal score')).toBeInTheDocument();
     expect(
       container.querySelector('img[src="/fecal-scan/dog/3.5.jpg"]'),
@@ -161,31 +173,169 @@ describe('FecalScanScreen', () => {
     expect(screen.getByText('MOIST STOOL WITH NO CRACKS')).toBeInTheDocument();
     expect(screen.getByText(RESULT.rationale)).toBeInTheDocument();
     expect(screen.getByText(RESULT.caution)).toBeInTheDocument();
+    // What a photo can't show — one chip per item.
+    expect(screen.getByText('odour')).toBeInTheDocument();
+    expect(screen.getByText('blood or mucus')).toBeInTheDocument();
   });
 
-  it('shows the grounding panel with its source, citation and similarity', () => {
+  it('shows confidence as a coarse AI estimate, never a precise percentage', () => {
+    scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
+    const { container } = renderScreen();
+
+    expect(screen.getByText('High confidence')).toBeInTheDocument();
+    expect(screen.getByText('AI estimate')).toBeInTheDocument();
+    expect(screen.queryByText(/confident/)).toBeNull();
+    // No percentage anywhere on the result (0.82 must not become "82%").
+    const card = screen.getByRole('region', { name: 'Fecal score' });
+    expect(card.textContent).not.toMatch(/\d\s?%/);
+    expect(container.textContent).not.toContain('82');
+
+    scan = baseScan({
+      status: 'done',
+      result: { ...RESULT, confidence: 0.55 },
+      retrieval: RETRIEVAL,
+    });
+    renderScreen();
+    expect(screen.getByText('Moderate confidence')).toBeInTheDocument();
+  });
+
+  it('keeps the numeral neutral and the band colour to a small dot', () => {
     scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
     renderScreen();
 
-    expect(screen.getByText('pgvector · knowledge_chunks')).toBeInTheDocument();
+    expect(screen.getByTestId('fecal-score')).toHaveStyle({ color: 'var(--pbt-text)' });
+    // The band chip's text is neutral; only the dot carries the band colour.
+    const chip = screen.getByText('Too soft');
+    expect(chip).toHaveStyle({ color: 'var(--pbt-text)' });
+    const dot = chip.querySelector('span[aria-hidden]') as HTMLElement;
+    expect(dot).toHaveStyle({ background: COLORS.score.poor });
+  });
+
+  it('scopes a neutral text palette over the whole screen', () => {
+    const { container } = renderScreen();
+    const wrapper = container.querySelector('[data-fecal-palette]') as HTMLElement;
+    expect(wrapper).not.toBeNull();
+    expect(wrapper.style.display).toBe('contents');
+    expect(wrapper.style.getPropertyValue('--pbt-text')).toBe(
+      FECAL_NEUTRAL_PALETTE.light['--pbt-text'],
+    );
+  });
+
+  it('offers Scan another after a result, which resets the scan', async () => {
+    const user = userEvent.setup();
+    scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
+    renderScreen();
+    await user.click(screen.getByRole('button', { name: 'Scan another' }));
+    expect(reset).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces the result to assistive tech', () => {
+    scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
+    renderScreen();
+    expect(
+      screen.getByText('Fecal score 3.5 out of 5: Too soft.'),
+    ).toBeInTheDocument();
+  });
+
+  it('explains where the score came from in plain language', () => {
+    scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
+    renderScreen();
+
+    expect(screen.getByText('Where this score came from')).toBeInTheDocument();
     expect(screen.getByText(CITATION)).toBeInTheDocument();
-    expect(screen.getByText('0.84')).toBeInTheDocument();
-    expect(screen.getByText(RETRIEVAL.query)).toBeInTheDocument();
-    // The visual half of the grounding: how many chart photos were compared.
-    expect(screen.getByText('Compared against 3 chart photos')).toBeInTheDocument();
+    expect(screen.getByText('Compared against 8 chart photos')).toBeInTheDocument();
+    // Source + relevance in words, not a raw cosine.
+    expect(screen.getByText('Royal Canin chart')).toBeInTheDocument();
+    expect(screen.getByText('Strong match')).toBeInTheDocument();
+    // The machinery stays behind the disclosure until asked for.
+    expect(screen.queryByText('0.84')).toBeNull();
+    expect(screen.queryByText(RETRIEVAL.query)).toBeNull();
+    expect(screen.queryByText(/pgvector/)).toBeNull();
+    expect(screen.queryByText('fecal:dog')).toBeNull();
   });
 
-  it('names the scope the search ran in, and the document each passage came from', () => {
+  it('shows the rest of the chart as also considered, never as a 0% match', () => {
+    scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
+    renderScreen();
+    expect(screen.getByText('Rest of the chart')).toBeInTheDocument();
+    expect(screen.getByText('Also considered')).toBeInTheDocument();
+    // Only the retrieved passage claims a match strength.
+    expect(screen.getAllByText(/match$/)).toHaveLength(1);
+    expect(screen.queryByText(/0\s?%/)).toBeNull();
+  });
+
+  it('labels a clinic supplement and names its document', () => {
+    scan = baseScan({
+      status: 'done',
+      result: RESULT,
+      retrieval: {
+        ...RETRIEVAL,
+        chunks: [
+          RETRIEVAL.chunks[0],
+          {
+            citation: null,
+            similarity: 0.62,
+            docTitle: 'Diet transition protocol',
+            excerpt: 'During a diet change a score of 3.5 is expected.',
+            scores: [3.5],
+            kind: 'supplement',
+          },
+          {
+            citation: null,
+            similarity: 0.4,
+            docTitle: null,
+            excerpt: 'A passage from an older deployment.',
+            scores: [],
+          },
+        ],
+      },
+    });
+    renderScreen();
+
+    expect(screen.getByText('Clinic supplement')).toBeInTheDocument();
+    expect(screen.getByText('Diet transition protocol')).toBeInTheDocument();
+    expect(screen.getByText('Good match')).toBeInTheDocument();
+    // A chunk without `kind` gets the neutral label.
+    expect(screen.getByText('Passage')).toBeInTheDocument();
+    expect(screen.getByText('Partial match')).toBeInTheDocument();
+    // The chart's own doc title repeats the citation — not shown twice.
+    expect(screen.queryByText('Fecal scoring — adult dog')).toBeNull();
+  });
+
+  it('keeps the technical trail in a keyboard-accessible disclosure', async () => {
+    const user = userEvent.setup();
     scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
     renderScreen();
 
-    // The scope is the hard wall: it says a cat passage could not have been
-    // used, which the raw slug list never did.
-    expect(screen.getByText('Scope · Fecal Scan · Adult dog')).toBeInTheDocument();
-    // Provenance per passage — a clinic supplement must not read as the chart.
-    expect(screen.getByText('Fecal scoring — adult dog')).toBeInTheDocument();
-    // The slugs survive as a mono tail for anyone who needs the identifier.
+    const toggle = screen.getByRole('button', { name: 'Technical details' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    toggle.focus();
+    await user.keyboard('{Enter}');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    expect(screen.getByText('Vector search · pgvector · knowledge_chunks')).toBeInTheDocument();
+    expect(screen.getByText(RETRIEVAL.query)).toBeInTheDocument();
+    // The scope is the hard wall: it says a cat passage could not have been used.
+    expect(screen.getByText('Fecal scan · Adult dog')).toBeInTheDocument();
     expect(screen.getByText('fecal:dog')).toBeInTheDocument();
+    expect(screen.getByText('0.84')).toBeInTheDocument();
+    // The precise model confidence lives here, not on the result.
+    expect(screen.getByText('0.82')).toBeInTheDocument();
+  });
+
+  it('names the search scope from the catalogs, not hardcoded English', async () => {
+    const user = userEvent.setup();
+    scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
+    render(
+      <ThemeProvider initialTheme="light">
+        <LanguageProvider initialLocale="fr">
+          <FecalScanScreen />
+        </LanguageProvider>
+      </ThemeProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Détails techniques' }));
+    expect(screen.getByText('Analyse fécale · Chien adulte')).toBeInTheDocument();
+    expect(screen.queryByText(/Fecal Scan|Adult dog/)).toBeNull();
   });
 
   it('hides the reference-photo count when the scorer compared none', () => {
@@ -198,31 +348,28 @@ describe('FecalScanScreen', () => {
     expect(screen.queryByText(/Compared against/)).toBeNull();
   });
 
-  it('labels a bundled fallback honestly', () => {
+  it('labels a bundled fallback honestly', async () => {
+    const user = userEvent.setup();
     scan = baseScan({
       status: 'done',
       result: RESULT,
       retrieval: { ...RETRIEVAL, source: 'bundled', chunks: [{ ...RETRIEVAL.chunks[0], similarity: null }] },
     });
     renderScreen();
-    expect(screen.getByText('bundled chart')).toBeInTheDocument();
+    // No similarity → no match strength claimed; a lone chart chunk is just the chart.
+    expect(screen.queryByText(/match$/)).toBeNull();
+    expect(screen.queryByText('Rest of the chart')).toBeNull();
+    expect(screen.getByText('Royal Canin chart')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Technical details' }));
+    expect(
+      screen.getByText('Bundled chart text (the search returned no passages)'),
+    ).toBeInTheDocument();
     expect(screen.queryByText('0.84')).toBeNull();
   });
 
   it('always shows the disclaimer', () => {
     renderScreen();
     expect(screen.getByText(/never a diagnosis/i)).toBeInTheDocument();
-  });
-
-  it('keeps confidence positive and the numeral neutral, whatever the band', () => {
-    scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
-    renderScreen();
-
-    // Confidence measures certainty, not health: always the good token.
-    const confidence = screen.getByText('82% confident');
-    expect(confidence).toHaveStyle({ color: COLORS.score.good });
-    // Only the band pill carries the band colour; the numeral stays neutral.
-    expect(screen.getByText('3.5')).toHaveStyle({ color: 'var(--pbt-text)' });
   });
 
   it('offers a gentle retry when the photo is not a stool', () => {
@@ -232,16 +379,21 @@ describe('FecalScanScreen', () => {
       retrieval: RETRIEVAL,
     });
     renderScreen();
-    expect(screen.getByText(/doesn't look like a stool sample/i)).toBeInTheDocument();
+    // Shown on the card and announced once through the live region.
+    expect(screen.getAllByText(/doesn't look like a stool sample/i)).toHaveLength(2);
     expect(screen.getByText('No score')).toBeInTheDocument();
     // No score is claimed for a photo the model rejected.
-    expect(screen.queryByText('3.5')).toBeNull();
+    expect(screen.queryByTestId('fecal-score')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Try another photo' })).toBeInTheDocument();
+    // No score → no "where this score came from" trail.
+    expect(screen.queryByText('Strong match')).toBeNull();
+    expect(screen.getByText(/After a scan, the chart passages/)).toBeInTheDocument();
   });
 
   it('surfaces an error with a retry affordance', () => {
     scan = baseScan({ status: 'error', error: 'Could not score the photo.' });
     renderScreen();
-    expect(screen.getByText('Could not score the photo.')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not score the photo.');
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
@@ -251,6 +403,8 @@ describe('FecalScanScreen', () => {
     await user.click(screen.getByRole('button', { name: 'View full chart' }));
 
     const sheet = screen.getByRole('region', { name: 'Reference chart' });
+    // Bands are neutral chips with a dot — never a solid or tinted band fill.
+    expect(within(sheet).getAllByText('Optimal').length).toBeGreaterThan(0);
     for (const entry of FECAL_CHARTS.dog.entries) {
       expect(
         within(sheet).getByAltText(
