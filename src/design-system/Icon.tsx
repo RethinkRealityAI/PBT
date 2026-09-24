@@ -179,6 +179,21 @@ export const Icon = {
       <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
     </>,
   ),
+  /** Photo library — choose an existing picture */
+  image: stroke(
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <circle cx="9" cy="9.5" r="1.8" />
+      <path d="M21 15.5l-4.6-4.6a1.2 1.2 0 0 0-1.7 0L6 19.6" />
+    </>,
+  ),
+  /** Counter-clockwise arrow — retake / redo */
+  retake: stroke(
+    <>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5" />
+      <path d="M3.5 3.5v5h5" />
+    </>,
+  ),
 } as const;
 
 export type IconKey = keyof typeof Icon;

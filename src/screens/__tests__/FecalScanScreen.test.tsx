@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
@@ -126,13 +126,35 @@ describe('FecalScanScreen', () => {
     expect(screen.getByRole('tab', { name: 'Cat' })).toBeInTheDocument();
   });
 
-  it('offers the upload path with no forced-camera attribute', () => {
+  it('offers the library path with no forced-camera attribute', () => {
     const { container } = renderScreen();
-    expect(
-      screen.getByRole('button', { name: 'Upload photo' }),
-    ).toBeInTheDocument();
+    // jsdom has no camera API, so the library is the primary action.
+    expect(screen.getByRole('button', { name: 'Choose a photo' })).toBeInTheDocument();
     const input = container.querySelector('input[type=file]') as HTMLInputElement;
     expect(input.hasAttribute('capture')).toBe(false);
+  });
+
+  it('opens a library pick in the capture modal for review — nothing is scanned yet', () => {
+    URL.createObjectURL = vi.fn(() => 'blob:preview');
+    URL.revokeObjectURL = vi.fn();
+    const { container } = renderScreen();
+    const input = container.querySelector('input[type=file]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(['x'], 'stool.jpg', { type: 'image/jpeg' })] },
+    });
+    expect(screen.getByRole('dialog', { name: 'Check the photo' })).toBeInTheDocument();
+    expect(screen.getByText('Adult dog chart')).toBeInTheDocument();
+    expect(analyzeFile).not.toHaveBeenCalled();
+  });
+
+  it('never shows scan progress or errors on the page itself', () => {
+    scan = baseScan({ status: 'analyzing' });
+    const { unmount } = renderScreen();
+    expect(screen.queryByText('Observing the sample')).toBeNull();
+    unmount();
+    scan = baseScan({ status: 'error', error: 'Could not score the photo.' });
+    renderScreen();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('reveals the breed-size picker only for the puppy chart', async () => {
@@ -390,11 +412,24 @@ describe('FecalScanScreen', () => {
     expect(screen.getByText(/After a scan, the chart passages/)).toBeInTheDocument();
   });
 
-  it('surfaces an error with a retry affordance', () => {
-    scan = baseScan({ status: 'error', error: 'Could not score the photo.' });
-    renderScreen();
-    expect(screen.getByRole('alert')).toHaveTextContent('Could not score the photo.');
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  it('Scan another goes straight back to the camera when there is one', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      writable: true,
+      value: { getUserMedia: vi.fn(() => new Promise(() => {})) },
+    });
+    try {
+      scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
+      renderScreen();
+      await user.click(screen.getByRole('button', { name: 'Scan another' }));
+      expect(screen.getByRole('dialog', { name: 'Take the photo' })).toBeInTheDocument();
+      // The result stays behind the modal until a new scan actually starts.
+      expect(reset).not.toHaveBeenCalled();
+    } finally {
+      // @ts-expect-error — remove the shim so other tests see a camera-less env
+      delete navigator.mediaDevices;
+    }
   });
 
   it('lists every score of the selected chart in the full-chart sheet', async () => {

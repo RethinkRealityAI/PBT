@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import type { ReactNode } from 'react';
-import { CameraCapture } from '../CameraCapture';
+import type { ComponentProps, ReactNode } from 'react';
+import { CameraCapture, visibleRegion } from '../CameraCapture';
 import { CaptureCard } from '../CaptureCard';
 import { ThemeProvider } from '../../../app/providers/ThemeProvider';
 import { LanguageProvider } from '../../../app/providers/LanguageProvider';
@@ -24,14 +24,14 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 const onCapture = vi.fn();
-const onCancel = vi.fn();
+const onChooseLibrary = vi.fn();
 const onUnavailable = vi.fn();
 
 function renderCamera() {
   return render(
     <CameraCapture
       onCapture={onCapture}
-      onCancel={onCancel}
+      onChooseLibrary={onChooseLibrary}
       onUnavailable={onUnavailable}
     />,
     { wrapper: Wrapper },
@@ -42,7 +42,7 @@ beforeEach(() => {
   stop.mockReset();
   getUserMedia.mockReset().mockResolvedValue(fakeStream());
   onCapture.mockReset();
-  onCancel.mockReset();
+  onChooseLibrary.mockReset();
   onUnavailable.mockReset();
 
   Object.defineProperty(navigator, 'mediaDevices', {
@@ -79,6 +79,29 @@ function setVideoSize(width: number, height: number) {
 afterEach(() => {
   // @ts-expect-error — remove the shim so other suites see a camera-less env
   delete navigator.mediaDevices;
+});
+
+describe('visibleRegion', () => {
+  it('crops a landscape frame to what a portrait viewfinder shows', () => {
+    // 1280×960 sensor frame, 360×640 viewfinder (object-fit: cover).
+    const r = visibleRegion({ videoWidth: 1280, videoHeight: 960, clientWidth: 360, clientHeight: 640 });
+    expect(r.sh).toBe(960);
+    expect(r.sw).toBeCloseTo(540);
+    expect(r.sx).toBeCloseTo(370);
+    expect(r.sy).toBe(0);
+  });
+
+  it('keeps the full frame when the aspect already matches', () => {
+    expect(
+      visibleRegion({ videoWidth: 1280, videoHeight: 720, clientWidth: 640, clientHeight: 360 }),
+    ).toEqual({ sx: 0, sy: 0, sw: 1280, sh: 720 });
+  });
+
+  it('falls back to the full frame without a layout size', () => {
+    expect(
+      visibleRegion({ videoWidth: 1280, videoHeight: 720, clientWidth: 0, clientHeight: 0 }),
+    ).toEqual({ sx: 0, sy: 0, sw: 1280, sh: 720 });
+  });
 });
 
 describe('CameraCapture', () => {
@@ -165,15 +188,14 @@ describe('CameraCapture', () => {
     expect(stop).toHaveBeenCalled();
   });
 
-  it('cancel releases the camera', async () => {
+  it('offers the photo library from the viewfinder', async () => {
     const user = userEvent.setup();
     renderCamera();
     await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
 
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Choose from library' }));
 
-    expect(onCancel).toHaveBeenCalled();
-    expect(stop).toHaveBeenCalled();
+    expect(onChooseLibrary).toHaveBeenCalledTimes(1);
   });
 
   it('unmounting releases the camera', async () => {
@@ -183,18 +205,17 @@ describe('CameraCapture', () => {
     await waitFor(() => expect(stop).toHaveBeenCalled());
   });
 
-  it('explains a denied permission and keeps the upload path open', async () => {
+  it('explains a denied permission and keeps the library path open', async () => {
+    const user = userEvent.setup();
     const err = new Error('denied');
     err.name = 'NotAllowedError';
     getUserMedia.mockRejectedValue(err);
     renderCamera();
 
-    expect(
-      await screen.findByText(
-        'Camera permission was denied — you can still upload a photo.',
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Camera access is blocked/);
     expect(onUnavailable).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Choose from library' }));
+    expect(onChooseLibrary).toHaveBeenCalledTimes(1);
   });
 
   it('reports missing hardware so the entry point can be hidden', async () => {
@@ -211,49 +232,69 @@ describe('CameraCapture', () => {
     renderCamera();
     expect(
       await screen.findByText(
-        'Could not open the camera. Upload a photo instead.',
+        'Could not open the camera. Choose a photo from your library instead.',
       ),
     ).toBeInTheDocument();
   });
 });
 
-describe('CaptureCard camera entry point', () => {
-  const onPick = vi.fn();
-
-  it('offers Take photo alongside Upload photo when a camera exists', () => {
-    render(<CaptureCard previewUrl={null} busy={false} onPick={onPick} />, {
-      wrapper: Wrapper,
-    });
-    expect(screen.getByRole('button', { name: 'Take photo' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Upload photo' })).toBeInTheDocument();
-  });
-
-  it('hides Take photo when the device exposes no camera API', () => {
-    // @ts-expect-error — simulate a browser without getUserMedia
-    delete navigator.mediaDevices;
-    render(<CaptureCard previewUrl={null} busy={false} onPick={onPick} />, {
-      wrapper: Wrapper,
-    });
-    expect(screen.queryByRole('button', { name: 'Take photo' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Upload photo' })).toBeInTheDocument();
-  });
-
-  it('offers Retake and Replace once a photo is in hand', () => {
-    render(<CaptureCard previewUrl="blob:photo" busy={false} onPick={onPick} />, {
-      wrapper: Wrapper,
-    });
-    expect(screen.getByRole('button', { name: 'Retake' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Replace' })).toBeInTheDocument();
-  });
-
-  it('keeps the upload input free of the capture attribute', () => {
-    const { container } = render(
-      <CaptureCard previewUrl={null} busy={false} onPick={onPick} />,
+describe('CaptureCard (launcher)', () => {
+  const onTakePhoto = vi.fn();
+  const onPickFile = vi.fn();
+  const renderCard = (props: Partial<ComponentProps<typeof CaptureCard>> = {}) =>
+    render(
+      <CaptureCard
+        previewUrl={null}
+        cameraSupported
+        onTakePhoto={onTakePhoto}
+        onPickFile={onPickFile}
+        {...props}
+      />,
       { wrapper: Wrapper },
     );
+
+  beforeEach(() => {
+    onTakePhoto.mockReset();
+    onPickFile.mockReset();
+  });
+
+  it('is camera-first with the library as the quiet alternative — no drop zone', async () => {
+    const user = userEvent.setup();
+    const { container } = renderCard();
+    await user.click(screen.getByRole('button', { name: 'Take photo' }));
+    expect(onTakePhoto).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Choose from library' })).toBeInTheDocument();
+    // Mobile-first: nothing on the card listens for drag-and-drop.
+    expect(screen.queryByText(/drop/i)).toBeNull();
+    expect(container.querySelector('[ondrop]')).toBeNull();
+  });
+
+  it('makes the library the primary action where there is no camera', () => {
+    renderCard({ cameraSupported: false });
+    expect(screen.queryByRole('button', { name: 'Take photo' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Choose a photo' })).toBeInTheDocument();
+  });
+
+  it('hands a library pick to the parent (which opens it in review)', () => {
+    const { container } = renderCard();
+    const input = container.querySelector('input[type=file]') as HTMLInputElement;
+    const file = new File(['x'], 'stool.jpg', { type: 'image/jpeg' });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(onPickFile).toHaveBeenCalledWith(file);
+  });
+
+  it('folds to a thumbnail with New photo / Library under a result', () => {
+    renderCard({ previewUrl: 'blob:photo', compact: true });
+    expect(screen.getByAltText('The stool photo you selected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New photo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Library' })).toBeInTheDocument();
+  });
+
+  it('keeps the library input free of the capture attribute', () => {
+    const { container } = renderCard();
     const input = container.querySelector('input[type=file]') as HTMLInputElement;
     expect(input.getAttribute('accept')).toBe('image/*');
-    // `capture` would make iOS force the camera for the UPLOAD path too.
+    // `capture` would make iOS force the camera for the LIBRARY path too.
     expect(input.hasAttribute('capture')).toBe(false);
   });
 });

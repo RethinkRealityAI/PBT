@@ -30,36 +30,66 @@ export const fecalScan = {
   'fecalScan.breedSize.hint':
     'On the puppy chart, score 3 reads differently for small/medium and large/giant breeds.',
 
-  // ── Capture card ──────────────────────────────────────────
+  // ── Capture card (opens the capture modal) ──────────────
   'fecalScan.capture.eyebrow': 'Capture',
-  'fecalScan.capture.title': 'Take or upload a photo',
+  'fecalScan.capture.title': 'Photograph the sample',
   'fecalScan.capture.body':
-    'Photograph the stool on a plain background in good light. The photo is never stored.',
+    'The camera opens full screen. You check the photo before anything is scanned, and it is never stored.',
+  'fecalScan.capture.tip.background': 'Plain background',
+  'fecalScan.capture.tip.light': 'Good light',
+  'fecalScan.capture.tip.fill': 'Fill the frame',
   'fecalScan.capture.takePhoto': 'Take photo',
-  'fecalScan.capture.uploadPhoto': 'Upload photo',
-  'fecalScan.capture.retake': 'Retake',
-  'fecalScan.capture.dropActive': 'Drop the photo to scan it',
-  'fecalScan.capture.replace': 'Replace',
+  'fecalScan.capture.chooseFromLibrary': 'Choose from library',
+  /** Primary action where the browser has no camera API. */
+  'fecalScan.capture.choosePhoto': 'Choose a photo',
+  /** Compact card under a result — start the next scan. */
+  'fecalScan.capture.newPhoto': 'New photo',
+  'fecalScan.capture.library': 'Library',
   'fecalScan.capture.photoAlt': 'The stool photo you selected',
 
-  // ── In-app camera ─────────────────────────────────────────
+  // ── Capture modal ─────────────────────────────────────────
+  'fecalScan.modal.title.camera': 'Take the photo',
+  'fecalScan.modal.title.review': 'Check the photo',
+  'fecalScan.modal.title.scanning': 'Scanning',
+  /** Under the modal title: which chart the photo is scored on. {chart} = species label. */
+  'fecalScan.modal.chart': '{chart} chart',
+  'fecalScan.modal.close': 'Close',
+
+  // ── In-app camera (inside the modal) ──────────────────────
   'fecalScan.camera.shutterAria': 'Take the photo',
   'fecalScan.camera.flipAria': 'Flip camera',
-  'fecalScan.camera.cancel': 'Cancel',
   'fecalScan.camera.denied':
-    'Camera permission was denied — you can still upload a photo.',
-  'fecalScan.camera.unavailable': 'No camera on this device — upload a photo instead.',
-  'fecalScan.camera.failed': 'Could not open the camera. Upload a photo instead.',
-  'fecalScan.camera.hint': 'Fill the frame with the stool on a plain background.',
+    'Camera access is blocked. Allow it in your browser settings, or choose a photo from your library.',
+  'fecalScan.camera.unavailable': 'No camera found on this device. Choose a photo from your library instead.',
+  'fecalScan.camera.failed': 'Could not open the camera. Choose a photo from your library instead.',
+  'fecalScan.camera.hint': 'Fill the frame with the stool on a plain background',
   /** Shown over the viewfinder until the first frame arrives (shutter disabled). */
   'fecalScan.camera.starting': 'Starting camera…',
+
+  // ── Review step ───────────────────────────────────────────
+  /** Shown while the quality check runs, or where the browser can't run it. */
+  'fecalScan.review.prompt': 'Is the stool in focus and filling most of the frame?',
+  'fecalScan.review.ok': 'Photo looks sharp. Start the scan when you are ready.',
+  'fecalScan.review.issue.blurry':
+    'This photo looks blurry. A sharper one gives a more reliable score.',
+  'fecalScan.review.issue.dark':
+    'This photo looks too dark to read the texture. Try again with more light.',
+  'fecalScan.review.retake': 'Retake',
+  /** Retake for a photo that came from the library. */
+  'fecalScan.review.chooseAnother': 'Choose another',
+  'fecalScan.review.start': 'Start scan',
+  /** Replaces "Start scan" as the secondary action when the quality check flags the photo. */
+  'fecalScan.review.scanAnyway': 'Scan anyway',
 
   // ── Analyzing stepper ─────────────────────────────────────
   'fecalScan.analyzing.eyebrow': 'Working',
   'fecalScan.analyzing.aria': 'Scoring the photo',
+  /** Announced when the stepper completes, just before the result opens. */
+  'fecalScan.analyzing.done': 'Done. Opening the result.',
   'fecalScan.analyzing.step.observe': 'Observing the sample',
   'fecalScan.analyzing.step.retrieve': 'Retrieving chart passages',
   'fecalScan.analyzing.step.match': 'Matching the chart score',
+  'fecalScan.scanning.cancel': 'Cancel scan',
 
   // ── Result hero ───────────────────────────────────────────
   'fecalScan.result.eyebrow': 'Fecal score',

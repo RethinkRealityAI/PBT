@@ -347,12 +347,29 @@ deploy or a real key. Migration `20260921000000_fecal_scan.sql` adds the
 `fecal_scan` telemetry call type + the `nav.sidebar.fecalScan.enabled` flag row.
 
 UI: `src/screens/FecalScanScreen.tsx` + `src/features/fecal-scan/*`
-(capture card, observe→retrieve→match stepper, result card, grounding panel,
-full chart sheet); hook `useFecalScan`; service `fecalScanService.ts`;
+(capture card, capture modal, result card, grounding panel, full chart
+sheet); hook `useFecalScan`; service `fecalScanService.ts`;
 image prep shared with Pet Vision in `src/lib/imagePrep.ts`. Entry points:
 Home tile, desktop sidebar (`nav.sidebar.fecalScan.enabled`), Pet Analyzer
 cross-link. Catalogs `src/i18n/{en,fr}/fecalScan.ts`; FR chart text overlay
 `src/i18n/fr/data/fecalCharts.ts` via `dataL10n/fecalCharts.ts`.
+
+**Capture is a modal, not a drop zone** (mobile-first). The card launches
+`CaptureModal` (portal; full screen on a phone, 560 px dialog from `sm`;
+always dark): camera → **review** (Retake / Start scan) → the stepper runs
+in the modal → it closes onto the result. Nothing reaches `ai-fecal-scan`
+until Start scan. Load-bearing details:
+- The shot is cropped to what the `object-fit: cover` viewfinder showed
+  (`visibleRegion` in `CameraCapture.tsx`) — what you frame is what's scored.
+- `photoQuality.ts` flags a clearly blurry / dark photo (Retake becomes
+  primary, "Scan anyway" secondary). Advisory only; thresholds are pinned
+  against the chart photos in `photoQuality.test.ts` — re-run it if you
+  change the metric. No "too bright" check on purpose (white backgrounds).
+- The modal closes only on a `done` it saw follow an `analyzing` it started
+  (the page can still hold the previous result's `done`). Closing mid-scan
+  or on an error calls `reset()`; the page itself never renders progress
+  or scan errors.
+- The `fecal_scan` event carries `photoIssue` + `retakes`.
 
 ## Admin dashboard (admin/)
 
