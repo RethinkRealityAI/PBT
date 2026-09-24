@@ -43,37 +43,61 @@ export const fecalScan: Record<keyof typeof enFecalScan, string> = {
   'fecalScan.breedSize.hint':
     "Sur la charte des chiots, la cote 3 ne se lit pas de la même façon chez les races petites et moyennes et chez les races grandes et géantes.",
 
-  // ── Carte de prise de photo ───────────────────────────────
+  // ── Carte de prise de photo (ouvre la fenêtre de capture) ─
   'fecalScan.capture.eyebrow': 'Prise de photo',
-  'fecalScan.capture.title': 'Prenez ou téléversez une photo',
+  'fecalScan.capture.title': "Photographiez l'échantillon",
   'fecalScan.capture.body':
-    "Photographiez les selles sur un fond uni, à bonne lumière. La photo n'est jamais conservée.",
+    "La caméra s'ouvre en plein écran. Vous vérifiez la photo avant toute analyse, et elle n'est jamais conservée.",
+  'fecalScan.capture.tip.background': 'Fond uni',
+  'fecalScan.capture.tip.light': 'Bon éclairage',
+  'fecalScan.capture.tip.fill': 'Cadrage serré',
   'fecalScan.capture.takePhoto': 'Prendre une photo',
-  'fecalScan.capture.uploadPhoto': 'Téléverser une photo',
-  'fecalScan.capture.retake': 'Reprendre',
-  'fecalScan.capture.dropActive': "Déposez la photo pour lancer l'analyse",
-  'fecalScan.capture.replace': 'Remplacer',
+  'fecalScan.capture.chooseFromLibrary': 'Choisir dans la photothèque',
+  'fecalScan.capture.choosePhoto': 'Choisir une photo',
+  'fecalScan.capture.newPhoto': 'Nouvelle photo',
+  'fecalScan.capture.library': 'Photos',
   'fecalScan.capture.photoAlt': 'La photo de selles que vous avez choisie',
 
-  // ── Appareil photo intégré ────────────────────────────────
+  // ── Fenêtre de capture ────────────────────────────────────
+  'fecalScan.modal.title.camera': 'Prenez la photo',
+  'fecalScan.modal.title.review': 'Vérifiez la photo',
+  'fecalScan.modal.title.scanning': 'Analyse en cours',
+  'fecalScan.modal.chart': 'Charte · {chart}',
+  'fecalScan.modal.close': 'Fermer',
+
+  // ── Appareil photo intégré (dans la fenêtre) ──────────────
   'fecalScan.camera.shutterAria': 'Prendre la photo',
   'fecalScan.camera.flipAria': 'Changer de caméra',
-  'fecalScan.camera.cancel': 'Annuler',
   'fecalScan.camera.denied':
-    "L'accès à la caméra a été refusé — vous pouvez quand même téléverser une photo.",
+    "L'accès à la caméra est bloqué. Autorisez-le dans les paramètres du navigateur, ou choisissez une photo dans votre photothèque.",
   'fecalScan.camera.unavailable':
-    'Aucune caméra sur cet appareil — téléversez plutôt une photo.',
+    'Aucune caméra détectée sur cet appareil. Choisissez plutôt une photo dans votre photothèque.',
   'fecalScan.camera.failed':
-    "Impossible d'ouvrir la caméra. Téléversez plutôt une photo.",
-  'fecalScan.camera.hint': 'Cadrez les selles de près, sur un fond uni.',
+    "Impossible d'ouvrir la caméra. Choisissez plutôt une photo dans votre photothèque.",
+  'fecalScan.camera.hint': 'Cadrez les selles de près, sur un fond uni',
   'fecalScan.camera.starting': 'Démarrage de la caméra…',
+
+  // ── Vérification de la photo ──────────────────────────────
+  'fecalScan.review.prompt':
+    'Les selles sont-elles nettes et occupent-elles la majeure partie du cadre ?',
+  'fecalScan.review.ok': "La photo semble nette. Lancez l'analyse quand vous le souhaitez.",
+  'fecalScan.review.issue.blurry':
+    'Cette photo semble floue. Une photo plus nette donne une cote plus fiable.',
+  'fecalScan.review.issue.dark':
+    'Cette photo semble trop sombre pour bien voir la texture. Reprenez-la avec plus de lumière.',
+  'fecalScan.review.retake': 'Reprendre',
+  'fecalScan.review.chooseAnother': 'Autre photo',
+  'fecalScan.review.start': 'Analyser',
+  'fecalScan.review.scanAnyway': 'Analyser quand même',
 
   // ── Étapes de l'analyse ───────────────────────────────────
   'fecalScan.analyzing.eyebrow': 'En cours',
   'fecalScan.analyzing.aria': 'Cotation de la photo en cours',
+  'fecalScan.analyzing.done': 'Terminé. Ouverture du résultat.',
   'fecalScan.analyzing.step.observe': "Observation de l'échantillon",
   'fecalScan.analyzing.step.retrieve': 'Récupération des passages de la charte',
   'fecalScan.analyzing.step.match': 'Appariement avec la cote de la charte',
+  'fecalScan.scanning.cancel': "Annuler l'analyse",
 
   // ── Résultat ──────────────────────────────────────────────
   'fecalScan.result.eyebrow': 'Cote fécale',

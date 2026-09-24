@@ -6,6 +6,12 @@
 **Source app:** Royal Canin Objection Trainer (this repo)
 **Target app:** PBT (Pushback Training)
 
+> **Historical document.** This is the original May 2026 rebuild spec. Parts
+> are superseded: scoring is now ACT-first with **5 dimensions** (Phase 2, not
+> the 7 below), every Gemini call runs in a Netlify Function (the key is never
+> in the browser), and the knowledge base seeds itself. `CLAUDE.md` is the
+> current reference.
+
 ---
 
 ## 1. Goal

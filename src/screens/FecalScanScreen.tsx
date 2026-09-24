@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
-import { PillButton } from '../design-system/PillButton';
 import { Segmented } from '../design-system/Segmented';
 import { RADII } from '../design-system/tokens';
 import { TopBar } from '../shell/TopBar';
@@ -11,13 +10,13 @@ import { useLanguage } from '../app/providers/LanguageProvider';
 import { formatScore } from '../i18n/format';
 import { useFecalScan } from '../features/fecal-scan/useFecalScan';
 import { CaptureCard } from '../features/fecal-scan/CaptureCard';
+import { CaptureModal, type CaptureStart } from '../features/fecal-scan/CaptureModal';
+import { isCameraSupported } from '../features/fecal-scan/CameraCapture';
 import { ChartSheet } from '../features/fecal-scan/ChartSheet';
 import { GroundingPanel } from '../features/fecal-scan/GroundingPanel';
 import { ResultCard } from '../features/fecal-scan/ResultCard';
-import { ScanProgress } from '../features/fecal-scan/ScanProgress';
 import {
   BAND_KEY,
-  ErrorNote,
   Eyebrow,
   FecalPalette,
   subtleSurface,
@@ -51,6 +50,11 @@ function isNarrow(): boolean {
  * stool photos. Accent colour is the user's ECHO driver; band colours appear
  * only as small semantic dots.
  *
+ * Capture happens in `CaptureModal` (full screen on a phone): camera →
+ * review the photo (retake, quality check) → Start scan → the stepper runs
+ * in the modal → it closes onto the result here. The page itself never shows
+ * a half-finished scan.
+ *
  * Layout: one rail on mobile (header → picker → capture → result → grounding
  * → chart), a two-column grid from `lg` with the working surfaces on the left
  * and the evidence on the right.
@@ -60,25 +64,29 @@ export function FecalScanScreen() {
   const { t, locale } = useLanguage();
   const reduce = useReducedMotion();
   const [chartOpen, setChartOpen] = useState(false);
+  const [capture, setCapture] = useState<CaptureStart | null>(null);
+  const [cameraSupported, setCameraSupported] = useState(isCameraSupported);
   const captureRef = useRef<HTMLDivElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLDivElement>(null);
 
   const { status, result, retrieval, previewUrl, error, species, breedSize } = scan;
-  const busy = status === 'analyzing';
   const done = status === 'done' && result !== null;
+  const captureOpen = capture !== null;
   const scrollBehavior: ScrollBehavior = reduce ? 'auto' : 'smooth';
 
-  // When a result lands, bring it into view on the single-rail layout (it
-  // renders below the capture card, usually off-screen on a phone) and move
-  // focus to it so keyboard / screen-reader users land on the answer.
+  // When the modal closes onto a result, bring it into view on the
+  // single-rail layout (it renders below the capture card, usually off-screen
+  // on a phone) and move focus to it so keyboard / screen-reader users land
+  // on the answer. Gated on the modal being gone: its close hands focus back
+  // to the launcher first, and this must win.
   useEffect(() => {
-    if (!done) return;
+    if (!done || captureOpen) return;
     const el = resultRef.current;
     if (!el) return;
     el.focus({ preventScroll: true });
     if (isNarrow()) el.scrollIntoView?.({ behavior: scrollBehavior, block: 'start' });
-  }, [done, result, scrollBehavior]);
+  }, [done, result, captureOpen, scrollBehavior]);
 
   useEffect(() => {
     if (!chartOpen) return;
@@ -88,10 +96,23 @@ export function FecalScanScreen() {
     });
   }, [chartOpen, scrollBehavior]);
 
+  const closeCapture = useCallback(() => {
+    // Dismissed mid-scan or on an error: cancel, so the page never shows a
+    // scan nobody is watching. A result from before the modal opened stays.
+    if (status === 'analyzing' || status === 'error') scan.reset();
+    setCapture(null);
+  }, [scan, status]);
+
   const scanAnother = useCallback(() => {
+    // Straight back to the camera — the next sample is usually already on
+    // the table. The current result stays behind the modal until a new scan
+    // starts, so closing the camera loses nothing.
+    if (cameraSupported) {
+      setCapture({ mode: 'camera' });
+      return;
+    }
     scan.reset();
-    // After the reset re-render: back to the capture card, focus its first
-    // action (Take photo, or Upload where there is no camera).
+    // No camera: back to the capture card, focus its library action.
     requestAnimationFrame(() => {
       const card = captureRef.current;
       if (!card) return;
@@ -100,7 +121,7 @@ export function FecalScanScreen() {
         preventScroll: true,
       });
     });
-  }, [scan, scrollBehavior]);
+  }, [cameraSupported, scan, scrollBehavior]);
 
   const speciesOptions: { value: FecalSpecies; label: string }[] = [
     { value: 'dog', label: t('fecalScan.species.dog') },
@@ -252,25 +273,23 @@ export function FecalScanScreen() {
               )}
             </Glass>
 
-            {/* ── 3. Capture ── */}
+            {/* ── 3. Capture (opens the modal) ── */}
             <div ref={captureRef} style={{ scrollMarginTop: 12 }}>
               <CaptureCard
                 previewUrl={previewUrl}
-                busy={busy}
-                onPick={scan.analyzeFile}
+                cameraSupported={cameraSupported}
+                onTakePhoto={() => setCapture({ mode: 'camera' })}
+                onPickFile={(file) => setCapture({ mode: 'review', file })}
                 compact={done}
               />
             </div>
-
-            {/* ── 4. Analyzing ── */}
-            {busy && <ScanProgress />}
 
             {/* Result announcement for assistive tech (the card itself is long). */}
             <div role="status" aria-live="polite" className="sr-only">
               {announcement}
             </div>
 
-            {/* ── 5. Result ── */}
+            {/* ── 4. Result ── */}
             {done && (
               <div
                 ref={resultRef}
@@ -287,25 +306,11 @@ export function FecalScanScreen() {
                 />
               </div>
             )}
-
-            {/* Error state */}
-            {status === 'error' && error && (
-              <Glass radius={RADII.lg} padding={16} glow={null} style={{ marginBottom: 14 }}>
-                <ErrorNote>{error}</ErrorNote>
-                <PillButton
-                  variant="glass"
-                  onClick={scanAnother}
-                  style={{ marginTop: 12, color: 'var(--pbt-text)' }}
-                >
-                  {t('fecalScan.footer.tryAgain')}
-                </PillButton>
-              </Glass>
-            )}
           </div>
 
           {/* ── Right column: the evidence ── */}
           <div>
-            {/* ── 6. Grounding panel ── */}
+            {/* ── 5. Grounding panel ── */}
             <GroundingPanel
               // No score was claimed for a non-stool photo, so there is
               // nothing to explain — keep the panel in its idle state.
@@ -313,7 +318,7 @@ export function FecalScanScreen() {
               confidence={done && result.isStool ? result.confidence : null}
             />
 
-            {/* ── 7. Full chart sheet ── */}
+            {/* ── 6. Full chart sheet ── */}
             {chartOpen && (
               <div ref={chartRef} style={{ scrollMarginTop: 12 }}>
                 <ChartSheet
@@ -326,7 +331,7 @@ export function FecalScanScreen() {
           </div>
         </div>
 
-        {/* ── 8. Footer ── */}
+        {/* ── 7. Footer ── */}
         <p
           style={{
             margin: '4px 0 14px',
@@ -339,6 +344,20 @@ export function FecalScanScreen() {
           {t('fecalScan.footer.disclaimer')}
         </p>
       </Page>
+
+      {capture && (
+        <CaptureModal
+          start={capture}
+          chartLabel={speciesOptions.find((o) => o.value === species)?.label ?? ''}
+          status={status}
+          error={error}
+          cameraSupported={cameraSupported}
+          onCameraUnavailable={() => setCameraSupported(false)}
+          onScan={(file, meta) => void scan.analyzeFile(file, meta)}
+          onFinished={() => setCapture(null)}
+          onClose={closeCapture}
+        />
+      )}
     </FecalPalette>
   );
 }

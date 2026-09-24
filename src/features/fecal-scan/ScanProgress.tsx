@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Glass } from '../../design-system/Glass';
 import { Icon } from '../../design-system/Icon';
-import { RADII } from '../../design-system/tokens';
 import { useT } from '../../i18n/useT';
 import type { CatalogKey } from '../../i18n/catalog';
 import { Eyebrow } from './fecalUi';
@@ -28,7 +26,7 @@ export interface ScanProgressProps {
 
 /**
  * Observe → retrieve → match, the three stages the `ai-fecal-scan` function
- * runs. Advances on a timer and holds on the last stage until the response
+ * runs. Rendered inside the capture modal, on its dark surface (no card). Advances on a timer and holds on the last stage until the response
  * lands, so a slow scan reads as "still matching" rather than as a stalled
  * spinner.
  */
@@ -45,9 +43,10 @@ export function ScanProgress({ settled = false }: ScanProgressProps) {
   }, [active, settled]);
 
   return (
-    <Glass radius={RADII.lg} padding={18} glow={null} style={{ marginBottom: 14 }}>
       <div role="status" aria-live="polite" aria-busy={!settled}>
-        <span className="sr-only">{t('fecalScan.analyzing.aria')}</span>
+        <span className="sr-only">
+          {settled ? t('fecalScan.analyzing.done') : t('fecalScan.analyzing.aria')}
+        </span>
         <Eyebrow accent style={{ marginBottom: 12 }}>
           {t('fecalScan.analyzing.eyebrow')}
         </Eyebrow>
@@ -148,6 +147,5 @@ export function ScanProgress({ settled = false }: ScanProgressProps) {
           />
         </div>
       </div>
-    </Glass>
   );
 }

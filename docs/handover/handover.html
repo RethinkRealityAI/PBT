@@ -19,7 +19,7 @@
   <div class="meta">
     <div><b>Prepared for</b>PBT platform owners (client)</div>
     <div><b>Prepared by</b>Rethink Reality · Dapo Ajisafe</div>
-    <div><b>Date</b>3 September 2026 · v1.0</div>
+    <div><b>Date</b>24 September 2026 · v1.1</div>
   </div>
 </section>
 
@@ -48,15 +48,15 @@
 <section class="section">
   <p class="eyebrow">Section 1</p>
   <h2>Executive summary</h2>
-  <p><strong>PBT (Pushback Training)</strong> is a mobile-first web app that trains veterinary teams to handle client pushback. Team members role-play against an AI customer (text or live voice), receive an ACT-based scorecard (Acknowledge · Clarify · Transform, plus Empathy and Rapport), and see their progress over time. An ECHO personality quiz (Activator · Energizer · Analyzer · Harmonizer) personalises the experience. A separate <strong>admin dashboard</strong> at <code>/admin</code> lets your team manage users and roles, tune the AI simulation, maintain the scenario library and knowledge base, send branded emails, toggle features without a deploy, and monitor quality and cost.</p>
+  <p><strong>PBT (Pushback Training)</strong> is a mobile-first web app that trains veterinary teams to handle client pushback. Team members role-play against an AI customer (text or live voice), receive an ACT-based scorecard (Acknowledge · Clarify · Transform, plus Empathy and Rapport), and see their progress over time. A <strong>Fecal Scan</strong> tool scores a stool photo against the Royal Canin Fecal Scoring charts (a supportive aid for technicians, not a diagnostic). An ECHO personality quiz (Activator · Energizer · Analyzer · Harmonizer) personalises the experience. A separate <strong>admin dashboard</strong> at <code>/admin</code> lets your team manage users and roles, tune the AI simulation, maintain the scenario library and knowledge base, send branded emails, toggle features without a deploy, and monitor quality and cost.</p>
 
   <h3>What ownership means in practice</h3>
   <p>The platform is made of five hosted services plus the source code. Today they all sit in Rethink Reality accounts. After handover they must sit in <em>your</em> accounts so that billing, data, credentials and uptime are fully under your control. No account is optional except Notion (documentation only) and, strictly speaking, the email provider (without it, admin invitations and password resets cannot be delivered).</p>
 
   <div class="grid2">
     <div class="card"><h4>Supabase</h4><p>Database, user accounts, admin roles, telemetry, knowledge base with vector search. All persistent data lives here.</p></div>
-    <div class="card"><h4>Netlify</h4><p>Hosts the web app and the admin dashboard, runs the 29 server-side functions, holds every secret as an environment variable.</p></div>
-    <div class="card"><h4>Google AI Studio (Gemini API)</h4><p>Every AI feature: customer role-play, scoring, coach hints, Pet Vision photo analysis, live voice, and knowledge-base embeddings.</p></div>
+    <div class="card"><h4>Netlify</h4><p>Hosts the web app and the admin dashboard, runs the 38 server-side functions (including every AI call), holds every secret as an environment variable.</p></div>
+    <div class="card"><h4>Google AI Studio (Gemini API)</h4><p>Every AI feature: customer role-play, scoring, coach hints, Pet Vision photo analysis, Fecal Scan, live voice, and knowledge-base embeddings. The key is used only on the server.</p></div>
     <div class="card"><h4>GitHub</h4><p>The source code. Netlify deploys automatically from the <code>main</code> branch.</p></div>
     <div class="card"><h4>Email provider (Resend or SMTP)</h4><p>Delivers admin invitations, role-change notices, welcome and password-reset emails through your own domain.</p></div>
     <div class="card"><h4>Notion</h4><p>Hosts the admin documentation system that accompanies this handover. Not part of the running platform.</p></div>
@@ -78,25 +78,27 @@
 <section class="section">
   <p class="eyebrow">Section 2</p>
   <h2>Architecture at a glance</h2>
-  <p>Every request starts in the browser on Netlify. Data and authentication go to Supabase. AI calls go to Google. Server-side work that must never expose a secret runs in Netlify Functions.</p>
+  <p>Every request starts in the browser on Netlify. Data and authentication go to Supabase. Every AI call is made by a Netlify Function, so the Gemini key never reaches a browser; live voice connects from the device with a single-use token that a Function mints for each session.</p>
 <div class="arch">┌─────────────────────────────  Netlify (your team)  ─────────────────────────────┐
 │                                                                                 │
 │   Consumer app  (/)               Admin dashboard  (/admin)                     │
 │   React PWA, mobile-first          React, RBAC-gated, 10 destinations           │
 │        │                                 │                                      │
-│        │  browser-side                   │  always via functions               │
+│        │  data: publishable key + JWT    │  always via functions                │
+│        │  AI: always via functions       │                                      │
 │        ▼                                 ▼                                      │
-│   Netlify Functions  (/.netlify/functions/*)  — 29 functions                    │
-│   admin-* (24) · account-delete · auth-recover · invite-accept                  │
-│   flags-resolve · rag-retrieve                                                  │
+│   Netlify Functions  (/.netlify/functions/*)  — 38 functions                    │
+│   ai-* (6: roleplay, evaluate, hint, vision, fecal-scan, voice-token)           │
+│   admin-* (26) · account-delete · auth-recover · invite-accept                  │
+│   flags-resolve · rag-retrieve · knowledge-sync-background                      │
 └──────────┬───────────────────────────────┬──────────────────────┬──────────────┘
            │ publishable key (browser)     │ service-role key     │ GEMINI_API_KEY
-           │ + user JWT                    │ (functions only)     │ (browser + functions)
+           │ + user JWT                    │ (functions only)     │ (functions only)
            ▼                               ▼                      ▼
 ┌──────────────────────────────────────────────────┐   ┌──────────────────────────┐
 │  Supabase (your organisation)                    │   │  Google AI Studio        │
 │  Postgres 17 + pgvector · Auth (email/password)  │   │  gemini-3-flash-preview  │
-│  24 tables · RLS on every table                  │   │  gemini-3.1-flash-live   │
+│  25 tables · RLS on every table                  │   │  gemini-3.1-flash-live   │
 │  profiles · training_sessions · telemetry ·      │   │  gemini-embedding-001    │
 │  flags · knowledge_documents/chunks · email_*    │   └──────────────────────────┘
 └──────────────────────────────────────────────────┘
@@ -112,7 +114,7 @@
     <tr><th>Credential</th><th>Where it lives</th><th>Exposure</th></tr>
     <tr><td>Supabase publishable (anon) key</td><td>Netlify env → built into the browser bundle</td><td>Public by design; Row Level Security protects data</td></tr>
     <tr><td>Supabase service-role key</td><td>Netlify env → Netlify Functions only</td><td><span class="pill secret">Secret</span> Bypasses RLS. Never in the browser.</td></tr>
-    <tr><td>Gemini API key</td><td>Netlify env → built into the browser bundle <em>and</em> used by functions</td><td><span class="pill secret">Sensitive</span> Visible to anyone inspecting the site; see Section 7 for mitigation.</td></tr>
+    <tr><td>Gemini API key</td><td>Netlify env → Netlify Functions only (read at runtime, never built into the bundle)</td><td><span class="pill secret">Secret</span> Never in the browser. Voice mode gets a single-use, short-lived token per session instead. A build check fails if a key-shaped string ever appears in the bundle.</td></tr>
     <tr><td>Email credentials (Resend key / SMTP password)</td><td>Entered in Admin → Email → Settings, encrypted at rest in Supabase (or set as env vars)</td><td><span class="pill secret">Secret</span> Never returned to the browser.</td></tr>
     <tr><td>EMAIL_SECRET_KEY</td><td>Netlify env → functions only</td><td><span class="pill secret">Secret</span> Encrypts the email credentials above.</td></tr>
   </table>
@@ -140,7 +142,7 @@
   <p><strong>Plan guidance.</strong> The Free tier pauses inactive projects after a week and has no backups; use at least the <strong>Pro</strong> plan for production so you get daily backups, no pausing, and support. Check current pricing at supabase.com/pricing.</p>
   <h4>Steps</h4>
   <div class="step"><div class="n">1</div><div class="b"><p>Create an organisation for your company at supabase.com (Dashboard → New organisation). Enable 2FA on the account.</p></div></div>
-  <div class="step"><div class="n">2</div><div class="b"><p><strong>Preferred:</strong> accept the <em>project transfer</em> from Rethink Reality (Section 5, Path A). The existing project moves into your organisation with all data intact. <strong>Alternative:</strong> create a new project named <code>pbt-pushback-training</code> in region <code>us-east-1</code> (Path B), then run the 18 migration files in filename order.</p></div></div>
+  <div class="step"><div class="n">2</div><div class="b"><p><strong>Preferred:</strong> accept the <em>project transfer</em> from Rethink Reality (Section 5, Path A). The existing project moves into your organisation with all data intact. <strong>Alternative:</strong> create a new project named <code>pbt-pushback-training</code> in region <code>us-east-1</code> (Path B), then run the 23 migration files in filename order.</p></div></div>
   <div class="step"><div class="n">3</div><div class="b"><p>Confirm the <code>vector</code> extension is enabled (Database → Extensions). The knowledge base and retrieval depend on it.</p></div></div>
   <div class="step"><div class="n">4</div><div class="b"><p>Authentication → Providers: <em>Email</em> enabled; <em>Confirm email</em> switched <strong>off</strong> (the product signs users in immediately; the in-app verification flow stays behind a code flag).</p></div></div>
   <div class="step"><div class="n">5</div><div class="b"><p>Authentication → URL configuration: set <em>Site URL</em> to your production URL and add these redirect URLs: <code>https://&lt;your-domain&gt;/reset-password</code>, <code>https://&lt;your-domain&gt;/admin/reset</code>, <code>https://&lt;your-domain&gt;/admin/invite</code>.</p></div></div>
@@ -149,7 +151,7 @@
 
   <!-- 3.2 NETLIFY -->
   <h3>3.2 Netlify — hosting, functions and secrets</h3>
-  <p><strong>What it provides.</strong> Netlify builds the app from GitHub on every push to <code>main</code>, serves the consumer app at <code>/</code> and the admin dashboard at <code>/admin</code>, runs the 29 Netlify Functions (all admin data access, account deletion, invitations, password recovery, flag resolution, knowledge retrieval), stores every environment variable and secret, and provides HTTPS and custom domains.</p>
+  <p><strong>What it provides.</strong> Netlify builds the app from GitHub on every push to <code>main</code>, serves the consumer app at <code>/</code> and the admin dashboard at <code>/admin</code>, runs the 38 Netlify Functions (every AI call, all admin data access, account deletion, invitations, password recovery, flag resolution, knowledge retrieval and automatic knowledge-base seeding), stores every environment variable and secret, and provides HTTPS and custom domains.</p>
   <p><strong>Plan guidance.</strong> The site runs today on a Pro team. The Free tier works technically, but Pro adds team seats, more function invocations and bandwidth, and password-protected deploy previews. Check current limits at netlify.com/pricing.</p>
   <h4>Steps</h4>
   <div class="step"><div class="n">1</div><div class="b"><p>Create a Netlify team for your company and enable 2FA. Connect the team to your GitHub organisation (Team settings → Git → Install the Netlify GitHub app on the transferred repository).</p></div></div>
@@ -164,8 +166,8 @@
   <p><strong>What it provides.</strong> One API key from Google AI Studio powers every AI feature:</p>
   <table>
     <tr><th>Model</th><th>Used for</th><th>Called from</th></tr>
-    <tr><td><code>gemini-3-flash-preview</code></td><td>AI customer replies in text role-play; ACT scorecard evaluation; in-chat coach hints; Pet Vision photo analysis (breed, body-condition, dermatology)</td><td>Browser</td></tr>
-    <tr><td><code>gemini-3.1-flash-live-preview</code></td><td>Live voice role-play (real-time audio in both directions, 5-minute cap per session)</td><td>Browser</td></tr>
+    <tr><td><code>gemini-3-flash-preview</code></td><td>AI customer replies in text role-play; ACT scorecard evaluation; in-chat coach hints; Pet Vision photo analysis (breed, body-condition, dermatology); Fecal Scan (stool photo scoring)</td><td>Netlify Functions</td></tr>
+    <tr><td><code>gemini-3.1-flash-live-preview</code></td><td>Live voice role-play (real-time audio in both directions, 5-minute cap per session)</td><td>Device, using a single-use token minted by a Netlify Function</td></tr>
     <tr><td><code>gemini-embedding-001</code></td><td>Embeddings for the knowledge base (ingest and retrieval), 768 dimensions</td><td>Netlify Functions</td></tr>
   </table>
   <p><strong>Plan guidance.</strong> The free tier of the Gemini API has low rate limits and is not suitable for a team of trainees using voice mode. Enable billing on the Google Cloud project behind the key ("paid tier") and set a monthly budget alert. Check current pricing at ai.google.dev/pricing.</p>
@@ -173,13 +175,13 @@
   <div class="step"><div class="n">1</div><div class="b"><p>Sign in to aistudio.google.com with a Google Workspace account owned by your company (not a personal Gmail).</p></div></div>
   <div class="step"><div class="n">2</div><div class="b"><p>Get API key → Create API key → create it in a <strong>new, dedicated Google Cloud project</strong> (for example <code>pbt-production</code>) so its usage and billing are isolated.</p></div></div>
   <div class="step"><div class="n">3</div><div class="b"><p>In the Google Cloud console for that project: Billing → link a billing account; Budgets &amp; alerts → set a monthly budget with email alerts.</p></div></div>
-  <div class="step"><div class="n">4</div><div class="b"><p>APIs &amp; Services → Credentials → edit the key → API restrictions → restrict it to the <em>Generative Language API</em> only. Do <strong>not</strong> add HTTP-referrer restrictions: the same key is used server-side by Netlify Functions for embeddings, and a referrer restriction would block those calls.</p></div></div>
-  <div class="step"><div class="n">5</div><div class="b"><p>Paste the key into Netlify as <code>GEMINI_API_KEY</code> (Section 4) and redeploy. The key is inlined at build time, so a redeploy is required whenever it changes.</p></div></div>
-  <div class="callout warn"><p><strong>Model IDs are "preview" releases.</strong> Google retires preview models on its own schedule. When that happens the AI features return errors until the model IDs in <code>src/services/geminiService.ts</code> and <code>netlify/functions/_shared/gemini.ts</code> are updated and redeployed. Watch Google's deprecation notices and the Admin → Analytics → AI quality screen (failure-rate alert).</p></div>
+  <div class="step"><div class="n">4</div><div class="b"><p>APIs &amp; Services → Credentials → edit the key → API restrictions → restrict it to the <em>Generative Language API</em> only. Do <strong>not</strong> add HTTP-referrer restrictions: every call with this key comes from Netlify Functions, which send no referrer, so a referrer restriction would block all AI features.</p></div></div>
+  <div class="step"><div class="n">5</div><div class="b"><p>Paste the key into Netlify as <code>GEMINI_API_KEY</code> (Section 4) and redeploy. Functions read it at runtime, but Netlify only applies changed environment variables to new deploys, so redeploy whenever it changes.</p></div></div>
+  <div class="callout warn"><p><strong>Model IDs are "preview" releases.</strong> Google retires preview models on its own schedule. When that happens the AI features return errors until the model IDs in <code>src/shared/ai/models.ts</code> (the single file that holds all three) are updated and redeployed. Watch Google's deprecation notices and the Admin → Analytics → AI quality screen (failure-rate alert).</p></div>
 
   <!-- 3.4 GITHUB -->
   <h3>3.4 GitHub — source code</h3>
-  <p><strong>What it provides.</strong> The repository holds the full source (consumer app, admin dashboard, Netlify Functions, database migrations, tests and this documentation). Netlify watches the <code>main</code> branch and deploys every push. There are no GitHub Actions workflows to migrate; the test suite (393 tests) runs locally with <code>npm test</code>.</p>
+  <p><strong>What it provides.</strong> The repository holds the full source (consumer app, admin dashboard, Netlify Functions, database migrations, tests and this documentation). Netlify watches the <code>main</code> branch and deploys every push. There are no GitHub Actions workflows to migrate; the test suite (about 1,140 tests) runs locally with <code>npm test</code>.</p>
   <h4>Steps</h4>
   <div class="step"><div class="n">1</div><div class="b"><p>Create a GitHub organisation for your company (free tier is sufficient) and enable 2FA enforcement.</p></div></div>
   <div class="step"><div class="n">2</div><div class="b"><p>Accept the repository transfer of <code>RethinkRealityAI/PBT</code> (Path A). GitHub keeps redirects from the old URL, but re-link Netlify to the new location anyway.</p></div></div>
@@ -211,15 +213,15 @@
 <section class="section">
   <p class="eyebrow">Section 4</p>
   <h2>Environment variables — complete reference</h2>
-  <p>All variables are set in Netlify → Site configuration → Environment variables. Variables prefixed <code>VITE_</code> and <code>GEMINI_API_KEY</code> are compiled into the browser bundle at build time; all others are read only by Netlify Functions at runtime. <strong>Any change to a build-time variable needs a redeploy to take effect.</strong></p>
+  <p>All variables are set in Netlify → Site configuration → Environment variables. Variables prefixed <code>VITE_</code> are compiled into the browser bundle at build time and are public by design; all others, including <code>GEMINI_API_KEY</code>, are read only by Netlify Functions at runtime. <strong>Any change to any variable needs a redeploy to take effect.</strong> Never create a <code>VITE_GEMINI_*</code> variable: the <code>VITE_</code> prefix would publish the key in the bundle.</p>
 
   <h3>Required</h3>
   <table>
     <tr><th>Variable</th><th>Scope</th><th>Purpose</th><th>What breaks if missing</th></tr>
-    <tr><td><code>GEMINI_API_KEY</code></td><td>Build + Functions</td><td>Google AI Studio key for all Gemini calls</td><td>Every AI feature: role-play, scoring, voice, Pet Vision, knowledge ingest/retrieval</td></tr>
+    <tr><td><code>GEMINI_API_KEY</code></td><td>Functions (secret)</td><td>Google AI Studio key for all Gemini calls</td><td>Every AI feature: role-play, scoring, coach hints, voice, Pet Vision, Fecal Scan, knowledge ingest/retrieval</td></tr>
     <tr><td><code>VITE_SUPABASE_URL</code></td><td>Build (public)</td><td>Supabase project URL</td><td>Cloud sync, sign-in and the whole admin dashboard. The consumer app still works anonymously with local storage only.</td></tr>
     <tr><td><code>VITE_SUPABASE_PUBLISHABLE_KEY</code></td><td>Build (public)</td><td>Supabase publishable (anon) key</td><td>Same as above</td></tr>
-    <tr><td><code>SUPABASE_SERVICE_ROLE_KEY</code></td><td>Functions (secret)</td><td>Server-side access that bypasses RLS for admin reads/writes, account deletion, invitations, recovery</td><td>Every admin function returns "Server misconfigured"; account deletion and password reset fail</td></tr>
+    <tr><td><code>SUPABASE_SERVICE_ROLE_KEY</code></td><td>Functions (secret)</td><td>Server-side access that bypasses RLS for admin reads/writes, score writes, account deletion, invitations, recovery and knowledge-base seeding</td><td>Every admin function returns "Server misconfigured"; account deletion and password reset fail</td></tr>
   </table>
 
   <h3>Strongly recommended</h3>
@@ -243,7 +245,7 @@
   <table>
     <tr><th>Variable</th><th>Purpose</th></tr>
     <tr><td><code>VITE_ADMIN_MOCK</code></td><td>Runs the admin dashboard against mock data for UI development. Never set in production.</td></tr>
-    <tr><td><code>VITE_GEMINI_API_KEY</code></td><td>Local-development alias accepted by the client; production uses <code>GEMINI_API_KEY</code>.</td></tr>
+    <tr><td><code>PBT_ALLOW_DEV_SYNC</code></td><td>Set to <code>1</code> to let <code>netlify dev</code> run the knowledge-base sync locally. Never set in production.</td></tr>
   </table>
 </section>
 
@@ -255,7 +257,7 @@
 
   <div class="grid2">
     <div class="card"><h4>Path A — Transfer (recommended)</h4><p>Supabase project transfer, Netlify site transfer, GitHub repository transfer. Zero data loss, no downtime, roughly half a day including verification.</p></div>
-    <div class="card"><h4>Path B — Rebuild</h4><p>New Supabase project + run 18 migrations, new Netlify site from Git, fresh env vars. Existing users and session history are not carried over unless exported and re-imported.</p></div>
+    <div class="card"><h4>Path B — Rebuild</h4><p>New Supabase project + run 23 migrations, new Netlify site from Git, fresh env vars. Existing users and session history are not carried over unless exported and re-imported.</p></div>
   </div>
 
   <h3>Phase 0 — Prepare (client, before handover day)</h3>
@@ -274,7 +276,7 @@
   <div class="step"><div class="n">3</div><div class="b"><p><strong>Netlify:</strong> Rethink Reality transfers site <code>rc-pbt</code> to your team (Site configuration → General → Transfer site). Environment variables move with the site. Re-link the repository to its new GitHub location (Site configuration → Build &amp; deploy → Continuous deployment).</p></div></div>
   <h4>Path B</h4>
   <div class="step"><div class="n">1</div><div class="b"><p>Fork or copy the repository into your organisation (Rethink Reality can push it directly).</p></div></div>
-  <div class="step"><div class="n">2</div><div class="b"><p>Create the Supabase project; in the SQL editor run each file in <code>supabase/migrations/</code> in filename (timestamp) order, from <code>20260504000000_init.sql</code> through <code>20260827000000_audit_report_entity.sql</code>. Every migration is idempotent, so re-running is safe.</p></div></div>
+  <div class="step"><div class="n">2</div><div class="b"><p>Create the Supabase project; in the SQL editor run each file in <code>supabase/migrations/</code> in filename (timestamp) order, from <code>20260504000000_init.sql</code> through <code>20260923000000_knowledge_sync_lease.sql</code>. Every migration is idempotent, so re-running is safe. The knowledge base then seeds itself after the first production deploy; there is nothing to load by hand.</p></div></div>
   <div class="step"><div class="n">3</div><div class="b"><p>Create the Netlify site from the repository, add the environment variables, deploy.</p></div></div>
   <div class="step"><div class="n">4</div><div class="b"><p>Optional data carry-over: Rethink Reality exports <code>profiles</code>, <code>training_sessions</code>, <code>user_scenarios</code>, <code>knowledge_documents</code>/<code>knowledge_chunks</code>, <code>flags</code>, <code>simulation_config</code>, <code>admin_roles</code> and <code>email_templates</code> from the old project and imports them into the new one. Auth users cannot be moved with their passwords; trainees would need to reset passwords or re-register (their local progress on-device is unaffected).</p></div></div>
 
@@ -300,9 +302,9 @@
   <h3>Automated</h3>
   <table>
     <tr><th>Check</th><th>Command (from a clone of the repo)</th><th>Proves</th></tr>
-    <tr><td>Schema applied</td><td><code>SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… npm run verify:db</code></td><td>Every table the code references exists in the live database (all 18 migrations applied)</td></tr>
-    <tr><td>Test suite</td><td><code>npm ci &amp;&amp; npm test</code></td><td>393 tests pass, including migration/code parity and translation catalog guards</td></tr>
-    <tr><td>Bundle budget</td><td><code>npm run build &amp;&amp; npm run check:bundle</code></td><td>Main entry stays under the 500 kB gzip budget (currently about 66 kB)</td></tr>
+    <tr><td>Schema applied</td><td><code>SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… npm run verify:db</code></td><td>Every table the code references exists in the live database (all 23 migrations applied)</td></tr>
+    <tr><td>Test suite</td><td><code>npm ci &amp;&amp; npm test</code></td><td>About 1,140 tests pass, including migration/code parity, translation catalog guards and the Fecal Scan grounding rules</td></tr>
+    <tr><td>Bundle budget</td><td><code>npm run build &amp;&amp; npm run check:bundle</code></td><td>Main entry stays under the 500 kB gzip budget (currently about 60 kB) and that no API-key-shaped string is in the bundle</td></tr>
   </table>
 
   <h3>Manual smoke test (15 minutes)</h3>
@@ -311,13 +313,14 @@
     <li><strong>Text role-play:</strong> start Today's pick → exchange three messages → end session → scorecard shows real scores (not "score unavailable").</li>
     <li><strong>Voice role-play:</strong> tap Begin in voice mode → browser asks for the microphone → the AI customer speaks → end → transcript and score appear.</li>
     <li><strong>Pet Analyzer:</strong> upload a pet photo → breed and body-condition estimate returned.</li>
+    <li><strong>Fecal Scan:</strong> on a phone, Home → Fecal Scan → pick <em>Adult dog</em> → <em>Take photo</em> → the camera opens full screen → photograph a stool (or a printed chart photo) → check the photo (<em>Retake</em> if needed) → <em>Start scan</em> → the steps run, then the result opens: a score from 1 to 5 with a confidence rating, the chart's reference photo, and the chart passages it was grounded in. A deliberately blurry photo should be flagged before scanning.</li>
     <li><strong>Account:</strong> Save your progress → sign up → refresh → progress persists; Settings → sign out → sign in.</li>
     <li><strong>Password reset:</strong> Sign in → Forgot password → email arrives from your domain → link opens the reset screen.</li>
     <li><strong>French:</strong> Settings → switch to Français → Home and a role-play render in French.</li>
     <li><strong>Admin:</strong> sign in at <code>/admin</code> as owner → Overview shows counts → People shows your users → Analytics → AI quality shows the sessions you just ran with cost and latency.</li>
     <li><strong>Admin invite:</strong> invite a colleague → email arrives → accept link creates their admin access with the chosen role.</li>
     <li><strong>Flags:</strong> toggle a component flag (for example the Home library card) → the consumer app reflects it on reload, with no deploy.</li>
-    <li><strong>Knowledge:</strong> Library → Knowledge → Seed from code → documents and chunks appear (this confirms the embedding model and the vector extension work).</li>
+    <li><strong>Knowledge:</strong> a few minutes after the first production deploy, Admin → Library → Knowledge lists the built-in documents with chunk counts (they seed themselves; there is no button). Use <em>Try a search</em> to confirm retrieval works, which proves the embedding model and the vector extension.</li>
     <li><strong>Email log:</strong> Email → Delivery shows the test, reset and invite messages as sent.</li>
   </ul>
 </section>
@@ -330,9 +333,10 @@
     <li>Two-factor authentication enforced on Supabase, Netlify, GitHub, Google and the email provider.</li>
     <li>At least two <em>owner</em> admins in PBT and at least two owners on every hosted account. The platform refuses to demote the last active owner, but hosting accounts do not protect you from a single lost login.</li>
     <li>Rethink Reality members removed from the Supabase organisation, Netlify team, GitHub organisation and the PBT admin team at close-out (Section 10).</li>
-    <li>Supabase service-role key rotated after transfer (Phase 2 step 2). Gemini key replaced with yours. Old Rethink Reality Gemini key deleted on our side.</li>
+    <li>Supabase service-role key rotated after transfer (Phase 2 step 2). Gemini key replaced with yours. Old Rethink Reality Gemini key deleted on our side. That old key shipped in the browser bundle before the September security release, so treat it as exposed and make sure it is deleted, not just replaced.</li>
     <li><code>EMAIL_SECRET_KEY</code> set to a dedicated random value and stored in your password manager. If it is ever lost, re-enter the email credentials in the admin screen; nothing else is affected.</li>
-    <li>Gemini key restricted to the Generative Language API with a budget alert. Because this key ships in the browser bundle by design (voice mode must connect from the device), treat it as <em>quota-sensitive</em> rather than secret: monitor usage in Google Cloud and rotate if you see unexplained spend. A future hardening step, proxying text and scoring calls through a Netlify Function, is listed in Section 9.</li>
+    <li>Gemini key restricted to the Generative Language API with a budget alert. The key lives only in Netlify Functions; voice mode connects with a single-use token per session, AI endpoints are rate-limited per IP, and scores are written by the server (a database trigger rejects scores written from a browser). Still monitor usage in Google Cloud and rotate if you see unexplained spend.</li>
+    <li>Old Netlify deploy previews reviewed. Every deploy stays reachable at its own link with the environment it was built with. Delete the Deploy Preview for commit <code>eccee53</code> (pull request #23) in Netlify → Deploys; rotating the service-role key in Phase 2 also neutralises it.</li>
     <li>Supabase → Authentication → Rate limits reviewed; Database → Backups → daily backups confirmed (Pro plan) and Point-in-time recovery considered.</li>
     <li>Branch protection on <code>main</code>; only reviewed pull requests reach production.</li>
     <li>Privacy: trainees can opt out of AI-training use in Settings, and can delete their own account (self-service, wipes all their data). Make sure your privacy notice reflects that data is stored in Supabase (US East) and sent to Google for AI processing.</li>
@@ -356,7 +360,7 @@
 
   <h3>Cost drivers</h3>
   <ul>
-    <li><strong>Gemini usage is the only usage-based cost that scales with trainees.</strong> Voice sessions cost the most per minute (hence the 5-minute cap); text sessions and scoring are cheap; embeddings are a one-off per knowledge document.</li>
+    <li><strong>Gemini usage is the only usage-based cost that scales with trainees.</strong> Voice sessions cost the most per minute (hence the 5-minute cap); text sessions, scoring and Fecal Scans (two image calls each) are cheap; embeddings are a one-off per knowledge document.</li>
     <li>Supabase and Netlify are flat monthly plans with usage overage only at high volume.</li>
     <li>Resend's free tier covers a small admin team; SMTP through an existing provider is usually already paid for.</li>
   </ul>
@@ -381,7 +385,8 @@
     <tr><td>French live-voice smoke test</td><td>Untested against the real Gemini Live socket; fr-FR fallback in place</td><td>Low; English voice fully tested</td></tr>
     <tr><td>Email verification at sign-up</td><td>Built, switched off by product decision (<code>FLAGS.EMAIL_VERIFICATION</code>)</td><td>None unless you want verified emails; enabling also needs Supabase "Confirm email" on</td></tr>
     <tr><td>Inclusive-writing pass (French quiz)</td><td>A few masculine-default adjectives flagged in the catalog</td><td>Cosmetic</td></tr>
-    <tr><td>Gemini key exposure hardening</td><td>Text/scoring calls could be proxied through a function so only voice needs the browser-side key</td><td>Reduces quota-abuse risk; no functional change</td></tr>
+    <tr><td>Fecal Scan clinical agreement check</td><td>Checked against the chart photos and test cases, not yet against a veterinarian's blind scoring of real clinic photos</td><td>Recommended before presenting it as more than a supportive aid</td></tr>
+    <tr><td>Fecal Scan off switch</td><td>The admin flag hides the desktop sidebar entry only; the Home tile and Pet Analyzer link stay visible</td><td>Low; a feature-wide flag can be added if you need to switch it off entirely</td></tr>
   </table>
 </section>
 
@@ -405,7 +410,7 @@
 
   <h3>Support after handover</h3>
   <p>Questions about this document or the platform: <strong>dapo@rethinkreality.ai</strong>. Reference material handed over with the platform: this PDF, the Notion documentation workspace, the repository's <code>README.md</code>, <code>CLAUDE.md</code> (engineering guide) and the design specification under <code>docs/</code>.</p>
-  <p class="footer-note">PBT — Pushback Training · Client handover v1.0 · 3 September 2026 · Rethink Reality. Model identifiers, plan names and vendor UI labels are accurate as of this date and may change; the repository is the source of truth for configuration.</p>
+  <p class="footer-note">PBT — Pushback Training · Client handover v1.1 · 24 September 2026 · Rethink Reality. Model identifiers, plan names and vendor UI labels are accurate as of this date and may change; the repository is the source of truth for configuration.</p>
 </section>
 
 </body>

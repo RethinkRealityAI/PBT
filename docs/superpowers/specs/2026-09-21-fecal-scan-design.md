@@ -185,13 +185,35 @@ headline "fecal scan"):
    one-line purpose, a persistent chip "Supportive tool · not a diagnosis".
 2. **Chart picker** — `Segmented` control: Adult dog · Puppy (8 wk+) · Cat.
    Puppy reveals a second segmented: Small/medium · Large/giant.
-3. **Capture card** — dashed drop zone; file input with
-   `accept="image/*" capture="environment"`; on mobile it opens the camera.
-   Copy: "Photograph the stool on a plain background in good light. The
-   photo is never stored."
-4. **Analyzing state** — a stepper that advances with the pipeline
-   (Observing → Retrieving chart passages → Matching score). The function is
-   one round trip, so the stepper is time-driven and settles on completion.
+3. **Capture card** (launcher, no drop zone — this is used on a phone) —
+   tips (plain background · good light · fill the frame), one big **Take
+   photo** and a quieter **Choose from library** (the library input has NO
+   `capture` attribute: on iOS it would force the camera). No camera API →
+   the library is the primary action. Under a result it folds to a
+   thumbnail + New photo / Library.
+4. **Capture modal** (`CaptureModal.tsx`; full screen on a phone, a
+   560 px dialog from `sm`; always dark — it is a camera surface) — one
+   flow, nothing sent until the tech says so:
+   - **Camera** — full-bleed viewfinder, library · shutter · flip in the
+     thumb zone, shutter flash. The shot is cropped to what the viewfinder
+     showed (`visibleRegion`: the preview is `object-fit: cover`).
+     Blocked / missing camera → message + Choose from library.
+   - **Review** — the whole photo (`contain`), the chart it will be scored
+     on, Retake (or Choose another for a library pick) and **Start scan**.
+     `photoQuality.ts` measures sharpness (90th-percentile tile Laplacian
+     variance at 256 px) and brightness; a clearly blurry or dark photo
+     swaps the buttons (Retake primary, **Scan anyway** secondary). Advisory,
+     never blocking; thresholds pinned against the 21 chart photos.
+   - **Scanning** — the photo with a sweep + the stepper (Observing →
+     Retrieving chart passages → Matching score; time-driven, settles on
+     completion). Cancel scan. On success the steps settle, the modal
+     closes after ~0.75 s and focus lands on the result. On an error the
+     photo is kept: Try again re-sends it, Retake starts over.
+   - Closing mid-scan or on an error cancels (the page never shows a scan
+     nobody is watching); closing with a result behind it keeps the result.
+     "Scan another" goes straight back to the camera.
+   - Analytics: the `fecal_scan` event also carries `photoIssue` (the
+     review verdict) and `retakes`.
 5. **Result** — hero card: big score numeral (display font) + band chip
    colored by band (red / amber / green from `COLORS`); confidence meter;
    side-by-side "Your photo" / "Chart reference {score}" with the chart
@@ -233,6 +255,15 @@ model's free-text output follows the locale addendum pattern from Pet Vision.
   `'fecal_scan'` + `'retrieval'`.
 - `src/features/fecal-scan/__tests__/useFecalScan.test.ts` — status machine,
   not-image / too-large errors, stale-request guard.
+- `src/features/fecal-scan/__tests__/CaptureModal.test.tsx` — camera →
+  review → scan → close; retake counted; a blurry verdict swaps the
+  buttons; a stale `done` never closes the modal; error keeps the photo;
+  Escape / close; blocked camera offers the library.
+- `src/features/fecal-scan/__tests__/photoQuality.test.ts` — no sharp chart
+  photo warns (>10× margin); every strongly blurred one does; dark wins
+  over blurry.
+- `src/features/fecal-scan/__tests__/CameraCapture.test.tsx` — stream
+  lifecycle, frame gate, viewfinder crop, launcher (no drop zone).
 - `src/screens/__tests__/FecalScanScreen.test.tsx` — renders picker, result
   with reference image path, grounding panel with similarity, disclaimer.
 - i18n parity + schema-parity tests pass unchanged.

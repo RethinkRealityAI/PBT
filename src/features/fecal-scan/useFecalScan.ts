@@ -11,6 +11,7 @@ import {
 } from '../../lib/imagePrep';
 import { useLanguage } from '../../app/providers/LanguageProvider';
 import { translate } from '../../i18n/translate';
+import type { PhotoIssue } from './photoQuality';
 import type {
   FecalBreedSize,
   FecalScanResult,
@@ -19,6 +20,14 @@ import type {
 } from '../../shared/ai/fecalScan';
 
 export type FecalScanStatus = 'idle' | 'analyzing' | 'done' | 'error';
+
+/** Capture context carried into the scan's analytics event (never to the model). */
+export interface AnalyzeMeta {
+  /** The review step's quality verdict when the tech tapped Start scan. */
+  photoIssue?: PhotoIssue | null;
+  /** How many times the photo was retaken before this scan. */
+  retakes?: number;
+}
 
 export interface UseFecalScan {
   status: FecalScanStatus;
@@ -33,7 +42,7 @@ export interface UseFecalScan {
   /** Puppies only — chart score 3 is banded by breed size. */
   breedSize: FecalBreedSize;
   setBreedSize: (size: FecalBreedSize) => void;
-  analyzeFile: (file: File) => Promise<FecalScanResult | null>;
+  analyzeFile: (file: File, meta?: AnalyzeMeta) => Promise<FecalScanResult | null>;
   reset: () => void;
 }
 
@@ -114,7 +123,7 @@ export function useFecalScan(): UseFecalScan {
   );
 
   const analyzeFile = useCallback(
-    async (file: File) => {
+    async (file: File, meta: AnalyzeMeta = {}) => {
       // Claim a request id BEFORE validating: a rejected pick is still the
       // user's latest intent, so an earlier scan that is still in flight must
       // not land afterwards and replace this error with a stale result.
@@ -191,6 +200,12 @@ export function useFecalScan(): UseFecalScan {
         setResult(res.result);
         setRetrieval(res.retrieval);
         setStatus('done');
+        // How often techs retake, and whether a flagged photo was scanned
+        // anyway — the numbers that say whether the review step earns its tap.
+        const capture = {
+          photoIssue: meta.photoIssue ?? null,
+          retakes: meta.retakes ?? 0,
+        };
         logEvent({
           type: 'custom',
           screen: 'fecalScan',
@@ -204,11 +219,13 @@ export function useFecalScan(): UseFecalScan {
                 score: res.result.score,
                 band: res.result.band,
                 source: res.retrieval?.source ?? null,
+                ...capture,
               }
             : {
                 species: scanSpecies,
                 isStool: false,
                 source: res.retrieval?.source ?? null,
+                ...capture,
               },
         });
         return res.result;
