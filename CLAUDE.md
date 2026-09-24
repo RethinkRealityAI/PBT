@@ -2,7 +2,7 @@
 
 ## What this is
 
-PBT is a mobile-first PWA that trains veterinary teams to handle client pushback. AI customer roleplay → 7-dimension scoring → ECHO personality-driven UI. Frictionless: anonymous use is the default; account upgrade is optional.
+PBT is a mobile-first PWA that trains veterinary teams to handle client pushback. AI customer roleplay (text or live voice) → ACT-first 5-dimension scoring → ECHO personality-driven UI. Frictionless: anonymous use is the default; account upgrade is optional.
 
 This file is loaded into Claude Code's context for every session in this repo. Keep it lean and current.
 
@@ -23,15 +23,19 @@ src/
   design-system/ — Glass, PillButton, Orb, Icon, DriverWave, GradientBg, ScoreRing, Chip, Segmented + tokens
   shell/       — AppFrame, Sidebar (desktop), TopBar, TabBar, Page, ThemeToggle
   screens/     — onboarding, terms, quiz, result, home, create, chat, stats, history, analyzer, resources, settings, actGuide (+ modals)
-  features/    — auth, chat (useTextChat), pet-analyzer (usePetAnalyzer)
+  features/    — auth, chat (useTextChat), scorecard, fecal-scan, pet-analyzer (usePetAnalyzer), feedback, reporting, scenarios, quiz
   services/    — geminiService (text + scoring), voiceSession.ts (Live voice + AudioWorklet), types
   data/        — echoDrivers, quizQuestions, scenarios, BCS/MCS, calorieTable
   data/knowledge/ — driverProfiles, pushbackTaxonomy, actGuide, clinicalReference, scoringRubric, promptBuilders
-  lib/         — storage (namespaced localStorage), classNames, id
+  lib/         — storage (namespaced localStorage), privacy, analytics, imagePrep, classNames, id
+  shared/      — code shared with netlify/functions: ai (contract, models, fecalScan, imageHash), access (RBAC), email, knowledge (scopes, analyze), scenarios
+  i18n/        — en + fr catalogs, translate.ts, format.ts
   tests/       — setup
-public/        — static assets (audio/pcm-capture-processor.js, studies/*.pdf)
+admin/        — admin dashboard (second Vite entry, served at /admin)
+public/        — static assets (audio/pcm-capture-processor.js, studies/*.pdf, fecal-scan/<species>/<score>.jpg)
+netlify/functions/ — every AI + admin endpoint (`_shared/` = server helpers)
 netlify/plugins/ — build plugins (knowledge-sync: auto-seeds the RAG corpus)
-scripts/       — knowledge-sync.ts (`npm run knowledge:sync`), build checks
+scripts/       — knowledge-sync.ts (`npm run knowledge:sync`), check-bundle-size, verify-db-schema, dev-admin-mock
 supabase/migrations/  — hand-run SQL
 docs/superpowers/specs/ — design spec
 resources/   — design handoff prototype + ECHO source PDFs/transcripts
@@ -132,9 +136,9 @@ System prompts are composed in `src/data/knowledge/promptBuilders.ts` from:
 - `pushbackTaxonomy.ts` (root concerns + recommended ACT response patterns)
 - `actGuide.ts` (Acknowledge / Clarify / Transform)
 - `clinicalReference.ts` (BCS / MCS / calorie / Royal Canin product anchors)
-- `scoringRubric.ts` (7 dimensions with band examples)
+- `scoringRubric.ts` (the 5 ACT-first dimensions with band examples)
 
-Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL_LIVE`.
+Model strings live in `src/shared/ai/models.ts` (`MODEL_TEXT`, `MODEL_LIVE`, embedding model); `geminiService.ts` re-exports them for older imports.
 
 **Voice pipeline:** `src/services/voiceSession.ts` — the ordering is load-bearing: mic **permission first** (`acquireMic()` is the first await in `start()`, inside the Begin tap — nothing connects or plays until granted), then playback `AudioContext`, then **`POST ai-voice-token`** (the server builds the voice system prompt with server-loaded config/overrides/RAG and mints a single-use token whose model + system prompt + tools are locked — `uses: 1`, new-session window 2 min, session life 15 min > the 5-min cap), then `ai.live.connect` on a client created with that token and `httpOptions: { apiVersion: 'v1alpha' }`; the capture processor is wired inside `onopen`. The browser never builds or sees the voice system prompt. Re-entrancy guard runs synchronously before any await (double-Begin must not open two sockets). A playback-end watchdog force-exits `aiSpeaking` if `source.onended` is missed — a stuck `aiSpeaking` mutes the mic for the rest of the session. Avoid calling `session.close()` twice (guarded).
 
@@ -358,10 +362,19 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations:
-- `20260507000000_admin_telemetry.sql` — `is_admin`, telemetry tables, view
+Migrations (23, all hand-run — `npm run verify:db` proves the live project
+has every relation the code uses). Each file's header explains it in full:
+- `20260504000000_init.sql` — `profiles`, `training_sessions`, `pet_records`
+- `20260507000000_admin_telemetry.sql` — `is_admin`, AI call/turn telemetry,
+  `user_scenarios`, `analyzer_events`, `nav_events`, `rag_export_v1` view
 - `20260507100000_rag_documents.sql` — `rag_documents` table; drops the
   cross-user admin RLS policies (replaced by Netlify Function gating)
+- `20260507200000_user_scenarios_full_details.sql` — persona/driver/context
+  columns on `user_scenarios`
+- `20260508000000_admin_flags.sql` — `flags`, `flag_rules`,
+  `scenario_overrides`, `admin_audit_log`
+- `20260508100000_scenario_builder_fields.sql` — card + authored-scenario
+  fields on `scenario_overrides` (`admin:<uuid>` scenarios)
 - `20260601000000_phase2_june.sql` — Pet Vision columns on `analyzer_events`
   (source/age_estimate/breed_confidence/dermatitis), `session_feedback` +
   `platform_reports` tables (anonymous-safe insert, admin select), and the
@@ -371,9 +384,11 @@ Migrations:
 - `20260701000000_user_management.sql` — `profiles.disabled` (mirrored to a
   Supabase Auth ban); audit-log entity type extended to include `user`
 - `20260702000000_rag_foundation.sql` — `knowledge_documents` (ingested
-  knowledge base; seeded from the code knowledge modules via
-  `admin-knowledge` op=seed) + `rag_chunks` (embedding-ready session
+  knowledge base; now seeded automatically — see "Knowledge base seeding")
+  + `rag_chunks` (embedding-ready session
   exchange/coaching chunks with tag filters, written by `ragDocument.ts`)
+- `20260703000000_rag_vectors.sql` — pgvector, `knowledge_chunks`
+  (vector(768), gemini-embedding-001) + `match_knowledge_chunks()`
 - `20260801000000_profile_locale.sql` — `profiles.locale` (regex CHECK, not an
   enum — future locales need no migration); applied to prod 2026-08
 - `20260805000000_rbac_invites_email.sql` — `admin_roles` (7 system presets +
@@ -382,12 +397,26 @@ Migrations:
   `email_settings`, `email_templates`, `email_log`; audit-log entity types
   extended with role/invite/email_settings/email_template. Applied to prod
   2026-08
+- `20260814000000_scenario_knowledge.sql` — `scenario_overrides.focus_area`
+  + `knowledge_slugs`; doc-slug-aware `match_knowledge_chunks`
+- `20260816000000_knowledge_safety.sql` — `knowledge_documents.deleted_at`
+  (soft delete / "Recently deleted"); retrieval ignores deleted docs
+- `20260825000000_flags_rls.sql` — RLS on `flags` (service-role only)
+- `20260825100000_rag_export_view_security.sql` — `rag_export_v1` becomes
+  security-invoker, select revoked from `authenticated`
+- `20260827000000_audit_report_entity.sql` — audit-log entity type `report`
 - `20260911000000_server_authoritative_scores.sql` — trigger on
   `training_sessions` rejecting client (`authenticated`/`anon`) writes to
   `score_report` / `score_overall`; only the service role (`ai-evaluate`)
   may set them. **Must be applied before deploying the server-side AI
   functions** — until it is, the client-side forgery hole stays open (the app
   still works either way)
+- `20260917000000_advisor_hardening.sql` — Supabase security-linter fixes
+  (pinned `search_path` on trigger functions)
+- `20260921000000_fecal_scan.sql` — `fecal_scan` call type + sidebar flag row
+- `20260922000000_knowledge_scopes.sql` — backfills `tags.tools/species`,
+  re-creates `match_knowledge_chunks` with `doc_slug`/`doc_title` (see
+  "Knowledge scopes")
 - `20260923000000_knowledge_sync_lease.sql` — `knowledge_sync_lease`
   (single row, RLS on with no policies) + `knowledge_sync_try_lease` /
   `knowledge_sync_release_lease` (SECURITY DEFINER, execute = service_role
@@ -527,8 +556,11 @@ Active keys:
 - `pbt:locale` (`'en' | 'fr'` — kept in sync with the `Locale` union; see Translations)
 - `pbt:rated_session_ids` (session ids already rated via the feedback tool, capped at 100)
 - `pbt:allow_training_use` (privacy opt-out, default `true` — read via `src/lib/privacy.ts`, never directly)
+- `pbt:saved_pets` (Pet Analyzer saved pets)
+- `pbt:nav_queue` (analytics events queued while offline / signed out; `src/lib/analytics.ts`)
 - `pbt:supabase_session` (managed by supabase-js)
 - `pbt:admin_session` (admin portal only, managed by supabase-js)
+- `pbt:admin_nav_collapsed`, `pbt:admin:knowledge_auto_suggest` (admin portal UI preferences)
 
 ## Adding new content
 
@@ -538,7 +570,7 @@ Active keys:
 | New pushback category    | `src/data/scenarios.ts` `PUSHBACK_CATEGORIES` + `src/data/knowledge/pushbackTaxonomy.ts`           |
 | New scenario in rotation | `src/data/scenarios.ts` `SEED_SCENARIOS`                                                           |
 | Tweak driver content     | `src/data/echoDrivers.ts` (UI) + `src/data/knowledge/driverProfiles.ts` (AI)                       |
-| Add scoring dimension    | `src/data/knowledge/scoringRubric.ts` (then update `geminiService.ts` schema + `ScoreReport` type) |
+| Add scoring dimension    | `src/data/knowledge/scoringRubric.ts` (then `buildResponseSchema` in `netlify/functions/ai-evaluate.ts` + the `ScoreReport` type + `normalizeScoreReport`) |
 | New screen               | Add a `Screen` value in `src/app/routes.ts` and a case in `ScreenSwitch` in `App.tsx`              |
 | New admin permission     | `src/shared/access/permissions.ts` (catalog + presets), then gate the endpoint with `requireAdmin(req, '<key>')` |
 | New admin screen         | `NAV_SECTIONS` in `admin/src/primitives/nav.ts` (destination or tab, with its `requires`) + a case in `admin/src/App.tsx` |
@@ -568,7 +600,8 @@ French). This is a hard invariant, not a feature:
   `locale` option (`promptBuilders.ts`), NOT the catalogs. Voice speech
   config follows `LOCALE_BCP47`.
 - Dates/percentages go through `src/i18n/format.ts` (French uses U+202F
-  before `%`), never bare `toLocaleString()`.
+  before `%`), never bare `toLocaleString()`. Decimal scores (Fecal 2.5 →
+  fr "2,5") use `formatScore()` from the same file.
 - Adding a locale: extend `src/i18n/locales.ts`, create the catalog dir (the
   types force completeness), add the dynamic-import arm in `translate.ts`,
   run the translator agent, done — no migration needed (`profiles.locale`
@@ -588,32 +621,18 @@ French). This is a hard invariant, not a feature:
   the theme-aware `.pbt-glass-input` class instead of inline light styles.
 - Mono labels (eyebrows, scores, timestamps): `Geist Mono`, all-caps, letter-spacing 0.18em.
 - Display headlines: weight 400, tight letter-spacing −0.025em, lowercase sentences with `\n` line breaks where the prototype has them.
-- Test files colocate as `__tests__/Subject.test.ts(x)`. Vitest globals are on (no need to import `describe`/`it`/`expect`).
+- Test files colocate as `__tests__/Subject.test.ts(x)`. Vitest globals are on at runtime, but `tsc` doesn't load their types — **import `describe`/`it`/`expect`/`vi` from `'vitest'`** like every existing test, or `npm run typecheck` fails.
 - Mock `@google/genai` in tests using `vi.hoisted` + a class-based mock — see `src/services/__tests__/geminiService.test.ts`.
 
-## Knowledge graph (Graphify)
+## Knowledge graph (Graphify) — optional
 
-This repo includes [Graphify](https://graphify.net/) outputs under `graphify-out/`:
-
-| File              | Purpose                                                                                      |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| `GRAPH_REPORT.md` | God nodes, communities, suggested questions                                                  |
-| `graph.json`      | Queryable graph for `py -3 -m graphify query "..."`                                          |
-| `graph.html`      | Interactive visualization (open in browser)                                                  |
-
-**MANDATORY — use the graph before grep/read searches:**
-
-1. **At session start**: Read `graphify-out/GRAPH_REPORT.md` in full before exploring the codebase.
-2. **Before any grep or multi-file read**: Run `py -3 -m graphify query "<topic>"` first. Use the returned node/file list to target reads directly — skip blind glob/grep unless the query returns nothing.
-3. **After editing code**: Run `py -3 -m graphify update .` (no API cost, <5s) to keep the graph current.
-
-The graph has 230 nodes / 310 edges. A single query replaces 3–8 grep calls and saves significant context. There is no excuse for skipping it.
-
-**Install (Python 3.10+):** `py -3 -m pip install graphifyy` (CLI is `py -3 -m graphify`).
-
-**Build from scratch (no LLM):** `py -3 scripts/graphify_ast_only.py`
-
-Cursor loads `.cursor/rules/graphify.mdc` automatically.
+[Graphify](https://graphify.net/) can build a queryable code graph
+(`graphify-out/GRAPH_REPORT.md`, `graph.json`, `graph.html`). **It is not
+checked in** (no `graphify-out/` in the repo), so don't assume it exists. If a
+local `graphify-out/` is present, read `GRAPH_REPORT.md` first and prefer
+`py -3 -m graphify query "<topic>"` over blind greps; after editing, refresh
+it with `py -3 -m graphify update .`. Install: `py -3 -m pip install graphifyy`.
+Otherwise use normal search.
 
 ## Build pipeline
 
@@ -630,7 +649,7 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
   (`src/features/auth/passwordStrength.ts`); the French catalog rides the lazy
   `import('./fr')` in `src/i18n/translate.ts`.
 - **Bundle gate**: `npm run check:bundle` after a build asserts the main entry
-  stays < 500 kB gzip (spec §13.9; currently ~66 kB) AND that no Google
+  stays < 500 kB gzip (spec §13.9; currently ~60 kB) AND that no Google
   API-key-shaped string (`AIza…`) exists in any `dist/**/*.js`.
 - Netlify build command: `npm run build`.
 - Build plugin `netlify/plugins/knowledge-sync` seeds the RAG knowledge base
@@ -682,11 +701,21 @@ The static test catches "migration file missing"; `verify:db` catches
 5. **Inclusive-writing pass (fr)**: a few quiz options use masculine-default
    adjectives where a neutral rewrite was clumsy (flagged in
    `src/i18n/fr/data/quiz.ts` review notes).
+6. **Fecal Scan clinical check**: accuracy has been checked against the
+   chart photos and synthetic cases, not against a vet's blind scoring of
+   real clinic photos. Run a small agreement study before promoting it
+   beyond "supportive aid".
+7. **Fecal Scan off switch**: `nav.sidebar.fecalScan.enabled` hides the
+   desktop sidebar entry only; the Home tile and the Pet Analyzer cross-link
+   stay visible. Add a feature-level flag if product needs a real kill switch.
+8. **Legacy preview deploy**: delete PR #23's Deploy Preview for commit
+   `eccee53` in Netlify (or rotate the service-role key) — see "Knowledge
+   base seeding".
 
 (Done since: coach drawer → `CoachHint.tsx`; Today's-pick rotation →
 `dailyPick.ts`; voice scorer sessionId attribution + 5-min cap; saved-pets
 list on the Pet Analyzer; privacy opt-out; account deletion; code-split;
-full fr-CA localization.)
+full fr-CA localization; Fecal Scan; scoped + self-seeding knowledge base.)
 
 ## Don'ts
 
@@ -707,4 +736,4 @@ full fr-CA localization.)
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→66 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings. `**npm test` — 650+ tests** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **`npm test` — ~1,140 tests / 90 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.
