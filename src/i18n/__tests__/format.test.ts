@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { formatScore } from '../format';
 
 describe('formatScore', () => {
