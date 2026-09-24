@@ -5,6 +5,7 @@ import { auth } from './auth';
 import { chat } from './chat';
 import { chrome } from './chrome';
 import { create } from './create';
+import { fecalScan } from './fecalScan';
 import { feedback } from './feedback';
 import { history } from './history';
 import { home } from './home';
@@ -20,6 +21,7 @@ import { terms } from './terms';
 import { actGuide as actGuideData } from './data/actGuide';
 import { clinical } from './data/clinical';
 import { drivers as driversData } from './data/drivers';
+import { fecalCharts } from './data/fecalCharts';
 import { pushbacks } from './data/pushbacks';
 import { quiz as quizData } from './data/quiz';
 import { rubric } from './data/rubric';
@@ -37,6 +39,7 @@ export const fr: Catalog = {
   ...create,
   ...settings,
   ...analyzer,
+  ...fecalScan,
   ...onboarding,
   ...terms,
   ...quiz,
@@ -60,6 +63,7 @@ export const frData: Record<string, unknown> = {
   quiz: quizData,
   drivers: driversData,
   clinical,
+  fecalCharts,
   actGuide: actGuideData,
   scenarios,
   pushbacks,

@@ -3,16 +3,21 @@
  *
  *   GET  /admin-knowledge                 → { documents: [...] }  (live only)
  *   GET  /admin-knowledge?trash=1         → { documents: [...] }  (soft-deleted)
- *   POST /admin-knowledge { op: 'seed' }  → ingest the code knowledge modules
- *        (driver personas, pushback taxonomy, ACT guide, clinical reference)
- *        as 'code-seed' documents, upserted by slug — re-running refreshes
- *        them after a code change without duplicating.
- *   POST { op: 'update', slug, title?, category?, focus?, citation? }
+ *   POST /admin-knowledge { op: 'seed' }  → 410 Gone. The built-in corpus
+ *        (driver personas, pushback taxonomy, ACT guide, clinical reference,
+ *        fecal charts, bundled studies) is synced automatically by
+ *        `knowledge-sync-background` (`_shared/knowledgeSyncRun.ts`), which
+ *        hashes content, skips unchanged documents, keeps soft deletes, and
+ *        holds a database lease. The old synchronous op undid that
+ *        bookkeeping, so it is gone rather than kept as a second writer.
+ *   POST { op: 'update', slug, title?, category?, focus?, citation?,
+ *          tools?: string[], species?: string[] }
  *        → edit a stored document's cataloguing WITHOUT re-embedding it.
  *          `title`/`category` are only editable on source='admin' documents
- *          (code-seeded ones are rebuilt by re-seeding); `focus`/`citation`
- *          are editable on every document — tagging built-in knowledge is the
- *          whole point of the focus vocabulary.
+ *          (code-seeded ones are rebuilt by the automatic sync); `focus`, `citation`
+ *          and the knowledge scope (`tools` / `species`, see
+ *          `src/shared/knowledge/knowledgeScopes.ts`) are editable on every
+ *          document — filing built-in knowledge is the whole point.
  *   POST { op: 'delete', slug }    → SOFT delete (see below)
  *   POST { op: 'restore', slug }   → undo a soft delete
  *
@@ -42,222 +47,34 @@ import {
   type AdminCtx,
 } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
-import { embedTexts } from './_shared/gemini';
-import { chunkMarkdown } from '../../src/services/ragShared';
-import { estimateTokens } from '../../src/services/aiTelemetry';
-import { DRIVER_KNOWLEDGE } from '../../src/data/knowledge/driverProfiles';
-import { PUSHBACK_KNOWLEDGE } from '../../src/data/knowledge/pushbackTaxonomy';
-import { ACT_STEPS } from '../../src/data/knowledge/actGuide';
 import {
-  BCS_BLURB,
-  CALORIE_FORMULA_BLURB,
-  MCS_BLURB,
-  NON_SHAMING_FRAMING,
-  PRODUCT_ANCHORS,
-} from '../../src/data/knowledge/clinicalReference';
+  isKnowledgeSpeciesKey,
+  isKnowledgeToolKey,
+  normalizeKnowledgeSpecies,
+  normalizeKnowledgeTools,
+} from '../../src/shared/knowledge/knowledgeScopes';
+import {
+  applyFocus,
+  applyScope,
+  readFocus,
+  readScopeList,
+  type Bag,
+} from './_shared/knowledgeSeed';
+import { triggerKnowledgeSync, type NetlifyContextLike } from './_shared/knowledgeTrigger';
 
 const CATEGORIES = ['driver', 'pushback', 'act', 'clinical', 'custom'];
 
-type Bag = Record<string, unknown>;
-
 /**
- * Read the focus area out of a document/chunk tag bag.
- *
- * Legacy fallback: the first bundled-study pass tagged the two communication
- * papers `{ topic: 'communication' }`, which predates `communication` becoming
- * a real focus area. Treat it as a focus so those documents aren't invisible
- * to focus-filtered retrieval before they're re-ingested.
+ * The retired `seed` op. It rebuilt the built-in documents synchronously and,
+ * in doing so, dropped the automatic sync's `metadata.sync` fingerprints
+ * (forcing a full re-embed on the next sync) and raced it. The automatic sync
+ * (`knowledge-sync-background`, kicked by opening this screen) is now the
+ * only writer of built-in knowledge.
  */
-function readFocus(tags: unknown): string | null {
-  if (!tags || typeof tags !== 'object') return null;
-  const bag = tags as Bag;
-  if (typeof bag.focus === 'string' && bag.focus) return bag.focus;
-  return bag.topic === 'communication' ? 'communication' : null;
-}
-
-/** Set (or clear) the focus key on a tag bag, dropping the legacy `topic` key. */
-function applyFocus(tags: unknown, focus: string | null): Bag {
-  const next: Bag = tags && typeof tags === 'object' ? { ...(tags as Bag) } : {};
-  if (focus) next.focus = focus;
-  else delete next.focus;
-  if (next.topic === 'communication') delete next.topic;
-  return next;
-}
-
-interface SeedDoc {
-  slug: string;
-  title: string;
-  category: 'driver' | 'pushback' | 'act' | 'clinical';
-  content: string;
-  metadata: Record<string, unknown>;
-}
-
-/** Serialise the code knowledge modules into embedder-ready documents. */
-function buildSeedDocs(): SeedDoc[] {
-  const docs: SeedDoc[] = [];
-
-  for (const [key, d] of Object.entries(DRIVER_KNOWLEDGE)) {
-    docs.push({
-      slug: `driver:${key}`,
-      title: `ECHO driver — ${key}`,
-      category: 'driver',
-      content: [
-        `# ${key}`,
-        `Motivation: ${d.motivation}`,
-        `Communication style:\n${d.communicationStyle.map((s) => `- ${s}`).join('\n')}`,
-        `Strengths:\n${d.strengths.map((s) => `- ${s}`).join('\n')}`,
-        `Under stress: ${d.stressSignature}`,
-        `Recognition cues:\n${d.recognitionCues.map((s) => `- ${s}`).join('\n')}`,
-        `Flexing tips:\n${d.flexingTips.map((s) => `- ${s}`).join('\n')}`,
-        `Sample customer phrasings:\n${d.customerSamplePhrasings.map((s) => `- ${s}`).join('\n')}`,
-      ].join('\n\n'),
-      metadata: { driver: key },
-    });
-  }
-
-  for (const [id, p] of Object.entries(PUSHBACK_KNOWLEDGE)) {
-    docs.push({
-      slug: `pushback:${id}`,
-      title: `Pushback — ${p.title}`,
-      category: 'pushback',
-      content: [
-        `# ${p.title}`,
-        `Examples:\n${p.examples.map((s) => `- ${s}`).join('\n')}`,
-        `Root concerns:\n${p.rootConcerns.map((s) => `- ${s}`).join('\n')}`,
-        `Acknowledge patterns:\n${p.acknowledgePatterns.map((s) => `- ${s}`).join('\n')}`,
-        `Clarify questions:\n${p.clarifyQuestions.map((s) => `- ${s}`).join('\n')}`,
-        `Take-action patterns:\n${p.takeActionPatterns.map((s) => `- ${s}`).join('\n')}`,
-        `Watch-outs:\n${p.watchOuts.map((s) => `- ${s}`).join('\n')}`,
-      ].join('\n\n'),
-      metadata: { pushback_id: id },
-    });
-  }
-
-  for (const step of ACT_STEPS) {
-    docs.push({
-      slug: `act:${step.key}`,
-      title: `ACT method — ${step.label}`,
-      category: 'act',
-      content: [
-        `# ${step.label}`,
-        `Goal: ${step.goal}`,
-        `Techniques:\n${step.techniques.map((s) => `- ${s}`).join('\n')}`,
-        `Do:\n${step.doExamples.map((s) => `- ${s}`).join('\n')}`,
-        `Don't:\n${step.dontExamples.map((s) => `- ${s}`).join('\n')}`,
-      ].join('\n\n'),
-      metadata: { act_step: step.key },
-    });
-  }
-
-  docs.push({
-    slug: 'clinical:reference',
-    title: 'Clinical reference — BCS / MCS / calories / product anchors',
-    category: 'clinical',
-    content: [
-      `BCS: ${BCS_BLURB}`,
-      `MCS: ${MCS_BLURB}`,
-      `Calories: ${CALORIE_FORMULA_BLURB}`,
-      `Framing: ${NON_SHAMING_FRAMING}`,
-      `Product anchors: ${PRODUCT_ANCHORS.satietySupport.name} — ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}`,
-    ].join('\n\n'),
-    metadata: { anchors: Object.keys(PRODUCT_ANCHORS) },
-  });
-
-  return docs;
-}
-
-async function seed(ctx: AdminCtx): Promise<Response> {
-  const docs = buildSeedDocs();
-
-  // Re-seeding rebuilds these documents from code, but an admin's cataloguing
-  // (focus area, citation) is NOT in the code — carry it across so "Load
-  // built-in knowledge" doesn't silently untag everything they filed.
-  const keptFocus = new Map<string, string>();
-  const keptCitation = new Map<string, string>();
-  // Soft-deleted built-ins stay deleted. Re-seeding refreshes the CONTENT of a
-  // code-seed doc; it is not an undelete, and silently resurrecting a document
-  // the admin removed would put it back into retrieval behind their back.
-  const keptDeleted = new Map<string, string>();
-  const { data: existing } = await ctx.sb
-    .from('knowledge_documents')
-    .select('slug, metadata, deleted_at')
-    .eq('source', 'code-seed');
-  for (const row of existing ?? []) {
-    const meta = (row.metadata ?? {}) as Bag;
-    const focus = readFocus(meta.tags);
-    if (focus) keptFocus.set(row.slug, focus);
-    if (typeof meta.citation === 'string' && meta.citation) {
-      keptCitation.set(row.slug, meta.citation);
-    }
-    if (row.deleted_at) keptDeleted.set(row.slug, String(row.deleted_at));
-  }
-
-  const { error } = await ctx.sb.from('knowledge_documents').upsert(
-    docs.map((d) => ({
-      slug: d.slug,
-      title: d.title,
-      category: d.category,
-      content: d.content,
-      metadata: {
-        ...d.metadata,
-        ...(keptFocus.has(d.slug) ? { tags: { focus: keptFocus.get(d.slug) } } : {}),
-        ...(keptCitation.has(d.slug) ? { citation: keptCitation.get(d.slug) } : {}),
-      },
-      source: 'code-seed',
-      deleted_at: keptDeleted.get(d.slug) ?? null,
-      updated_by: ctx.user.id,
-      updated_at: new Date().toISOString(),
-    })),
-    { onConflict: 'slug' },
-  );
-  if (error) return errorResponse(500, error.message);
-
-  // Chunk + embed each seeded doc (best-effort per doc so one embedding
-  // failure doesn't fail the whole seed — docs without chunks simply don't
-  // participate in retrieval until re-embedded).
-  const failures: string[] = [];
-  const skippedDeleted: string[] = [];
-  for (const d of docs) {
-    if (keptDeleted.has(d.slug)) {
-      skippedDeleted.push(d.slug);
-      continue;
-    }
-    try {
-      const { data: row } = await ctx.sb
-        .from('knowledge_documents')
-        .select('id')
-        .eq('slug', d.slug)
-        .maybeSingle();
-      if (!row) continue;
-      const chunks = chunkMarkdown(d.content);
-      const embeddings = await embedTexts(chunks, 'RETRIEVAL_DOCUMENT');
-      await ctx.sb.from('knowledge_chunks').delete().eq('doc_id', row.id);
-      await ctx.sb.from('knowledge_chunks').insert(
-        chunks.map((content, i) => ({
-          doc_id: row.id,
-          chunk_idx: i,
-          content,
-          token_estimate: estimateTokens(content),
-          tags: {
-            category: d.category,
-            ...d.metadata,
-            ...(keptFocus.has(d.slug) ? { focus: keptFocus.get(d.slug) } : {}),
-          },
-          citation: keptCitation.get(d.slug) ?? null,
-          embedding: `[${embeddings[i].join(',')}]`,
-        })),
-      );
-    } catch (err) {
-      failures.push(`${d.slug}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-  return jsonResponse({
-    ok: true,
-    seeded: docs.length - skippedDeleted.length,
-    skipped_deleted: skippedDeleted,
-    failures,
-  });
-}
+const SEED_GONE =
+  'Seeding is automatic now: the built-in knowledge base is synced by the deploy ' +
+  '(knowledge-sync-background), which runs when the app boots and when this ' +
+  'Knowledge screen is opened. There is nothing to press.';
 
 /** Cap on the document body copied into an audit row (Postgres jsonb payload). */
 const MAX_AUDIT_CONTENT = 100_000;
@@ -382,12 +199,14 @@ async function restore(ctx: AdminCtx, slug: string): Promise<Response> {
 }
 
 /**
- * Edit a document's cataloguing (title / category / focus area / citation).
+ * Edit a document's cataloguing (title / category / focus / citation / scope).
  *
  * Deliberately does NOT touch `content` or embeddings — this is the cheap
  * "file it correctly" path, distinct from re-ingesting. It DOES rewrite the
- * document's chunk tags, because retrieval filters on chunk tags: a focus
- * change that stopped at the document row would be invisible at query time.
+ * document's chunk tags, because retrieval filters on chunk tags: a focus or
+ * scope change that stopped at the document row would be invisible at query
+ * time, which is the most expensive kind of wrong here (an admin would see
+ * "Fecal Scan only" in the UI while roleplay kept quoting the document).
  */
 async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Response> {
   const slug = String(body.slug ?? '').trim();
@@ -398,6 +217,38 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
   if (hasFocus && focusInput !== null && !isFocusAreaKey(focusInput)) {
     return errorResponse(400, `Unknown focus area: ${focusInput}`);
   }
+
+  // Scope. Unlike focus, "none" is not a meaningful answer: a document with an
+  // empty tools list can never be retrieved by anything, which is a delete
+  // wearing a disguise. Absent → leave whatever is stored untouched.
+  const scopeOrError = (
+    key: 'tools' | 'species',
+    label: string,
+    isKey: (v: unknown) => boolean,
+    normalize: (v: unknown, fallback?: readonly string[]) => string[],
+  ): string[] | null | Response => {
+    if (!Object.prototype.hasOwnProperty.call(body, key)) return null;
+    const raw = body[key];
+    if (!Array.isArray(raw)) return errorResponse(400, `${label} must be a list`);
+    const unknown = raw.find((v) => !isKey(v));
+    if (unknown !== undefined) {
+      return errorResponse(400, `Unknown ${label.toLowerCase()}: ${String(unknown)}`);
+    }
+    if (raw.length === 0) {
+      return errorResponse(400, `${label}: choose at least one, or delete the document instead.`);
+    }
+    return normalize(raw);
+  };
+
+  const nextTools = scopeOrError('tools', 'Tool', isKnowledgeToolKey, normalizeKnowledgeTools);
+  if (nextTools instanceof Response) return nextTools;
+  const nextSpecies = scopeOrError(
+    'species',
+    'Species',
+    isKnowledgeSpeciesKey,
+    normalizeKnowledgeSpecies,
+  );
+  if (nextSpecies instanceof Response) return nextSpecies;
 
   const { data: doc, error: readErr } = await ctx.sb
     .from('knowledge_documents')
@@ -424,13 +275,13 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
   if (retitles && doc.source !== 'admin') {
     return errorResponse(
       400,
-      'Built-in documents are rebuilt from code — re-run “Load built-in knowledge” to change their title or type. Focus area and citation can still be edited.',
+      'Built-in documents are rebuilt from code on every deploy — change their title or type in the source, not here. Focus area, citation and scope can still be edited.',
     );
   }
 
   const meta: Bag = doc.metadata && typeof doc.metadata === 'object' ? { ...(doc.metadata as Bag) } : {};
   const nextFocus = hasFocus ? focusInput : readFocus(meta.tags);
-  meta.tags = applyFocus(meta.tags, nextFocus);
+  meta.tags = applyScope(applyFocus(meta.tags, nextFocus), nextTools, nextSpecies);
 
   const hasCitation = Object.prototype.hasOwnProperty.call(body, 'citation');
   let citation: string | null = typeof meta.citation === 'string' ? meta.citation : null;
@@ -473,7 +324,7 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
   for (let i = 0; i < rows.length; i += BATCH) {
     const results = await Promise.all(
       rows.slice(i, i + BATCH).map(async (row) => {
-        const tags = applyFocus(row.tags, nextFocus);
+        const tags = applyScope(applyFocus(row.tags, nextFocus), nextTools, nextSpecies);
         tags.category = nextCategory;
         const rowPatch: Record<string, unknown> = { tags };
         if (hasCitation) rowPatch.citation = citation;
@@ -492,16 +343,25 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
     slug,
     focus: nextFocus,
     citation,
+    tools: nextTools ?? readScopeList(meta.tags, 'tools', (v) => normalizeKnowledgeTools(v)),
+    species:
+      nextSpecies ?? readScopeList(meta.tags, 'species', (v) => normalizeKnowledgeSpecies(v)),
     chunks_updated: chunksUpdated,
     chunk_failures: chunkFailures,
   });
 }
 
-export default async (req: Request): Promise<Response> => {
+export default async (req: Request, context?: NetlifyContextLike): Promise<Response> => {
   const ctx = await requireAdmin(req, 'knowledge.read');
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
+    // Opening the Knowledge screen nudges the background sync — so an admin
+    // who wonders "why is the corpus empty?" has already fixed it by looking.
+    // Production only, once per instance, aimed at the primary site URL; it
+    // cannot affect this response.
+    triggerKnowledgeSync(context);
+
     // ?trash=1 — the "Recently deleted" drawer. Slim payload: enough to
     // recognise a document and restore it, without shipping every body.
     if (new URL(req.url).searchParams.get('trash')) {
@@ -554,7 +414,7 @@ export default async (req: Request): Promise<Response> => {
     return errorResponse(400, 'Invalid JSON');
   }
 
-  if (body.op === 'seed') return seed(ctx);
+  if (body.op === 'seed') return errorResponse(410, SEED_GONE);
 
   if (body.op === 'update') return update(ctx, body);
 

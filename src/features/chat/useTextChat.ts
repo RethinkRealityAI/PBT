@@ -338,7 +338,10 @@ export function useTextChat(scenario: Scenario): UseTextChat {
             {
               k: ragCfg.k,
               cacheKey: scenarioRetrievalCacheKey(scenario),
-              filters: scenarioRetrievalFilters(scenario),
+              // `tool` is the knowledge scope, not scenario targeting: the
+              // browser only ever retrieves as the roleplay customer, so a
+              // document filed for the Fecal Scan can never reach this prompt.
+              filters: { ...scenarioRetrievalFilters(scenario), tool: 'roleplay' },
             },
           )
         : [];

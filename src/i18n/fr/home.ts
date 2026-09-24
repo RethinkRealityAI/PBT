@@ -60,6 +60,8 @@ export const home: Record<keyof typeof enHome, string> = {
   'home.actions.build.sub': 'Objection personnalisée',
   'home.actions.analyzer.title': 'Analyseur animal',
   'home.actions.analyzer.sub': 'BCS · MCS · kcal',
+  'home.actions.fecalScan.title': 'Analyse fécale',
+  'home.actions.fecalScan.sub': 'Cote des selles · 1–5',
 
   // ── Cartes Bibliothèque et profil ECHO ────────────────────
   'home.library.aria': 'Bibliothèque',

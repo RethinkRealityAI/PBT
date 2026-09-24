@@ -7,6 +7,7 @@ import { home as enHome } from '../en/home';
 import { create as enCreate } from '../en/create';
 import { settings as enSettings } from '../en/settings';
 import { analyzer as enAnalyzer } from '../en/analyzer';
+import { fecalScan as enFecalScan } from '../en/fecalScan';
 import { onboarding as enOnboarding } from '../en/onboarding';
 import { terms as enTerms } from '../en/terms';
 import { quiz as enQuiz } from '../en/quiz';
@@ -109,6 +110,7 @@ describe('locale catalogs', () => {
       enCreate,
       enSettings,
       enAnalyzer,
+      enFecalScan,
       enOnboarding,
       enTerms,
       enQuiz,

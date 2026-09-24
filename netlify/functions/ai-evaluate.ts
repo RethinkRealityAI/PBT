@@ -283,7 +283,7 @@ export default async (req: Request): Promise<Response> => {
   }
 
   const config = await loadSimulationConfig(caller.sb);
-  const retrieved = await retrieveForScenario(caller.sb, scenario, config);
+  const retrieved = await retrieveForScenario(caller.sb, scenario, config, 'scoring');
   const systemInstruction = buildScoringSystemPrompt({ scenario, config, retrieved, locale });
 
   const formatted = transcript

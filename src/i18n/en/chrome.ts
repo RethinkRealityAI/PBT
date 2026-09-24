@@ -24,6 +24,7 @@ export const chrome = {
   // Train / History / Library reuse the tab.* keys above.
   'chrome.nav.create': 'Build scenario',
   'chrome.nav.analyzer': 'Pet Analyzer',
+  'chrome.nav.fecalScan': 'Fecal scan',
   'chrome.nav.profile': 'Profile',
   'chrome.theme.dark': 'Dark mode',
   'chrome.theme.light': 'Light mode',

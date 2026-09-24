@@ -370,22 +370,32 @@ describe('loadPromptOverrides', () => {
 describe('retrieveForScenario', () => {
   const client = () => sb.client as unknown as SupabaseClient;
 
-  it('asks for the scenario query + filters with the configured k', async () => {
+  it('asks for the scenario query + filters with the configured k, scoped to the tool', async () => {
     mocks.retrieveChunks.mockResolvedValue([{ content: 'c', citation: null, tags: null, similarity: 1 }]);
     const scenario = { ...SEED_SCENARIOS[0], focusArea: 'weight' };
-    const out = await retrieveForScenario(client(), scenario, { rag: { k: 6 } });
+    const out = await retrieveForScenario(client(), scenario, { rag: { k: 6 } }, 'roleplay');
     expect(out).toHaveLength(1);
     expect(mocks.retrieveChunks).toHaveBeenCalledWith(
       `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
-      expect.objectContaining({ k: 6, filters: { focus: 'weight' } }),
+      expect.objectContaining({ k: 6, filters: { focus: 'weight', tool: 'roleplay' } }),
     );
   });
 
+  it('scopes an unlinked scenario to the tool alone', async () => {
+    mocks.retrieveChunks.mockResolvedValue([]);
+    await retrieveForScenario(client(), SEED_SCENARIOS[0], undefined, 'scoring');
+    expect(mocks.retrieveChunks.mock.calls[0][1]).toMatchObject({
+      filters: { tool: 'scoring' },
+    });
+  });
+
   it('skips retrieval when rag is disabled and fails open on error', async () => {
-    expect(await retrieveForScenario(client(), SEED_SCENARIOS[0], { rag: { enabled: false } })).toEqual([]);
+    expect(
+      await retrieveForScenario(client(), SEED_SCENARIOS[0], { rag: { enabled: false } }, 'roleplay'),
+    ).toEqual([]);
     expect(mocks.retrieveChunks).not.toHaveBeenCalled();
     mocks.retrieveChunks.mockRejectedValue(new Error('down'));
-    expect(await retrieveForScenario(client(), SEED_SCENARIOS[0], undefined)).toEqual([]);
+    expect(await retrieveForScenario(client(), SEED_SCENARIOS[0], undefined, 'roleplay')).toEqual([]);
   });
 });
 

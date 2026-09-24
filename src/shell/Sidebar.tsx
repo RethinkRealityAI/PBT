@@ -24,6 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   { screen: 'create', labelKey: 'chrome.nav.create', icon: Icon.plus, flag: 'nav.sidebar.create.enabled' },
   { screen: 'history', labelKey: 'tab.history', icon: Icon.history, flag: 'nav.sidebar.history.enabled' },
   { screen: 'analyzer', labelKey: 'chrome.nav.analyzer', icon: Icon.paw, flag: 'nav.sidebar.analyzer.enabled' },
+  { screen: 'fecalScan', labelKey: 'chrome.nav.fecalScan', icon: Icon.scan, flag: 'nav.sidebar.fecalScan.enabled' },
   { screen: 'resources', labelKey: 'tab.library', icon: Icon.book, flag: 'nav.sidebar.resources.enabled' },
   { screen: 'settings', labelKey: 'chrome.nav.profile', icon: Icon.user },
 ];

@@ -111,7 +111,40 @@ describe('KnowledgeScreen read errors', () => {
     state.overrides = { data: [], loading: false, error: null };
     renderScreen(['knowledge.read']);
     expect(screen.queryByText('+ Add document')).not.toBeInTheDocument();
-    expect(screen.queryByText('Load built-in knowledge')).not.toBeInTheDocument();
     expect(screen.getByText(/view-only access/i)).toBeInTheDocument();
+    // The status strip is information, not a control: it stays.
+    expect(screen.getByTestId('builtin-status')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Built-in knowledge is loaded by the deploy now, not by a button here. What
+ * replaced the button has one job: say whether that actually happened, and say
+ * the awkward thing plainly when it hasn't.
+ */
+describe('built-in knowledge status strip', () => {
+  it('counts the built-in documents and when they last changed', () => {
+    state.docs = {
+      data: [doc(), doc({ id: 'b', slug: 'act:guide', source: 'code-seed' })],
+      loading: false,
+      error: null,
+    };
+    state.overrides = { data: [], loading: false, error: null };
+    renderScreen();
+    expect(screen.getByTestId('builtin-status')).toHaveTextContent(
+      /^Built-in knowledge loads automatically · 1 built-in document · last updated \S+/,
+    );
+    // The bulk loaders are gone — the deploy owns that now.
+    expect(screen.queryByText('Load built-in knowledge')).not.toBeInTheDocument();
+    expect(screen.queryByText('Load bundled studies')).not.toBeInTheDocument();
+  });
+
+  it('says so when no built-in document has arrived yet', () => {
+    state.docs = { data: [doc()], loading: false, error: null };
+    state.overrides = { data: [], loading: false, error: null };
+    renderScreen();
+    expect(screen.getByTestId('builtin-status')).toHaveTextContent(
+      'Built-in knowledge hasn’t loaded yet — it loads on the next deploy',
+    );
   });
 });

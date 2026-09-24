@@ -54,6 +54,8 @@ export const home = {
   'home.actions.analyzer.title': 'Pet Analyzer',
   /** Clinical initialisms + unit only — identical in every locale (allowlisted). */
   'home.actions.analyzer.sub': 'BCS · MCS · kcal',
+  'home.actions.fecalScan.title': 'Fecal Scan',
+  'home.actions.fecalScan.sub': 'Stool score · 1–5',
 
   // ── Library + ECHO profile cards ──────────────────────────
   'home.library.aria': 'Library',

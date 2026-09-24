@@ -7,7 +7,15 @@
  * working; the functions import from here directly.
  */
 
-export type CallType = 'roleplay' | 'evaluate' | 'voice' | 'hint' | 'vision';
+export type CallType =
+  | 'roleplay'
+  | 'evaluate'
+  | 'voice'
+  | 'hint'
+  | 'vision'
+  | 'fecal_scan'
+  /** Embedding lookup for a RAG consumer (logged by `ai-fecal-scan`). */
+  | 'retrieval';
 
 export interface AiCallRecord {
   sessionId?: string | null;

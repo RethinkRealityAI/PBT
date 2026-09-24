@@ -26,8 +26,14 @@ import { PROMPT_FIXTURE_CASES, type PromptFixtureCase } from './promptFixtureCas
 
 const FIXTURE_DIR = join(__dirname, '__fixtures__', 'en');
 
+/**
+ * Fixtures are stored with LF endings (see .gitattributes). A Windows
+ * checkout with `core.autocrlf=true` still hands us CRLF, and the builders
+ * always emit LF — normalise so the comparison is about prompt CONTENT, not
+ * the developer's git configuration.
+ */
 function readFixture(name: string): string {
-  return readFileSync(join(FIXTURE_DIR, `${name}.txt`), 'utf8');
+  return readFileSync(join(FIXTURE_DIR, `${name}.txt`), 'utf8').replace(/\r\n/g, '\n');
 }
 
 function build(c: PromptFixtureCase, locale: 'en' | 'fr'): string {

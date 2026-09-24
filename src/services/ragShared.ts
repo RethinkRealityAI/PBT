@@ -11,6 +11,13 @@ export interface RetrievedChunk {
   citation: string | null;
   tags: Record<string, unknown> | null;
   similarity: number;
+  /**
+   * Provenance of the chunk (`knowledge_documents.slug` / `.title`). Present
+   * once the `match_knowledge_chunks` RPC returns them (migration
+   * 20260922000000_knowledge_scopes.sql); older deployments leave them out.
+   */
+  docSlug?: string | null;
+  docTitle?: string | null;
 }
 
 /**

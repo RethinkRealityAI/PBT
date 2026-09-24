@@ -1,0 +1,293 @@
+// @vitest-environment node
+/**
+ * Seeding the built-in corpus — now ONLY through the sync engine
+ * (`runKnowledgeSync`, what `knowledge-sync-background`, the build plugin and
+ * `npm run knowledge:sync` all run; the old `admin-knowledge { op: 'seed' }`
+ * answers 410). The fecal charts must arrive in the corpus already filed: one `fecal:<species>` document per chart, chunks
+ * carrying the Royal Canin citation and the gi / fecal-scoring / species
+ * tags that `ai-fecal-scan`'s slug-filtered retrieval leans on.
+ *
+ * The existing seed docs must be untouched by that change, so this also pins
+ * an ACT document's (absent) cataloguing.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { jsonRequest, makeFakeSupabase, setFunctionEnv, type FakeSupabase } from './fakeSupabase';
+
+const mocks = vi.hoisted(() => ({
+  embedContent: vi.fn(),
+  createClient: vi.fn(),
+}));
+
+vi.mock('@google/genai', () => {
+  class MockGoogleGenAI {
+    models = { embedContent: mocks.embedContent };
+    constructor(_opts: unknown) {}
+  }
+  return { GoogleGenAI: MockGoogleGenAI, Type: {}, Modality: {} };
+});
+vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
+
+import adminKnowledge from '../admin-knowledge';
+import { runKnowledgeSync } from '../_shared/knowledgeSyncRun';
+import {
+  FECAL_CHARTS,
+  FECAL_SPECIES,
+  fecalChartChunks,
+  fecalChartCitation,
+  fecalKnowledgeSlug,
+} from '../../../src/data/knowledge/fecalCharts';
+import { chunkMarkdown } from '../../../src/services/ragShared';
+import {
+  ALL_KNOWLEDGE_SPECIES,
+  DEFAULT_KNOWLEDGE_TOOLS,
+} from '../../../src/shared/knowledge/knowledgeScopes';
+import type { SbCall } from './fakeSupabase';
+
+let sb: FakeSupabase;
+
+type Row = Record<string, unknown>;
+
+/** The rows a `.insert(...)`/`.upsert(...)` call carried, flattened. */
+function written(calls: SbCall[], op: 'insert' | 'upsert'): Row[] {
+  const out: Row[] = [];
+  for (const call of calls) {
+    for (const o of call.ops) {
+      if (o.op !== op) continue;
+      const arg = o.args[0];
+      out.push(...((Array.isArray(arg) ? arg : [arg]) as Row[]));
+    }
+  }
+  return out;
+}
+
+beforeEach(() => {
+  setFunctionEnv();
+  sb = makeFakeSupabase();
+  mocks.createClient.mockReset();
+  mocks.createClient.mockImplementation(() => sb.client);
+  mocks.embedContent.mockReset();
+  mocks.embedContent.mockImplementation((req: { contents: string[] }) => ({
+    embeddings: req.contents.map(() => ({ values: Array(768).fill(0.5) })),
+  }));
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  sb.getUser.mockResolvedValue({ data: { user: { id: 'admin-1' } }, error: null });
+  sb.setHandler('profiles', () => ({
+    data: { is_admin: true, disabled: false, admin_role: null, permission_overrides: null },
+    error: null,
+  }));
+  sb.setHandler('admin_roles', () => ({ data: [], error: null }));
+  // Empty corpus: no kept focus/citation, nothing soft-deleted. The document
+  // upsert answers with a deterministic id so chunk rows are traceable.
+  sb.setHandler('knowledge_documents', docsHandler([]));
+  sb.setHandler('knowledge_chunks', () => ({ data: null, error: null }));
+  sb.setHandler('knowledge_chunk_counts', () => ({ data: [], error: null }));
+  sb.rpc.mockImplementation(async (fn: string) =>
+    fn === 'knowledge_sync_try_lease' ? { data: true, error: null } : { data: null, error: null },
+  );
+});
+
+function docsHandler(existing: Row[]) {
+  return (call: SbCall) => {
+    const up = call.ops.find((o) => o.op === 'upsert');
+    if (up) return { data: { id: `id:${String((up.args[0] as Row).slug)}` }, error: null };
+    if (call.ops.some((o) => o.op === 'select')) return { data: existing, error: null };
+    return { data: null, error: null };
+  };
+}
+
+/** The built-in documents (studies excluded — they need PDFs + extraction). */
+const seed = () =>
+  runKnowledgeSync({
+    sb: sb.client,
+    groups: ['fecal', 'builtin'],
+    readStudy: () => Promise.reject(new Error('studies are not part of this test')),
+  });
+
+describe('admin-knowledge { op: seed } — retired', () => {
+  it('answers 410 and writes nothing', async () => {
+    const res = await adminKnowledge(
+      jsonRequest('admin-knowledge', { op: 'seed' }, { headers: { authorization: 'Bearer admin' } }),
+    );
+    expect(res.status).toBe(410);
+    expect(sb.callsFor('knowledge_documents')).toEqual([]);
+    expect(mocks.embedContent).not.toHaveBeenCalled();
+  });
+});
+
+describe('knowledge sync — fecal charts', () => {
+  it('upserts one pre-filed document per chart', async () => {
+    const result = await seed();
+    expect(result.skipped).toBeUndefined();
+    expect(result.plan.create.length).toBeGreaterThan(0);
+
+    const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
+    for (const species of FECAL_SPECIES) {
+      const slug = fecalKnowledgeSlug(species);
+      const doc = docs.find((d) => d.slug === slug);
+      expect(doc, `missing seed doc ${slug}`).toBeTruthy();
+      expect(doc).toMatchObject({
+        slug,
+        title: FECAL_CHARTS[species].title,
+        category: 'clinical',
+        source: 'code-seed',
+        deleted_at: null,
+      });
+      expect(doc!.metadata).toMatchObject({
+        citation: fecalChartCitation(species),
+        // Scoped to the Fecal Scan ONLY — never the training-session tools,
+        // or a stool chart becomes quotable in a GI roleplay.
+        tags: {
+          focus: 'gi',
+          topic: 'fecal-scoring',
+          tools: ['fecal-scan'],
+          species: [species],
+        },
+      });
+      expect(String(doc!.content)).toContain('Score 1 ');
+    }
+    expect(docs.map((d) => d.slug)).toEqual(
+      expect.arrayContaining(['fecal:dog', 'fecal:cat', 'fecal:puppy']),
+    );
+  });
+
+  it('writes chunks carrying the Royal Canin citation and the gi/species tags', async () => {
+    await seed();
+    const chunks = written(sb.callsFor('knowledge_chunks'), 'insert');
+
+    for (const species of FECAL_SPECIES) {
+      const slug = fecalKnowledgeSlug(species);
+      const rows = chunks.filter((c) => c.doc_id === `id:${slug}`);
+      expect(rows.length, `no chunks for ${slug}`).toBeGreaterThanOrEqual(1);
+      for (const row of rows) {
+        expect(row.citation).toBe(fecalChartCitation(species));
+        expect(row.tags).toMatchObject({
+          category: 'clinical',
+          focus: 'gi',
+          topic: 'fecal-scoring',
+          tools: ['fecal-scan'],
+          species: [species],
+        });
+        expect(typeof row.embedding).toBe('string');
+      }
+      // Every score of the chart survives into the chunk text.
+      const text = rows.map((r) => String(r.content)).join('\n');
+      for (const entry of FECAL_CHARTS[species].entries) {
+        expect(text).toContain(`Score ${entry.score} `);
+      }
+    }
+  });
+
+  it('embeds ONE chunk per score, not one per chart', async () => {
+    await seed();
+    const chunks = written(sb.callsFor('knowledge_chunks'), 'insert');
+
+    // The counts are the point: a chart is ~370 tokens, so chunkMarkdown's
+    // 800-token packing would emit a single chunk per chart and every query
+    // would retrieve the same passage at the same similarity.
+    const expected: Record<string, number> = { 'fecal:dog': 8, 'fecal:cat': 6, 'fecal:puppy': 7 };
+    for (const species of FECAL_SPECIES) {
+      const slug = fecalKnowledgeSlug(species);
+      const rows = chunks.filter((c) => c.doc_id === `id:${slug}`);
+      expect(rows, slug).toHaveLength(expected[slug]);
+      expect(rows.map((r) => r.chunk_idx)).toEqual(rows.map((_, i) => i));
+      expect(rows.map((r) => r.content)).toEqual(fecalChartChunks(species));
+    }
+  });
+
+  it('leaves the other seed documents un-FOCUSED, but scoped to the default tools', async () => {
+    await seed();
+    const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
+    const act = docs.find((d) => String(d.slug).startsWith('act:'));
+    expect(act).toBeTruthy();
+    expect(act!.metadata).not.toHaveProperty('citation');
+    // Clinical focus is still the admin's job; the SCOPE is not optional —
+    // an untagged chunk is invisible to scoped retrieval.
+    expect(act!.metadata).toMatchObject({
+      tags: { tools: DEFAULT_KNOWLEDGE_TOOLS, species: ALL_KNOWLEDGE_SPECIES },
+    });
+    expect((act!.metadata as Record<string, unknown>).tags).not.toHaveProperty('focus');
+
+    const chunks = written(sb.callsFor('knowledge_chunks'), 'insert');
+    const actChunks = chunks.filter((c) => String(c.doc_id).startsWith('id:act:'));
+    expect(actChunks.length).toBeGreaterThan(0);
+    for (const row of actChunks) {
+      expect(row.citation).toBeNull();
+      expect(row.tags).not.toHaveProperty('focus');
+      expect(row.tags).toMatchObject({
+        tools: DEFAULT_KNOWLEDGE_TOOLS,
+        species: ALL_KNOWLEDGE_SPECIES,
+      });
+    }
+  });
+
+  it('scopes EVERY non-fecal seed document and chunk to the training tools', async () => {
+    await seed();
+    const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
+    const chunks = written(sb.callsFor('knowledge_chunks'), 'insert');
+
+    for (const doc of docs.filter((d) => !String(d.slug).startsWith('fecal:'))) {
+      expect((doc.metadata as Record<string, unknown>).tags, String(doc.slug)).toMatchObject({
+        tools: DEFAULT_KNOWLEDGE_TOOLS,
+        species: ALL_KNOWLEDGE_SPECIES,
+      });
+    }
+    const fecalChunks = chunks.filter((c) => String(c.doc_id).startsWith('id:fecal:'));
+    for (const row of chunks.filter((c) => !String(c.doc_id).startsWith('id:fecal:'))) {
+      expect(row.tags).toMatchObject({ tools: DEFAULT_KNOWLEDGE_TOOLS });
+    }
+    // …and the fecal ones are NOT in that set.
+    for (const row of fecalChunks) {
+      expect((row.tags as Record<string, unknown>).tools).toEqual(['fecal-scan']);
+    }
+  });
+
+  it('carries an admin-edited scope across a re-seed, like focus and citation', async () => {
+    sb.setHandler(
+      'knowledge_documents',
+      docsHandler([
+        {
+          id: 'id:act:acknowledge',
+          slug: 'act:acknowledge',
+          deleted_at: null,
+          source: 'code-seed',
+          metadata: {
+            citation: 'Clinic handbook',
+            tags: { focus: 'communication', tools: ['coach'], species: ['cat'] },
+          },
+        },
+      ]),
+    );
+
+    await seed();
+    const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
+    const edited = docs.find((d) => d.slug === 'act:acknowledge');
+    expect(edited!.metadata).toMatchObject({
+      citation: 'Clinic handbook',
+      tags: { focus: 'communication', tools: ['coach'], species: ['cat'] },
+    });
+
+    // Untouched siblings still get the defaults.
+    const other = docs.find((d) => d.slug !== 'act:acknowledge' && String(d.slug).startsWith('act:'));
+    expect((other!.metadata as Record<string, unknown>).tags).toMatchObject({
+      tools: DEFAULT_KNOWLEDGE_TOOLS,
+      species: ALL_KNOWLEDGE_SPECIES,
+    });
+  });
+
+  it('still chunks every non-fecal document with chunkMarkdown', async () => {
+    await seed();
+    const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
+    const chunks = written(sb.callsFor('knowledge_chunks'), 'insert');
+
+    const others = docs.filter((d) => !String(d.slug).startsWith('fecal:'));
+    expect(others.length).toBeGreaterThan(0);
+    for (const doc of others) {
+      const rows = chunks.filter((c) => c.doc_id === `id:${doc.slug}`);
+      expect(rows.map((r) => r.content), String(doc.slug)).toEqual(
+        chunkMarkdown(String(doc.content)),
+      );
+    }
+  });
+});

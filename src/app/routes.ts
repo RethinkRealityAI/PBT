@@ -10,6 +10,7 @@ export type Screen =
   | 'history'
   | 'historyDetail'
   | 'analyzer'
+  | 'fecalScan'
   | 'resources'
   | 'settings'
   | 'actGuide';

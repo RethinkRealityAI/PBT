@@ -1,0 +1,8 @@
+{
+  "name": "netlify-plugin-knowledge-sync",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "description": "Seeds the PBT RAG knowledge base after a successful deploy. Fail-open."
+}

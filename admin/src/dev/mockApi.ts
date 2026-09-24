@@ -20,6 +20,10 @@ import {
   PERMISSION_CATEGORIES,
   SYSTEM_ROLES,
 } from '../../../src/shared/access/permissions';
+import {
+  ALL_KNOWLEDGE_SPECIES,
+  DEFAULT_KNOWLEDGE_TOOLS,
+} from '../../../src/shared/knowledge/knowledgeScopes';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -188,6 +192,342 @@ function logRow(template: string, to: string, subject: string, status: string, a
   };
 }
 
+// ─── Knowledge library ──────────────────────────────────────────────────────
+
+/**
+ * A library with real scope variety, because the scope columns and the search
+ * tester are only reviewable against one: built-ins on the default training
+ * scope, three fecal charts each locked to one species, and an uploaded
+ * supplement that reaches the scan for dogs and puppies but not cats. That
+ * last row is the whole feature in one line.
+ */
+function knowledgeDoc(
+  slug: string,
+  title: string,
+  category: string,
+  source: string,
+  metadata: Record<string, unknown>,
+  content: string,
+  chunkCount: number,
+  age: number,
+) {
+  return {
+    id: slug,
+    slug,
+    title,
+    category,
+    source,
+    metadata,
+    content,
+    chunk_count: chunkCount,
+    created_at: ago(age + 30 * DAY),
+    updated_at: ago(age),
+  };
+}
+
+const DEFAULT_SCOPE = {
+  tools: DEFAULT_KNOWLEDGE_TOOLS,
+  species: ALL_KNOWLEDGE_SPECIES,
+};
+
+function fecalChartDoc(
+  species: 'dog' | 'cat' | 'puppy',
+  label: string,
+  chunkCount: number,
+  age: number,
+) {
+  return knowledgeDoc(
+    `fecal:${species}`,
+    `Fecal scoring — ${label.toLowerCase()}`,
+    'clinical',
+    'code-seed',
+    {
+      citation: `Royal Canin — Fecal Scoring System for ${label}`,
+      tags: {
+        focus: 'gi',
+        topic: 'fecal-scoring',
+        tools: ['fecal-scan'],
+        species: [species],
+      },
+    },
+    `Score 1: very hard and dry, requires effort to pass, leaves no residue.\n\n` +
+      `Score 3: moist stool with no cracks, has a distinct shape, leaves residue ` +
+      `when picked up.\n\nScore 5: watery, no texture, occurs in puddles. ` +
+      `(${label} chart.)`,
+    chunkCount,
+    age,
+  );
+}
+
+const KNOWLEDGE_DOCS = [
+  knowledgeDoc(
+    'driver:Activator',
+    'ECHO driver — Activator',
+    'driver',
+    'code-seed',
+    { driver: 'Activator', tags: { ...DEFAULT_SCOPE } },
+    'The Activator is direct, time-pressed and decisive. Lead with the outcome.',
+    6,
+    12 * DAY,
+  ),
+  knowledgeDoc(
+    'pushback:playbook',
+    'Pushback playbook',
+    'pushback',
+    'code-seed',
+    { tags: { ...DEFAULT_SCOPE } },
+    'Cost pushback usually hides a value question, not a price question.',
+    14,
+    12 * DAY,
+  ),
+  knowledgeDoc(
+    'act:guide',
+    'The ACT method',
+    'act',
+    'code-seed',
+    { tags: { ...DEFAULT_SCOPE } },
+    'Acknowledge what was said. Clarify what sits underneath it. Transform it into a next step.',
+    9,
+    12 * DAY,
+  ),
+  knowledgeDoc(
+    'clinical:reference',
+    'Clinical reference',
+    'clinical',
+    'code-seed',
+    { tags: { ...DEFAULT_SCOPE } },
+    'Body condition scoring runs 1–9; 4–5 is ideal. Each point above 5 is roughly 10% over ideal weight.',
+    11,
+    12 * DAY,
+  ),
+  fecalChartDoc('dog', 'Dogs', 8, 5 * DAY),
+  fecalChartDoc('cat', 'Cats', 6, 5 * DAY),
+  fecalChartDoc('puppy', 'Puppies', 7, 5 * DAY),
+  knowledgeDoc(
+    'study:davies-2024',
+    'Owner preferences in weight conversations',
+    'clinical',
+    'admin',
+    {
+      citation: 'Davies et al., 2024 — Veterinary Record',
+      tags: { focus: 'weight', ...DEFAULT_SCOPE },
+    },
+    'Owners respond to a written plan and a recheck date far more reliably than to a verbal warning about weight.',
+    18,
+    3 * DAY,
+  ),
+  knowledgeDoc(
+    'custom:stool-colour',
+    'Canine stool colour guide',
+    'custom',
+    'admin',
+    {
+      citation: 'Clinic handout, 2026',
+      tags: { focus: 'gi', tools: ['fecal-scan'], species: ['dog', 'puppy'] },
+    },
+    'Colour is not part of the consistency score. Record it separately: dark tarry stool and fresh red streaks are both reasons to involve the veterinarian.',
+    4,
+    HOUR,
+  ),
+];
+
+/**
+ * The containment filter, in the browser. Mirrors what
+ * `match_knowledge_chunks` does with `tags @> filter`: tools and species are
+ * "array contains" and never relaxed; focus is an equality preference that
+ * gets dropped when it matches nothing.
+ */
+function knowledgeSearchMock(body: Record<string, unknown>): unknown {
+  const tool = typeof body.tool === 'string' ? body.tool : 'roleplay';
+  const species = typeof body.species === 'string' ? body.species : null;
+  const focus = typeof body.focus === 'string' ? body.focus : null;
+  const k = Math.max(1, Math.min(8, Number(body.k) || 4));
+
+  const scopeOf = (doc: (typeof KNOWLEDGE_DOCS)[number]) => {
+    const tags = (doc.metadata.tags ?? {}) as Record<string, unknown>;
+    return {
+      tools: Array.isArray(tags.tools) ? (tags.tools as string[]) : [],
+      species: Array.isArray(tags.species) ? (tags.species as string[]) : [],
+      focus: typeof tags.focus === 'string' ? tags.focus : null,
+      tags,
+    };
+  };
+
+  const inScope = KNOWLEDGE_DOCS.filter((doc) => {
+    const s = scopeOf(doc);
+    if (!s.tools.includes(tool)) return false;
+    if (species && !s.species.includes(species)) return false;
+    return true;
+  });
+  const focused = focus ? inScope.filter((doc) => scopeOf(doc).focus === focus) : inScope;
+  // Focus is soft: an empty focused set falls back to the tool/species scope,
+  // which is exactly the case the "Focus relaxed" alert exists for.
+  const focusRelaxed = Boolean(focus) && focused.length === 0 && inScope.length > 0;
+  const hits = (focused.length > 0 ? focused : inScope).slice(0, k);
+
+  const appliedFilter: Record<string, unknown> = { tools: [tool] };
+  if (species) appliedFilter.species = [species];
+  if (focus && !focusRelaxed) appliedFilter.focus = focus;
+
+  return {
+    results: hits.map((doc, i) => {
+      const s = scopeOf(doc);
+      return {
+        content: doc.content.split('\n\n')[i % 2] ?? doc.content,
+        citation: (doc.metadata.citation as string | undefined) ?? null,
+        tags: s.tags,
+        similarity: Number((0.88 - i * 0.07).toFixed(4)),
+        docSlug: doc.slug,
+        docTitle: doc.title,
+      };
+    }),
+    appliedFilter,
+    focusRelaxed,
+    latencyMs: 118 + hits.length,
+  };
+}
+
+/**
+ * The tag assistant, offline. A real analysis is a model call; this one is a
+ * handful of keyword rules over the same input, so the panel can be reviewed
+ * in every state it has — with a ~1.2 s wait so the "Reading…" state is
+ * actually visible, and a warning when the text is short so the amber list
+ * is on screen too. The rules are the ones an admin would recognise: stool
+ * words file under Fecal Scan for the species named, weight words under
+ * weight management, and anything else stays on the training defaults.
+ */
+const PDF_FIXTURE_MARKDOWN =
+  '# Faecal scoring in adult dogs\n\n' +
+  'A nine-point scale from very hard and dry (1) to watery with no texture (5). ' +
+  'Score 3 to 3.5 is ideal: moist, holds a distinct shape, leaves residue when picked up. ' +
+  'Record colour separately — dark tarry stool and fresh red streaks both need the veterinarian.\n\n' +
+  'Royal Canin — Fecal Scoring System for Dogs, 2025.';
+
+function knowledgeAnalyzeMock(body: Record<string, unknown>): Promise<unknown> {
+  const slugDoc =
+    typeof body.slug === 'string' ? KNOWLEDGE_DOCS.find((d) => d.slug === body.slug) : undefined;
+  const fromPdf = typeof body.pdfBase64 === 'string';
+  const text = fromPdf
+    ? PDF_FIXTURE_MARKDOWN
+    : slugDoc
+      ? `${slugDoc.title}\n\n${slugDoc.content}`
+      : typeof body.text === 'string'
+        ? body.text
+        : '';
+  const titleHint = typeof body.title === 'string' ? body.title : slugDoc?.title ?? '';
+  const hay = `${titleHint}\n${text}`.toLowerCase();
+  const has = (re: RegExp) => re.test(hay);
+
+  const stool = has(/\b(stool|fecal|faecal|faeces|feces|poo|diarrh|constipat)/);
+  const topics: string[] = [];
+  let focus: string | null = null;
+  if (stool) {
+    focus = 'gi';
+    topics.push('stool scoring');
+  } else if (has(/\b(weight|obes|body condition|calorie)/)) {
+    focus = 'weight';
+    topics.push('weight management');
+  } else if (has(/\b(skin|derm|itch|allerg|coat)/)) {
+    focus = 'dermatitis';
+    topics.push('skin and coat');
+  } else if (has(/\b(urinar|crystal|struvite|bladder)/)) {
+    focus = 'urinary';
+    topics.push('urinary health');
+  } else if (has(/\b(senior|ageing|aging|geriatric|mobility)/)) {
+    focus = 'aging';
+    topics.push('senior care');
+  } else if (has(/\b(communicat|empathy|pushback|conversation|client)/)) {
+    focus = 'communication';
+    topics.push('client conversations');
+  }
+
+  const cat = has(/\b(cat|cats|kitten|feline)\b/);
+  const puppy = has(/\b(pupp(y|ies))\b/);
+  const dog = has(/\b(dog|dogs|canine)\b/);
+  const species = stool
+    ? [...(dog || (!cat && !puppy) ? ['dog'] : []), ...(puppy ? ['puppy'] : []), ...(cat ? ['cat'] : [])]
+    : [...ALL_KNOWLEDGE_SPECIES];
+  const tools = stool ? ['fecal-scan'] : [...DEFAULT_KNOWLEDGE_TOOLS];
+
+  if (has(/\bcolou?r\b/)) topics.push('stool colour');
+  if (has(/\bveterinarian|refer\b/)) topics.push('when to refer');
+  if (has(/\bdiet|food|feeding\b/)) topics.push('diet');
+  if (has(/\bowner|client\b/)) topics.push('owner guidance');
+  if (species.length < 3) topics.push(...species.map((s) => (s === 'dog' ? 'adult dogs' : s === 'puppy' ? 'puppies' : 'cats')));
+
+  const citationMatch =
+    /([A-Z][a-z]+ et al\.,? \d{4}[^.\n]*)/.exec(text) ?? /(Royal Canin[^.\n]*\d{4})/.exec(text);
+  const custom = has(/\b(handout|protocol|checklist|our clinic|sop)\b/);
+  const short = text.trim().length < 600;
+
+  const summaryTopic = focus
+    ? {
+        gi: 'stool and digestive health',
+        weight: 'weight management',
+        dermatitis: 'skin and coat health',
+        urinary: 'urinary health',
+        aging: 'senior care',
+        communication: 'talking with clients',
+      }[focus]
+    : 'general veterinary practice';
+  // No hint: the first clause of the first line, the way a person would name it.
+  const firstClause = (text.split(/\n/)[0] ?? '').split(/[.:;(]/)[0].trim().slice(0, 80);
+  const title =
+    titleHint || (fromPdf ? 'Faecal scoring in adult dogs' : firstClause || 'Untitled document');
+
+  const analysis = {
+    title,
+    summary:
+      `A ${custom ? 'clinic document' : 'clinical reference'} about ${summaryTopic}. ` +
+      (stool
+        ? `It describes how stool looks and what each appearance means, so it belongs with the stool charts the scan uses. `
+        : `It gives the kind of background a roleplay customer or the scorer can quote from. `) +
+      `Read ${Math.min(text.length, 40_000).toLocaleString()} characters.`,
+    category: custom ? 'custom' : 'clinical',
+    focus,
+    tools,
+    species,
+    citation: citationMatch ? citationMatch[1].trim() : null,
+    topics: [...new Set(topics)].slice(0, 6),
+    confidence: stool ? 0.86 : focus ? 0.72 : 0.48,
+    reasons: {
+      focus: focus
+        ? `The text is mostly about ${summaryTopic}, which is the ${focus === 'gi' ? 'digestive health' : summaryTopic} area.`
+        : 'No single clinical topic dominates, so it is best left unfiled.',
+      tools: stool
+        ? 'Stool material belongs to Fecal Scan only — a roleplay customer should not quote a stool chart.'
+        : 'Nothing here is specific to one tool, so the four training tools keep it.',
+      species: stool
+        ? species.length === 3
+          ? 'The text does not single out a species.'
+          : `The text only talks about ${species.map((s) => (s === 'dog' ? 'adult dogs' : s === 'puppy' ? 'puppies' : 'cats')).join(' and ')}.`
+        : 'Nothing in the text is species-specific.',
+    },
+    warnings: [
+      ...(short ? ['Only a short passage was read — the suggestions are a best guess.'] : []),
+      ...(stool && species.length === 3
+        ? ['Stool documents are usually for one species — check before saving.']
+        : []),
+    ],
+  };
+
+  return new Promise((resolve) =>
+    setTimeout(
+      () =>
+        resolve(
+          fromPdf
+            ? {
+                analysis,
+                extractedMarkdown: PDF_FIXTURE_MARKDOWN,
+                extractedCitation: 'Royal Canin — Fecal Scoring System for Dogs, 2025',
+              }
+            : { analysis },
+        ),
+      1200,
+    ),
+  );
+}
+
 const ROUTES: Record<string, unknown> = {
   'admin-whoami': {
     user_id: ME,
@@ -308,7 +648,7 @@ const ROUTES: Record<string, unknown> = {
   'admin-scenarios': [],
   'admin-audit-log': [],
   'admin-flags': { flags: [], rules: [] },
-  'admin-knowledge': { documents: [] },
+  'admin-knowledge': { documents: KNOWLEDGE_DOCS },
   'admin-scenario-overrides': [],
   'admin-simulation-config': { config: {} },
   'user-scenarios': [],
@@ -351,6 +691,43 @@ const POST_ROUTES: Record<string, unknown> = {
   },
 };
 
+/**
+ * POSTs whose answer depends on what was sent. `POST_ROUTES` above is enough
+ * when the response is a fixture; these need the request body — the search
+ * tester because the filter IS the thing being reviewed, and the knowledge
+ * write ops because their outcome copy quotes numbers back ("13 documents
+ * indexed", "4 sections re-filed") and `{ok:true}` renders those as undefined.
+ */
+const POST_HANDLERS: Record<
+  string,
+  (body: Record<string, unknown>) => unknown | Promise<unknown>
+> = {
+  'admin-knowledge-search': knowledgeSearchMock,
+  'admin-knowledge-analyze': knowledgeAnalyzeMock,
+  'admin-knowledge': (body) => {
+    switch (body.op) {
+      case 'seed':
+        return { ok: true, seeded: 4, failures: [], skipped_deleted: [] };
+      case 'delete':
+        return { ok: true, slug: body.slug, pruned_scenarios: [] };
+      case 'restore':
+        return { ok: true, slug: body.slug };
+      default:
+        return {
+          ok: true,
+          slug: body.slug,
+          focus: body.focus ?? null,
+          citation: body.citation ?? null,
+          chunks_updated: 4,
+        };
+    }
+  },
+  'admin-knowledge-ingest': (body) =>
+    body.op === 'ingest-bundled'
+      ? { ok: true, ingested: 5, failures: [] }
+      : { ok: true, slug: 'custom:new-document', chunks: 6, failures: [] },
+};
+
 export function installAdminMocks(): void {
   // `?mock=signedout` skips the seeded session so the sign-in and recovery
   // screens can be reviewed too.
@@ -368,8 +745,23 @@ export function installAdminMocks(): void {
     // the rubric dry-run renders a scorecard, so a bare `{ok:true}` would
     // leave the panel it exists to demonstrate permanently blank.
     if ((init?.method ?? 'GET').toUpperCase() === 'POST') {
+      const handler = POST_HANDLERS[name];
+      if (handler) {
+        let parsed: Record<string, unknown> = {};
+        try {
+          parsed = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        } catch {
+          parsed = {};
+        }
+        return json(await handler(parsed));
+      }
       const posted = POST_ROUTES[name];
       return json(posted === undefined ? { ok: true, status: 'sent' } : posted);
+    }
+    // Same endpoint, different question: `?trash=1` asks for the tombstones,
+    // so it must not answer with the live library.
+    if (name === 'admin-knowledge' && /[?&]trash=/.test(url)) {
+      return json({ documents: [] });
     }
     const body = ROUTES[name];
     if (body === undefined) return json({ error: `No mock for ${name}` }, 404);

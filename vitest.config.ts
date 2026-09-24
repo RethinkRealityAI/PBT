@@ -13,6 +13,9 @@ export default defineConfig({
   test: {
     globals: true,
     css: false,
+    // Heavy jsdom screens (the admin Knowledge screen, the lazy App smoke)
+    // exceed the 5 s default when 80+ files run in parallel on a laptop.
+    testTimeout: 15_000,
     // Two projects because the environments are incompatible: the app tests
     // need jsdom + the DOM shims in src/tests/setup.ts (which touches
     // `window` at load and would throw under node), while the Netlify

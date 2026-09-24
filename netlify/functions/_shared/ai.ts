@@ -399,18 +399,24 @@ export function __resetAiCaches(): void {
 /**
  * RAG grounding for a scenario — the same query + filters both browser modes
  * used, gated by the admin `rag` knobs. Fail-open: any failure is `[]`.
+ *
+ * `tool` is the knowledge scope this consumer retrieves AS (see
+ * `src/shared/knowledge/knowledgeScopes.ts`): only documents an admin filed
+ * for that tool can come back, on every fallback path. Required rather than
+ * defaulted — an unscoped caller would quietly read the whole corpus.
  */
 export async function retrieveForScenario(
   sb: SupabaseClient,
   scenario: Scenario,
   config: SimulationConfig | undefined,
+  tool: string,
 ): Promise<RetrievedChunk[]> {
   try {
     const rag = resolveRag(config);
     if (!rag.enabled) return [];
     return await retrieveChunks(scenarioRetrievalQuery(scenario), {
       k: rag.k,
-      filters: scenarioRetrievalFilters(scenario),
+      filters: { ...scenarioRetrievalFilters(scenario), tool },
       sb,
     });
   } catch {

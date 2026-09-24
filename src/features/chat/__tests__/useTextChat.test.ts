@@ -39,7 +39,13 @@ vi.mock('../../../app/providers/FlagProvider', () => ({
 vi.mock('../../auth/supabaseClient', () => ({ getSupabase: () => supabase.client }));
 vi.mock('../../../services/aiTelemetry', () => ({ recordTurns: vi.fn() }));
 vi.mock('../../../services/ragDocument', () => ({ persistRagDocument }));
-vi.mock('../../../services/ragClient', () => ({ retrieveContext }));
+// Only the network call is faked — `scenarioRetrievalCacheKey` and
+// `scenarioRetrievalFilters` are pure, and the hook's retrieval scope is one
+// of the things these tests pin.
+vi.mock('../../../services/ragClient', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../services/ragClient')>()),
+  retrieveContext,
+}));
 vi.mock('../../../lib/analytics', () => ({ logEvent }));
 
 import { useTextChat } from '../useTextChat';
@@ -292,6 +298,18 @@ describe('useTextChat.rescore', () => {
   });
 });
 
+describe('useTextChat — knowledge scope', () => {
+  it('retrieves as the roleplay tool, alongside the scenario targeting', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    expect(retrieveContext).toHaveBeenCalledTimes(1);
+    const opts = retrieveContext.mock.calls[0][1];
+    expect(opts.filters).toMatchObject({ tool: 'roleplay' });
+  });
+});
+
 describe('useTextChat — server-side AI contract', () => {
   it('sends neither the simulation config nor retrieved chunks to the AI calls', async () => {
     const { result } = renderHook(() => useTextChat(SCENARIO_A));
@@ -348,7 +366,7 @@ describe('useTextChat — server-side AI contract', () => {
       mode: 'text',
       completed: true,
       ended_reason: 'completed',
-      turns: 2,
+      turns: 3,
     });
     expect(Array.isArray(row.transcript)).toBe(true);
 

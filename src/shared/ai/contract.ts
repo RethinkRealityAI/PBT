@@ -35,6 +35,12 @@ import type { ChatMessage, ScoreReport } from '../../services/types';
 import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
 import type { Locale } from '../../i18n/locales';
 import type { PetVisionResult } from './petVision';
+import type {
+  FecalBreedSize,
+  FecalScanResult,
+  FecalScanRetrieval,
+  FecalSpecies,
+} from './fecalScan';
 import type { ScenarioDraftForAi, WizardField } from './scenarioWizard';
 
 export const AI_ENDPOINTS = {
@@ -42,6 +48,7 @@ export const AI_ENDPOINTS = {
   evaluate: '/.netlify/functions/ai-evaluate',
   hint: '/.netlify/functions/ai-hint',
   vision: '/.netlify/functions/ai-vision',
+  fecalScan: '/.netlify/functions/ai-fecal-scan',
   voiceToken: '/.netlify/functions/ai-voice-token',
   /** Admin-only (requires `scenarios.write`). */
   scenarioSuggest: '/.netlify/functions/admin-scenario-ai',
@@ -125,6 +132,24 @@ export interface VisionRequest extends AiRequestMeta {
 
 export interface VisionResponse {
   result: PetVisionResult;
+}
+
+// ─── Fecal Scan ────────────────────────────────────────────────────────────
+
+export interface FecalScanRequest extends AiRequestMeta {
+  /** Raw base64 (no data-URL prefix). Client downscales before sending. */
+  imageBase64: string;
+  mimeType: string;
+  /** Which Royal Canin chart to score against. */
+  species: FecalSpecies;
+  /** Puppies only — score 3 is banded by breed size on the chart. */
+  breedSize?: FecalBreedSize;
+}
+
+export interface FecalScanResponse {
+  result: FecalScanResult;
+  /** What the scorer was grounded in — surfaced in the UI as the RAG trail. */
+  retrieval: FecalScanRetrieval;
 }
 
 // ─── Live voice — ephemeral token ──────────────────────────────────────────

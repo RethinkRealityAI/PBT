@@ -29,7 +29,9 @@ src/
   data/knowledge/ — driverProfiles, pushbackTaxonomy, actGuide, clinicalReference, scoringRubric, promptBuilders
   lib/         — storage (namespaced localStorage), classNames, id
   tests/       — setup
-public/        — static assets (e.g. audio/pcm-capture-processor.js for voice capture)
+public/        — static assets (audio/pcm-capture-processor.js, studies/*.pdf)
+netlify/plugins/ — build plugins (knowledge-sync: auto-seeds the RAG corpus)
+scripts/       — knowledge-sync.ts (`npm run knowledge:sync`), build checks
 supabase/migrations/  — hand-run SQL
 docs/superpowers/specs/ — design spec
 resources/   — design handoff prototype + ECHO source PDFs/transcripts
@@ -76,6 +78,7 @@ long-lived key). `npm run check:bundle` fails if a key-shaped string
 | `evaluateConversation` (geminiService)    | `ai-evaluate`         | `gemini-3-flash-preview` (JSON mode)    | ACT-first 5-dim scorecard; **writes the score** for signed-in users |
 | `generateCoachHint` (geminiService)       | `ai-hint`             | `gemini-3-flash-preview`                | In-chat coach nudge (text mode, ≤3/session) |
 | `analyzePetPhoto` (petVisionService)      | `ai-vision`           | `gemini-3-flash-preview` (multimodal)   | Pet Vision (breed/BCS/derm)   |
+| `analyzeStoolPhoto` (fecalScanService)    | `ai-fecal-scan`       | `gemini-3-flash-preview` (multimodal ×2 + `gemini-embedding-001` retrieval) | Fecal Scan (chart score, RAG-grounded) |
 | `useVoiceSession` (voiceSession)          | `ai-voice-token` → `ai.live.connect` from the device | `gemini-3.1-flash-live-preview` | Voice mode |
 | `suggestField` (admin `scenarioAi`)       | `admin-scenario-ai`   | `gemini-3-flash-preview`                | Scenario Builder wizard (admin, `scenarios.write`) |
 
@@ -135,6 +138,133 @@ Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL
 
 **Voice pipeline:** `src/services/voiceSession.ts` — the ordering is load-bearing: mic **permission first** (`acquireMic()` is the first await in `start()`, inside the Begin tap — nothing connects or plays until granted), then playback `AudioContext`, then **`POST ai-voice-token`** (the server builds the voice system prompt with server-loaded config/overrides/RAG and mints a single-use token whose model + system prompt + tools are locked — `uses: 1`, new-session window 2 min, session life 15 min > the 5-min cap), then `ai.live.connect` on a client created with that token and `httpOptions: { apiVersion: 'v1alpha' }`; the capture processor is wired inside `onopen`. The browser never builds or sees the voice system prompt. Re-entrancy guard runs synchronously before any await (double-Begin must not open two sockets). A playback-end watchdog force-exits `aiSpeaking` if `source.onended` is missed — a stuck `aiSpeaking` mutes the mic for the rest of the session. Avoid calling `session.close()` twice (guarded).
 
+### Knowledge scopes (RAG isolation)
+
+Every consumer reads one `knowledge_chunks` table, so scope is a property of
+the DOCUMENT. Vocabulary: `src/shared/knowledge/knowledgeScopes.ts`.
+
+- **`tags.tools[]`** — WHO may retrieve it: `roleplay` · `scoring` · `coach` ·
+  `scenario-builder` · `fecal-scan`. Default = the four training-session
+  tools; **Fecal Scan is never a default** (file it there on purpose).
+- **`tags.species[]`** — `dog` · `puppy` · `cat`. Default = all three.
+- Both are copied onto every chunk and matched with jsonb containment
+  (`tags @> '{"tools":["fecal-scan"]}'` = "array contains").
+
+`netlify/functions/_shared/retrieval.ts`: `tool` + `species` are **HARD** —
+present on every RPC call including the zero-row and RPC-error retries.
+`focus` is **SOFT** (dropped on a zero-row retry); `docSlugs` replace `focus`
+and run *inside* the scope. `retrieveChunksDetailed()` also returns the
+applied filter + `focusRelaxed`; `buildScopeFilter()` is the pure builder.
+
+Per-consumer tool: `ai-roleplay` / `ai-voice-token` / browser `useTextChat` →
+`roleplay`; `ai-evaluate` → `scoring`; `admin-scenario-ai` →
+`scenario-builder`; `ai-fecal-scan` → `fecal-scan` + species (no docSlugs).
+The public `rag-retrieve` endpoint (browser `useTextChat`) **forces**
+`tool: 'roleplay'` whatever the body says, strips provenance (slug/title)
+from its response, and is rate-limited 30/min per IP — a caller cannot use it
+to read fecal-scan or scoring-only documents.
+Admin tester: `admin-knowledge-search` (permission `knowledge.read`) runs the
+same retrieval and echoes the exact filter — that is how you *prove* a cat
+document cannot reach a dog scan. Scope is editable per document via
+`admin-knowledge { op: 'update', tools, species }` (built-ins too) and set on
+seed / ingest.
+
+Migration **`20260922000000_knowledge_scopes.sql`** backfills the tags and
+re-creates `match_knowledge_chunks` with `doc_slug` / `doc_title`. **Apply it
+with (or before) the deploy** — un-scoped chunks are invisible to scoped
+retrieval (fail-open: ungrounded prompts, not errors).
+
+### Knowledge base seeding (automatic — there is no button)
+
+The built-in corpus — driver personas, pushback taxonomy, ACT guide, clinical
+reference, the three Royal Canin fecal charts, and the five bundled studies in
+`public/studies/` — **seeds itself**. Nobody loads it by hand. One engine,
+`netlify/functions/_shared/knowledgeSyncRun.ts` (`runKnowledgeSync`), behind
+three triggers:
+
+1. **`knowledge-sync-background` (the one that works in production).** A
+   Netlify *background* function (the `-background` suffix buys 202-immediate
+   + a 15-minute budget, which a cold sync needs). Fired fire-and-forget by
+   `flags-resolve` (every app boot) and by `admin-knowledge` GET, via
+   `_shared/knowledgeTrigger.ts` — once per function instance, never awaited
+   (`context.waitUntil`), and ALWAYS at the site's primary URL
+   (`process.env.URL`), so the code that runs is the published production
+   deploy whichever deploy served the boot. **It is not open:** every deploy
+   (previews, branch deploys, old production deploys) stays reachable at its
+   permalink with the same env vars and the same database, so an open
+   endpoint would let an old or preview deploy write ITS corpus into prod.
+   Gates, in order: (a) `x-pbt-sync-key` must equal HMAC-SHA256 of a fixed
+   label keyed with `SUPABASE_SERVICE_ROLE_KEY` (constant-time; nothing extra
+   to configure) → 401; (b) `syncAllowedHere()` — deploy context must be
+   `production` AND the published deploy; `dev` only with
+   `PBT_ALLOW_DEV_SYNC=1` → 403; (c) 1 call / 5 min per-IP `rateLimit`;
+   (d) inside the engine, the single-row **database lease**
+   (`knowledge_sync_try_lease`, 15-min TTL, migration
+   `20260923000000_knowledge_sync_lease.sql`) so concurrent cold instances
+   can't interleave delete-then-insert, plus a **10-minute cooldown** (recent
+   `metadata.sync.syncedAt` + a dry-run plan showing nothing to do ⇒ exit).
+   The request body is never read — it can only write code-defined content.
+   Never throws. PDFs come from the deploy's own origin (`/studies/*`).
+   The legacy admin buttons are gone: `admin-knowledge {op:'seed'}` and
+   `admin-knowledge-ingest {op:'ingest-bundled'}` answer **410**.
+   **Legacy exposure:** the pre-hardening function (POST, no auth) never
+   reached production; the only deploy that carried it is PR #23's Deploy
+   Preview for commit `eccee53` (earlier previews failed to build). Delete
+   that deploy in Netlify → Deploys — or, failing that, rotate the
+   service-role key — so its permalink cannot write the prod corpus.
+2. **`netlify/plugins/knowledge-sync`** (`[[plugins]]` in `netlify.toml`) —
+   belt and braces. `onSuccess`, **`production` context only** (branch deploys
+   share the prod database), skipped without the keys, takes the same lease,
+   and **can never fail the deploy**.
+3. **`npm run knowledge:sync`** (service-role env) — the hands-on one.
+   `--dry-run` prints the plan without calling Gemini at all;
+   `--only fecal|builtin|studies` narrows it. After a direct sync it runs the
+   retrieval proof (the dog probe must rank the Score 3.5 passage first; the
+   cat probe must return only `fecal:cat`) and exits non-zero on failure.
+   No service key? `-- --emit-sql <file> --existing <rows.json>` runs the same
+   plan and the same embeddings and writes idempotent `<file>.001.sql`,
+   `…002.sql` parts (~400 KB) to apply in order; the exact `select` that
+   produces `rows.json` is in the script header.
+- **Idempotent by content hash.** Each document stores `metadata.sync =
+  { version, contentHash, sourceHash?, syncedAt }`. Matching hash + non-zero
+  chunk count ⇒ skipped (no re-embed); a study PDF with an unchanged
+  `sourceHash` is never even extracted. Bump `SYNC_VERSION` in
+  `_shared/knowledgeSync.ts` to force a full re-embed.
+- **Admin edits survive.** Focus / citation / tools / species edits and
+  soft-deletes are carried across by `buildSeedCatalogue` in
+  `netlify/functions/_shared/knowledgeSeed.ts` — a soft-deleted built-in has
+  its body refreshed but gets no chunks, so a re-sync is never an undelete.
+- Shared code, one implementation: `_shared/knowledgeSeed.ts` (documents +
+  precedence), `_shared/knowledgeIngest.ts` (`BUNDLED_STUDIES`, `extractPdf`,
+  `writeKnowledgeDoc`), `_shared/knowledgeSync.ts` (hashing +
+  `planKnowledgeSync`), `_shared/knowledgeSyncRun.ts` (`runKnowledgeSync` —
+  the engine; the study PDFs are *injected* so disk and HTTP produce the same
+  `sourceHash`), `_shared/knowledgeSql.ts` (SQL emission),
+  `_shared/knowledgeTrigger.ts` (the fire-and-forget kick + the HMAC key).
+
+### Tag assistant (AI pre-fill when filing a document)
+
+`netlify/functions/admin-knowledge-analyze` (POST, `knowledge.write`; contract
+`src/shared/knowledge/knowledgeAnalyze.ts`) reads a document and proposes
+title, summary, category, focus, **Used by** (tools), species, citation,
+topics, confidence, one-sentence `reasons` and `warnings` — the admin edits,
+then the existing ingest / update ops save. Exactly one input: `pdfBase64`
+(≤ `MAX_PDF_BYTES`; `extractPdf` runs ONCE and the result comes back as
+`extractedMarkdown` / `extractedCitation`, so the UI ingests as **text** with
+the new optional `citation` on `admin-knowledge-ingest` op=ingest — never a
+second extraction), `text` (≤ 200k chars) or `slug` (stored content —
+"Suggest with AI"; 404 when missing). One `MODEL_TEXT` JSON call whose system
+prompt (`_shared/knowledgeAnalyze.ts::buildKnowledgeAnalyzeSystemPrompt`)
+lists every focus / tool / species key **with its description** straight from
+the vocabularies, so a vocabulary edit is live without touching the prompt.
+The answer is normalised back INTO those vocabularies
+(`normalizeKnowledgeAnalysis`: unknown tool dropped → defaults, unknown focus
+→ null, confidence clamped, ≤ 6 topics); content past ~40k chars is cut for
+the model and flagged in `warnings`. Nothing is written and no telemetry is
+recorded (mirrors `admin-scenario-ai`). Errors use the admin `{ error }`
+shape: 400 / 404 / 502 (Gemini). Tests:
+`netlify/functions/__tests__/adminKnowledgeAnalyze.test.ts`.
+
 ## Scenario builder (`CreateScreen`)
 
 - **Build / Library** tabs — library lists `SEED_SCENARIOS` with quick Start.
@@ -161,6 +291,64 @@ Model strings live in `src/services/geminiService.ts` as `MODEL_TEXT` and `MODEL
 - **Privacy opt-out** (spec §8.3): `pbt:allow_training_use` read via
   `src/lib/privacy.ts`; gates `logEvent`, AI call/turn telemetry, and RAG
   document assembly. The user's own sessions/feedback/reports are NOT gated.
+
+## Fecal Scan (stool assessment, RAG showcase)
+
+A supportive stool-assessment aid for vet techs — **not a diagnostic**. The
+tech picks a chart (Adult dog · Puppy 8 wk+ · Cat), photographs the stool, and
+gets the Royal Canin fecal score (1 → 5) with a confidence rating, the chart's
+reference photo side by side, and the exact chart passages the answer was
+grounded in. Spec: `docs/superpowers/specs/2026-09-21-fecal-scan-design.md`.
+
+The ONLY knowledge the feature uses is the three Royal Canin charts
+(`resources/fecal-charts/*.pdf`, VGI/064/0324 + VGI/066/0324), transcribed
+verbatim in `src/data/knowledge/fecalCharts.ts` (+ reference photos in
+`public/fecal-scan/<species>/<score>.jpg`). Never add outside sources.
+
+Pipeline (`netlify/functions/ai-fecal-scan.ts`, mirrors `ai-vision`):
+1. **Observe** — multimodal JSON, chart-free neutral description.
+2. **Retrieve** — `retrieveChunks(observationText, { filters: { tool:
+   'fecal-scan', species } })` against `knowledge_chunks` (pgvector) — a HARD
+   scope, not a slug list, so an admin can add a supplement without opening
+   the scan to the rest of the corpus (see "Knowledge scopes"). Each chart
+   score is its own chunk (`fecalChartChunks`), so the top-k (k = 8) are the
+   nearest *scores*. Any `fecal:<other species>` chunk is dropped whatever
+   its tags say.
+3. **Ground** — the scorer ALWAYS gets the whole chart: retrieved passages
+   verbatim + every score retrieval missed from the code module (one
+   `similarity: null` chunk). Retrieval ranks and admits supplements; it
+   never narrows the answer (k < chart size once made scores unreachable).
+   Passages are labelled chart vs clinic supplement (`kind`); a supplement
+   can never add or override a score. `source` = `'rag'` if anything was
+   retrieved, else `'bundled'`.
+4. **Score** — multimodal JSON, calibrated-confidence prompt;
+   `normalizeFecalScanResult` snaps a non-chart answer to the nearest chart
+   score (confidence ≤ 0.4) and re-derives the band from the chart (puppy
+   score 3 splits by `breedSize`). A missing/NaN score is a 502 `upstream`.
+   French: the scorer returns translated observations.
+- **Exact-reference shortcut** (`src/shared/ai/imageHash.ts`): a photo that
+  IS a chart photo is answered from the chart — needs aspect ±10 %, dHash ≤ 6
+  AND 32×32 luma MAD ≤ 2 (dHash alone matched 62/108 plain silhouettes).
+- Reference photos load from disk (`[functions."ai-fecal-scan"]
+  included_files` in `netlify.toml`), with a guarded HTTP fallback (200 +
+  `image/jpeg` + JPEG magic, 4 s timeout, `DEPLOY_URL` origin).
+- Telemetry: one `'fecal_scan'` row + one `'retrieval'` row per scan.
+
+Knowledge base: the charts are code-seed documents `fecal:dog|cat|puppy`,
+seeded automatically on every deploy (see "Knowledge base seeding"; by hand:
+`npm run knowledge:sync`, which also proves retrieval by checking the 3.5
+passage ranks first). Netlify masks `SUPABASE_SERVICE_ROLE_KEY` as a secret,
+so local `netlify dev` always reports `source: 'bundled'`; `'rag'` needs a
+deploy or a real key. Migration `20260921000000_fecal_scan.sql` adds the
+`fecal_scan` telemetry call type + the `nav.sidebar.fecalScan.enabled` flag row.
+
+UI: `src/screens/FecalScanScreen.tsx` + `src/features/fecal-scan/*`
+(capture card, observe→retrieve→match stepper, result card, grounding panel,
+full chart sheet); hook `useFecalScan`; service `fecalScanService.ts`;
+image prep shared with Pet Vision in `src/lib/imagePrep.ts`. Entry points:
+Home tile, desktop sidebar (`nav.sidebar.fecalScan.enabled`), Pet Analyzer
+cross-link. Catalogs `src/i18n/{en,fr}/fecalScan.ts`; FR chart text overlay
+`src/i18n/fr/data/fecalCharts.ts` via `dataL10n/fecalCharts.ts`.
 
 ## Admin dashboard (admin/)
 
@@ -200,6 +388,12 @@ Migrations:
   may set them. **Must be applied before deploying the server-side AI
   functions** — until it is, the client-side forgery hole stays open (the app
   still works either way)
+- `20260923000000_knowledge_sync_lease.sql` — `knowledge_sync_lease`
+  (single row, RLS on with no policies) + `knowledge_sync_try_lease` /
+  `knowledge_sync_release_lease` (SECURITY DEFINER, execute = service_role
+  only) and an explicit `match_knowledge_chunks` grant to service_role. The
+  sync fails closed (logs, keeps the stored corpus) until it exists. Applied
+  to prod 2026-09-23
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -231,7 +425,7 @@ feedback summaries. **Analytics** — nav_events traffic/engagement + dwell-time
 "where users spend time" heatmap. **AI Quality** doubles as the observability
 layer: alert-threshold banner (`ALERT_THRESHOLDS`), failure-rate/latency/cost
 trends, per-model breakdown. **RAG foundation** — `admin-knowledge` function
-(list/upsert/delete + `seed` from code knowledge modules) and per-session
+(list/upsert/update/delete; the corpus now seeds itself — see "Knowledge base seeding") and per-session
 `rag_chunks` written alongside `rag_documents`.
 
 ## Access control (RBAC)
@@ -439,6 +633,9 @@ Cursor loads `.cursor/rules/graphify.mdc` automatically.
   stays < 500 kB gzip (spec §13.9; currently ~66 kB) AND that no Google
   API-key-shaped string (`AIza…`) exists in any `dist/**/*.js`.
 - Netlify build command: `npm run build`.
+- Build plugin `netlify/plugins/knowledge-sync` seeds the RAG knowledge base
+  after a successful **production** deploy (see "Knowledge base seeding"). It
+  is fail-open and never blocks or fails a deploy.
 
 ## Database migrations & deploy alignment (REQUIRED)
 

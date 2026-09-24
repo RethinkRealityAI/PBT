@@ -53,6 +53,10 @@ function filterKey(filters: RetrievalFilters | undefined): string {
   const parts: string[] = [];
   if (filters.focus) parts.push(`focus=${filters.focus}`);
   if (filters.docSlugs?.length) parts.push(`docs=${[...filters.docSlugs].sort().join(',')}`);
+  // The knowledge scope changes WHICH documents are reachable, so two tools
+  // asking the same question are two different results — never one cache row.
+  if (filters.tool) parts.push(`tool=${filters.tool}`);
+  if (filters.species) parts.push(`species=${filters.species}`);
   return parts.length ? `|${parts.join('&')}` : '';
 }
 

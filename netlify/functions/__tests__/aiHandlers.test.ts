@@ -656,7 +656,7 @@ describe('admin-scenario-ai', () => {
     expect(await res.json()).toEqual({ suggestions: ['a', 'b', 'c'] });
     expect(mocks.retrieveChunks).toHaveBeenCalledWith(
       'cost Lab Adult (3-7) owner pushback',
-      expect.objectContaining({ k: 3 }),
+      expect.objectContaining({ k: 3, filters: { tool: 'scenario-builder' } }),
     );
     const sys = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
     expect(sys).toContain('Field to suggest: pushback_notes');
@@ -677,5 +677,48 @@ describe('admin-scenario-ai', () => {
     const sys = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
     expect(sys).not.toContain('Research grounding');
     expect(sys).toContain('(no fields filled in yet)');
+  });
+});
+
+/**
+ * Knowledge scopes: every AI function names the tool it retrieves AS, so a
+ * document filed "Fecal Scan only" can never surface in a roleplay prompt.
+ * The scope is a HARD filter inside `_shared/retrieval` — here we only pin
+ * that each consumer declares the right one.
+ */
+describe('knowledge scopes — each function retrieves as its own tool', () => {
+  const toolOf = (call = 0) =>
+    (mocks.retrieveChunks.mock.calls[call][1] as { filters?: { tool?: string } }).filters?.tool;
+
+  it('ai-roleplay retrieves as `roleplay`', async () => {
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ emotion: 'yellow', text: 'Why so pricey?' }),
+    });
+    const res = await roleplay(jsonRequest('ai-roleplay', { scenario, history: [] }));
+    expect(res.status).toBe(200);
+    expect(toolOf()).toBe('roleplay');
+  });
+
+  it('ai-voice-token retrieves as `roleplay`', async () => {
+    mocks.authTokensCreate.mockResolvedValueOnce({ name: 'auth_tokens/abc123' });
+    const res = await voiceToken(jsonRequest('ai-voice-token', { scenario }));
+    expect(res.status).toBe(200);
+    expect(toolOf()).toBe('roleplay');
+  });
+
+  it('ai-evaluate retrieves as `scoring`', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+    const res = await evaluate(
+      jsonRequest('ai-evaluate', {
+        scenario,
+        transcript: [
+          { role: 'ai', text: 'Not fat.', timestamp: 1 },
+          { role: 'user', text: 'I hear you.', timestamp: 2 },
+        ],
+        mode: 'text',
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(toolOf()).toBe('scoring');
   });
 });

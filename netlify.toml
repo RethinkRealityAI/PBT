@@ -25,6 +25,28 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Seed the RAG knowledge base automatically. Runs in `onSuccess` (after the
+# deploy is live), on the PRODUCTION context only — every deploy context
+# shares the one Supabase project and Netlify env vars apply to all contexts
+# by default, so a branch or preview build must never write the corpus. It
+# skips itself when GEMINI_API_KEY or SUPABASE_SERVICE_ROLE_KEY is absent,
+# takes the `knowledge_sync_lease` row so concurrent syncs can't interleave,
+# and can never fail the deploy — the app works without a corpus. Documents
+# are content-hashed, so an unchanged deploy costs a handful of SELECTs.
+[[plugins]]
+  package = "./netlify/plugins/knowledge-sync"
+
+# Fecal Scan compares the stool photo against the chart's reference photos.
+# Bundle them with the function so it reads them from disk; if they are ever
+# missing it falls back to a guarded fetch from the deploy's own origin.
+[functions."ai-fecal-scan"]
+  included_files = ["public/fecal-scan/**"]
+
+# Local `netlify dev`: Vite is pinned to 3006 in vite.config.ts; without this
+# the CLI waits on Vite's default 5173 and times out.
+[dev]
+  targetPort = 3006
+
 # Admin SPA fallback — /admin and /admin/anything serves admin.html.
 # Must come before the global SPA fallback so it wins.
 [[redirects]]

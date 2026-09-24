@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:admin-mock": "node scripts/dev-admin-mock.js",
     "build": "vite build",
     "postbuild": "node scripts/copy-static.js",
     "preview": "vite preview",
@@ -13,7 +14,8 @@
     "test:ui": "vitest --ui",
     "typecheck": "tsc --noEmit",
     "check:bundle": "node scripts/check-bundle-size.mjs",
-    "verify:db": "node scripts/verify-db-schema.mjs"
+    "verify:db": "node scripts/verify-db-schema.mjs",
+    "knowledge:sync": "esbuild scripts/knowledge-sync.ts --bundle --platform=node --format=esm --packages=external --outfile=.netlify/knowledge-sync.mjs && node .netlify/knowledge-sync.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
@@ -22,6 +24,7 @@
     "@supabase/supabase-js": "^2.105.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jpeg-js": "^0.4.4",
     "lucide-react": "^0.563.0",
     "motion": "^12.38.0",
     "nodemailer": "^7.0.13",
