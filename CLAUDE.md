@@ -313,7 +313,10 @@ editable `scenario_overrides` column exactly once (unit-tested).
   (`src/shared/scenarios/draftToScenario.ts`, parity-tested against the
   consumer's `adminOverrideToScenario`), loads the server simulation config,
   runs the real roleplay retrieval, and returns the exact
-  `buildCustomerSystemPrompt` text + passages. Read-only.
+  `buildCustomerSystemPrompt` text + passages. Read-only. Gated
+  `scenarios.read`, but the briefing half also needs `scenarios.write` or
+  `simulation.read`, the passages half `scenarios.write` or
+  `knowledge.read` (global AI-tuning notes are withheld otherwise).
 - **Test drive** (`simulator/`) calls the public `ai-roleplay` /
   `ai-evaluate` with `preview: true`, `allowTelemetry: false` and an
   EXPLICIT `promptOverrides` (without one, preview falls back to the SAVED
@@ -321,10 +324,15 @@ editable `scenario_overrides` column exactly once (unit-tested).
   (the `/?pbt_preview=1` iframe protocol, in a phone frame).
 - **Publishing**: one row per scenario — `visible` is the publish switch
   (no server-side drafts). Unsaved work (draft + assistant transcript +
-  step + tested flag) persists locally (`localDrafts.ts`,
-  `pbt:admin:studio_drafts`), so leaving never loses work. Save keeps the
-  old builder's rules: sparse overrides for library scenarios
-  (`diffAgainstBase`), server-managed columns stripped, last-visible guard.
+  step + tested flag) persists locally PER ADMIN ACCOUNT (`localDrafts.ts`,
+  `pbt:admin:studio_drafts:<userId>`), so leaving never loses work.
+  **Resume never reverts anyone else's work**: `rebaseLocalDraft` re-applies
+  only the admin's own edits (vs. the version they started from) over the
+  CURRENT server draft, and publish state always comes from the server.
+  Save keeps the old builder's rules: sparse overrides for library scenarios
+  (`diffAgainstBase`), server-managed columns stripped, last-visible guard;
+  saving over a soft-deleted scenario is a 409 (restore via Audit, or
+  duplicate).
 - **Species** (`src/shared/scenarios/species.ts`): absent = dog. Prompt
   builders swap dog→cat wording ONLY for `species === 'cat'` (dog prompts
   stay byte-identical — parity fixtures); canine trial figures are never
@@ -334,8 +342,12 @@ editable `scenario_overrides` column exactly once (unit-tested).
   migration `20260925000000_scenario_species.sql`: until applied,
   `admin-scenario-overrides` retries the save without it and returns
   `_notice: 'species_column_missing'` (the Studio warns), and `flags-resolve`
-  tries `species` → focus/knowledge → base columns (a failed species probe is
-  remembered 10 min).
+  tries `species` → focus/knowledge → base columns (a genuinely MISSING species
+  column is remembered 10 min; a transient error is not). The Studio probes
+  `admin-scenario-overrides?op=capabilities` and will not publish a CAT
+  scenario while species can't be stored (required readiness item). The
+  assistant's attachable catalogue and the readiness checklist respect the
+  species retrieval scope (a dog-only document retrieves nothing for a cat).
 - **Scenario Author** system role (`scenario_author`): scenarios read/write,
   knowledge read/write, preview. Lands on the Studio. Self-installs via
   `admin-roles::ensureSystemRoles` (no migration).
@@ -655,7 +667,7 @@ Active keys:
 - `pbt:supabase_session` (managed by supabase-js)
 - `pbt:admin_session` (admin portal only, managed by supabase-js)
 - `pbt:admin_nav_collapsed`, `pbt:admin:knowledge_auto_suggest` (admin portal UI preferences)
-- `pbt:admin:studio_drafts` (Scenario Studio unsaved work + assistant transcripts; ≤20 entries, 14-day expiry)
+- `pbt:admin:studio_drafts:<userId>` (Scenario Studio unsaved work + assistant transcripts, per admin account; ≤20 entries, 14-day expiry)
 
 ## Adding new content
 
@@ -841,4 +853,4 @@ full fr-CA localization; Fecal Scan; scoped + self-seeding knowledge base.)
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **`npm test` — ~1,140 tests / 90 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **Scenario Studio (Sept 25):** scenario building as its own admin destination — guided 7-step builder, A2UI assistant (proposals only, re-validated on confirm), prompt/retrieval inspector, native Test drive, dog/cat species (column migration deferred), Scenario Author role; Knowledge + AI tuning promoted to their own nav items. **`npm test` — ~1,700 tests / 120 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.
