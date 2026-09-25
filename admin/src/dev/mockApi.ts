@@ -20,6 +20,7 @@ import {
   PERMISSION_CATEGORIES,
   SYSTEM_ROLES,
 } from '../../../src/shared/access/permissions';
+import { STUDIO_POST_HANDLERS, STUDIO_ROUTES } from './mockStudio';
 import {
   ALL_KNOWLEDGE_SPECIES,
   DEFAULT_KNOWLEDGE_TOOLS,
@@ -702,6 +703,9 @@ const POST_HANDLERS: Record<
   string,
   (body: Record<string, unknown>) => unknown | Promise<unknown>
 > = {
+  // Scenario Studio: assistant, inspector and the preview-only simulator
+  // (ai-roleplay / ai-evaluate) — see ./mockStudio.ts.
+  ...STUDIO_POST_HANDLERS,
   'admin-knowledge-search': knowledgeSearchMock,
   'admin-knowledge-analyze': knowledgeAnalyzeMock,
   'admin-knowledge': (body) => {
@@ -763,7 +767,7 @@ export function installAdminMocks(): void {
     if (name === 'admin-knowledge' && /[?&]trash=/.test(url)) {
       return json({ documents: [] });
     }
-    const body = ROUTES[name];
+    const body = name in STUDIO_ROUTES ? STUDIO_ROUTES[name] : ROUTES[name];
     if (body === undefined) return json({ error: `No mock for ${name}` }, 404);
     return json(body);
   };

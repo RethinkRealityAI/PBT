@@ -90,6 +90,12 @@ export interface ScenarioOverride {
   pushback_notes: string | null;
   suggested_driver: string | null;
   weight_kg: number | null;
+  /**
+   * 'dog' | 'cat'. Optional on the wire: the column arrives with migration
+   * 20260925000000_scenario_species.sql, and until it is applied the
+   * snapshot simply has no key (treated as a dog).
+   */
+  species?: string | null;
   // Retrieval targeting (scenario ↔ knowledge links)
   focus_area?: string | null;
   knowledge_slugs?: string[] | null;

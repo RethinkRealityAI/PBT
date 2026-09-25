@@ -1,4 +1,5 @@
 import type { DriverKey } from '../lib/tokens';
+import type { ScenarioSpecies } from '../../../src/shared/scenarios/species';
 
 export interface AdminUser {
   user_id: string;
@@ -205,6 +206,12 @@ export interface ScenarioOverrideRow {
   pushback_notes: string | null;
   suggested_driver: DriverKey | null;
   weight_kg: number | null;
+  /**
+   * 'dog' | 'cat' (null/absent = dog). Column added by the DEFERRED migration
+   * 20260925000000_scenario_species.sql — rows read before it is applied
+   * have no such key.
+   */
+  species?: ScenarioSpecies | null;
   /** Clinical focus area key (see src/shared/knowledge/focusAreas.ts). */
   focus_area: string | null;
   /** knowledge_documents.slug values explicitly attached to this scenario. */
