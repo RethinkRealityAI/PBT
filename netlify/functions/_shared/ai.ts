@@ -35,6 +35,7 @@ import {
   scenarioRetrievalQuery,
 } from '../../../src/shared/ai/retrievalQuery';
 import { DRIVER_KEYS } from '../../../src/design-system/tokens';
+import { isScenarioSpecies } from '../../../src/shared/scenarios/species';
 import { DEFAULT_LOCALE, isLocale, type Locale } from '../../../src/i18n/locales';
 
 // ─── Responses ─────────────────────────────────────────────────────────────
@@ -568,5 +569,10 @@ export function sanitizeScenario(input: unknown): Scenario | null {
   } else {
     delete out.knowledgeSlugs;
   }
+  // `species` switches the prompt wording and the HARD knowledge scope, so
+  // only the two values the prompt builders know may pass. Anything else is
+  // dropped (not rejected): the scenario simply runs as the dog it would
+  // have been before species existed.
+  if (!isScenarioSpecies(s.species)) delete out.species;
   return out as unknown as Scenario;
 }

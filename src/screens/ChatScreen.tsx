@@ -318,7 +318,7 @@ function ScenarioDetailsPanel({
 
               {/* Meta chips row */}
               <div className="flex flex-wrap gap-2" style={{ marginBottom: 10 }}>
-                {[scenario.breed, localizedLifeStage(scenario.age, locale), localizedPersona(scenario.persona, locale)].map((tag) => (
+                {[scenario.breed, localizedLifeStage(scenario.age, locale, scenario.species), localizedPersona(scenario.persona, locale)].map((tag) => (
                   <span
                     key={tag}
                     style={{

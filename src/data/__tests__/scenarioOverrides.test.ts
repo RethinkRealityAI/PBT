@@ -268,3 +268,58 @@ describe('scenarioOverrides', () => {
     expect(adminOverrideToScenario(bad)).toBeNull();
   });
 });
+
+describe('scenarioOverrides — species', () => {
+  const ADMIN_ROW: ScenarioOverride = {
+    ...NULL_OVERRIDE,
+    scenario_id: 'admin:cat-1',
+    breed: 'Maine Coon',
+    life_stage: 'Puppy (<1)',
+    pushback_id: 'cost',
+    suggested_driver: 'Harmonizer',
+  };
+
+  it('a legacy row (no species key, or null) leaves the merged scenario key-for-key unchanged', () => {
+    const withoutKey = applyScenarioOverride(base, NULL_OVERRIDE, 'seed:0');
+    const withNull = applyScenarioOverride(base, { ...NULL_OVERRIDE, species: null }, 'seed:0');
+    expect(withoutKey).not.toHaveProperty('species');
+    expect(withNull).not.toHaveProperty('species');
+    expect(Object.keys(withNull).sort()).toEqual(Object.keys(withoutKey).sort());
+    expect(withNull).toStrictEqual(withoutKey);
+  });
+
+  it('applies a valid override species onto a base scenario', () => {
+    const merged = applyScenarioOverride(base, { ...NULL_OVERRIDE, species: 'cat' }, 'seed:0');
+    expect(merged.species).toBe('cat');
+    // Nothing else about the base moves.
+    expect(merged.breed).toBe(base.breed);
+    expect(merged.age).toBe(base.age);
+  });
+
+  it('ignores an unknown override species and keeps the base species', () => {
+    const catBase: Scenario = { ...base, species: 'cat' };
+    expect(
+      applyScenarioOverride(catBase, { ...NULL_OVERRIDE, species: 'hamster' }, 'seed:0').species,
+    ).toBe('cat');
+    expect(applyScenarioOverride(catBase, NULL_OVERRIDE, 'seed:0').species).toBe('cat');
+    expect(
+      applyScenarioOverride(base, { ...NULL_OVERRIDE, species: 'hamster' }, 'seed:0'),
+    ).not.toHaveProperty('species');
+  });
+
+  it('adminOverrideToScenario carries a valid species and omits the key otherwise', () => {
+    expect(adminOverrideToScenario({ ...ADMIN_ROW, species: 'cat' })?.species).toBe('cat');
+    expect(adminOverrideToScenario({ ...ADMIN_ROW, species: 'dog' })?.species).toBe('dog');
+    for (const species of [undefined, null, '', 'Cat', 'hamster']) {
+      const row = { ...ADMIN_ROW, species } as ScenarioOverride;
+      const scenario = adminOverrideToScenario(row);
+      expect(scenario, String(species)).not.toBeNull();
+      expect(scenario, String(species)).not.toHaveProperty('species');
+    }
+  });
+
+  it('stores a kitten under the shared life-stage vocabulary', () => {
+    // Life stage stays one stored vocabulary; only the DISPLAY says "Kitten".
+    expect(adminOverrideToScenario({ ...ADMIN_ROW, species: 'cat' })?.age).toBe('Puppy (<1)');
+  });
+});

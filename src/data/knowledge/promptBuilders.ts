@@ -14,8 +14,124 @@ import {
   resolveWeights,
   type SimulationConfig,
 } from './simulationConfig';
+import type { DriverKnowledge } from './driverProfiles';
 import type { RetrievedChunk } from '../../services/ragShared';
 import { DEFAULT_LOCALE, type Locale } from '../../i18n/locales';
+import { lifeStageLabel, speciesOf } from '../../shared/scenarios/species';
+
+// ─── Species (dog / cat) ────────────────────────────────────────────────────
+//
+// Every prompt below was written about a dog, and a scenario with NO species
+// (every legacy row, every trainee-built scenario) IS a dog: its prompts must
+// stay byte-identical to the `__fixtures__/en` captures. So each species
+// branch here is `speciesOf(...) === 'cat' ? <cat wording> : <the original
+// literal>` — the dog side is never re-derived, only left alone.
+
+/**
+ * Dog → cat nouns for the CANNED knowledge text interpolated into the prompts
+ * (driver personas, pushback taxonomy, ACT goals, rubric examples, the
+ * locale rule blocks). Whole words only, case-preserving. English plus the
+ * French forms the fr-CA rule blocks use ("mon chien file pas").
+ *
+ * Deliberately NOT applied to: admin/trainee free text (context, pushback
+ * notes, prompt prefix/suffix — the author wrote those for THIS scenario),
+ * retrieved research passages (rewriting a canine study to say "cats" would
+ * falsify evidence) and clinical figures (a canine trial statistic does not
+ * become a feline one by renaming the animal — see the CAT_* blurbs below).
+ * `chienne` is intentionally absent: its naive feminine counterpart is a
+ * vulgarity in Québec French.
+ */
+const CAT_WORDS: Record<string, string> = {
+  dog: 'cat',
+  dogs: 'cats',
+  Dog: 'Cat',
+  Dogs: 'Cats',
+  DOG: 'CAT',
+  DOGS: 'CATS',
+  puppy: 'kitten',
+  puppies: 'kittens',
+  Puppy: 'Kitten',
+  Puppies: 'Kittens',
+  PUPPY: 'KITTEN',
+  PUPPIES: 'KITTENS',
+  canine: 'feline',
+  canines: 'felines',
+  Canine: 'Feline',
+  chien: 'chat',
+  chiens: 'chats',
+  Chien: 'Chat',
+  Chiens: 'Chats',
+  chiot: 'chaton',
+  chiots: 'chatons',
+  Chiot: 'Chaton',
+  Chiots: 'Chatons',
+};
+
+const CAT_WORD_RX = new RegExp(`\\b(?:${Object.keys(CAT_WORDS).join('|')})\\b`, 'g');
+
+/**
+ * Canned prompt text, re-worded for the scenario's species. Identity (the
+ * very same string) for a dog or an absent species.
+ */
+export function adaptToSpecies(text: string, species: unknown): string {
+  if (speciesOf(species) !== 'cat') return text;
+  return text.replace(CAT_WORD_RX, (word) => CAT_WORDS[word] ?? word);
+}
+
+function adaptAll(list: string[], species: unknown): string[] {
+  return speciesOf(species) === 'cat' ? list.map((s) => adaptToSpecies(s, species)) : list;
+}
+
+/** Driver persona text, re-worded for the species (same object for a dog). */
+function driverForSpecies(driver: DriverKnowledge, species: unknown): DriverKnowledge {
+  if (speciesOf(species) !== 'cat') return driver;
+  return {
+    motivation: adaptToSpecies(driver.motivation, species),
+    communicationStyle: adaptAll(driver.communicationStyle, species),
+    strengths: adaptAll(driver.strengths, species),
+    stressSignature: adaptToSpecies(driver.stressSignature, species),
+    recognitionCues: adaptAll(driver.recognitionCues, species),
+    flexingTips: adaptAll(driver.flexingTips, species),
+    customerSamplePhrasings: adaptAll(driver.customerSamplePhrasings, species),
+  };
+}
+
+/** "dog" / "cat" — the noun the prompt scaffolding uses for the pet. */
+function petNoun(species: unknown): string {
+  return speciesOf(species) === 'cat' ? 'cat' : 'dog';
+}
+
+/**
+ * Feline counterparts of the canine clinical blurbs in `clinicalReference.ts`.
+ * Kept generic on purpose: the canine blurbs carry dog-specific cut-offs and
+ * DMER multipliers, and the product anchors quote a canine trial. Nothing
+ * here introduces a feline number that the clinic's own charts don't own.
+ */
+const CAT_BCS_BLURB = `
+Body Condition Score (BCS) is scored 1–9 for cats too. Use the clinic's feline
+BCS chart for the exact bands: the ideal sits mid-scale, higher scores indicate
+progressive overweight and obesity, lower scores underweight. Never apply
+canine cut-offs to a cat.
+`.trim();
+
+const CAT_CALORIE_FORMULA_BLURB = `
+Resting energy requirement (RER) ≈ 70 × kg^0.75 (the standard formula, used
+for cats as well). Feline maintenance and weight-loss targets use cat-specific
+factors, not the canine DMER multipliers — expect staff to defer to the
+clinic's calculated feeding plan, based on ideal (not current) weight.
+`.trim();
+
+/**
+ * Product claims the scorer may credit once earned. For a cat, the canine
+ * trial percentages are left out: quoting "97% of dogs…" to a cat owner is
+ * not evidence about their cat.
+ */
+function productClaimsLine(species: unknown): string {
+  const claims = PRODUCT_ANCHORS.satietySupport.keyClaims;
+  if (speciesOf(species) !== 'cat') return claims.join('; ');
+  const general = claims.filter((c) => !/\d\s*%/.test(c));
+  return `${general.join('; ')} (the published trial percentages are canine results — never credit quoting them as outcomes for a cat)`;
+}
 
 /**
  * Which side of the simulation a customer prompt is driving.
@@ -84,19 +200,32 @@ export function formatPushbackPromptSection(scenario: Scenario): string {
       extra,
     ].join('\n');
   }
-  const base = `${scenario.pushback.title}\nExample phrase you might lead with: ${scenario.pushback.example}`;
+  // The category title + example are canned (dog-worded) copy; the trainee's
+  // own specifics below are theirs and pass through untouched.
+  const base = adaptToSpecies(
+    `${scenario.pushback.title}\nExample phrase you might lead with: ${scenario.pushback.example}`,
+    scenario.species,
+  );
   if (extra) {
     return `${base}\n\nTrainee-added specifics about this pushback:\n${extra}`;
   }
   return base;
 }
 
+/** `- <Dog|Cat> weight: …` — shared by the scenario-facts block and the scorer. */
+function weightLine(scenario: Scenario): string {
+  const label = speciesOf(scenario.species) === 'cat' ? 'Cat weight' : 'Dog weight';
+  return `- ${label}: ${scenario.weightKg?.trim() ? `${scenario.weightKg.trim()} kg` : '(not specified)'}`;
+}
+
 function formatScenarioFacts(scenario: Scenario): string {
   return [
+    // A cat says so outright; a dog keeps the legacy block byte-for-byte.
+    ...(speciesOf(scenario.species) === 'cat' ? ['- Species: Cat'] : []),
     `- Breed: ${scenario.breed}`,
-    `- Life stage: ${scenario.age}`,
+    `- Life stage: ${lifeStageLabel(scenario.age, scenario.species)}`,
     `- Owner persona: ${scenario.persona}`,
-    `- Dog weight: ${scenario.weightKg?.trim() ? `${scenario.weightKg.trim()} kg` : '(not specified)'}`,
+    weightLine(scenario),
     `- Context: ${scenario.context?.trim() || '(none)'}`,
   ].join('\n');
 }
@@ -225,8 +354,15 @@ const LANGUAGE_RULES: Record<Locale, LanguageRules> = {
   fr: FR_RULES,
 };
 
-function rulesFor(locale: Locale | undefined): LanguageRules {
-  return LANGUAGE_RULES[locale ?? DEFAULT_LOCALE] ?? EN_RULES;
+function rulesFor(locale: Locale | undefined, species?: unknown): LanguageRules {
+  const rules = LANGUAGE_RULES[locale ?? DEFAULT_LOCALE] ?? EN_RULES;
+  if (speciesOf(species) !== 'cat') return rules;
+  // The fr-CA dialect examples put "mon chien" in the customer's mouth.
+  const adapted = {} as LanguageRules;
+  for (const key of Object.keys(rules) as (keyof LanguageRules)[]) {
+    adapted[key] = adaptToSpecies(rules[key], species);
+  }
+  return adapted;
 }
 
 /**
@@ -237,9 +373,13 @@ function rulesFor(locale: Locale | undefined): LanguageRules {
  * localized. Transcript excerpts are quoted verbatim so a key moment never
  * misrepresents what was actually said.
  */
-function coachingLanguageBlock(locale: Locale | undefined): string {
+function coachingLanguageBlock(locale: Locale | undefined, species?: unknown): string {
   if ((locale ?? DEFAULT_LOCALE) !== 'fr') return '';
-  return `
+  // "Never translate … dog breeds" names the pet — a cat scenario says cat.
+  return adaptToSpecies(FR_COACHING_BLOCK, species);
+}
+
+const FR_COACHING_BLOCK = `
 # OUTPUT LANGUAGE — CANADIAN FRENCH
 Write EVERY piece of text the trainee will read in Canadian French (Québec
 register, warm and professional, vouvoiement): the critique, the better
@@ -252,7 +392,6 @@ initialism "ACT". Never translate ECHO driver names, dog breeds, Royal Canin
 product names, or the BCS / MCS initialisms.
 
 `;
-}
 
 /** Options accepted by every customer-facing prompt builder. */
 export interface CustomerPromptOptions {
@@ -304,7 +443,9 @@ export function buildCustomerSystemPrompt({
   locale = DEFAULT_LOCALE,
   mode = 'text',
 }: CustomerPromptOptions): string {
-  const lang = rulesFor(locale);
+  const species = scenario.species;
+  const pet = petNoun(species);
+  const lang = rulesFor(locale, species);
   // Voice must NOT open unprompted — the kickoff cue drives the first line,
   // and an unprompted opener races it into a double opening.
   const openingRule =
@@ -316,9 +457,19 @@ export function buildCustomerSystemPrompt({
     'REFERENCE — WHAT RESEARCH SAYS ABOUT OWNERS LIKE YOU',
     'Ground your behaviour in these findings. EMBODY them — never quote the studies, never cite authors or years in dialogue, never mention research exists.',
   );
-  const driver = resolveDriverKnowledge(scenario.suggestedDriver, config);
+  const driver = driverForSpecies(resolveDriverKnowledge(scenario.suggestedDriver, config), species);
   const pushback = resolvePushbackKnowledge(scenario.pushback.id, config);
   const pushbackBlock = formatPushbackPromptSection(scenario);
+  // Cat-only additions ride on the END of an existing line, so a dog prompt
+  // gains no bytes — not even an empty line.
+  const speciesRule =
+    speciesOf(species) === 'cat'
+      ? '\n- SPECIES: your pet is a CAT. If an example or a reference in this brief reads as canine (another species\' breed, a canine study), translate it to your cat and its breed — never talk about your pet as if it were another species.'
+      : '';
+  const evidenceRule =
+    speciesOf(species) === 'cat'
+      ? 'If staff cites specific clinical evidence concretely AFTER hearing you out, take it seriously.'
+      : 'If staff cites the 97% / 12-week trial concretely AFTER hearing you out, take it seriously.';
   const difficultyLine: Record<number, string> = {
     1: 'You are coachable: you push back once but yield when staff demonstrates real listening. Reward genuine empathy with clear softening.',
     2: 'You are skeptical: you push back twice; soften noticeably if staff acknowledged your concern well — reward solid ACT skills with visible progress.',
@@ -343,11 +494,11 @@ export function buildCustomerSystemPrompt({
 
   return `
 ${prefixBlock}You are roleplaying a Royal Canin customer pushing back during an in-clinic conversation.
-You are NOT the staff member. You are the OWNER of the dog. Stay in character.
+You are NOT the staff member. You are the OWNER of the ${pet}. Stay in character.
 Reply in 1–3 sentences per turn. Never break character. Never grade the staff.
 Never mention that you are an AI.
 ${lang.outputLanguageBlock}
-# DOG
+# ${pet.toUpperCase()}
 ${formatScenarioFacts(scenario)}
 
 # PUSHBACK
@@ -366,7 +517,7 @@ ${difficultyLine[scenario.difficulty]}
 
 ${pushback ? `# UNDER THE SURFACE
 Real concerns the staff needs to surface:
-${pushback.rootConcerns.map((c) => `- ${c}`).join('\n')}` : ''}
+${adaptAll(pushback.rootConcerns, species).map((c) => `- ${c}`).join('\n')}` : ''}
 
 # CONTEXT FROM THE OWNER (optional)
 ${scenario.context ?? '(none)'}
@@ -374,15 +525,15 @@ ${scenario.context ?? '(none)'}
 ${referenceBlock}# RULES
 - ${lang.dialectRule}
 - ADDRESS THE STAFF MEMBER DIRECTLY using SECOND PERSON ("you"). They are speaking to you face-to-face. NEVER use third-person pronouns ("they", "them", "the staff", "the vet") to refer to the person you're talking with — that breaks the simulation. Only use third person when referring to other people who are NOT in the room (e.g., "my husband", "my last vet"). Examples: ✓ "What you just said about the price worries me." ✗ "What they just said about the price worries me."
-- STAY IN SCOPE: respond to what the staff member actually said in the most recent turn. Do not invent quotes, do not respond to things they didn't say, and do not drift to unrelated objections. Keep the conversation rooted in this scenario's pushback topic and the dog's specifics above.
+- STAY IN SCOPE: respond to what the staff member actually said in the most recent turn. Do not invent quotes, do not respond to things they didn't say, and do not drift to unrelated objections. Keep the conversation rooted in this scenario's pushback topic and the ${pet}'s specifics above.${speciesRule}
 - ${openingRule}
 - ${VARIETY_NUDGE}
 - YOUR RESOLUTION ARC (this is how a real owner moves, and it must match what good handling looks like):
   • Stay guarded until the staff member genuinely validates how you feel — name your worry or your bond — WITHOUT immediately countering it. Empty "I understand, but..." does NOT count. Real acknowledgement earns a first, visible softening.
-  • Open up only once they ask a genuine question and actually listen — share one honest detail about your dog when they do. Being clarified makes you noticeably more receptive.
+  • Open up only once they ask a genuine question and actually listen — share one honest detail about your ${pet} when they do. Being clarified makes you noticeably more receptive.
   • Accept only once they tie it together into a specific, credible next step you can picture (a bounded trial, a recheck, a clear plan) — not a vague "this will help." A concrete, low-pressure next step after you've felt heard is what tips you into agreeing.
 - Push back harder if staff jumps straight to a product or a pitch without first acknowledging and clarifying — that should keep you firmly resistant.
-- If staff cites the 97% / 12-week trial concretely AFTER hearing you out, take it seriously.
+- ${evidenceRule}
 - Never say the words "ACT method" or "acknowledge / clarify / transform".
 - ENDING THE SIMULATION (read carefully — ending well is part of being realistic):
   • The simulation MUST end when ANY of these is true:
@@ -411,7 +562,9 @@ export function buildScoringSystemPrompt({
   retrieved,
   locale = DEFAULT_LOCALE,
 }: ScoringPromptOptions): string {
-  const languageBlock = coachingLanguageBlock(locale);
+  const species = scenario.species;
+  const cat = speciesOf(species) === 'cat';
+  const languageBlock = coachingLanguageBlock(locale, species);
   const evidenceBlock = formatRetrievedBlock(
     retrieved,
     'EVIDENCE BASE',
@@ -424,12 +577,12 @@ export function buildScoringSystemPrompt({
   const dimensionLines = resolveDimensions(config)
     .map(
       (d) =>
-        `- ${d.key} (${d.label}, weight ${Math.round((dimensionWeights[d.key] ?? 0) * 100)}% of the overall score): ${d.description} | EXCELLENT (≥85): ${d.excellentExample} | NEEDS WORK (<70): ${d.needsWorkExample}`,
+        `- ${d.key} (${d.label}, weight ${Math.round((dimensionWeights[d.key] ?? 0) * 100)}% of the overall score): ${adaptToSpecies(d.description, species)} | EXCELLENT (≥85): ${adaptToSpecies(d.excellentExample, species)} | NEEDS WORK (<70): ${adaptToSpecies(d.needsWorkExample, species)}`,
     )
     .join('\n');
 
   const actLines = ACT_STEPS.map(
-    (s) => `${s.label}: ${s.goal}`,
+    (s) => `${s.label}: ${adaptToSpecies(s.goal, species)}`,
   ).join('\n');
 
   const scoringPrefix = trimOverride(config.scoring?.promptPrefix);
@@ -448,10 +601,10 @@ and non-shaming.
 
 # SCENARIO
 - Pushback: ${formatPushbackPromptSection(scenario).replace(/\n/g, ' | ')}
-- Breed: ${scenario.breed}
-- Life stage: ${scenario.age}
+${cat ? '- Species: Cat\n' : ''}- Breed: ${scenario.breed}
+- Life stage: ${lifeStageLabel(scenario.age, species)}
 - Owner persona: ${scenario.persona}
-- Dog weight: ${scenario.weightKg?.trim() ? `${scenario.weightKg.trim()} kg` : '(not specified)'}
+${weightLine(scenario)}
 - Context: ${scenario.context?.trim() || '(none)'}
 - Customer's underlying driver: ${scenario.suggestedDriver}
 - Difficulty: ${scenario.difficulty}
@@ -487,10 +640,10 @@ Do NOT include an overall or band — those are computed from your dimension sco
 ${evidenceBlock}${languageBlock}# GUARDRAILS
 - ${NON_SHAMING_FRAMING}
 - Empathy and clarifying come FIRST. Do not reward a strong product pitch that arrived before the client felt heard — that belongs in the lower bands of "transform".
-- A specific, credible next step (a bounded trial, a recheck, a written plan) is what "transform" rewards. Product specifics are only relevant once earned: ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}
-- Use BCS guidance: ${BCS_BLURB}
-- ${MCS_BLURB}
-- ${CALORIE_FORMULA_BLURB}${suffixBlock}
+- A specific, credible next step (a bounded trial, a recheck, a written plan) is what "transform" rewards. Product specifics are only relevant once earned: ${productClaimsLine(species)}
+- Use BCS guidance: ${cat ? CAT_BCS_BLURB : BCS_BLURB}
+- ${adaptToSpecies(MCS_BLURB, species)}
+- ${cat ? CAT_CALORIE_FORMULA_BLURB : CALORIE_FORMULA_BLURB}${suffixBlock}
 `.trim();
 }
 
@@ -506,10 +659,11 @@ export function buildCoachHintSystemPrompt({
   config = {},
   locale = DEFAULT_LOCALE,
 }: CoachPromptOptions): string {
-  const languageBlock = coachingLanguageBlock(locale);
-  const driver = resolveDriverKnowledge(scenario.suggestedDriver, config);
+  const species = scenario.species;
+  const languageBlock = coachingLanguageBlock(locale, species);
+  const driver = driverForSpecies(resolveDriverKnowledge(scenario.suggestedDriver, config), species);
   const pushback = resolvePushbackKnowledge(scenario.pushback.id, config);
-  const actLines = ACT_STEPS.map((s) => `${s.label}: ${s.goal}`).join('\n');
+  const actLines = ACT_STEPS.map((s) => `${s.label}: ${adaptToSpecies(s.goal, species)}`).join('\n');
 
   return `
 You are a veterinary communication coach quietly observing a live training
@@ -524,7 +678,7 @@ ${formatScenarioFacts(scenario)}
 
 ${pushback ? `# WHAT'S REALLY GOING ON
 Root concerns the trainee needs to surface:
-${pushback.rootConcerns.map((c) => `- ${c}`).join('\n')}
+${adaptAll(pushback.rootConcerns, species).map((c) => `- ${c}`).join('\n')}
 
 ` : ''}# THE ACT METHOD (the skill being trained)
 ${actLines}
@@ -554,7 +708,7 @@ export function buildVoiceSystemPrompt(options: CustomerPromptOptions): string {
   // The voice-mode opening rule is composed by the customer builder itself
   // (mode: 'voice') rather than string-replaced out of the text prompt.
   const base = buildCustomerSystemPrompt({ ...options, mode: 'voice' });
-  const lang = rulesFor(options.locale);
+  const lang = rulesFor(options.locale, options.scenario.species);
 
   return (
     base +

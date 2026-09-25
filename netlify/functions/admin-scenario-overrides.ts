@@ -9,10 +9,25 @@
  * 1500 chars each (also enforced by the migration). The canonical customer
  * prompt + scoring rubric remain authoritative — these wrap the customer
  * turn only.
+ *
+ * Species (dog / cat) — DEFERRED COLUMN. `scenario_overrides.species` arrives
+ * with the hand-run migration 20260925000000_scenario_species.sql. Until it is
+ * applied, a write that carries `species` fails at PostgREST with "column not
+ * found"; instead of failing the admin's save, the upsert / duplicate is
+ * retried ONCE without `species` and — when a species (dog or cat) was
+ * actually requested — the response is the saved row plus
+ *
+ *   "_notice": "species_column_missing"
+ *
+ * (a non-column key the Studio shows as "saved — species not stored yet").
+ * The scenario then runs exactly as it did before species existed: a dog.
+ * Any other database error is unchanged (500).
  */
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import { isLifeStage, isPersona, isPushbackId } from '../../src/shared/scenarios/enums';
+import { isScenarioSpecies } from '../../src/shared/scenarios/species';
 
 export interface OverrideUpsert {
   scenario_id: string;
@@ -39,6 +54,8 @@ export interface OverrideUpsert {
   pushback_notes?: string | null;
   suggested_driver?: string | null;
   weight_kg?: number | null;
+  /** 'dog' | 'cat' | null (null = dog). Deferred column — see the header. */
+  species?: string | null;
   // Knowledge & focus — restrict what RAG retrieval may draw on.
   focus_area?: string | null;
   knowledge_slugs?: string[] | null;
@@ -72,6 +89,7 @@ const WRITABLE_COLUMNS = [
   'pushback_notes',
   'suggested_driver',
   'weight_kg',
+  'species',
   'focus_area',
   'knowledge_slugs',
 ] as const satisfies readonly (keyof OverrideUpsert)[];
@@ -141,6 +159,10 @@ export function validateOverride(
     return 'life_stage must be a known life stage';
   if (o.persona_override != null && !isPersona(o.persona_override))
     return 'persona_override must be a known persona';
+  // Species switches the prompt wording and the knowledge scope; null / absent
+  // means dog (every legacy row), so only the two real values are storable.
+  if (o.species != null && !isScenarioSpecies(o.species))
+    return 'species must be dog or cat';
   if (o.weight_kg != null) {
     if (typeof o.weight_kg !== 'number' || !Number.isFinite(o.weight_kg))
       return 'weight_kg must be a number';
@@ -176,6 +198,60 @@ export function validateOverride(
     }
   }
   return null;
+}
+
+/** Response key + value when a save had to drop `species` (see the header). */
+export const SPECIES_NOTICE_KEY = '_notice';
+export const SPECIES_COLUMN_MISSING = 'species_column_missing';
+
+type DbError = { code?: string; message?: string } | null;
+
+/**
+ * True when the error says `scenario_overrides.species` does not exist yet:
+ * PostgREST's schema-cache miss (PGRST204 "Could not find the 'species'
+ * column of 'scenario_overrides' in the schema cache") or Postgres' own
+ * undefined_column (42703). Must name `species` — a missing column that is
+ * NOT this deferred one is a real fault and keeps failing loudly.
+ */
+export function isMissingSpeciesColumn(error: DbError): boolean {
+  if (!error) return false;
+  if (error.code !== 'PGRST204' && error.code !== '42703') return false;
+  return /\bspecies\b/i.test(error.message ?? '');
+}
+
+/**
+ * Upsert one override row; if the deferred `species` column is missing,
+ * retry the SAME write without it. Only retried when the payload actually
+ * carried a `species` key. `speciesDropped` (→ the notice) is true when the
+ * admin asked for a species (dog or cat) that could not be stored; a
+ * `species: null` dropped the same way loses nothing (null already means
+ * dog), so it saves silently.
+ */
+export async function upsertOverrideRow(
+  sb: SupabaseClient,
+  payload: Record<string, unknown>,
+): Promise<{ data: unknown; error: DbError; speciesDropped: boolean }> {
+  const first = await sb.from('scenario_overrides').upsert(payload).select('*').maybeSingle();
+  if (!first.error || !('species' in payload) || !isMissingSpeciesColumn(first.error)) {
+    return { data: first.data, error: first.error, speciesDropped: false };
+  }
+  console.warn(
+    '[admin-scenario-overrides] species column missing — apply 20260925000000_scenario_species.sql; saving without it',
+  );
+  const { species: requestedSpecies, ...withoutSpecies } = payload;
+  const retry = await sb
+    .from('scenario_overrides')
+    .upsert(withoutSpecies)
+    .select('*')
+    .maybeSingle();
+  return { data: retry.data, error: retry.error, speciesDropped: !retry.error && requestedSpecies != null };
+}
+
+/** The saved row, plus the notice when `species` could not be stored. */
+function savedResponse(data: unknown, speciesDropped: boolean): Response {
+  if (!speciesDropped) return jsonResponse(data);
+  const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  return jsonResponse({ ...row, [SPECIES_NOTICE_KEY]: SPECIES_COLUMN_MISSING });
 }
 
 export default async (req: Request): Promise<Response> => {
@@ -285,12 +361,8 @@ export default async (req: Request): Promise<Response> => {
       requireAdminFields: false,
     });
     if (invalidCopy) return errorResponse(400, `Cannot duplicate: ${invalidCopy}`);
-    const { data, error } = await ctx.sb
-      .from('scenario_overrides')
-      .upsert(payload)
-      .select('*')
-      .maybeSingle();
-    if (error) return errorResponse(500, error.message);
+    const { data, error, speciesDropped } = await upsertOverrideRow(ctx.sb, payload);
+    if (error) return errorResponse(500, error.message ?? 'Database error');
     await writeAuditLog(ctx, {
       entity_type: 'scenario_override',
       entity_id: newId,
@@ -298,7 +370,7 @@ export default async (req: Request): Promise<Response> => {
       after: data,
       note: `Duplicated from ${body.scenario_id}`,
     });
-    return jsonResponse(data);
+    return savedResponse(data, speciesDropped);
   }
 
   const invalid = validateOverride(body);
@@ -313,16 +385,12 @@ export default async (req: Request): Promise<Response> => {
   ).data;
   const isNewAdmin =
     body.scenario_id.startsWith('admin:') && (!before || before.created_by == null);
-  const { data, error } = await ctx.sb
-    .from('scenario_overrides')
-    .upsert({
-      ...pickWritable(body),
-      updated_by: ctx.user.id,
-      ...(isNewAdmin ? { created_by: ctx.user.id } : {}),
-    })
-    .select('*')
-    .maybeSingle();
-  if (error) return errorResponse(500, error.message);
+  const { data, error, speciesDropped } = await upsertOverrideRow(ctx.sb, {
+    ...pickWritable(body),
+    updated_by: ctx.user.id,
+    ...(isNewAdmin ? { created_by: ctx.user.id } : {}),
+  });
+  if (error) return errorResponse(500, error.message ?? 'Database error');
   await writeAuditLog(ctx, {
     entity_type: 'scenario_override',
     entity_id: body.scenario_id,
@@ -330,5 +398,5 @@ export default async (req: Request): Promise<Response> => {
     before,
     after: data,
   });
-  return jsonResponse(data);
+  return savedResponse(data, speciesDropped);
 };
