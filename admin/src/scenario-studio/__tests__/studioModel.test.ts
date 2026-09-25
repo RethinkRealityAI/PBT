@@ -229,6 +229,15 @@ describe('readiness', () => {
     expect(canPublish(readiness({ ...complete, pushback_id: 'custom' }, ctx()))).toBe(false);
   });
 
+  it('lists the custom-objection row only when "Something else" is chosen', () => {
+    expect(readiness(complete, ctx()).some((i) => i.key === 'custom-pushback')).toBe(false);
+    const custom = readiness(
+      { ...complete, pushback_id: 'custom', pushback_notes: 'Thinks kibble is ultra-processed' },
+      ctx(),
+    );
+    expect(custom.find((i) => i.key === 'custom-pushback')!.ok).toBe(true);
+  });
+
   it('only warns about knowledge the AI can’t read', () => {
     const items = readiness(complete, ctx({ unindexedTitles: ['Study A'] }));
     const k = items.find((i) => i.key === 'knowledge')!;

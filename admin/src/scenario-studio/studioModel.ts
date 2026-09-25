@@ -255,17 +255,22 @@ export function readiness(draft: StudioDraft, ctx: StudioContext): ReadinessItem
             ? 'pushback'
             : 'customer',
     },
-    {
-      key: 'custom-pushback',
-      label: 'A custom objection is described',
-      ok: draft.pushback_id !== 'custom' || hasText(draft.pushback_notes),
-      level: 'required',
-      detail:
-        draft.pushback_id === 'custom' && !hasText(draft.pushback_notes)
-          ? 'Say what the owner is objecting to in “In the owner’s words”.'
-          : undefined,
-      step: 'pushback',
-    },
+    // Only relevant to "Something else" — a ticked row about a custom
+    // objection the admin never chose just reads as noise.
+    ...(draft.pushback_id === 'custom'
+      ? [
+          {
+            key: 'custom-pushback',
+            label: 'The custom objection is described',
+            ok: hasText(draft.pushback_notes),
+            level: 'required' as const,
+            detail: hasText(draft.pushback_notes)
+              ? undefined
+              : 'Say what the owner is objecting to in “In the owner’s words”.',
+            step: 'pushback' as const,
+          },
+        ]
+      : []),
     {
       key: 'limits',
       label: 'Every field is within its limit',

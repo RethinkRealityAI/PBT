@@ -441,7 +441,8 @@ export function StudioEditor(props: StudioEditorProps) {
   const onAssistantPatch = useCallback(
     (p: StudioDraft, summary: string) => {
       patch(p);
-      toast({ message: `Applied: ${summary}`, tone: 'success', duration: 3500 });
+      // `summary` already reads "Applied: …" (CopilotPanelProps contract).
+      toast({ message: summary, tone: 'success', duration: 3500 });
     },
     [patch, toast],
   );
@@ -837,7 +838,14 @@ export function StudioEditor(props: StudioEditorProps) {
       >
         {/* ── Sticky header ── */}
         <div ref={headerRef} style={{ position: 'sticky', top: 0, zIndex: 20, paddingTop: 4, marginBottom: 16 }}>
-          <Glass padding={layout === 'narrow' ? 12 : '12px 16px'} radius={18} shine={false}>
+          {/* Near-opaque: the step content scrolls UNDER this bar, and the
+              default glass tint let scrolled text read through the title. */}
+          <Glass
+            padding={layout === 'narrow' ? 12 : '12px 16px'}
+            radius={18}
+            shine={false}
+            style={{ background: 'rgba(255,255,255,0.94)' }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <Button tone="ghost" onClick={onClose} aria-label="Back to the Studio" style={{ paddingLeft: 8 }}>
                 ← Studio
