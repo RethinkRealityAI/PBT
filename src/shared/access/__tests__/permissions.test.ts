@@ -78,6 +78,32 @@ describe('system roles', () => {
     expect(clinical.permissions).not.toContain('team.manage');
   });
 
+  it('gives a Scenario Author exactly the Studio, its documents and the preview', () => {
+    const author = SYSTEM_ROLES.find((r) => r.key === 'scenario_author')!;
+    expect(author.name).toBe('Scenario Author');
+    expect([...author.permissions].sort()).toEqual(
+      ['knowledge.read', 'knowledge.write', 'preview.read', 'scenarios.read', 'scenarios.write'].sort(),
+    );
+    // Sits between Content Manager and Clinical Reviewer in pickers.
+    expect(author.rank).toBe(25);
+    // Nothing outside scenario building: no tuning, no analytics, no people.
+    for (const p of ['simulation.write', 'simulation.read', 'overview.read', 'team.read', 'flags.write'] as const) {
+      expect(author.permissions).not.toContain(p);
+    }
+    expect(isSystemRole('scenario_author')).toBe(true);
+    const access = resolveAccess({ role: 'scenario_author' });
+    expect(hasPermission(access, 'scenarios.write')).toBe(true);
+    expect(hasPermission(access, 'simulation.read')).toBe(false);
+  });
+
+  it('keeps system role keys unique and ranks strictly ordered', () => {
+    const keys = SYSTEM_ROLES.map((r) => r.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    const ranks = SYSTEM_ROLES.map((r) => r.rank);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    expect(new Set(ranks).size).toBe(ranks.length);
+  });
+
   it('recognises its own keys as system roles', () => {
     for (const role of SYSTEM_ROLES) expect(isSystemRole(role.key)).toBe(true);
     expect(isSystemRole('regional_trainer')).toBe(false);

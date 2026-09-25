@@ -313,6 +313,25 @@ export const SYSTEM_ROLES: RoleDefinition[] = [
     rank: 20,
   },
   {
+    // For the people who ONLY build training scenarios. Knowledge write is
+    // included because the Studio's Knowledge step uploads the documents a
+    // scenario is grounded in (a narrower "upload only" permission is a
+    // follow-up). No Monitor screens, so they land straight on the Studio.
+    key: 'scenario_author',
+    name: 'Scenario Author',
+    description:
+      'Builds, tests and publishes training scenarios, and can add the documents they are grounded in. Nothing else.',
+    permissions: [
+      'scenarios.read',
+      'scenarios.write',
+      'knowledge.read',
+      'knowledge.write',
+      'preview.read',
+    ],
+    system: true,
+    rank: 25,
+  },
+  {
     key: 'clinical_reviewer',
     name: 'Clinical Reviewer',
     description:

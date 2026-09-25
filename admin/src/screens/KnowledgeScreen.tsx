@@ -621,7 +621,7 @@ export function KnowledgeScreen({
   }, [docs.data]);
 
   /*
-    The global switch in Library → Simulation turns supporting research off for
+    The global switch in AI tuning → Every conversation turns supporting research off for
     every scenario. With it off nothing here reaches a roleplay, so the library
     must say so rather than keep promising that scenarios can quote from it.
   */
@@ -708,7 +708,7 @@ export function KnowledgeScreen({
           file a document under a <strong>focus area</strong> and every scenario set
           to that area starts its sessions with the most relevant sections of it. For
           tighter control, attach specific documents to a scenario in{' '}
-          <strong>Library → Builder</strong> — attachments win, and the focus filter
+          <strong>Scenario Studio</strong>, on its Knowledge step — attachments win, and the focus filter
           is then ignored.
           <br />
           <br />
@@ -724,7 +724,7 @@ export function KnowledgeScreen({
           <InlineAlert tone="warn" title="Scenarios aren’t using this library right now">
             Supporting research is switched off for every scenario, so nothing here
             reaches a roleplay — the AI answers from its own general knowledge.
-            Turn it back on in <strong>Library → Simulation → Global</strong>.
+            Turn it back on in <strong>AI tuning → Every conversation</strong>.
           </InlineAlert>
         )}
         {/*
