@@ -17,7 +17,7 @@ import {
 import type { DriverKnowledge } from './driverProfiles';
 import type { RetrievedChunk } from '../../services/ragShared';
 import { DEFAULT_LOCALE, type Locale } from '../../i18n/locales';
-import { lifeStageLabel, speciesOf } from '../../shared/scenarios/species';
+import { adaptPetWords, lifeStageLabel, speciesOf } from '../../shared/scenarios/species';
 
 // ─── Species (dog / cat) ────────────────────────────────────────────────────
 //
@@ -28,54 +28,20 @@ import { lifeStageLabel, speciesOf } from '../../shared/scenarios/species';
 // literal>` — the dog side is never re-derived, only left alone.
 
 /**
- * Dog → cat nouns for the CANNED knowledge text interpolated into the prompts
- * (driver personas, pushback taxonomy, ACT goals, rubric examples, the
- * locale rule blocks). Whole words only, case-preserving. English plus the
- * French forms the fr-CA rule blocks use ("mon chien file pas").
+ * Canned prompt text, re-worded for the scenario's species (dog → cat nouns,
+ * English + fr-CA, whole words, case-preserving). Identity — the very same
+ * string — for a dog or an absent species. The word map lives in
+ * `src/shared/scenarios/species.ts` (`adaptPetWords`) so the trainee app's
+ * display of canned copy uses the identical rewording.
  *
  * Deliberately NOT applied to: admin/trainee free text (context, pushback
  * notes, prompt prefix/suffix — the author wrote those for THIS scenario),
  * retrieved research passages (rewriting a canine study to say "cats" would
  * falsify evidence) and clinical figures (a canine trial statistic does not
  * become a feline one by renaming the animal — see the CAT_* blurbs below).
- * `chienne` is intentionally absent: its naive feminine counterpart is a
- * vulgarity in Québec French.
- */
-const CAT_WORDS: Record<string, string> = {
-  dog: 'cat',
-  dogs: 'cats',
-  Dog: 'Cat',
-  Dogs: 'Cats',
-  DOG: 'CAT',
-  DOGS: 'CATS',
-  puppy: 'kitten',
-  puppies: 'kittens',
-  Puppy: 'Kitten',
-  Puppies: 'Kittens',
-  PUPPY: 'KITTEN',
-  PUPPIES: 'KITTENS',
-  canine: 'feline',
-  canines: 'felines',
-  Canine: 'Feline',
-  chien: 'chat',
-  chiens: 'chats',
-  Chien: 'Chat',
-  Chiens: 'Chats',
-  chiot: 'chaton',
-  chiots: 'chatons',
-  Chiot: 'Chaton',
-  Chiots: 'Chatons',
-};
-
-const CAT_WORD_RX = new RegExp(`\\b(?:${Object.keys(CAT_WORDS).join('|')})\\b`, 'g');
-
-/**
- * Canned prompt text, re-worded for the scenario's species. Identity (the
- * very same string) for a dog or an absent species.
  */
 export function adaptToSpecies(text: string, species: unknown): string {
-  if (speciesOf(species) !== 'cat') return text;
-  return text.replace(CAT_WORD_RX, (word) => CAT_WORDS[word] ?? word);
+  return adaptPetWords(text, species);
 }
 
 function adaptAll(list: string[], species: unknown): string[] {

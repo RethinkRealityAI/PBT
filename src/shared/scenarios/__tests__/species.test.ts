@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   POPULAR_BREEDS,
+  adaptPetWords,
   SCENARIO_SPECIES,
   SPECIES_LABELS,
   TYPICAL_WEIGHT_HINT,
@@ -88,5 +89,21 @@ describe('studio vocabularies', () => {
       expect(POPULAR_BREEDS[species].length).toBeGreaterThan(0);
       expect(new Set(POPULAR_BREEDS[species]).size).toBe(POPULAR_BREEDS[species].length);
     }
+  });
+});
+
+describe('adaptPetWords', () => {
+  it('re-words canned dog copy for a cat, in English and French', () => {
+    expect(adaptPetWords('"My dog already eats fine — why change?"', 'cat')).toBe(
+      '"My cat already eats fine — why change?"',
+    );
+    expect(adaptPetWords('« Mon chien mange déjà bien. »', 'cat')).toBe('« Mon chat mange déjà bien. »');
+  });
+
+  it('returns the very same string for a dog or an absent species', () => {
+    const text = 'My dog already eats fine';
+    expect(adaptPetWords(text, 'dog')).toBe(text);
+    expect(adaptPetWords(text, undefined)).toBe(text);
+    expect(adaptPetWords(text, null)).toBe(text);
   });
 });

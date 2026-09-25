@@ -54,6 +54,51 @@ export function retrievalSpeciesFor(
 }
 
 /**
+ * Dog → cat nouns for CANNED copy (driver personas, pushback taxonomy and its
+ * example quotes, ACT goals, rubric examples, locale rule blocks). Whole
+ * words only, case-preserving; English plus the French forms the fr-CA copy
+ * uses ("mon chien file pas"). `chienne` is intentionally absent: its naive
+ * feminine counterpart is a vulgarity in Québec French.
+ */
+const CAT_WORDS: Record<string, string> = {
+  dog: 'cat',
+  dogs: 'cats',
+  Dog: 'Cat',
+  Dogs: 'Cats',
+  DOG: 'CAT',
+  DOGS: 'CATS',
+  puppy: 'kitten',
+  puppies: 'kittens',
+  Puppy: 'Kitten',
+  Puppies: 'Kittens',
+  PUPPY: 'KITTEN',
+  PUPPIES: 'KITTENS',
+  canine: 'feline',
+  canines: 'felines',
+  Canine: 'Feline',
+  chien: 'chat',
+  chiens: 'chats',
+  Chien: 'Chat',
+  Chiens: 'Chats',
+  chiot: 'chaton',
+  chiots: 'chatons',
+  Chiot: 'Chaton',
+  Chiots: 'Chatons',
+};
+
+const CAT_WORD_RX = new RegExp(`\\b(?:${Object.keys(CAT_WORDS).join('|')})\\b`, 'g');
+
+/**
+ * Canned dog-worded copy, re-worded for the scenario's species. Returns the
+ * very same string for a dog or an absent species. Never use it on text an
+ * author wrote for the scenario, or on research — only on built-in copy.
+ */
+export function adaptPetWords(text: string, species: unknown): string {
+  if (speciesOf(species) !== 'cat') return text;
+  return text.replace(CAT_WORD_RX, (word) => CAT_WORDS[word] ?? word);
+}
+
+/**
  * Quick-pick breed suggestions shown in the Studio. The breed field stays
  * free text (any breed is valid); these are only shortcuts.
  */
