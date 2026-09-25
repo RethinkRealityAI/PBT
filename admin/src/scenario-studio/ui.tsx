@@ -33,7 +33,11 @@ export const STUDIO_STYLESHEET = `
   @keyframes pbt-studio-dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
   @keyframes pbt-studio-spin { to { transform: rotate(360deg); } }
 
-  .pbt-studio-in { animation: pbt-studio-in 0.22s ease both; }
+  /* fill-mode BACKWARDS, never both/forwards: a transform left on the element
+     after the animation (even translateY(0)) makes it the containing block
+     for position:fixed descendants, so an in-place Modal/InfoTip inside a
+     step would cover only the step instead of the screen. */
+  .pbt-studio-in { animation: pbt-studio-in 0.22s ease backwards; }
 
   .pbt-studio-field {
     transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
