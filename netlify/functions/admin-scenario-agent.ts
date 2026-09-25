@@ -180,6 +180,20 @@ export async function loadRoleplayCatalogue(sb: SupabaseClient): Promise<AgentCa
     }));
 }
 
+/**
+ * The catalogue a scenario of this species scope can actually retrieve from.
+ * `scope` undefined (no species declared) keeps everything — legacy
+ * scenarios retrieve un-scoped. A document with no species tags reads as
+ * "every species" (the knowledge vocabulary's default).
+ */
+export function catalogueForSpecies(
+  catalogue: readonly AgentCatalogueDoc[],
+  scope: string | undefined,
+): AgentCatalogueDoc[] {
+  if (!scope) return [...catalogue];
+  return catalogue.filter((d) => !d.species || d.species.length === 0 || d.species.includes(scope));
+}
+
 // ── Retrieval ────────────────────────────────────────────────────────────
 
 /**
@@ -367,7 +381,7 @@ export default async (req: Request): Promise<Response> => {
   const query = agentRetrievalQuery(turns, draft);
   const species = retrievalSpeciesFor(draft.species, draft.life_stage);
   const speciesFilter = species ? { species } : {};
-  const [catalogue, relevantChunks, researchChunks] = await Promise.all([
+  const [fullCatalogue, relevantChunks, researchChunks] = await Promise.all([
     withTimeout(loadRoleplayCatalogue(ctx.sb), CATALOGUE_TIMEOUT_MS, [] as AgentCatalogueDoc[]),
     withTimeout(
       retrieveChunks(query, {
@@ -388,6 +402,11 @@ export default async (req: Request): Promise<Response> => {
       [] as RetrievedChunk[],
     ),
   ]);
+  // Species is a HARD retrieval scope and attached documents never widen, so
+  // a dog-only document attached to a cat scenario would retrieve NOTHING.
+  // The assistant only ever sees (and may only attach) documents this
+  // scenario's species can actually read.
+  const catalogue = catalogueForSpecies(fullCatalogue, species);
   const knownSlugs = new Set(catalogue.map((d) => d.slug));
 
   const systemInstruction = buildScenarioAgentSystemPrompt({

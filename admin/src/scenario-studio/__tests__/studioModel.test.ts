@@ -17,6 +17,7 @@ import {
   blankToNull,
   buildDuplicateDraft,
   buildStudioContext,
+  rebaseLocalDraft,
   buildStudioEntries,
   canPublish,
   difficultyText,
@@ -98,6 +99,8 @@ const ctx = (over: Partial<StudioContext> = {}): StudioContext => ({
   missingSlugs: [],
   unindexedTitles: [],
   notRoleplayTitles: [],
+  wrongSpeciesTitles: [],
+  speciesUnsupported: false,
   ...over,
 });
 
@@ -689,5 +692,60 @@ describe('titles, summaries, times', () => {
     const id = newAdminScenarioId();
     expect(id).toMatch(/^admin:[0-9a-f-]{36}$/);
     expect(newAdminScenarioId()).not.toBe(id);
+  });
+});
+
+describe('rebaseLocalDraft — resuming never reverts someone else’s work', () => {
+  const started = { scenario_id: 'admin:s', breed: 'Lab', context_override: 'Old story', visible: true };
+
+  it('re-applies only the admin’s own edits over the current server version', () => {
+    const local = { draft: { ...started, breed: 'Golden Retriever' }, baseline: JSON.stringify(started) };
+    // Meanwhile another admin rewrote the backstory AND unpublished it.
+    const server = { ...started, context_override: 'New story', visible: false };
+    const r = rebaseLocalDraft(local, server);
+    expect(r.draft).toMatchObject({ breed: 'Golden Retriever', context_override: 'New story', visible: false });
+    expect(r.edited).toEqual(['breed']);
+    expect(r.serverMoved).toBe(true);
+  });
+
+  it('never carries publish state or server-owned columns across', () => {
+    const local = {
+      draft: { ...started, visible: false, updated_at: 'x', created_by: 'y' },
+      baseline: JSON.stringify(started),
+    };
+    const r = rebaseLocalDraft(local, started);
+    expect(r.edited).toEqual([]);
+    expect(r.draft.visible).toBe(true);
+    expect(r.serverMoved).toBe(false);
+  });
+
+  it('a never-saved draft (empty baseline) comes back whole', () => {
+    const draft = { scenario_id: 'admin:n', breed: 'Persian', species: 'cat' as const, visible: false };
+    const r = rebaseLocalDraft({ draft, baseline: '{}' }, draft);
+    expect(r.draft).toMatchObject(draft);
+    expect(r.serverMoved).toBe(false);
+  });
+});
+
+describe('species checks', () => {
+  const catDoc = { slug: 'cat-doc', title: 'Cat handout', chunk_count: 3, metadata: { tags: { tools: ['roleplay'], species: ['cat'] } } };
+  const dogDoc = { slug: 'dog-doc', title: 'Dog study', chunk_count: 3, metadata: { tags: { tools: ['roleplay'], species: ['dog'] } } };
+
+  it('flags attached documents filed for another species', () => {
+    const c = buildStudioContext({
+      draft: { species: 'cat', life_stage: 'Adult (3-7)', knowledge_slugs: ['cat-doc', 'dog-doc'] },
+      source: 'admin',
+      tested: true,
+      docs: [catDoc, dogDoc],
+    });
+    expect(c.wrongSpeciesTitles).toEqual(['Dog study']);
+    expect(readiness({ ...complete, species: 'cat' }, c).find((i) => i.key === 'knowledge')!.ok).toBe(false);
+  });
+
+  it('blocks publishing a cat scenario while species can’t be stored — never a dog one', () => {
+    const blocked = readiness({ ...complete, species: 'cat' }, ctx({ speciesUnsupported: true }));
+    expect(blocked.find((i) => i.key === 'species-storage')!.ok).toBe(false);
+    expect(canPublish(blocked)).toBe(false);
+    expect(canPublish(readiness({ ...complete, species: 'dog' }, ctx({ speciesUnsupported: true })))).toBe(true);
   });
 });

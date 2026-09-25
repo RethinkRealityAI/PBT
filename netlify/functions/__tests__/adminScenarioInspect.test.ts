@@ -146,9 +146,36 @@ describe('admin-scenario-inspect — gating', () => {
     expect(body.error).toContain('scenarios.read');
   });
 
-  it('lets a read-only role inspect (scenarios.read is enough)', async () => {
-    const res = await request({ draft: DRAFT }, adminHeaders({ is_admin: false, admin_role: 'analyst' }));
+  it('lets a read-only role with AI-tuning + knowledge access inspect everything', async () => {
+    // clinical_reviewer: scenarios.read + simulation.read + knowledge.read, no scenarios.write.
+    const res = await request(
+      { draft: DRAFT },
+      adminHeaders({ is_admin: false, admin_role: 'clinical_reviewer' }),
+    );
     expect(res.status).toBe(200);
+  });
+
+  it('refuses the briefing and the passages to scenarios.read alone (analyst)', async () => {
+    const headers = adminHeaders({ is_admin: false, admin_role: 'analyst' });
+    let res = await request({ draft: DRAFT, include: { knowledge: false } }, headers);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toMatch(/briefing/);
+    res = await request({ draft: DRAFT, include: { prompt: false } }, headers);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toMatch(/knowledge/);
+    expect(mocks.retrieveChunksDetailed).not.toHaveBeenCalled();
+  });
+
+  it('never returns the global AI-tuning notes to a role that may not see the briefing', async () => {
+    withConfig({ customerPromptPrefix: 'GLOBAL OPENING', customerPromptSuffix: 'GLOBAL CLOSING' });
+    const res = await request(
+      { draft: DRAFT, include: { prompt: false, knowledge: false } },
+      adminHeaders({ is_admin: false, admin_role: 'analyst' }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { adminNotes: Record<string, unknown> };
+    expect(body.adminNotes.globalPrefix).toBeNull();
+    expect(body.adminNotes.globalSuffix).toBeNull();
   });
 
   it('rejects a bad body with 400', async () => {

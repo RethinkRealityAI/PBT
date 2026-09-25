@@ -50,6 +50,7 @@ import {
   type ScenarioAgentAction,
 } from '../../../../src/shared/ai/scenarioAgent';
 import { SCENARIO_LIMITS } from '../../../../src/shared/scenarios/limits';
+import { retrievalSpeciesFor } from '../../../../src/shared/scenarios/species';
 import { A2uiSurface } from './A2uiSurface';
 import { CARD_EVENTS, buildActionSurface } from './agentSurfaces';
 import { composerPlaceholder, greetingFor, starterPrompts } from './starterPrompts';
@@ -153,17 +154,25 @@ export function CopilotPanel(props: CopilotPanelProps) {
   const onPendingConsumedRef = useLatest(props.onPendingConsumed);
 
   /**
-   * Documents the assistant may attach: readable by the roleplay customer
-   * and indexed. Anything else would silently retrieve nothing.
+   * Documents the assistant may attach: readable by the roleplay customer,
+   * indexed, and filed for this scenario's species (species is a HARD
+   * retrieval scope and attached documents never widen). Anything else
+   * would silently retrieve nothing.
    */
+  const speciesScope = retrievalSpeciesFor(draft.species, draft.life_stage);
   const knownSlugs = useMemo(
     () =>
       new Set(
         knowledge.docs
-          .filter((d) => d.chunk_count > 0 && resolveDocScope(d.metadata).tools.includes('roleplay'))
+          .filter((d) => {
+            if (d.chunk_count <= 0) return false;
+            const scope = resolveDocScope(d.metadata);
+            if (!scope.tools.includes('roleplay')) return false;
+            return !speciesScope || scope.species.includes(speciesScope);
+          })
           .map((d) => d.slug),
       ),
-    [knowledge.docs],
+    [knowledge.docs, speciesScope],
   );
   const knownSlugsRef = useLatest(knownSlugs);
 
@@ -202,6 +211,21 @@ export function CopilotPanel(props: CopilotPanelProps) {
 
   // ── The conversation loop ──────────────────────────────────────────────
 
+  /**
+   * The docked panel and the drawer are separate mounts, so crossing the
+   * dock breakpoint (or hiding the dock) unmounts this panel mid-request.
+   * Its late reply would then write a STALE transcript over whatever the new
+   * mount has added — so an unmounted panel drops its reply, and the new
+   * mount offers Retry for the unanswered message (effect below).
+   */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   /** Ask the model for its next turn. Caller holds `sendingRef`. */
   const runTurn = useCallback(async () => {
     // A reply that lands after the admin switched scenarios belongs to the
@@ -213,7 +237,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
         draft: pickAgentDraft(draftRef.current),
         step: stepRef.current,
       });
-      if (scenarioRef.current !== forScenario) return;
+      if (!mountedRef.current || scenarioRef.current !== forScenario) return;
       // The server normalised these already; the client does it again
       // against the library THIS browser can see before any card is built.
       const actions = normalizeAgentActions(res?.actions, { knownSlugs: knownSlugsRef.current });
@@ -231,7 +255,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
       });
       setAnnouncement(reply || (actions.length ? 'The assistant made a suggestion.' : FALLBACK_REPLY));
     } catch (err) {
-      if (scenarioRef.current !== forScenario) return;
+      if (!mountedRef.current || scenarioRef.current !== forScenario) return;
       const detail = err instanceof Error ? err.message : String(err ?? '');
       const text = offlineMessage(detail);
       update((t) => setSuggestions(appendAssistant(t, text, { offline: true }), []));
@@ -272,6 +296,23 @@ export function CopilotPanel(props: CopilotPanelProps) {
     },
     [update, runTurn, canWriteRef],
   );
+
+  // A transcript whose LAST item is the admin's own message was cut off
+  // mid-request (the panel remounted, or the page reloaded). Say so and offer
+  // Retry rather than leaving a question hanging with no answer. Runs once
+  // per mount; `update` writes through `transcriptRef` immediately, so a
+  // StrictMode double-run sees the note and doesn't add a second one.
+  useEffect(() => {
+    const last = transcriptRef.current.items[transcriptRef.current.items.length - 1];
+    if (last?.kind !== 'user' || sendingRef.current) return;
+    update((t) =>
+      setSuggestions(
+        appendAssistant(t, 'The assistant was interrupted before it could reply.', { offline: true }),
+        [],
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Card events ────────────────────────────────────────────────────────
 

@@ -21,6 +21,7 @@ import {
 import { SCENARIO_LIMITS } from '../../../src/shared/scenarios/limits';
 import {
   lifeStageLabel,
+  retrievalSpeciesFor,
   speciesOf,
   type ScenarioSpecies,
 } from '../../../src/shared/scenarios/species';
@@ -167,6 +168,17 @@ export interface StudioContext {
   unindexedTitles: string[];
   /** Titles of attached documents the roleplay customer may not read. */
   notRoleplayTitles: string[];
+  /**
+   * Titles of attached documents filed for another species. Species is a
+   * HARD retrieval scope and attached documents never widen, so these
+   * retrieve nothing for this scenario.
+   */
+  wrongSpeciesTitles?: string[];
+  /**
+   * The database can't store `species` yet (the deferred migration is
+   * pending): a cat scenario would reach trainees as a dog.
+   */
+  speciesUnsupported?: boolean;
 }
 
 export function hasText(v: unknown): boolean {
@@ -204,7 +216,11 @@ export function stepStatus(
         ? { status: 'done' }
         : { status: 'todo', detail: 'Pick the owner’s ECHO driver' };
     case 'knowledge': {
-      const issues = ctx.missingSlugs.length + ctx.unindexedTitles.length + ctx.notRoleplayTitles.length;
+      const issues =
+        ctx.missingSlugs.length +
+        ctx.unindexedTitles.length +
+        ctx.notRoleplayTitles.length +
+        (ctx.wrongSpeciesTitles?.length ?? 0);
       if (issues > 0) return { status: 'attention', detail: 'Some attached documents can’t be used' };
       return hasText(draft.focus_area) || (draft.knowledge_slugs?.length ?? 0) > 0
         ? { status: 'done' }
@@ -239,8 +255,12 @@ export function readiness(draft: StudioDraft, ctx: StudioContext): ReadinessItem
     ...ctx.missingSlugs.map((s) => `“${s}” no longer exists`),
     ...ctx.unindexedTitles.map((t) => `“${t}” isn’t searchable yet`),
     ...ctx.notRoleplayTitles.map((t) => `“${t}” isn’t readable by the roleplay`),
+    ...(ctx.wrongSpeciesTitles ?? []).map(
+      (t) => `“${t}” is filed for another species, so this scenario never reads it`,
+    ),
   ];
   const problems = draftProblems(draft);
+  const catBlocked = draft.species === 'cat' && ctx.speciesUnsupported === true;
   return [
     {
       key: 'core',
@@ -268,6 +288,22 @@ export function readiness(draft: StudioDraft, ctx: StudioContext): ReadinessItem
               ? undefined
               : 'Say what the owner is objecting to in “In the owner’s words”.',
             step: 'pushback' as const,
+          },
+        ]
+      : []),
+    // A cat scenario can't go live while the species column is missing: the
+    // save would drop `species` and trainees would get a DOG roleplay with a
+    // cat's backstory. Saving it as a hidden draft is fine.
+    ...(catBlocked
+      ? [
+          {
+            key: 'species-storage',
+            label: 'Cat scenarios can be stored',
+            ok: false,
+            level: 'required' as const,
+            detail:
+              'A database update is still pending, so this scenario would reach trainees as a dog. Save it as a draft for now — it can go live once the update is applied.',
+            step: 'pet' as const,
           },
         ]
       : []),
@@ -585,6 +621,78 @@ export function localEntryHasChanges(entry: { draft: StudioDraft; baseline: stri
   return draftsDiffer(entry.draft, base ?? {});
 }
 
+/** Columns a resumed local draft may never carry over: identity, publish
+ * state, and what the server owns. */
+const NOT_REBASED: ReadonlySet<string> = new Set([
+  'scenario_id',
+  'visible',
+  'created_at',
+  'created_by',
+  'updated_at',
+  'updated_by',
+  'deleted_at',
+]);
+
+function sameFieldValue(a: unknown, b: unknown): boolean {
+  if (isBlankValue(a) && isBlankValue(b)) return true;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export interface RebasedDraft {
+  /** The current server draft with ONLY the admin's local edits re-applied. */
+  draft: StudioDraft;
+  /** Keys the admin changed locally (relative to where they started). */
+  edited: Array<keyof ScenarioOverrideRow>;
+  /** The server version moved on after the local work began. */
+  serverMoved: boolean;
+}
+
+/**
+ * Resume unsaved browser work WITHOUT reverting anyone else's.
+ *
+ * A local entry remembers the server version the admin started from
+ * (`baseline`). Resuming used to restore the whole old snapshot — so if
+ * another admin had since edited or unpublished the scenario, one Save put
+ * their changes back and re-published it. Now only the fields the admin
+ * actually changed are laid over the CURRENT server draft, and `visible`
+ * (publish state) always comes from the server.
+ */
+export function rebaseLocalDraft(
+  entry: { draft: StudioDraft; baseline: string },
+  server: StudioDraft,
+): RebasedDraft {
+  let base: StudioDraft = {};
+  try {
+    const parsed = JSON.parse(entry.baseline) as unknown;
+    if (parsed && typeof parsed === 'object') base = parsed as StudioDraft;
+  } catch {
+    base = {};
+  }
+  const local = entry.draft as Record<string, unknown>;
+  const from = base as Record<string, unknown>;
+  const keys = new Set([...Object.keys(local), ...Object.keys(from)]);
+  const edited: Array<keyof ScenarioOverrideRow> = [];
+  const draft: Record<string, unknown> = { ...server };
+  for (const key of keys) {
+    if (NOT_REBASED.has(key)) continue;
+    if (sameFieldValue(local[key], from[key])) continue;
+    edited.push(key as keyof ScenarioOverrideRow);
+    draft[key] = local[key] ?? null;
+  }
+  draft.visible = server.visible;
+  draft.scenario_id = server.scenario_id;
+  // A never-saved draft started from nothing — there is no server version to
+  // have moved.
+  const serverMoved = Object.keys(from).length > 0 && draftsDiffer(stripUnrebased(base), stripUnrebased(server));
+  return { draft: draft as StudioDraft, edited, serverMoved };
+}
+
+function stripUnrebased(d: StudioDraft): StudioDraft {
+  const out: Record<string, unknown> = { ...d };
+  for (const k of NOT_REBASED) if (k !== 'visible') delete out[k];
+  return out as StudioDraft;
+}
+
 /**
  * Fields that never reach the AI: how the card looks, whether it is live, and
  * the columns the server owns. Changing them after a Test drive doesn't make
@@ -618,12 +726,24 @@ export function buildStudioContext(args: {
   source: StudioSource;
   tested: boolean;
   docs: readonly KnowledgeDocLite[] | null;
+  /** From `admin-scenario-overrides?op=capabilities`; undefined = unknown. */
+  speciesSupported?: boolean;
 }): StudioContext {
   const { draft, source, tested, docs } = args;
+  const speciesUnsupported = args.speciesSupported === false;
   const selected = draft.knowledge_slugs ?? [];
   if (!docs || selected.length === 0) {
-    return { source, tested, missingSlugs: [], unindexedTitles: [], notRoleplayTitles: [] };
+    return {
+      source,
+      tested,
+      missingSlugs: [],
+      unindexedTitles: [],
+      notRoleplayTitles: [],
+      wrongSpeciesTitles: [],
+      speciesUnsupported,
+    };
   }
+  const scope = retrievalSpeciesFor(draft.species, draft.life_stage);
   const bySlug = new Map(docs.map((d) => [d.slug, d] as const));
   const attached = selected
     .map((slug) => bySlug.get(slug))
@@ -636,6 +756,12 @@ export function buildStudioContext(args: {
     notRoleplayTitles: attached
       .filter((d) => !readKnowledgeScope(d.metadata).tools.includes('roleplay'))
       .map((d) => d.title),
+    wrongSpeciesTitles: scope
+      ? attached
+          .filter((d) => !readKnowledgeScope(d.metadata).species.includes(scope))
+          .map((d) => d.title)
+      : [],
+    speciesUnsupported,
   };
 }
 

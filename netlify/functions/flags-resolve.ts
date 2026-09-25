@@ -21,6 +21,7 @@
  * the flag's default_value is returned.
  */
 import { errorResponse, getServiceClient, jsonResponse } from './_shared/admin';
+import { isMissingSpeciesColumn } from './_shared/speciesColumn';
 import { triggerKnowledgeSync, type NetlifyContextLike } from './_shared/knowledgeTrigger';
 
 const CACHE_TTL_MS = 60_000;
@@ -129,7 +130,10 @@ export async function selectOverrideRows(select: OverrideSelect, now = Date.now(
   if (now - speciesSelectFailedAt >= SPECIES_REPROBE_MS) {
     const withSpecies = await select(OVERRIDE_COLUMNS_WITH_SPECIES);
     if (!withSpecies.error) return withSpecies.data;
-    speciesSelectFailedAt = now;
+    // Only a genuinely missing column is remembered. A transient failure
+    // (timeout, blip) must not serve every cat scenario as a dog for the
+    // next ten minutes — it just falls through for this one load.
+    if (isMissingSpeciesColumn(withSpecies.error)) speciesSelectFailedAt = now;
     console.warn(
       '[flags-resolve] scenario_overrides select with species failed (migration pending?), retrying without it',
       withSpecies.error,

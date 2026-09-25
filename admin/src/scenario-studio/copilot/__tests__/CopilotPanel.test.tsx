@@ -497,4 +497,24 @@ describe('CopilotPanel', () => {
     expect(screen.getByRole('button', { name: /Keep going/ })).toBeInTheDocument();
     expect(askScenarioAgent).not.toHaveBeenCalled();
   });
+
+  it('a transcript cut off mid-request says so and offers Retry, once', () => {
+    const cutOff: CopilotTranscript = {
+      items: [
+        { id: 'a1', kind: 'assistant', text: 'What should they practise?', at: 1 },
+        { id: 'u2', kind: 'user', text: 'A cat owner on a budget', at: 2 },
+      ],
+      surfaces: {},
+      suggestions: [],
+      seq: 2,
+    };
+    render(
+      <StrictMode>
+        <Harness initialTranscript={cutOff} />
+      </StrictMode>,
+    );
+    expect(screen.getAllByText(/interrupted before it could reply/)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument();
+    expect(askScenarioAgent).not.toHaveBeenCalled();
+  });
 });

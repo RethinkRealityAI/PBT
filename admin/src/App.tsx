@@ -337,7 +337,7 @@ export function App() {
           )}
 
           {item.key === 'scenarios' && tab === 'studio' && (
-            <ScenarioStudioScreen query={query} onQuery={setQuery} />
+            <ScenarioStudioScreen query={query} onQuery={setQuery} meUserId={me.user_id} />
           )}
           {item.key === 'scenarios' && tab === 'trainee' && (
             <ScenariosScreen query={query} onQuery={setQuery} />

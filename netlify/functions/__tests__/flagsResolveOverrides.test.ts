@@ -33,10 +33,10 @@ describe('flags-resolve selectOverrideRows', () => {
     expect(rows[0].columns).toContain('focus_area');
   });
 
-  it('remembers a failed species probe, then re-probes later', async () => {
+  it('remembers a missing species column, then re-probes later', async () => {
     const select = vi.fn(async (columns: string) =>
       columns.includes('species')
-        ? { data: null, error: { code: '42703' } }
+        ? { data: null, error: { code: '42703', message: 'column scenario_overrides.species does not exist' } }
         : { data: [], error: null },
     );
     await selectOverrideRows(select, 1_000_000);
@@ -46,6 +46,21 @@ describe('flags-resolve selectOverrideRows', () => {
     select.mockClear();
     await selectOverrideRows(select, 1_000_000 + 11 * 60_000);
     expect(select.mock.calls[0][0]).toContain('species');
+  });
+
+  it('does not remember a transient failure — the next load tries species again', async () => {
+    let fail = true;
+    const select = vi.fn(async (columns: string) => {
+      if (columns.includes('species') && fail) {
+        fail = false;
+        return { data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } };
+      }
+      return { data: [{ columns }], error: null };
+    });
+    await selectOverrideRows(select, 2_000_000);
+    select.mockClear();
+    const rows = (await selectOverrideRows(select, 2_000_000 + 1_000)) as Array<{ columns: string }>;
+    expect(rows[0].columns).toContain('species');
   });
 
   it('falls back to the base columns, and throws the full-select error if even that fails', async () => {

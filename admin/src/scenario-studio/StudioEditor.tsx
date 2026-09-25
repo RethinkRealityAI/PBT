@@ -45,6 +45,9 @@ import {
   buildStudioContext,
   canPublish,
   draftsDiffer,
+  FIELD_LABELS,
+  localEntryHasChanges,
+  rebaseLocalDraft,
   nextStep,
   overriddenFieldLabels,
   previousStep,
@@ -130,6 +133,11 @@ export interface StudioEditorProps {
   isOnlyVisible: boolean;
   canWrite: boolean;
   knowledge: KnowledgeState;
+  /**
+   * Whether the database can store `species` (deferred migration). `false`
+   * blocks publishing a CAT scenario; undefined = unknown, never blocks.
+   */
+  speciesSupported?: boolean;
   initialStep?: StudioStepKey;
   /** Open with the assistant showing. */
   openAssistant?: boolean;
@@ -233,13 +241,19 @@ export function StudioEditor(props: StudioEditorProps) {
       offer: null as LocalDraftEntry | null,
     };
     if (!local) return start;
-    const differs = draftsDiffer(local.draft, seed);
-    if (differs && !props.resumeLocal) {
+    // Only the admin's OWN edits count as unsaved work — measured against
+    // the version they started from (`baseline`), not against today's
+    // server copy. A kept assistant conversation or a Test drive with no
+    // edits restores silently; it never raises the offer.
+    const hasEdits = localEntryHasChanges(local);
+    if (hasEdits && !props.resumeLocal) {
       // Unsaved work from earlier that the server doesn't have: offer it,
       // don't impose it — the saved version may have moved on since.
       return { ...start, offer: local };
     }
-    const draft = differs ? { ...local.draft, scenario_id: scenarioId } : seed;
+    // Resuming lays ONLY those edits over the current server draft;
+    // `visible` (publish state) always comes from the server.
+    const draft = hasEdits ? rebaseLocalDraft(local, seed).draft : seed;
     return {
       draft,
       step: props.initialStep ?? local.step ?? 'pet',
@@ -296,11 +310,28 @@ export function StudioEditor(props: StudioEditorProps) {
   const docked = assistantAvailable && layout === 'wide' && !dockHidden;
 
   // ── Derived ──
+  const offerSummary = useMemo(() => {
+    if (!offer) return { edited: [] as string[], serverMoved: false };
+    const r = rebaseLocalDraft(offer, { ...initialDraft, scenario_id: scenarioId });
+    return {
+      edited: r.edited.map((k) => FIELD_LABELS[k] ?? String(k)),
+      serverMoved: r.serverMoved,
+    };
+  }, [offer, initialDraft, scenarioId]);
   const tested = testedSig !== null && testedSig === aiSignature(draft);
   const knowledgeDocs = knowledge.loading || knowledge.error ? null : knowledge.docs;
   const ctx = useMemo(
-    () => buildStudioContext({ draft, source, tested, docs: knowledgeDocs }),
-    [draft, source, tested, knowledgeDocs],
+    () =>
+      buildStudioContext({
+        draft,
+        source,
+        tested,
+        docs: knowledgeDocs,
+        // A save already told us the column is missing — believe it even if
+        // the capabilities probe hasn't answered.
+        speciesSupported: speciesPending ? false : props.speciesSupported,
+      }),
+    [draft, source, tested, knowledgeDocs, speciesPending, props.speciesSupported],
   );
   const dirty = draftsDiffer(draft, baseline);
   const title = studioTitle(draft, fallbackTitle);
@@ -555,6 +586,34 @@ export function StudioEditor(props: StudioEditorProps) {
 
       if (notice === 'species_column_missing') {
         setSpeciesPending(true);
+        // Published before we knew the species couldn't be stored (the
+        // capabilities probe hadn't answered): a CAT scenario must not stay
+        // live as a dog roleplay. Take it straight back to a hidden draft.
+        if (next.visible === true && next.species === 'cat') {
+          try {
+            const hidden = { ...next, visible: false };
+            await upsertScenarioOverride({
+              ...blankToNull(stripServerManaged(sparsify(hidden))),
+              scenario_id: scenarioId,
+            });
+            setBaseline(hidden);
+            setDraft((cur) => ({ ...cur, visible: false }));
+            onSaved();
+            toast({
+              message:
+                'Saved as a hidden draft instead — cat scenarios can go live once a pending database update is applied. Until then trainees would get it as a dog.',
+              tone: 'error',
+              duration: 14000,
+            });
+          } catch (err) {
+            toast({
+              message: `This cat scenario is live but will play as a dog until a database update is applied — unpublish it from the Publish step. (${errorText(err, 'unpublish failed')})`,
+              tone: 'error',
+              duration: 16000,
+            });
+          }
+          return false;
+        }
         toast({
           message:
             'Saved — but the species isn’t stored yet (a database update is pending), so trainees will see this as a dog scenario for now.',
@@ -687,7 +746,16 @@ export function StudioEditor(props: StudioEditorProps) {
 
   function resumeOffer() {
     if (!offer) return;
-    setDraft({ ...offer.draft, scenario_id: scenarioId });
+    const rebased = rebaseLocalDraft(offer, { ...initialDraft, scenario_id: scenarioId });
+    setDraft(rebased.draft);
+    if (rebased.serverMoved) {
+      toast({
+        message:
+          'This scenario was also changed since you started — only your edits were applied on top of the latest version. Check it before saving.',
+        tone: 'info',
+        duration: 10_000,
+      });
+    }
     setStep(offer.step ?? step);
     setTranscript(offer.transcript ?? EMPTY_TRANSCRIPT);
     setSeenItems(offer.transcript?.items.length ?? 0);
@@ -1005,9 +1073,22 @@ export function StudioEditor(props: StudioEditorProps) {
               {offer && (
                 <InlineAlert tone="warn" title={`You have unsaved changes from ${relativeTime(offer.savedAt)}`}>
                   <div>
-                    They were kept in this browser but never saved. Pick up where you left off, or
-                    discard them and work from the saved version — editing starts once you choose.
+                    They were kept in this browser but never saved
+                    {offerSummary.edited.length > 0 && (
+                      <>
+                        {' '}— {offerSummary.edited.slice(0, 4).join(', ')}
+                        {offerSummary.edited.length > 4 ? ` and ${offerSummary.edited.length - 4} more` : ''}
+                      </>
+                    )}
+                    . Pick up where you left off, or discard them and work from the saved version —
+                    editing starts once you choose.
                   </div>
+                  {offerSummary.serverMoved && (
+                    <div style={{ marginTop: 6, fontWeight: 700 }}>
+                      Someone has saved this scenario since. Resuming applies only your edits on top of
+                      their version — it never changes whether the scenario is live.
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
                     <Button tone="primary" size="sm" onClick={resumeOffer}>
                       Resume

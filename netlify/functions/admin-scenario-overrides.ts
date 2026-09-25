@@ -25,6 +25,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
+import { isMissingSpeciesColumn } from './_shared/speciesColumn';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import { isLifeStage, isPersona, isPushbackId } from '../../src/shared/scenarios/enums';
 import { isScenarioSpecies } from '../../src/shared/scenarios/species';
@@ -206,18 +207,7 @@ export const SPECIES_COLUMN_MISSING = 'species_column_missing';
 
 type DbError = { code?: string; message?: string } | null;
 
-/**
- * True when the error says `scenario_overrides.species` does not exist yet:
- * PostgREST's schema-cache miss (PGRST204 "Could not find the 'species'
- * column of 'scenario_overrides' in the schema cache") or Postgres' own
- * undefined_column (42703). Must name `species` — a missing column that is
- * NOT this deferred one is a real fault and keeps failing loudly.
- */
-export function isMissingSpeciesColumn(error: DbError): boolean {
-  if (!error) return false;
-  if (error.code !== 'PGRST204' && error.code !== '42703') return false;
-  return /\bspecies\b/i.test(error.message ?? '');
-}
+export { isMissingSpeciesColumn };
 
 /**
  * Upsert one override row; if the deferred `species` column is missing,
@@ -259,6 +249,17 @@ export default async (req: Request): Promise<Response> => {
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
+    // `?op=capabilities` — what this database can store. Today: whether the
+    // DEFERRED `species` column exists, so the Studio can refuse to publish a
+    // cat scenario that would reach trainees as a dog (and say why) BEFORE a
+    // save, and keep saying it after a reload.
+    if (new URL(req.url).searchParams.get('op') === 'capabilities') {
+      const probe = await ctx.sb.from('scenario_overrides').select('species').limit(1);
+      if (probe.error && !isMissingSpeciesColumn(probe.error)) {
+        return errorResponse(500, probe.error.message);
+      }
+      return jsonResponse({ species: !probe.error });
+    }
     // Match the consumer's flags-resolve filter: soft-deleted admin
     // scenarios are tombstones, not part of the live library. Without
     // this, the Scenario Builder list would show admin-authored
@@ -383,6 +384,17 @@ export default async (req: Request): Promise<Response> => {
       .eq('scenario_id', body.scenario_id)
       .maybeSingle()
   ).data;
+  // A soft-deleted admin scenario is a tombstone kept for Audit → Revert.
+  // Upserting over it would leave `deleted_at` set (it is not writable), so
+  // the save would "succeed" while the scenario stayed invisible to everyone
+  // — e.g. a draft resumed in one browser after another admin deleted it.
+  // Say so instead; restoring is Audit's job, or the admin saves a copy.
+  if (before && (before as { deleted_at?: string | null }).deleted_at) {
+    return errorResponse(
+      409,
+      'This scenario was deleted. Restore it from Audit → Revert, or use Duplicate to save your version as a new scenario.',
+    );
+  }
   const isNewAdmin =
     body.scenario_id.startsWith('admin:') && (!before || before.created_by == null);
   const { data, error, speciesDropped } = await upsertOverrideRow(ctx.sb, {

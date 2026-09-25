@@ -7,7 +7,7 @@
  * `allowTelemetry: false`: the server then honours the draft's unsaved AI
  * notes, records no telemetry, and writes no session or score.
  */
-import { postJson } from '../lib/api';
+import { apiFetch, postJson } from '../lib/api';
 import type {
   EvaluateRequest,
   EvaluateResponse,
@@ -78,4 +78,22 @@ export async function simulateScore(args: {
   };
   const res = await postJson<EvaluateResponse>('ai-evaluate', body);
   return res.report;
+}
+
+/**
+ * What the database can store today. `species: false` while the deferred
+ * species migration is pending. Resolves `undefined` when unknown (an older
+ * server, a network blip) — callers treat unknown as "don't block".
+ */
+export async function fetchScenarioCapabilities(): Promise<{ species?: boolean }> {
+  try {
+    const res = await apiFetch<unknown>('admin-scenario-overrides', { op: 'capabilities' });
+    if (res && typeof res === 'object' && !Array.isArray(res)) {
+      const species = (res as { species?: unknown }).species;
+      return typeof species === 'boolean' ? { species } : {};
+    }
+    return {};
+  } catch {
+    return {};
+  }
 }

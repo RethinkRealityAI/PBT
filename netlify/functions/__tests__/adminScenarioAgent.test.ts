@@ -44,6 +44,7 @@ vi.mock('../_shared/retrieval', () => ({ retrieveChunks: mocks.retrieveChunks })
 import agent, {
   CATALOGUE_MAX_DOCS,
   agentRetrievalQuery,
+  catalogueForSpecies,
   loadRoleplayCatalogue,
   parseAgentAnswer,
   pruneNoOpActions,
@@ -357,7 +358,9 @@ describe('admin-scenario-agent — a turn', () => {
     expect(sys).toContain('CURRENT STEP: pet · The pet');
     expect(sys).toContain('- study:davies-2024 · Owner preferences in weight conversations · topic: Weight management · species: all');
     expect(sys).toContain('- clinical:reference · Clinical reference · topic: general · species: all');
-    expect(sys).toContain('- custom:cat-urinary · Feline urinary handout · topic: Urinary health · species: cat');
+    // A cat-only document can never be retrieved by this DOG scenario (species
+    // is a hard scope and attached documents never widen) → not offered.
+    expect(sys).not.toContain('custom:cat-urinary');
     // Not readable by the roleplay customer, or not indexed → not offered.
     expect(sys).not.toContain('fecal:cat');
     expect(sys).not.toContain('custom:not-indexed');
@@ -814,5 +817,28 @@ describe('buildScenarioAgentSystemPrompt', () => {
     const value = (JSON.parse(draftLine) as { context_override: string }).context_override;
     expect(value).toHaveLength(PROMPT_DRAFT_FIELD_CHARS);
     expect(value.endsWith('…')).toBe(true);
+  });
+});
+
+describe('catalogueForSpecies', () => {
+  const docs = [
+    { slug: 'all', title: 'All', species: ['dog', 'puppy', 'cat'] },
+    { slug: 'dog-only', title: 'Dog', species: ['dog'] },
+    { slug: 'cat-only', title: 'Cat', species: ['cat'] },
+    { slug: 'untagged', title: 'Untagged', species: null },
+  ];
+
+  it('keeps every document when the scenario declares no species', () => {
+    expect(catalogueForSpecies(docs, undefined).map((d) => d.slug)).toEqual([
+      'all',
+      'dog-only',
+      'cat-only',
+      'untagged',
+    ]);
+  });
+
+  it('drops documents the scenario species can never retrieve', () => {
+    expect(catalogueForSpecies(docs, 'cat').map((d) => d.slug)).toEqual(['all', 'cat-only', 'untagged']);
+    expect(catalogueForSpecies(docs, 'puppy').map((d) => d.slug)).toEqual(['all', 'untagged']);
   });
 });

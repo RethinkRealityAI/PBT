@@ -26,7 +26,7 @@
  * Nothing is written, no telemetry is recorded. `scenarios.read` — anyone who
  * can view a scenario may see what it tells the AI.
  */
-import { requireAdmin } from './_shared/admin';
+import { can, requireAdmin } from './_shared/admin';
 import {
   adaptAdminError,
   aiError,
@@ -175,10 +175,33 @@ export default async (req: Request): Promise<Response> => {
   };
   const mode = knowledgeModeOf(draft);
 
+  // `scenarios.read` gets you into the endpoint, but the two halves reveal
+  // more than scenarios: the prompt carries the admin-tuned personas and the
+  // GLOBAL notes (AI tuning), the passages carry document titles/citations
+  // (the public rag-retrieve strips those). Anyone who edits scenarios needs
+  // both to do the job; a read-only role needs the matching read permission.
+  const canBriefing = can(ctx, 'scenarios.write') || can(ctx, 'simulation.read');
+  const canPassages = can(ctx, 'scenarios.write') || can(ctx, 'knowledge.read');
+  if (include.prompt && !canBriefing) {
+    return aiError(
+      403,
+      'unauthorized',
+      'Seeing the full briefing needs permission to edit scenarios or to view AI tuning.',
+    );
+  }
+  if (include.knowledge && !canPassages) {
+    return aiError(
+      403,
+      'unauthorized',
+      'Previewing what the AI reads needs permission to edit scenarios or to view the knowledge base.',
+    );
+  }
+
   try {
     const config = await loadSimulationConfig(ctx.sb);
     const rag = resolveRag(config);
-    const adminNotes = adminNotesOf(draft, config);
+    const notes = adminNotesOf(draft, config);
+    const adminNotes = canBriefing ? notes : { ...notes, globalPrefix: null, globalSuffix: null };
 
     const missing = missingScenarioFields(draft);
     const scenario = missing.length === 0 ? draftToScenario(draft) : null;

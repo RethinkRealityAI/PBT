@@ -292,3 +292,42 @@ describe('POST op=duplicate — species', () => {
     expect(await res.json()).toEqual({ error: 'Cannot duplicate: species must be dog or cat' });
   });
 });
+
+describe('POST upsert — deleted scenarios', () => {
+  it('refuses to save over a soft-deleted admin scenario (409) instead of saving into a tombstone', async () => {
+    overridesTable({ ...ROW, deleted_at: '2026-09-24T10:00:00Z', created_by: 'someone' });
+    const res = await save({ ...ROW, visible: true });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as Bag).error).toMatch(/deleted/i);
+    expect(upserts()).toHaveLength(0);
+  });
+});
+
+describe('GET op=capabilities', () => {
+  const capabilities = () =>
+    handler(
+      new Request('http://localhost/.netlify/functions/admin-scenario-overrides?op=capabilities', {
+        headers: { authorization: 'Bearer admin' },
+      }),
+    );
+
+  it('reports species: true when the column exists', async () => {
+    sb.setHandler('scenario_overrides', () => ({ data: [], error: null }));
+    const res = await capabilities();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ species: true });
+  });
+
+  it('reports species: false while the deferred migration is pending', async () => {
+    sb.setHandler('scenario_overrides', () => ({
+      data: null,
+      error: { code: '42703', message: 'column scenario_overrides.species does not exist' },
+    }));
+    expect(await (await capabilities()).json()).toEqual({ species: false });
+  });
+
+  it('any other failure is a 500, not a false "unsupported"', async () => {
+    sb.setHandler('scenario_overrides', () => ({ data: null, error: { code: '57014', message: 'timeout' } }));
+    expect((await capabilities()).status).toBe(500);
+  });
+});

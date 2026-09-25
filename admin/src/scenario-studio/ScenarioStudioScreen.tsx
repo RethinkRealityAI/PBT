@@ -38,10 +38,11 @@ import {
   type StudioEntry,
   type StudioStepKey,
 } from './studioModel';
-import { clearLocalDraft, listLocalDrafts, readLocalDraft } from './localDrafts';
+import { clearLocalDraft, listLocalDrafts, readLocalDraft, setLocalDraftsOwner } from './localDrafts';
 import type { KnowledgeState } from './types';
 import { StudioHome, type ComposerSpecies, type ResumableDraft } from './StudioHome';
 import { StudioEditor } from './StudioEditor';
+import { fetchScenarioCapabilities } from './api';
 
 interface OpenState {
   id: string;
@@ -70,10 +71,15 @@ function scrollPageTo(top: number) {
 export function ScenarioStudioScreen({
   query,
   onQuery,
+  meUserId,
 }: {
   query: string;
   onQuery: (q: string) => void;
+  /** The signed-in admin — browser-kept drafts are stored per account. */
+  meUserId?: string;
 }) {
+  // Before anything below reads local drafts (render-time, idempotent).
+  setLocalDraftsOwner(meUserId);
   const [refreshKey, setRefreshKey] = useState(0);
   const overrides = useScenarioOverrides(refreshKey);
   const userScenarios = useUserScenarios(500);
@@ -85,6 +91,17 @@ export function ScenarioStudioScreen({
 
   const [open, setOpen] = useState<OpenState | null>(null);
   const [localNonce, setLocalNonce] = useState(0);
+  /** What the database can store (the deferred species column), probed once. */
+  const [capabilities, setCapabilities] = useState<{ species?: boolean }>({});
+  useEffect(() => {
+    let cancelled = false;
+    void fetchScenarioCapabilities().then((c) => {
+      if (!cancelled) setCapabilities(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const nonce = useRef(0);
   const homeScroll = useRef(0);
 
@@ -283,6 +300,7 @@ export function ScenarioStudioScreen({
           isOnlyVisible={visibleScenarioCount(entries, open.id) === 0}
           canWrite={canWrite}
           knowledge={knowledge}
+          speciesSupported={capabilities.species}
           initialStep={open.step}
           openAssistant={open.openAssistant}
           initialPrompt={open.prompt ?? null}

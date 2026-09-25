@@ -12,6 +12,22 @@ import type { StudioDraft, StudioStepKey } from './studioModel';
 import type { CopilotTranscript } from './copilot/types';
 
 export const LOCAL_DRAFTS_KEY = 'pbt:admin:studio_drafts';
+
+/**
+ * Drafts are kept PER ADMIN ACCOUNT (`pbt:admin:studio_drafts:<userId>`):
+ * on a shared machine the next admin must not see — or resume — someone
+ * else's unsaved work and assistant conversation. Set once by the Studio
+ * from the signed-in identity; unset falls back to the shared key.
+ */
+let owner: string | null = null;
+
+export function setLocalDraftsOwner(userId: string | null | undefined): void {
+  owner = userId && /^[A-Za-z0-9_-]{1,80}$/.test(userId) ? userId : null;
+}
+
+function storageKey(): string {
+  return owner ? `${LOCAL_DRAFTS_KEY}:${owner}` : LOCAL_DRAFTS_KEY;
+}
 const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const MAX_ENTRIES = 20;
 
@@ -36,7 +52,7 @@ type Store = Record<string, LocalDraftEntry>;
 
 function readStore(): Store {
   try {
-    const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
+    const raw = localStorage.getItem(storageKey());
     if (!raw) return {};
     const parsed = JSON.parse(raw) as unknown;
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Store) : {};
@@ -52,7 +68,7 @@ function writeStore(store: Store): void {
       .filter(([, e]) => e && typeof e.savedAt === 'number' && now - e.savedAt < MAX_AGE_MS)
       .sort(([, a], [, b]) => b.savedAt - a.savedAt)
       .slice(0, MAX_ENTRIES);
-    localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(Object.fromEntries(kept)));
+    localStorage.setItem(storageKey(), JSON.stringify(Object.fromEntries(kept)));
   } catch {
     /* storage full or blocked — resume is a convenience, not a guarantee */
   }
