@@ -31,7 +31,7 @@ src/
   shared/      — code shared with netlify/functions: ai (contract, models, fecalScan, imageHash), access (RBAC), email, knowledge (scopes, analyze), scenarios
   i18n/        — en + fr catalogs, translate.ts, format.ts
   tests/       — setup
-admin/        — admin dashboard (second Vite entry, served at /admin)
+admin/        — admin dashboard (second Vite entry, served at /admin); admin/src/scenario-studio = Scenario Studio
 public/        — static assets (audio/pcm-capture-processor.js, studies/*.pdf, fecal-scan/<species>/<score>.jpg)
 netlify/functions/ — every AI + admin endpoint (`_shared/` = server helpers)
 netlify/plugins/ — build plugins (knowledge-sync: auto-seeds the RAG corpus)
@@ -84,7 +84,9 @@ long-lived key). `npm run check:bundle` fails if a key-shaped string
 | `analyzePetPhoto` (petVisionService)      | `ai-vision`           | `gemini-3-flash-preview` (multimodal)   | Pet Vision (breed/BCS/derm)   |
 | `analyzeStoolPhoto` (fecalScanService)    | `ai-fecal-scan`       | `gemini-3-flash-preview` (multimodal ×2 + `gemini-embedding-001` retrieval) | Fecal Scan (chart score, RAG-grounded) |
 | `useVoiceSession` (voiceSession)          | `ai-voice-token` → `ai.live.connect` from the device | `gemini-3.1-flash-live-preview` | Voice mode |
-| `suggestField` (admin `scenarioAi`)       | `admin-scenario-ai`   | `gemini-3-flash-preview`                | Scenario Builder wizard (admin, `scenarios.write`) |
+| `suggestField` (admin `scenarioAi`)       | `admin-scenario-ai`   | `gemini-3-flash-preview`                | Legacy per-field wizard (admin, `scenarios.write`) — no UI calls it since the Scenario Studio |
+| `askScenarioAgent` (admin `scenario-studio/api`) | `admin-scenario-agent` | `gemini-3-flash-preview` (JSON, low thinking) | Scenario Studio assistant (admin, `scenarios.write`) — proposals only, never writes |
+| `inspectScenario` (admin `scenario-studio/api`)  | `admin-scenario-inspect` | — (no model call)                   | Exact customer prompt + retrieved passages for a draft (admin, `scenarios.read`) |
 
 Wire contract: `src/shared/ai/contract.ts` (read its header — it states what the
 server trusts). Transport: `src/services/aiApi.ts::postAi` attaches the Supabase
@@ -269,12 +271,79 @@ recorded (mirrors `admin-scenario-ai`). Errors use the admin `{ error }`
 shape: 400 / 404 / 502 (Gemini). Tests:
 `netlify/functions/__tests__/adminKnowledgeAnalyze.test.ts`.
 
-## Scenario builder (`CreateScreen`)
+## Scenario builder (`CreateScreen`) — the TRAINEE's own builder
+
+(Admins author scenarios in the **Scenario Studio**, below — not here.)
 
 - **Build / Library** tabs — library lists `SEED_SCENARIOS` with quick Start.
 - Pushback: **dropdown** for canned categories; **Other pushback** remains a separate card; optional/required notes placement depends on selection.
 - **Difficulty** — four levels with descriptions (`DIFFICULTY_DESCRIPTIONS` in `scenarios.ts`).
 - Optional `**weightKg`** on `Scenario` for custom builds.
+
+## Scenario Studio (admin) — `admin/src/scenario-studio/`
+
+Spec: `docs/superpowers/specs/2026-09-25-scenario-studio-design.md`. Its own
+nav destination (`#/scenarios/studio`, tab `trainee` = trainee-built
+analytics). A non-technical admin describes a scenario in plain words (the
+assistant drafts it) or builds it in **seven one-at-a-time steps**: Pet
+(dog/cat, breed, life stage, weight) → Pushback → Owner (ECHO driver, persona,
+difficulty, opening line) → Knowledge (whole library / one topic / specific
+documents, inline upload, "Preview what the AI will read") → AI brief (notes
+wrapped around the canonical prompt + "See the full briefing") → Test drive →
+Publish (card text, readiness checklist). `STUDIO_STEPS` covers every
+editable `scenario_overrides` column exactly once (unit-tested).
+
+- **Assistant = A2UI orchestration, ported from PhotoBoothAR.** The model
+  never writes UI or data: `admin-scenario-agent` returns `{reply,
+  actionsJson, suggestionsJson}` (actions ride a JSON-encoded STRING — an
+  ARRAY-of-OBJECT response schema hung constrained decoding in PhotoBoothAR),
+  the server normalises, and the client **re-normalises on every card
+  confirm** (`src/shared/ai/scenarioAgent.ts::normalizeAgentActions` — the
+  gate: unknown tools, illegal enum values, made-up document slugs dropped;
+  ≤3 actions, ≤1 question). Trusted builders
+  (`copilot/agentSurfaces.ts`) turn actions into A2UI v0.9.1 surfaces
+  (`admin/src/lib/a2ui.ts`, renderer `copilot/A2uiSurface.tsx`). Applying a
+  card only patches the on-screen draft; **Save / Publish stay explicit
+  clicks.** Tools: `update_fields`, `set_ai_notes`, `attach_knowledge`,
+  `ask` (clarifying question as buttons), `offer_options`, `go_to_step`.
+  Prompt: `src/shared/ai/scenarioAgentPrompt.ts` — static rules first, fenced
+  DATA blocks last (draft, roleplay-readable document catalogue, likely
+  relevant docs, research); fence markers in untrusted text are flattened.
+- **Inspector** `admin-scenario-inspect` builds the scenario from the draft
+  (`src/shared/scenarios/draftToScenario.ts`, parity-tested against the
+  consumer's `adminOverrideToScenario`), loads the server simulation config,
+  runs the real roleplay retrieval, and returns the exact
+  `buildCustomerSystemPrompt` text + passages. Read-only.
+- **Test drive** (`simulator/`) calls the public `ai-roleplay` /
+  `ai-evaluate` with `preview: true`, `allowTelemetry: false` and an
+  EXPLICIT `promptOverrides` (without one, preview falls back to the SAVED
+  row's notes). Nothing is recorded. Voice/real UI: "Open in the trainee app"
+  (the `/?pbt_preview=1` iframe protocol, in a phone frame).
+- **Publishing**: one row per scenario — `visible` is the publish switch
+  (no server-side drafts). Unsaved work (draft + assistant transcript +
+  step + tested flag) persists locally (`localDrafts.ts`,
+  `pbt:admin:studio_drafts`), so leaving never loses work. Save keeps the
+  old builder's rules: sparse overrides for library scenarios
+  (`diffAgainstBase`), server-managed columns stripped, last-visible guard.
+- **Species** (`src/shared/scenarios/species.ts`): absent = dog. Prompt
+  builders swap dog→cat wording ONLY for `species === 'cat'` (dog prompts
+  stay byte-identical — parity fixtures); canine trial figures are never
+  presented as feline evidence; retrieval gets a HARD species scope when a
+  scenario declares one (dog under 1 → `puppy`). `Puppy (<1)` displays as
+  "Kitten (<1)" / "Chaton (<1)" for cats. The column rides the **DEFERRED**
+  migration `20260925000000_scenario_species.sql`: until applied,
+  `admin-scenario-overrides` retries the save without it and returns
+  `_notice: 'species_column_missing'` (the Studio warns), and `flags-resolve`
+  tries `species` → focus/knowledge → base columns (a failed species probe is
+  remembered 10 min).
+- **Scenario Author** system role (`scenario_author`): scenarios read/write,
+  knowledge read/write, preview. Lands on the Studio. Self-installs via
+  `admin-roles::ensureSystemRoles` (no migration).
+- UI vocabulary: `ui.tsx` (never put step content inside `<Glass>` or any
+  transformed ancestor — `backdrop-filter`/`transform` trap in-place
+  `position: fixed` modals; `.pbt-studio-in` uses fill-mode `backwards` for
+  that reason). Offline review: `npm run dev:admin-mock` (fixtures in
+  `admin/src/dev/mockStudio.ts`).
 
 ## Auth (anonymous-first)
 
@@ -379,8 +448,8 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations (23, all hand-run — `npm run verify:db` proves the live project
-has every relation the code uses). Each file's header explains it in full:
+Migrations (24 files, all hand-run — `npm run verify:db` proves the live
+project has every relation the code uses; ONE is deferred, see the last entry). Each file's header explains it in full:
 - `20260504000000_init.sql` — `profiles`, `training_sessions`, `pet_records`
 - `20260507000000_admin_telemetry.sql` — `is_admin`, AI call/turn telemetry,
   `user_scenarios`, `analyzer_events`, `nav_events`, `rag_export_v1` view
@@ -440,6 +509,10 @@ has every relation the code uses). Each file's header explains it in full:
   only) and an explicit `match_knowledge_chunks` grant to service_role. The
   sync fails closed (logs, keeps the stored corpus) until it exists. Applied
   to prod 2026-09-23
+- `20260925000000_scenario_species.sql` — `scenario_overrides.species`
+  ('dog' | 'cat', null = dog). **DEFERRED — written 2026-09-25, NOT applied.**
+  The app degrades safely until it is (see "Scenario Studio"); `verify:db`
+  warns instead of failing on this column.
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -452,10 +525,12 @@ branded transactional templates with a live preview, provider settings
 (Resend or SMTP), and a delivery log.
 
 **Admin navigation** (`admin/src/primitives/nav.ts` + `Sidebar.tsx`): a left
-rail of 4 sections over 10 destinations, replacing the old 18-link wrapping
+rail of 4 sections over 12 destinations, replacing the old 18-link wrapping
 pill bar. Related screens are tabs of one destination (Analytics =
-insights/traffic/quality, People = users/admins/roles/invites, Library =
-scenarios/builder/knowledge/simulation, …). The rail collapses to icons and
+insights/traffic/quality, People = users/admins/roles/invites, Scenario
+Studio = studio/trainee-built, …); Knowledge and AI tuning (the old
+"Simulation" screen) are destinations of their own. Old `#/library/…` hashes
+are rewritten by `legacyRoute()`. The rail collapses to icons and
 becomes a drawer under 900px. Location is in the URL hash (`#/people/roles`) —
 still no router library, just a parsed hash. Screens stay unaware of tabs: a
 destination publishes them via `SectionTabsProvider` and `ContextBar` renders
@@ -483,8 +558,10 @@ BOTH `admin/src/**` and `netlify/functions/**` — keep it dependency-free.
   (`scenarios.write` needs `scenarios.read`), enforced by
   `withImpliedPermissions` / `withoutDependents` in the editor and by
   `sanitizePermissions` on the server.
-- 7 system roles (owner, admin, content_manager, clinical_reviewer, analyst,
-  support, comms_manager) + admin-authored custom roles in `admin_roles`.
+- 8 system roles (owner, admin, content_manager, scenario_author,
+  clinical_reviewer, analyst, support, comms_manager) + admin-authored custom
+  roles in `admin_roles`. New presets self-install on the next Team & roles
+  load (`ensureSystemRoles`) — no migration.
 - `resolveAccess()` merges role permissions with per-user
   `{ grant, revoke }` overrides — **revoke always wins**, and `owner` is
   absolute (holds every permission including ones added later, and cannot be
@@ -523,7 +600,7 @@ pane is byte-identical to what ships.
 `src/data/knowledge/simulationConfig.ts` defines `SimulationConfig` — an
 optional, deep-merged layer over the hardcoded scoring rubric / driver profiles
 / pushback taxonomy (code defaults are always the fallback). It lets the admin
-**Simulation** screen tune, without a deploy:
+**AI tuning** screen (formerly "Simulation") tune, without a deploy:
 - scoring dimension labels/descriptions/**weights** (normalised at runtime) +
   band examples, and a scoring-prompt prefix/suffix
 - the 4 ECHO driver personas (`driverProfiles`) and the pushback taxonomy
@@ -578,6 +655,7 @@ Active keys:
 - `pbt:supabase_session` (managed by supabase-js)
 - `pbt:admin_session` (admin portal only, managed by supabase-js)
 - `pbt:admin_nav_collapsed`, `pbt:admin:knowledge_auto_suggest` (admin portal UI preferences)
+- `pbt:admin:studio_drafts` (Scenario Studio unsaved work + assistant transcripts; ≤20 entries, 14-day expiry)
 
 ## Adding new content
 
@@ -728,6 +806,16 @@ The static test catches "migration file missing"; `verify:db` catches
 8. **Legacy preview deploy**: delete PR #23's Deploy Preview for commit
    `eccee53` in Netlify (or rotate the service-role key) — see "Knowledge
    base seeding".
+9. **Apply the species migration** `20260925000000_scenario_species.sql`
+   (deferred on purpose). Until then cat scenarios save and play as dogs,
+   with a warning in the Studio.
+10. **Scenario Studio follow-ups**: a narrower "upload only" knowledge
+    permission for Scenario Authors (today `knowledge.write` also lets them
+    edit/delete any document); server-side drafts for LIVE scenarios (today
+    edits to a live scenario stay in the author's browser until "Update live
+    scenario"); voice inside the native Test drive; the unused per-field
+    wizard (`admin-scenario-ai` + `admin/src/lib/scenarioAi.ts`) can be
+    removed once product confirms.
 
 (Done since: coach drawer → `CoachHint.tsx`; Today's-pick rotation →
 `dailyPick.ts`; voice scorer sessionId attribution + 5-min cap; saved-pets
