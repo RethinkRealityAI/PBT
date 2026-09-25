@@ -33,7 +33,7 @@ export const STUDIO_STYLESHEET = `
   @keyframes pbt-studio-dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
   @keyframes pbt-studio-spin { to { transform: rotate(360deg); } }
 
-  .pbt-studio-in { animation: pbt-studio-in 0.22s ease both; }
+  .pbt-studio-in { animation: pbt-studio-in 0.22s ease backwards; }
 
   .pbt-studio-field {
     transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
