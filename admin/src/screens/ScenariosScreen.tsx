@@ -74,8 +74,8 @@ export function ScenariosScreen({
   return (
     <>
       <ContextBar
-        title="Scenarios"
-        subtitle="Scenarios built and replayed"
+        title="Trainee-built scenarios"
+        subtitle="Scenarios trainees built for their own practice, and how often they replay them. To publish one for everyone, duplicate it in the Studio."
         query={query}
         onQuery={onQuery}
       />

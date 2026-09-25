@@ -228,6 +228,20 @@ describe('sanitizeScenario', () => {
     expect(out).not.toHaveProperty('knowledgeSlugs');
     expect(out?._overrideId).toBe('seed:0');
   });
+
+  it('keeps a known species and drops anything else (the scenario then runs as a dog)', () => {
+    const base = SEED_SCENARIOS[0];
+    expect(sanitizeScenario({ ...base, species: 'cat' })?.species).toBe('cat');
+    expect(sanitizeScenario({ ...base, species: 'dog' })?.species).toBe('dog');
+    for (const junk of ['hamster', 'Cat', '', 42, null, { cat: true }, ['cat']]) {
+      const out = sanitizeScenario({ ...base, species: junk });
+      // A bad species never fails the request — it is simply not carried.
+      expect(out, String(junk)).not.toBeNull();
+      expect(out, String(junk)).not.toHaveProperty('species');
+    }
+    // An absent species stays absent (legacy scenarios are unchanged).
+    expect(sanitizeScenario(base)).not.toHaveProperty('species');
+  });
 });
 
 describe('isUuid', () => {
@@ -387,6 +401,17 @@ describe('retrieveForScenario', () => {
     expect(mocks.retrieveChunks.mock.calls[0][1]).toMatchObject({
       filters: { tool: 'scoring' },
     });
+  });
+
+  it('carries a declared species as the HARD scope and names a cat in the query', async () => {
+    mocks.retrieveChunks.mockResolvedValue([]);
+    const cat = { ...SEED_SCENARIOS[0], species: 'cat' as const, breed: 'Maine Coon', focusArea: 'weight' };
+    await retrieveForScenario(client(), cat, undefined, 'roleplay');
+    const [query, opts] = mocks.retrieveChunks.mock.calls[0];
+    expect(query).toBe(
+      `${cat.pushback.title} ${cat.suggestedDriver} owner cat Maine Coon ${cat.age}`,
+    );
+    expect(opts.filters).toEqual({ focus: 'weight', species: 'cat', tool: 'roleplay' });
   });
 
   it('skips retrieval when rag is disabled and fails open on error', async () => {

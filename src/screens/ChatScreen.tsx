@@ -44,6 +44,7 @@ import type { CatalogKey } from '../i18n/catalog';
 import { useLanguage } from '../app/providers/LanguageProvider';
 import { getLocalizedOpeningLine, localizedScenario, localizedLifeStage, localizedPersona } from '../i18n/dataL10n/scenarios';
 import { localizedPushbackCategory } from '../i18n/dataL10n/pushbacks';
+import { adaptPetWords } from '../shared/scenarios/species';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -318,7 +319,7 @@ function ScenarioDetailsPanel({
 
               {/* Meta chips row */}
               <div className="flex flex-wrap gap-2" style={{ marginBottom: 10 }}>
-                {[scenario.breed, localizedLifeStage(scenario.age, locale), localizedPersona(scenario.persona, locale)].map((tag) => (
+                {[scenario.breed, localizedLifeStage(scenario.age, locale, scenario.species), localizedPersona(scenario.persona, locale)].map((tag) => (
                   <span
                     key={tag}
                     style={{
@@ -372,7 +373,12 @@ function ScenarioDetailsPanel({
                 <em style={{ fontWeight: 600, color: 'var(--pbt-text)', fontStyle: 'italic' }}>
                   {getLocalizedOpeningLine(scenario, locale) ||
                     scenario.pushbackNotes ||
-                    localizedPushbackCategory(scenario.pushback, locale).example}
+                    // Canned example copy is dog-worded ("My dog already
+                    // eats fine…") — re-worded for a cat scenario.
+                    adaptPetWords(
+                      localizedPushbackCategory(scenario.pushback, locale).example,
+                      scenario.species,
+                    )}
                 </em>
               </p>
 

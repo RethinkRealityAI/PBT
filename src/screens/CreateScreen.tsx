@@ -163,7 +163,7 @@ export function CreateScreen() {
                       {localizedScenario(scenario, locale).pushback.title}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', marginBottom: 8 }}>
-                      {scenario.breed} · {localizedLifeStage(scenario.age, locale)} ·{' '}
+                      {scenario.breed} · {localizedLifeStage(scenario.age, locale, scenario.species)} ·{' '}
                       {localizedPersona(scenario.persona, locale)}
                     </div>
                     <span

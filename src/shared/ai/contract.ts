@@ -42,6 +42,12 @@ import type {
   FecalSpecies,
 } from './fecalScan';
 import type { ScenarioDraftForAi, WizardField } from './scenarioWizard';
+import type {
+  AgentTurn,
+  ScenarioAgentAction,
+  ScenarioAgentDraft,
+  StudioStepKey,
+} from './scenarioAgent';
 
 export const AI_ENDPOINTS = {
   roleplay: '/.netlify/functions/ai-roleplay',
@@ -52,6 +58,10 @@ export const AI_ENDPOINTS = {
   voiceToken: '/.netlify/functions/ai-voice-token',
   /** Admin-only (requires `scenarios.write`). */
   scenarioSuggest: '/.netlify/functions/admin-scenario-ai',
+  /** Admin-only (requires `scenarios.write`) — the Scenario Studio assistant. */
+  scenarioAgent: '/.netlify/functions/admin-scenario-agent',
+  /** Admin-only (requires `scenarios.read`) — exact prompt + retrieval for a draft. */
+  scenarioInspect: '/.netlify/functions/admin-scenario-inspect',
 } as const;
 
 /** Fields every AI request may carry. */
@@ -187,6 +197,80 @@ export interface ScenarioSuggestRequest {
 
 export interface ScenarioSuggestResponse {
   suggestions: string[];
+}
+
+// ─── Admin Scenario Studio assistant ───────────────────────────────────────
+//
+// See src/shared/ai/scenarioAgent.ts for the action vocabulary and the
+// normaliser both sides run. The server never writes anything: it returns a
+// reply plus PROPOSALS the admin reviews on cards.
+
+export interface ScenarioAgentRequest {
+  /** The conversation so far, oldest first, ending on the admin's turn. */
+  messages: AgentTurn[];
+  /** The on-screen (unsaved) draft — prompt context only. */
+  draft: ScenarioAgentDraft;
+  /** The Studio step the admin is looking at. */
+  step?: StudioStepKey;
+}
+
+export interface ScenarioAgentResponse {
+  /** 1–4 plain sentences, no markdown. */
+  reply: string;
+  /** Normalised proposals (≤ 3); the client re-normalises before applying. */
+  actions: ScenarioAgentAction[];
+  /** ≤ 3 short follow-up prompts shown as chips. */
+  suggestions: string[];
+}
+
+// ─── Admin Scenario Studio inspector ───────────────────────────────────────
+//
+// "What exactly will the AI customer be told, and what will it read?" — the
+// server builds the scenario from the draft, loads the live simulation
+// config, runs the real roleplay retrieval, and returns both. Read-only.
+
+export interface ScenarioInspectRequest {
+  draft: ScenarioAgentDraft;
+  /** What to compute. Both default to true. */
+  include?: { prompt?: boolean; knowledge?: boolean };
+}
+
+export interface InspectPassage {
+  slug: string | null;
+  title: string | null;
+  citation: string | null;
+  /** The chunk text, trimmed for display (≤ ~700 chars). */
+  snippet: string;
+  similarity: number | null;
+}
+
+export interface ScenarioInspectResponse {
+  /**
+   * Fields the draft is missing before a customer can be built (human
+   * labels). When non-empty, `prompt` is null and `knowledge.passages` empty.
+   */
+  missing: string[];
+  /** The exact text-mode customer system prompt, or null. */
+  prompt: string | null;
+  /** The admin text wrapped around the canonical brief, for highlighting. */
+  adminNotes: {
+    scenarioPrefix: string | null;
+    scenarioSuffix: string | null;
+    globalPrefix: string | null;
+    globalSuffix: string | null;
+  };
+  knowledge: {
+    /** False when research grounding is switched off in AI tuning. */
+    enabled: boolean;
+    /** Passages retrieved per conversation (config `rag.k`). */
+    k: number;
+    mode: 'library' | 'focus' | 'documents';
+    /** The retrieval scope actually applied (tool, species, focus, docSlugs). */
+    appliedFilter: Record<string, unknown>;
+    /** True when a focus filter found nothing and the search widened. */
+    focusRelaxed: boolean;
+    passages: InspectPassage[];
+  };
 }
 
 // ─── Errors ────────────────────────────────────────────────────────────────

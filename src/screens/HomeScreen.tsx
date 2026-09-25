@@ -416,7 +416,7 @@ export function HomeScreen() {
     todaysOverride?.card_subtitle_override?.trim() ||
     t('home.pick.subtitle', {
       breed: todaysPick.breed,
-      age: localizedLifeStage(todaysPick.age, locale),
+      age: localizedLifeStage(todaysPick.age, locale, todaysPick.species),
       driver: todaysPick.suggestedDriver,
     });
   const startButtonLabel =

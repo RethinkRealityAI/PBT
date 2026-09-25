@@ -21,6 +21,7 @@ import {
 import type { ScenarioOverride } from '../services/flagsClient';
 import type { DriverKey } from '../design-system/tokens';
 import { DRIVER_KEYS } from '../design-system/tokens';
+import { isScenarioSpecies, type ScenarioSpecies } from '../shared/scenarios/species';
 
 export function seedScenarioId(index: number): string {
   return `seed:${index}`;
@@ -75,6 +76,14 @@ function asWeightKg(n: number | null | undefined): string | null {
 }
 
 /**
+ * `species` arrives only once migration 20260925000000_scenario_species.sql
+ * is applied, and is plain text — anything but 'dog' | 'cat' is ignored.
+ */
+function asSpecies(v: string | null | undefined): ScenarioSpecies | null {
+  return isScenarioSpecies(v) ? v : null;
+}
+
+/**
  * `knowledge_slugs` is jsonb — trust nothing about its shape. Returns
  * undefined (not []) when there is nothing usable, so callers can treat
  * "no explicit attachment" as a single falsy check.
@@ -103,8 +112,12 @@ export function applyScenarioOverride(
   scenarioId?: string,
 ): Scenario {
   if (!override) return scenarioId ? { ...base, _overrideId: scenarioId } : base;
+  // Only a scenario that HAS a species gets the key: a legacy row merged onto
+  // a legacy base stays key-for-key the object it always was.
+  const species = asSpecies(override.species) ?? base.species;
   return {
     ...base,
+    ...(species ? { species } : {}),
     breed: override.breed?.trim() || base.breed,
     age: asLifeStage(override.life_stage) ?? base.age,
     pushback: asPushback(override.pushback_id) ?? base.pushback,
@@ -137,7 +150,9 @@ export function adminOverrideToScenario(
   const driver = asDriver(override.suggested_driver);
   const pushback = asPushback(override.pushback_id);
   if (!override.breed || !lifeStage || !driver || !pushback) return null;
+  const species = asSpecies(override.species);
   return {
+    ...(species ? { species } : {}),
     breed: override.breed,
     age: lifeStage,
     persona: asPersona(override.persona_override) ?? 'Skeptical',

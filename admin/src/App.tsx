@@ -9,7 +9,7 @@ import { Sidebar, SidebarTrigger, useSidebarState } from './primitives/Sidebar';
 import { AccessProvider } from './primitives/access';
 import { ConfirmProvider } from './primitives/Confirm';
 import { ToastProvider } from './primitives/Toast';
-import { defaultTab, findNavItem, visibleItems, visibleTabs } from './primitives/nav';
+import { defaultTab, findNavItem, legacyRoute, visibleItems, visibleTabs } from './primitives/nav';
 import { useHashRoute } from './lib/route';
 import { OverviewScreen } from './screens/OverviewScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
@@ -22,7 +22,7 @@ import { QualityScreen } from './screens/QualityScreen';
 import { FeedbackScreen } from './screens/FeedbackScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { FlagsScreen } from './screens/FlagsScreen';
-import { ScenarioBuilderScreen } from './screens/ScenarioBuilderScreen';
+import { ScenarioStudioScreen } from './scenario-studio/ScenarioStudioScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
 import { SimulationScreen } from './screens/SimulationScreen';
@@ -58,7 +58,14 @@ export function App() {
   const [auth, setAuth] = useState<AdminState>({ status: 'loading' });
   const [range, setRange] = useState<Range>('28d');
   const [query, setQuery] = useState('');
-  const [hashRoute, navigate] = useHashRoute();
+  const [rawHashRoute, navigate] = useHashRoute();
+  // Old `#/library/…` links (the Library destination was split into Scenario
+  // Studio, Knowledge and AI tuning) resolve to their new home this render,
+  // and the URL is rewritten in place so Back doesn't return to the old one.
+  const hashRoute = rawHashRoute ? legacyRoute(rawHashRoute) : null;
+  useEffect(() => {
+    if (rawHashRoute && hashRoute && hashRoute !== rawHashRoute) navigate(hashRoute, true);
+  }, [rawHashRoute, hashRoute, navigate]);
   const sidebar = useSidebarState();
   const route = publicRoute();
 
@@ -329,16 +336,14 @@ export function App() {
             />
           )}
 
-          {item.key === 'library' && tab === 'scenarios' && (
+          {item.key === 'scenarios' && tab === 'studio' && (
+            <ScenarioStudioScreen query={query} onQuery={setQuery} meUserId={me.user_id} />
+          )}
+          {item.key === 'scenarios' && tab === 'trainee' && (
             <ScenariosScreen query={query} onQuery={setQuery} />
           )}
-          {item.key === 'library' && tab === 'builder' && (
-            <ScenarioBuilderScreen query={query} onQuery={setQuery} />
-          )}
-          {item.key === 'library' && tab === 'knowledge' && (
-            <KnowledgeScreen query={query} onQuery={setQuery} />
-          )}
-          {item.key === 'library' && tab === 'simulation' && <SimulationScreen />}
+          {item.key === 'knowledge' && <KnowledgeScreen query={query} onQuery={setQuery} />}
+          {item.key === 'tuning' && <SimulationScreen />}
 
           {item.key === 'feedback' && tab === 'sessions' && (
             <FeedbackScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
