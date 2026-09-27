@@ -30,12 +30,14 @@ import {
 import { Glass } from '../primitives/Glass';
 import { SectionTabsProvider } from '../primitives/Shell';
 import { Button, InlineAlert } from '../primitives/form';
-import { ReadOnlyBanner } from '../primitives/access';
+import { ReadOnlyBanner, useCan } from '../primitives/access';
+import { ApiError } from '../lib/api';
 import { useConfirm } from '../primitives/Confirm';
 import { useToast } from '../primitives/Toast';
 import { COLOR } from '../lib/tokens';
 import { deleteScenarioOverride, upsertScenarioOverride } from '../data/queries';
 import { stripServerManaged } from '../data/scenarioManifest';
+import type { ScenarioOverrideRow } from '../data/types';
 import { speciesOf } from '../../../src/shared/scenarios/species';
 import {
   SOURCE_LABELS,
@@ -57,6 +59,7 @@ import {
   stepIndex,
   stepStatus,
   studioTitle,
+  withBaseFallback,
   type SaveBlocker,
   type StudioDraft,
   type StudioSource,
@@ -134,8 +137,17 @@ export interface StudioEditorProps {
   canWrite: boolean;
   knowledge: KnowledgeState;
   /**
-   * Whether the database can store `species` (deferred migration). `false`
-   * blocks publishing a CAT scenario; undefined = unknown, never blocks.
+   * The saved row's `updated_at` as loaded (`null` = no row yet). Sent with
+   * every save as the optimistic-concurrency token; a 409 `stale` answer
+   * means another admin saved meanwhile.
+   */
+  baseUpdatedAt?: string | null;
+  /** Turns the row that won a concurrency race back into a hydrated draft. */
+  hydrateRow?: (row: ScenarioOverrideRow) => StudioDraft;
+  /**
+   * Whether the database can store `species` (false on a project that has
+   * not run the species migration). `false` blocks publishing a CAT
+   * scenario; undefined = unknown, never blocks.
    */
   speciesSupported?: boolean;
   initialStep?: StudioStepKey;
@@ -228,6 +240,12 @@ export function StudioEditor(props: StudioEditorProps) {
   } = props;
   const toast = useToast();
   const confirm = useConfirm();
+  const can = useCan();
+  // Where a deleted scenario comes back from — only meaningful to someone
+  // who can open the Audit log (a Scenario Author cannot).
+  const recoverable = can('audit.read')
+    ? 'Recoverable from Audit → Revert.'
+    : 'An admin can restore it from the Audit log.';
 
   // ── Initial state, including anything kept in this browser ──
   const [boot] = useState(() => {
@@ -285,6 +303,14 @@ export function StudioEditor(props: StudioEditorProps) {
   const [blockers, setBlockers] = useState<SaveBlocker[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [speciesPending, setSpeciesPending] = useState(false);
+  /** The `updated_at` of the row this editor last saw — the save's concurrency token. */
+  const [serverUpdatedAt, setServerUpdatedAt] = useState<string | null>(props.baseUpdatedAt ?? null);
+  /**
+   * Did the browser actually keep the last local write? `false` when storage
+   * is full or blocked — the header and the leave toast must not promise
+   * "kept in this browser" when it isn't.
+   */
+  const [keptLocally, setKeptLocally] = useState<boolean | null>(null);
   const [pending, setPending] = useState<{ id: number; text: string } | null>(() =>
     canWrite && props.initialPrompt ? { id: 1, text: props.initialPrompt } : null,
   );
@@ -310,6 +336,17 @@ export function StudioEditor(props: StudioEditorProps) {
   const docked = assistantAvailable && layout === 'wide' && !dockHidden;
 
   // ── Derived ──
+  /**
+   * What trainees actually get. For a library / trainee-built scenario a
+   * blank field INHERITS the built-in value at save time, so the Test drive,
+   * the readiness check and "What you're testing" must see the built-in
+   * text where the draft is blank — not an owner with no opening line.
+   */
+  const effectiveDraft = useMemo(
+    () => (source !== 'admin' && base ? withBaseFallback(draft, base) : draft),
+    [draft, base, source],
+  );
+
   const offerSummary = useMemo(() => {
     if (!offer) return { edited: [] as string[], serverMoved: false };
     const r = rebaseLocalDraft(offer, { ...initialDraft, scenario_id: scenarioId });
@@ -369,7 +406,7 @@ export function StudioEditor(props: StudioEditorProps) {
       if (readLocalDraft(scenarioId)) clearLocalDraft(scenarioId);
       return;
     }
-    writeLocalDraft(scenarioId, {
+    const kept = writeLocalDraft(scenarioId, {
       draft: s.draft,
       baseline: JSON.stringify(s.baseline),
       step: s.step,
@@ -378,6 +415,7 @@ export function StudioEditor(props: StudioEditorProps) {
       title: s.title,
       savedAt: Date.now(),
     });
+    setKeptLocally(kept);
   }, [canWrite, scenarioId]);
 
   useEffect(() => {
@@ -408,14 +446,21 @@ export function StudioEditor(props: StudioEditorProps) {
       persistNow();
       const s = latest.current;
       if (!canWrite || !s.dirty || s.untouchedSeed || s.offer) return;
+      const kept = readLocalDraft(scenarioId) !== null;
       leaveTimer.current = window.setTimeout(() => {
-        toast({
-          message: 'Your changes are kept — resume any time from the Studio.',
-          tone: 'info',
-        });
+        toast(
+          kept
+            ? { message: 'Your changes are kept — resume any time from the Studio.', tone: 'info' }
+            : {
+                message:
+                  'This browser couldn’t keep your unsaved changes (storage is full or blocked) — they are lost unless you go back and save.',
+                tone: 'error',
+                duration: 12000,
+              },
+        );
       }, 0);
     };
-  }, [persistNow, toast, canWrite]);
+  }, [persistNow, toast, canWrite, scenarioId]);
 
   // A save is the one moment closing the tab can lose something.
   useEffect(() => {
@@ -548,8 +593,15 @@ export function StudioEditor(props: StudioEditorProps) {
     setError(null);
     try {
       const payload = blankToNull(stripServerManaged(sparsify(next)));
-      const res = await upsertScenarioOverride({ ...payload, scenario_id: scenarioId });
+      const res = await upsertScenarioOverride({
+        ...payload,
+        scenario_id: scenarioId,
+        // Concurrency token: the row as this editor last saw it (null = none).
+        baseUpdatedAt: rowExists ? serverUpdatedAt : null,
+      });
       const notice = (res as { _notice?: unknown } | null | undefined)?._notice;
+      const savedAt = (res as { updated_at?: unknown } | null | undefined)?.updated_at;
+      if (typeof savedAt === 'string') setServerUpdatedAt(savedAt);
       setBaseline(next);
       // Keep anything typed while the request was in flight; only the
       // published flag is taken from what was saved.
@@ -592,10 +644,13 @@ export function StudioEditor(props: StudioEditorProps) {
         if (next.visible === true && next.species === 'cat') {
           try {
             const hidden = { ...next, visible: false };
-            await upsertScenarioOverride({
+            const hiddenRes = await upsertScenarioOverride({
               ...blankToNull(stripServerManaged(sparsify(hidden))),
               scenario_id: scenarioId,
+              baseUpdatedAt: typeof savedAt === 'string' ? savedAt : null,
             });
+            const hiddenAt = (hiddenRes as { updated_at?: unknown } | null | undefined)?.updated_at;
+            if (typeof hiddenAt === 'string') setServerUpdatedAt(hiddenAt);
             setBaseline(hidden);
             setDraft((cur) => ({ ...cur, visible: false }));
             onSaved();
@@ -623,6 +678,35 @@ export function StudioEditor(props: StudioEditorProps) {
       }
       return true;
     } catch (err) {
+      // Someone else saved this scenario since it was opened. Lay the admin's
+      // OWN edits over the row that won (the same rebase a resumed draft
+      // gets), take the new token, and let them review before saving again
+      // — never overwrite the other admin whole-row, never lose these edits.
+      if (err instanceof ApiError && err.code === 'stale') {
+        const current = err.body.current;
+        const row = current && typeof current === 'object' ? (current as ScenarioOverrideRow) : null;
+        const server = row && props.hydrateRow ? { ...props.hydrateRow(row), scenario_id: scenarioId } : null;
+        if (server) {
+          const rebased = rebaseLocalDraft({ draft: next, baseline: JSON.stringify(baseline) }, server);
+          setDraft(rebased.draft);
+          setBaseline(server);
+          setSavedOnce(true);
+          setRowSaved(true);
+        }
+        setServerUpdatedAt(typeof row?.updated_at === 'string' ? row.updated_at : null);
+        onSaved();
+        const bothMoved = server
+          ? rebaseLocalDraft({ draft: next, baseline: JSON.stringify(baseline) }, server).serverMoved
+          : false;
+        const message = server
+          ? `Someone else saved this scenario while you were editing. Your edits are re-applied on top of their version${
+              bothMoved ? ' (you both changed some of the same fields — yours are shown)' : ''
+            } — review, then save again.`
+          : 'Someone else saved this scenario while you were editing. Reload it to see their version, then re-apply your edits.';
+        setError(message);
+        toast({ message, tone: 'error', duration: 14000 });
+        return false;
+      }
       const message = errorText(err, 'The save didn’t go through');
       setError(message);
       toast({ message: `Couldn’t save — ${message}`, tone: 'error' });
@@ -634,7 +718,7 @@ export function StudioEditor(props: StudioEditorProps) {
 
   async function publish() {
     if (!editable || busy) return;
-    const items = readiness(draft, ctx);
+    const items = readiness(effectiveDraft, ctx);
     if (!canPublish(items)) {
       setStep('publish');
       toast({
@@ -677,7 +761,7 @@ export function StudioEditor(props: StudioEditorProps) {
           ? fields.map((f) => `“${f}” goes back to the built-in value.`)
           : ['No fields carry a change right now — this just clears the saved row.']),
         ...(dirty ? ['Your unsaved edits here are discarded too.'] : []),
-        'Recoverable from Audit → Revert.',
+        recoverable,
       ],
       confirmLabel: 'Revert to built-in',
       tone: 'danger',
@@ -708,7 +792,7 @@ export function StudioEditor(props: StudioEditorProps) {
           ? ['It is the only scenario trainees can see — the app will show none.']
           : []),
         'Past training sessions and their scores are untouched.',
-        'Recoverable from Audit → Revert.',
+        recoverable,
       ],
       confirmLabel: 'Delete scenario',
       tone: 'danger',
@@ -718,7 +802,9 @@ export function StudioEditor(props: StudioEditorProps) {
     try {
       await deleteScenarioOverride(scenarioId);
       toast({
-        message: `“${title}” deleted — restore it from Audit → Revert if that was a mistake.`,
+        message: can('audit.read')
+          ? `“${title}” deleted — restore it from Audit → Revert if that was a mistake.`
+          : `“${title}” deleted — an admin can restore it from the Audit log if that was a mistake.`,
         tone: 'success',
       });
       onSaved();
@@ -805,11 +891,20 @@ export function StudioEditor(props: StudioEditorProps) {
         ? '🐾'
         : SPECIES_GLYPH[speciesOf(draft.species)];
 
-  const saveState: { tone: 'success' | 'warn' | 'neutral'; text: string } = !savedOnce
-    ? { tone: 'warn', text: layout === 'narrow' ? 'Not saved yet' : 'Not saved yet — kept in this browser' }
-    : dirty
-      ? { tone: 'warn', text: 'Unsaved changes' }
-      : { tone: 'neutral', text: 'All changes saved' };
+  const saveState: { tone: 'success' | 'warn' | 'neutral'; text: string } =
+    keptLocally === false && (dirty || !savedOnce)
+      ? {
+          tone: 'warn',
+          text:
+            layout === 'narrow'
+              ? 'Not kept — save soon'
+              : 'This browser can’t keep drafts (storage full or blocked) — save before you leave',
+        }
+      : !savedOnce
+        ? { tone: 'warn', text: layout === 'narrow' ? 'Not saved yet' : 'Not saved yet — kept in this browser' }
+        : dirty
+          ? { tone: 'warn', text: 'Unsaved changes' }
+          : { tone: 'neutral', text: 'All changes saved' };
 
   const statusDot =
     source === 'user' ? (
@@ -838,7 +933,7 @@ export function StudioEditor(props: StudioEditorProps) {
     if (source === 'admin' && rowExists) {
       menuItems.push({
         label: 'Delete scenario…',
-        hint: 'Recoverable from Audit',
+        hint: can('audit.read') ? 'Recoverable from Audit' : 'An admin can restore it',
         danger: true,
         onSelect: () => void deleteScenario(),
       });
@@ -869,6 +964,7 @@ export function StudioEditor(props: StudioEditorProps) {
         return (
           <TestDriveStep
             {...stepProps}
+            draft={effectiveDraft}
             scenarioId={scenarioId}
             onTested={() => setTestedSig(aiSignature(latest.current.draft))}
           />

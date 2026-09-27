@@ -81,9 +81,10 @@ export async function simulateScore(args: {
 }
 
 /**
- * What the database can store today. `species: false` while the deferred
- * species migration is pending. Resolves `undefined` when unknown (an older
- * server, a network blip) — callers treat unknown as "don't block".
+ * What the database can store today. `species: false` on a project that has
+ * not run the species migration (production has, since 2026-09-27).
+ * Resolves `undefined` when unknown (an older server, a network blip) —
+ * callers treat unknown as "don't block".
  */
 export async function fetchScenarioCapabilities(): Promise<{ species?: boolean }> {
   try {

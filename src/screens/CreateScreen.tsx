@@ -29,6 +29,7 @@ import {
 import { DRIVER_KEYS, type DriverKey } from '../design-system/tokens';
 import { persistUserScenario } from '../features/scenarios/persistScenario';
 import { logEvent } from '../lib/analytics';
+import { SCENARIO_LIMITS } from '../shared/scenarios/limits';
 import { useT } from '../i18n/useT';
 import { useLanguage } from '../app/providers/LanguageProvider';
 import {
@@ -462,6 +463,7 @@ export function CreateScreen() {
                       </div>
                       <textarea
                         value={pushbackNotes}
+                        maxLength={SCENARIO_LIMITS.pushbackNotesMax}
                         onChange={(e) => { setPushbackNotes(e.target.value); if (pushbackError) setPushbackError(null); }}
                         placeholder={t('create.pushback.notesOptionalPlaceholder')}
                         rows={2}
@@ -550,6 +552,7 @@ export function CreateScreen() {
                       </div>
                       <textarea
                         value={pushbackNotes}
+                        maxLength={SCENARIO_LIMITS.pushbackNotesMax}
                         onChange={(e) => { setPushbackNotes(e.target.value); if (pushbackError) setPushbackError(null); }}
                         placeholder={t('create.pushback.notesRequiredPlaceholder')}
                         rows={3}
@@ -608,6 +611,7 @@ export function CreateScreen() {
               <Glass radius={20} padding={14}>
                 <textarea
                   value={context}
+                  maxLength={SCENARIO_LIMITS.contextMax}
                   onChange={(e) => setContext(e.target.value)}
                   placeholder={t('create.details.placeholder')}
                   rows={4}

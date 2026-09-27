@@ -416,7 +416,7 @@ function ResumeStrip({
                 </div>
                 <div style={{ fontSize: 12, color: COLOR.inkMute, marginTop: 2 }}>
                   {item.summary ? `${item.summary} · ` : ''}
-                  {item.neverSaved ? 'Never saved' : 'Unsaved changes'} · {relativeTime(item.savedAt)}
+                  {item.neverSaved ? 'Only in this browser' : 'Unsaved changes'} · {relativeTime(item.savedAt)}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>

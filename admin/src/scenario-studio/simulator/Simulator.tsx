@@ -43,6 +43,7 @@ import {
   emotionMeta,
   groupMissingByStep,
   isConversationActive,
+  isScorable,
   joinList,
   latestEmotion,
   trySayingFor,
@@ -206,7 +207,9 @@ export function Simulator({ draft, scenarioId, onTested, goTo, onOpenTraineeApp 
 
       {ended && (
         <div ref={scoreAreaRef} style={{ scrollMarginTop: 16 }}>
-          {state.phase === 'scored' ? (
+          {!isScorable(state.messages) ? (
+            <UnscorableCard onRunAgain={sim.runAgain} />
+          ) : state.phase === 'scored' ? (
             <ScoreSummary
               ref={scoreHeadingRef}
               report={state.report}
@@ -766,6 +769,32 @@ function EndDivider({ text }: { text: string }) {
       </span>
       <span aria-hidden style={{ flex: 1, height: 1, background: COLOR.border }} />
     </div>
+  );
+}
+
+/**
+ * The owner ended the conversation before the admin said a word (an opening
+ * line that carried the end token). Nothing was scored, and the run doesn't
+ * count as a test — the scorer rates what the trainee says.
+ */
+function UnscorableCard({ onRunAgain }: { onRunAgain: () => void }) {
+  return (
+    <Glass padding="18px 22px" radius={RADIUS.xl}>
+      <div role="status" style={{ display: 'grid', gap: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: COLOR.ink }}>
+          The owner ended the conversation before you replied
+        </div>
+        <div style={{ fontSize: 12.5, lineHeight: 1.5, color: COLOR.inkSoft }}>
+          There is nothing to score and this doesn’t count as a test drive. Restart — if the owner
+          keeps ending straight away, check the opening line and the AI brief.
+        </div>
+        <div>
+          <Button size="sm" tone="primary" onClick={onRunAgain}>
+            ↺ Restart
+          </Button>
+        </div>
+      </div>
+    </Glass>
   );
 }
 

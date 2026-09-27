@@ -223,6 +223,37 @@ describe('species — cat prompts', () => {
     const scoring = buildScoringSystemPrompt({ scenario, retrieved });
     expect(scoring).toContain('59% of dogs seen in clinics were overweight');
   });
+
+  it('frames retrieved canine research as canine when the scenario is about a cat', () => {
+    // The species scope keeps dog-ONLY documents out, but most of the corpus
+    // is shared by both species and quotes canine trials verbatim. The
+    // passage is left intact (it is research); the block tells the model how
+    // to read it — and a dog prompt does not gain a byte.
+    const retrieved: RetrievedChunk[] = [
+      {
+        content: '97% of dogs in a 12-week clinical evaluation lost weight. DMER for adult dogs: 130 × kg^0.75.',
+        citation: 'Royal Canin',
+        tags: null,
+        similarity: 0.9,
+      },
+    ];
+    const framing = 'This scenario is about a CAT.';
+    const cat = catScenario();
+    const catCustomer = buildCustomerSystemPrompt({ scenario: cat, retrieved });
+    const catScoring = buildScoringSystemPrompt({ scenario: cat, retrieved });
+    expect(catCustomer).toContain(framing);
+    expect(catScoring).toContain(framing);
+    expect(catCustomer).toContain('97% of dogs in a 12-week clinical evaluation lost weight');
+
+    const dog = { ...cat, species: undefined };
+    const explicitDog = { ...cat, species: 'dog' as const };
+    for (const s of [dog, explicitDog]) {
+      expect(buildCustomerSystemPrompt({ scenario: s, retrieved })).not.toContain(framing);
+      expect(buildScoringSystemPrompt({ scenario: s, retrieved })).not.toContain(framing);
+    }
+    // No passages → no block → no framing line either.
+    expect(buildCustomerSystemPrompt({ scenario: cat, retrieved: [] })).not.toContain(framing);
+  });
 });
 
 describe('adaptToSpecies', () => {
@@ -234,9 +265,12 @@ describe('adaptToSpecies', () => {
   });
 
   it('swaps whole words only, preserving case', () => {
+    // "canine" is deliberately NOT a pet noun here: it names product lines
+    // ("Royal Canin Canine …") and anatomy, and a renamed product is a
+    // different product.
     expect(
       adaptToSpecies('Dog, dog, DOG, dogs, Dogs, dog\'s, puppy, Puppies, canine', 'cat'),
-    ).toBe("Cat, cat, CAT, cats, Cats, cat's, kitten, Kittens, feline");
+    ).toBe("Cat, cat, CAT, cats, Cats, cat's, kitten, Kittens, canine");
     expect(adaptToSpecies('hotdog dogma doggy underdogs', 'cat')).toBe(
       'hotdog dogma doggy underdogs',
     );

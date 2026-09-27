@@ -345,7 +345,14 @@ export default async (req: Request): Promise<Response> => {
       { allowTelemetry, preview },
     );
 
-    report = { ...parsedOut, ...dims, overall, band: bandFor(overall) };
+    // Only the model's own fields ride along. `scoreUnavailable` is OUR flag
+    // (the honest-failure fallback); a model that emitted it would turn a
+    // real score into "unavailable" in every consumer.
+    const { scoreUnavailable: _neverFromModel, ...modelFields } = parsedOut as Record<
+      string,
+      unknown
+    >;
+    report = { ...modelFields, ...dims, overall, band: bandFor(overall) } as ScoreReport;
   } catch (err) {
     console.error('[ai-evaluate] evaluateConversation failed', errorMessage(err));
     await recordCallServer(

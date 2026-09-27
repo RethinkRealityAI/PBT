@@ -208,6 +208,19 @@ async function restore(ctx: AdminCtx, slug: string): Promise<Response> {
  * time, which is the most expensive kind of wrong here (an admin would see
  * "Fecal Scan only" in the UI while roleplay kept quoting the document).
  */
+/**
+ * Does this write touch the Fecal Scan's evidence? Either a chart itself
+ * (`fecal:<species>`) or a scope edit that puts a document INTO the
+ * `fecal-scan` tool — the scan retrieves everything filed there.
+ */
+export function touchesFecalScan(body: Record<string, unknown>): boolean {
+  const slug = String(body.slug ?? '').trim();
+  if (slug.startsWith('fecal:')) return true;
+  const tools = body.tools;
+  const list = Array.isArray(tools) ? tools : typeof tools === 'string' ? [tools] : [];
+  return list.includes('fecal-scan');
+}
+
 async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Response> {
   const slug = String(body.slug ?? '').trim();
   if (!slug) return errorResponse(400, 'slug required');
@@ -415,6 +428,20 @@ export default async (req: Request, context?: NetlifyContextLike): Promise<Respo
   }
 
   if (body.op === 'seed') return errorResponse(410, SEED_GONE);
+
+  // The Fecal Scan grounds on ONE thing: the three Royal Canin charts, in
+  // their own `fecal-scan` scope. Re-filing a chart into the roleplay scope,
+  // filing a roleplay document into the scan, or deleting a chart changes a
+  // clinical feature's evidence — not something the Scenario Author role
+  // (knowledge.write for uploading its own material) is meant to reach.
+  // AI tuning (`simulation.write`) is the permission that already governs
+  // what the AI is told, so it governs this too.
+  if ((body.op === 'update' || body.op === 'delete') && touchesFecalScan(body) && !can(ctx, 'simulation.write')) {
+    return errorResponse(
+      403,
+      'Changing the Fecal Scan charts or their scope needs the AI tuning permission (simulation.write).',
+    );
+  }
 
   if (body.op === 'update') return update(ctx, body);
 

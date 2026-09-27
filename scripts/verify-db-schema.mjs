@@ -151,9 +151,10 @@ function expectedSchemaFromMigrations() {
  * then on the column is checked like any other.
  */
 const DEFERRED_COLUMNS = new Map([
-  // Scenario Studio dog/cat. Without it, species saves are dropped with a
-  // `_notice` and every scenario runs as a dog.
-  ['scenario_overrides.species', '20260925000000_scenario_species.sql'],
+  // (empty) — `scenario_overrides.species` sat here from 2026-09-25 until the
+  // migration was applied to production on 2026-09-27; it is now a required
+  // column like any other. Add an entry only for a migration that is written
+  // but deliberately not yet run.
 ]);
 
 const base = URL_ENV.replace(/\/$/, '');

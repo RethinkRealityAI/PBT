@@ -46,18 +46,19 @@ export function scenarioRetrievalQuery(
  * Explicitly attached knowledge documents win over the broader focus area;
  * an unlinked scenario retrieves un-targeted, exactly as before.
  *
- * A scenario that DECLARES a species also carries it as the HARD knowledge
- * scope (`retrievalSpeciesFor`: a dog under one year → `puppy`), so a cat
- * scenario never grounds on dog-only documents. A legacy scenario with no
- * species gets no species key at all — its filters are unchanged.
+ * Every scenario carries its species as the HARD knowledge scope
+ * (`retrievalSpeciesFor`: absent = dog, a dog under one year → `puppy`), so a
+ * cat scenario never grounds on dog-only documents and a dog scenario never
+ * grounds on cat-only ones. Documents keep the vocabulary default (every
+ * species) unless someone narrows them, so this only ever removes passages
+ * that were filed for the other animal.
  */
 export function scenarioRetrievalFilters(
   scenario: Pick<Scenario, 'focusArea' | 'knowledgeSlugs' | 'species'> & {
     age?: Scenario['age'];
   },
-): RetrievalFilters | undefined {
-  const species = retrievalSpeciesFor(scenario.species, scenario.age);
-  const scope = species ? { species } : undefined;
+): RetrievalFilters {
+  const scope = { species: retrievalSpeciesFor(scenario.species, scenario.age) };
   if (scenario.knowledgeSlugs?.length) return { docSlugs: scenario.knowledgeSlugs, ...scope };
   if (scenario.focusArea) return { focus: scenario.focusArea, ...scope };
   return scope;

@@ -34,9 +34,12 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 
 import handler, { SYNC_COOLDOWN_MS } from '../knowledge-sync-background';
 import { __resetRateLimits } from '../_shared/ai';
-import { SYNC_VERSION, sha256Hex } from '../_shared/knowledgeSync';
+import { SYNC_VERSION, scopeHashFor, sha256Hex } from '../_shared/knowledgeSync';
 import { buildSeedDocs } from '../_shared/knowledgeSeed';
 import { BUNDLED_STUDIES } from '../_shared/knowledgeIngest';
+
+/** Every document the sync owns: code seeds (incl. the fecal charts) + the bundled studies. */
+const CORPUS_SIZE = buildSeedDocs().length + BUNDLED_STUDIES.length;
 import { fecalKnowledgeSlug } from '../../../src/data/knowledge/fecalCharts';
 import {
   KNOWLEDGE_SYNC_KEY_HEADER,
@@ -61,7 +64,15 @@ function currentRows(syncedAt: string, omit: string[] = []) {
       source: 'code-seed',
       metadata: {
         tags: { tools: ['roleplay'] },
-        sync: { version: SYNC_VERSION, contentHash: sha256Hex(d.content), syncedAt },
+        // A seed that narrows its default scope (the fecal charts, the
+        // species-scoped clinical references) is fingerprinted on that scope
+        // too — see `scopeHashFor`.
+        sync: {
+          version: SYNC_VERSION,
+          contentHash: sha256Hex(d.content),
+          ...(scopeHashFor(d.tags) ? { scopeHash: scopeHashFor(d.tags) } : {}),
+          syncedAt,
+        },
       },
     }));
   // The five bundled studies, fingerprinted against the real PDF bytes that
@@ -79,6 +90,7 @@ function currentRows(syncedAt: string, omit: string[] = []) {
           version: SYNC_VERSION,
           contentHash: 'study-body-hash',
           sourceHash: sha256Hex(new Uint8Array([1, 2, 3])),
+          ...(scopeHashFor(study.tags) ? { scopeHash: scopeHashFor(study.tags) } : {}),
           syncedAt,
         },
       },
@@ -339,7 +351,7 @@ describe('knowledge-sync-background', () => {
 
     expect(logs.join('\n')).toContain('knowledge sync: 1 created, 0 updated');
     // The other 22 documents were untouched — this is a targeted repair.
-    expect(logs.join('\n')).toContain('22 unchanged');
+    expect(logs.join('\n')).toContain(`${CORPUS_SIZE - 1} unchanged`);
   });
 
   it('runs without a cooldown check when nothing has ever been synced', async () => {
@@ -348,15 +360,15 @@ describe('knowledge-sync-background', () => {
     expect(res.status).toBe(202);
     const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
     // 18 code-seed documents + 5 bundled studies.
-    expect(docs).toHaveLength(23);
+    expect(docs).toHaveLength(CORPUS_SIZE);
     expect(mocks.generateContent).toHaveBeenCalledTimes(BUNDLED_STUDIES.length);
-    expect(logs.join('\n')).toContain('knowledge sync: 23 created');
+    expect(logs.join('\n')).toContain(`knowledge sync: ${CORPUS_SIZE} created`);
   });
 
   it('skips the cooldown entirely once the last sync is older than the window', async () => {
     wire(currentRows(new Date(Date.now() - SYNC_COOLDOWN_MS - 1000).toISOString()));
     const res = await post();
-    expect((await res.json()).status).toContain('0 created, 0 updated, 23 unchanged');
+    expect((await res.json()).status).toContain(`0 created, 0 updated, ${CORPUS_SIZE} unchanged`);
     // Still cheap: everything hashed the same, so nothing was embedded.
     expect(mocks.embedContent).not.toHaveBeenCalled();
   });

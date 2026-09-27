@@ -227,12 +227,24 @@ describe('knowledge sync — fecal charts', () => {
     const docs = written(sb.callsFor('knowledge_documents'), 'upsert');
     const chunks = written(sb.callsFor('knowledge_chunks'), 'insert');
 
+    // Species-specific clinical knowledge is filed for its animal only: the
+    // canine reference (BCS cut-offs, DMER multipliers, the "97% of dogs"
+    // trial) for dog + puppy, its feline counterpart for cats. Everything
+    // else is shared by every species.
+    const SPECIES_SCOPED: Record<string, string[]> = {
+      'clinical:reference': ['dog', 'puppy'],
+      'clinical:reference-cat': ['cat'],
+    };
+    const seen = new Set<string>();
     for (const doc of docs.filter((d) => !String(d.slug).startsWith('fecal:'))) {
-      expect((doc.metadata as Record<string, unknown>).tags, String(doc.slug)).toMatchObject({
+      const slug = String(doc.slug);
+      seen.add(slug);
+      expect((doc.metadata as Record<string, unknown>).tags, slug).toMatchObject({
         tools: DEFAULT_KNOWLEDGE_TOOLS,
-        species: ALL_KNOWLEDGE_SPECIES,
+        species: SPECIES_SCOPED[slug] ?? ALL_KNOWLEDGE_SPECIES,
       });
     }
+    for (const slug of Object.keys(SPECIES_SCOPED)) expect(seen.has(slug), slug).toBe(true);
     const fecalChunks = chunks.filter((c) => String(c.doc_id).startsWith('id:fecal:'));
     for (const row of chunks.filter((c) => !String(c.doc_id).startsWith('id:fecal:'))) {
       expect(row.tags).toMatchObject({ tools: DEFAULT_KNOWLEDGE_TOOLS });

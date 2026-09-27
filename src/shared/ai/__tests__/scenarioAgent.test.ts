@@ -462,11 +462,19 @@ describe('normalizeAgentActions — offer_options and go_to_step', () => {
   });
 
   it('offer_options clamps each option to the field cap', () => {
-    const a = one({ tool: 'offer_options', field: 'card_title_override', options: ['t'.repeat(500)] }) as Extract<
-      ScenarioAgentAction,
-      { tool: 'offer_options' }
-    >;
+    const a = one({
+      tool: 'offer_options',
+      field: 'card_title_override',
+      options: ['t'.repeat(500), 'Short and sweet'],
+    }) as Extract<ScenarioAgentAction, { tool: 'offer_options' }>;
     expect(a.options[0]).toHaveLength(SCENARIO_LIMITS.cardTitleMax);
+    expect(a.options[1]).toBe('Short and sweet');
+  });
+
+  it('offer_options needs at least two ideas — "pick one" of one is not a choice', () => {
+    expect(norm([{ tool: 'offer_options', field: 'card_title_override', options: ['Only one'] }])).toEqual([]);
+    // Two ideas that normalise to the same thing are one idea.
+    expect(norm([{ tool: 'offer_options', field: 'card_title_override', options: ['Same', 'Same'] }])).toEqual([]);
   });
 
   it('go_to_step: real steps only, with an optional note', () => {
@@ -688,16 +696,20 @@ describe('applyAgentAction', () => {
     const focus = applyAgentAction(base, { tool: 'attach_knowledge', mode: 'focus', focus_area: 'urinary' });
     expect(focus.draft).toMatchObject({ focus_area: 'urinary', knowledge_slugs: null });
 
+    // Documents replace the topic: retrieval uses the documents when both are
+    // set, so a kept focus_area would be saved but ignored (the Knowledge
+    // step's own attach path clears it for the same reason).
     const docs = applyAgentAction(base, {
       tool: 'attach_knowledge',
       mode: 'documents',
       slugs: ['study:davies-2024', 'act:guide'],
     });
-    expect(docs.draft).toMatchObject({ focus_area: 'weight', knowledge_slugs: ['study:davies-2024', 'act:guide'] });
-    expect(docs.changed).toEqual(['Attached documents']);
+    expect(docs.draft).toMatchObject({ focus_area: null, knowledge_slugs: ['study:davies-2024', 'act:guide'] });
+    expect(docs.changed).toEqual(['Attached documents', 'Focus topic']);
 
-    const same = applyAgentAction(base, { tool: 'attach_knowledge', mode: 'documents', slugs: ['act:guide'] });
-    expect(same.draft).toBe(base);
+    const noFocus = { ...base, focus_area: null };
+    const same = applyAgentAction(noFocus, { tool: 'attach_knowledge', mode: 'documents', slugs: ['act:guide'] });
+    expect(same.draft).toBe(noFocus);
     expect(same.changed).toEqual([]);
   });
 

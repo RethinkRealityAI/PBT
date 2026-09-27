@@ -71,12 +71,17 @@ export default async (req: Request): Promise<Response> => {
     const query = (body.query ?? '').trim().slice(0, MAX_QUERY_CHARS);
     if (!query) return ok([]);
     const k = Math.max(1, Math.min(MAX_K, Math.round(Number(body.k ?? 4)) || 4));
-    // Targeting (focus / attached documents) is the client's to choose; the
-    // SCOPE is not. Anything the client said about tool or species is dropped.
-    const { focus, docSlugs } = sanitizeFilters(body.filters);
+    // Targeting (focus / attached documents / species) is the client's to
+    // choose; the TOOL scope is not. A client species only ever NARROWS the
+    // roleplay scope to one animal — it can never widen it — and honouring it
+    // keeps the citations the browser records (`rag_documents.retrieved`)
+    // the same passages the server grounded the prompt on. Anything the
+    // client said about `tool` is dropped.
+    const { focus, docSlugs, species } = sanitizeFilters(body.filters);
     const filters = {
       ...(focus ? { focus } : {}),
       ...(docSlugs ? { docSlugs } : {}),
+      ...(species ? { species } : {}),
       tool: PUBLIC_RETRIEVAL_TOOL,
     };
     const results = await retrieveChunks(query, { k, filters });

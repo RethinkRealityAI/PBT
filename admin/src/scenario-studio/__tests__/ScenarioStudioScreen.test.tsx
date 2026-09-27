@@ -334,7 +334,7 @@ describe('StudioEditor', () => {
       }),
     );
     renderScreen();
-    expect(screen.getByText(/Never saved/)).toBeInTheDocument();
+    expect(screen.getByText(/Only in this browser/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Resume “Persian draft”' }));
     await heading('Who is the patient?');
     expect(screen.getByText('Not saved yet — kept in this browser')).toBeInTheDocument();
@@ -346,7 +346,7 @@ describe('StudioEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to the Studio' }));
     // Re-titled from the draft itself; the pet line tells untitled drafts apart.
     expect(await screen.findByRole('button', { name: 'Resume “Untitled scenario”' })).toBeInTheDocument();
-    expect(screen.getByText(/Persian · Never saved/)).toBeInTheDocument();
+    expect(screen.getByText(/Persian · Only in this browser/)).toBeInTheDocument();
   });
 
   it('forgets a blank new scenario nobody touched', async () => {

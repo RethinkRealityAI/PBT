@@ -304,7 +304,22 @@ function A2uiSurfaceImpl({ surface, onAction, onDataChange, busy = false, readOn
     return null;
   };
 
+  // A persisted surface is untrusted storage: a component whose child is
+  // itself (or a chain deep enough to blow the stack) must render as nothing,
+  // not take the Studio down with it.
+  const visiting = new Set<string>();
+  const MAX_RENDER_DEPTH = 48;
   const render = (id: string, scope: string, inButton = false): ReactNode => {
+    if (visiting.has(id) || visiting.size >= MAX_RENDER_DEPTH) return null;
+    visiting.add(id);
+    try {
+      return renderInner(id, scope, inButton);
+    } finally {
+      visiting.delete(id);
+    }
+  };
+
+  const renderInner = (id: string, scope: string, inButton = false): ReactNode => {
     const c = components[id];
     if (!c) return null;
     const key = `${surfaceId}:${id}:${scope}`;
@@ -440,7 +455,7 @@ function A2uiSurfaceImpl({ surface, onAction, onDataChange, busy = false, readOn
           <div key={key} role="group" aria-label={label || undefined} style={{ display: 'grid', gap: 6 }}>
             {label && <span style={labelStyle}>{label}</span>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {options.map((o, i) => {
+              {options.filter((o) => o && typeof o === 'object').map((o, i) => {
                 const value = resolveDynamic(o.value, dataModel, scope);
                 return (
                   <Chip
@@ -519,7 +534,7 @@ function A2uiSurfaceImpl({ surface, onAction, onDataChange, busy = false, readOn
             </div>
             {kind === 'choice' ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {options.map((o, i) => {
+                {options.filter((o) => o && typeof o === 'object').map((o, i) => {
                   const optValue = resolveDynamic(o.value, dataModel, scope);
                   return (
                     <Chip

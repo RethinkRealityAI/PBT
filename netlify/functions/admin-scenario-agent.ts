@@ -194,6 +194,27 @@ export function catalogueForSpecies(
   return catalogue.filter((d) => !d.species || d.species.length === 0 || d.species.includes(scope));
 }
 
+/**
+ * The catalogue changes when an admin files a document — a few times a day,
+ * not a few times a minute — while the assistant asks for it on EVERY turn
+ * (a 500-row document scan plus a full-corpus chunk-count aggregate). Held
+ * per function instance for a minute, like the simulation config.
+ */
+const CATALOGUE_CACHE_TTL_MS = 60_000;
+let catalogueCache: { value: AgentCatalogueDoc[]; expiresAt: number } | null = null;
+
+export async function cachedRoleplayCatalogue(sb: SupabaseClient): Promise<AgentCatalogueDoc[]> {
+  if (catalogueCache && catalogueCache.expiresAt > Date.now()) return catalogueCache.value;
+  const value = await loadRoleplayCatalogue(sb);
+  catalogueCache = { value, expiresAt: Date.now() + CATALOGUE_CACHE_TTL_MS };
+  return value;
+}
+
+/** Test hook — the catalogue cache is module state. */
+export function __clearAgentCatalogueCache(): void {
+  catalogueCache = null;
+}
+
 // ── Retrieval ────────────────────────────────────────────────────────────
 
 /**
@@ -382,7 +403,7 @@ export default async (req: Request): Promise<Response> => {
   const species = retrievalSpeciesFor(draft.species, draft.life_stage);
   const speciesFilter = species ? { species } : {};
   const [fullCatalogue, relevantChunks, researchChunks] = await Promise.all([
-    withTimeout(loadRoleplayCatalogue(ctx.sb), CATALOGUE_TIMEOUT_MS, [] as AgentCatalogueDoc[]),
+    withTimeout(cachedRoleplayCatalogue(ctx.sb), CATALOGUE_TIMEOUT_MS, [] as AgentCatalogueDoc[]),
     withTimeout(
       retrieveChunks(query, {
         k: RELEVANT_K,

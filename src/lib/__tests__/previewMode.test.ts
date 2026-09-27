@@ -13,6 +13,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   __resetPreviewRuns,
+  __setFramedForTests,
   getPreviewRun,
   isPreviewMode,
   startPreviewRun,
@@ -29,10 +30,14 @@ function setSearch(search: string): void {
 beforeEach(() => {
   __resetPreviewRuns();
   setSearch('');
+  // The admin iframe is the only legitimate host — every test below runs
+  // "inside" it unless it says otherwise.
+  __setFramedForTests(true);
 });
 
 afterEach(() => {
   setSearch('');
+  __setFramedForTests(null);
   vi.restoreAllMocks();
 });
 
@@ -50,6 +55,21 @@ describe('isPreviewMode', () => {
 
   it('is not fooled by a lookalike param', () => {
     setSearch('?pbt_preview_mode=1');
+    expect(isPreviewMode()).toBe(false);
+  });
+
+  it('is false for a top-level tab, even with the param', () => {
+    // Preview mode skips Terms, the quiz, telemetry and history — typing the
+    // URL into the address bar must not buy any of that.
+    __setFramedForTests(false);
+    setSearch('?pbt_preview=1');
+    expect(isPreviewMode()).toBe(false);
+  });
+
+  it('is false when the test override is cleared and jsdom is (as always) top-level', () => {
+    __setFramedForTests(null);
+    setSearch('?pbt_preview=1');
+    expect(window.self === window.top).toBe(true);
     expect(isPreviewMode()).toBe(false);
   });
 });

@@ -152,15 +152,20 @@ describe('retrieveChunks — hard scope', () => {
     expect(filterOf(0)).toEqual({});
   });
 
-  it('keys the cache on tool and species', async () => {
+  it('keys the result cache on tool and species — one embedding per question whatever the scope', async () => {
     sb.rpc.mockResolvedValue({ data: [ROW], error: null });
     await retrieveChunks('same', { k: 4, filters: { tool: 'roleplay' } });
     await retrieveChunks('same', { k: 4, filters: { tool: 'roleplay' } });
-    expect(mocks.embedContent).toHaveBeenCalledTimes(1);
+    expect(sb.rpc).toHaveBeenCalledTimes(1);
+    // Another tool or species is another SCOPE: a fresh RPC, never a shared
+    // result — but the same question, so the embedding is not bought twice
+    // (the Studio assistant asks the same thing as `roleplay` and as
+    // `scenario-builder` every turn).
     await retrieveChunks('same', { k: 4, filters: { tool: 'scoring' } });
-    expect(mocks.embedContent).toHaveBeenCalledTimes(2);
+    expect(sb.rpc).toHaveBeenCalledTimes(2);
     await retrieveChunks('same', { k: 4, filters: { tool: 'scoring', species: 'cat' } });
-    expect(mocks.embedContent).toHaveBeenCalledTimes(3);
+    expect(sb.rpc).toHaveBeenCalledTimes(3);
+    expect(mocks.embedContent).toHaveBeenCalledTimes(1);
   });
 
   it('maps doc_slug / doc_title provenance when the RPC returns it', async () => {

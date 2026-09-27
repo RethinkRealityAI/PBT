@@ -38,10 +38,13 @@ import { ACT_STEPS } from '../../../src/data/knowledge/actGuide';
 import {
   BCS_BLURB,
   CALORIE_FORMULA_BLURB,
+  CAT_BCS_BLURB,
+  CAT_CALORIE_FORMULA_BLURB,
   MCS_BLURB,
   NON_SHAMING_FRAMING,
   PRODUCT_ANCHORS,
 } from '../../../src/data/knowledge/clinicalReference';
+import { adaptPetWords } from '../../../src/shared/scenarios/species';
 import {
   FECAL_CHARTS,
   FECAL_SPECIES,
@@ -191,6 +194,11 @@ export function buildSeedDocs(): SeedDoc[] {
     });
   }
 
+  // The canine clinical reference is DOG knowledge: its BCS cut-offs, DMER
+  // multipliers and the "97% of dogs" trial are canine results. Scoped to
+  // dog + puppy so a cat scenario's HARD species filter never retrieves it
+  // (the prompt builders strip these figures from cat prompts; retrieval
+  // must not put them back). Cats get their own document below.
   docs.push({
     slug: 'clinical:reference',
     title: 'Clinical reference — BCS / MCS / calories / product anchors',
@@ -203,6 +211,21 @@ export function buildSeedDocs(): SeedDoc[] {
       `Product anchors: ${PRODUCT_ANCHORS.satietySupport.name} — ${PRODUCT_ANCHORS.satietySupport.keyClaims.join('; ')}`,
     ].join('\n\n'),
     metadata: { anchors: Object.keys(PRODUCT_ANCHORS) },
+    tags: { species: ['dog', 'puppy'] },
+  });
+
+  docs.push({
+    slug: 'clinical:reference-cat',
+    title: 'Clinical reference (cats) — BCS / MCS / calories / framing',
+    category: 'clinical',
+    content: [
+      `BCS: ${CAT_BCS_BLURB}`,
+      `MCS: ${adaptPetWords(MCS_BLURB, 'cat')}`,
+      `Calories: ${CAT_CALORIE_FORMULA_BLURB}`,
+      `Framing: ${NON_SHAMING_FRAMING}`,
+    ].join('\n\n'),
+    metadata: {},
+    tags: { species: ['cat'] },
   });
 
   // Royal Canin fecal scoring charts — one document per chart, one paragraph

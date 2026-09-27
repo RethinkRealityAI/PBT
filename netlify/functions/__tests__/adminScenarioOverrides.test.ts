@@ -49,11 +49,27 @@ const ROW: Bag = {
   suggested_driver: 'Harmonizer',
 };
 
-/** Every payload handed to `.upsert(...)` on scenario_overrides, in order. */
+/**
+ * Every payload WRITTEN to scenario_overrides, in order. A new id is an
+ * `upsert`; an existing row is an `update` guarded by `deleted_at is null`
+ * — both carry the same column set.
+ */
 function upserts(): Bag[] {
   const out: Bag[] = [];
   for (const call of sb.callsFor('scenario_overrides')) {
-    for (const op of call.ops) if (op.op === 'upsert') out.push(op.args[0] as Bag);
+    for (const op of call.ops) {
+      if (op.op === 'upsert' || op.op === 'update') out.push(op.args[0] as Bag);
+    }
+  }
+  return out;
+}
+
+/** The `.is('deleted_at', null)` guard is what makes the update tombstone-safe. */
+function updateGuards(): Array<[string, unknown]> {
+  const out: Array<[string, unknown]> = [];
+  for (const call of sb.callsFor('scenario_overrides')) {
+    if (!call.ops.some((o) => o.op === 'update')) continue;
+    for (const op of call.ops) if (op.op === 'is') out.push([op.args[0] as string, op.args[1]]);
   }
   return out;
 }
@@ -75,7 +91,7 @@ function overridesTable(
   onUpsert: (payload: Bag) => SbResult = (payload) => ({ data: payload, error: null }),
 ) {
   sb.setHandler('scenario_overrides', (call: SbCall) => {
-    const up = call.ops.find((o) => o.op === 'upsert');
+    const up = call.ops.find((o) => o.op === 'upsert' || o.op === 'update');
     if (up) return onUpsert(up.args[0] as Bag);
     return { data: existing, error: null };
   });
@@ -300,6 +316,95 @@ describe('POST upsert — deleted scenarios', () => {
     expect(res.status).toBe(409);
     expect(((await res.json()) as Bag).error).toMatch(/deleted/i);
     expect(upserts()).toHaveLength(0);
+  });
+});
+
+describe('POST upsert — two admins, one scenario (baseUpdatedAt)', () => {
+  const stored = { ...ROW, updated_at: '2026-09-27T10:00:00.000Z' };
+
+  it('saves when the editor saw the row that is still there', async () => {
+    overridesTable(stored);
+    const res = await save({ ...ROW, baseUpdatedAt: stored.updated_at });
+    expect(res.status).toBe(200);
+    expect(upserts()).toHaveLength(1);
+    // An existing row is UPDATED behind the tombstone guard, never upserted.
+    expect(updateGuards()).toEqual([['deleted_at', null]]);
+  });
+
+  it('refuses (409 stale) when someone else saved since, and returns the row that won', async () => {
+    overridesTable(stored);
+    const res = await save({ ...ROW, breed: 'Ragdoll', baseUpdatedAt: '2026-09-27T09:00:00.000Z' });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code?: string; current?: Bag };
+    expect(body.code).toBe('stale');
+    expect(body.current?.updated_at).toBe(stored.updated_at);
+    expect(upserts()).toHaveLength(0);
+  });
+
+  it('a null base means "there was no row" — a row created meanwhile is stale too', async () => {
+    overridesTable(stored);
+    const res = await save({ ...ROW, baseUpdatedAt: null });
+    expect(res.status).toBe(409);
+    expect(upserts()).toHaveLength(0);
+  });
+
+  it('a save without the token keeps working (older clients)', async () => {
+    overridesTable(stored);
+    expect((await save(ROW)).status).toBe(200);
+  });
+
+  it('a soft-delete landing between the read and the write is a 409, not a silent save into a tombstone', async () => {
+    // The read still sees a live row; the guarded update then matches nothing.
+    overridesTable(stored, () => ({ data: null, error: null }));
+    const res = await save({ ...ROW, baseUpdatedAt: stored.updated_at });
+    expect(res.status).toBe(409);
+    expect(auditRows()).toHaveLength(0);
+  });
+});
+
+describe('POST upsert — bounds the server used to trust the client on', () => {
+  it('a custom pushback needs its notes — the notes ARE the pushback', async () => {
+    overridesTable(null);
+    const res = await save({ ...ROW, pushback_id: 'custom', pushback_notes: '   ' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/custom pushback/);
+    expect((await save({ ...ROW, pushback_id: 'custom', pushback_notes: 'Wants raw food' })).status).toBe(200);
+  });
+
+  it('caps every prose column (backstory, opening line, notes, title) instead of letting an unplayable scenario save', async () => {
+    overridesTable(null);
+    expect((await save({ ...ROW, context_override: 'x'.repeat(4001) })).status).toBe(400);
+    expect((await save({ ...ROW, opening_line_override: 'x'.repeat(1001) })).status).toBe(400);
+    expect((await save({ ...ROW, pushback_notes: 'x'.repeat(2001) })).status).toBe(400);
+    expect((await save({ ...ROW, title_override: 'x'.repeat(121) })).status).toBe(400);
+    expect((await save({ ...ROW, info_modal_title: 'x'.repeat(121) })).status).toBe(400);
+    expect((await save({ ...ROW, context_override: 'x'.repeat(4000) })).status).toBe(200);
+  });
+
+  it('a non-string in a text column is a 400, not a database 500', async () => {
+    overridesTable(null);
+    const res = await save({ ...ROW, prompt_prefix: 12 as unknown as string });
+    expect(res.status).toBe(400);
+    expect(upserts()).toHaveLength(0);
+  });
+
+  it('sort_order must be a whole number the int column can hold', async () => {
+    overridesTable(null);
+    expect((await save({ ...ROW, sort_order: 1e21 })).status).toBe(400);
+    expect((await save({ ...ROW, sort_order: 1.5 })).status).toBe(400);
+    expect((await save({ ...ROW, sort_order: -3 })).status).toBe(200);
+  });
+
+  it('a delete without a scenario_id is a 400, not a TypeError', async () => {
+    overridesTable(null);
+    const res = await save({} as Bag, 'delete');
+    expect(res.status).toBe(400);
+  });
+
+  it('an oversized body is refused before it is parsed', async () => {
+    overridesTable(null);
+    const res = await save({ ...ROW, context_override: 'x'.repeat(70 * 1024) });
+    expect(res.status).toBe(413);
   });
 });
 

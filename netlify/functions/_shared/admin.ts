@@ -55,7 +55,7 @@ function envFirst(...names: string[]): string {
 }
 
 /**
- * Load every role definition. Small table (7 system roles + any custom ones),
+ * Load every role definition. Small table (8 system roles + any custom ones),
  * read once per request. Falls back to the code presets if the table is
  * missing — a deploy that runs ahead of its migration degrades to the built-in
  * roles instead of locking every admin out.

@@ -31,7 +31,7 @@ import { Glass } from '../../primitives/Glass';
 import { resolveDocScope } from '../../data/knowledgeActions';
 import { askScenarioAgent } from '../api';
 import type { CopilotPanelProps } from '../types';
-import type { StudioDraft } from '../studioModel';
+import { FIELD_LABELS, type StudioDraft } from '../studioModel';
 import { AssistMark, Chip, TypingDots } from '../ui';
 import {
   AGENT_LIMITS,
@@ -52,6 +52,7 @@ import {
 import { SCENARIO_LIMITS } from '../../../../src/shared/scenarios/limits';
 import { retrievalSpeciesFor } from '../../../../src/shared/scenarios/species';
 import { A2uiSurface } from './A2uiSurface';
+import { SurfaceBoundary } from './SurfaceBoundary';
 import { CARD_EVENTS, buildActionSurface } from './agentSurfaces';
 import { composerPlaceholder, greetingFor, starterPrompts } from './starterPrompts';
 import {
@@ -148,6 +149,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
   const scenarioRef = useLatest(scenarioId);
   const canWriteRef = useLatest(canWrite);
   const docsRef = useLatest(knowledge.docs);
+  const knowledgeRef = useLatest(knowledge);
   const onPatchRef = useLatest(props.onPatch);
   const onGoToStepRef = useLatest(props.onGoToStep);
   const onTranscriptChangeRef = useLatest(props.onTranscriptChange);
@@ -243,6 +245,25 @@ export function CopilotPanel(props: CopilotPanelProps) {
       const actions = normalizeAgentActions(res?.actions, { knownSlugs: knownSlugsRef.current });
       const reply = typeof res?.reply === 'string' ? res.reply.trim() : '';
       const suggestions = normalizeSuggestions(res?.suggestions);
+      // The server offered documents this browser's library can't vouch for
+      // (still loading, unreadable for this role, or filed for another
+      // species) — the gate dropped them, and the reply still talks about
+      // them. Say so instead of leaving a bubble that promises a card.
+      const rawActions = Array.isArray(res?.actions) ? res.actions : [];
+      const offeredDocs = rawActions.some(
+        (a) => isRecord(a) && a.tool === 'attach_knowledge' && a.mode === 'documents',
+      );
+      const keptDocs = actions.some((a) => a.tool === 'attach_knowledge' && a.mode === 'documents');
+      const k = knowledgeRef.current;
+      const droppedDocsNote =
+        offeredDocs && !keptDocs
+          ? k.loading
+            ? 'The assistant suggested documents, but your library is still loading — ask again in a moment.'
+            : k.error
+              ? `The assistant suggested documents, but your library couldn’t be read (${k.error}), so they can’t be shown here.`
+              : 'The assistant suggested documents this scenario can’t use — not indexed yet, or filed for another animal — so nothing was attached.'
+          : null;
+      if (droppedDocsNote && (k.loading || k.error)) k.refetch();
       update((t) => {
         let next = t;
         if (reply || actions.length === 0) next = appendAssistant(next, reply || FALLBACK_REPLY);
@@ -251,6 +272,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
             buildActionSurface(action, sid, { draft: draftRef.current, docs: docsRef.current }),
           );
         }
+        if (droppedDocsNote) next = appendAssistant(next, droppedDocsNote);
         return setSuggestions(next, suggestions);
       });
       setAnnouncement(reply || (actions.length ? 'The assistant made a suggestion.' : FALLBACK_REPLY));
@@ -343,6 +365,27 @@ export function CopilotPanel(props: CopilotPanelProps) {
         return;
       }
       let toApply: ScenarioAgentAction = action;
+      // The card was built against the draft as it was when the assistant
+      // answered; the admin may have edited a field since. Their edit wins:
+      // a field that moved is skipped, never silently overwritten.
+      let skipped: string[] = [];
+      if (action.tool === 'update_fields' && isRecord(event.context.before)) {
+        const before = event.context.before;
+        const now = draftRef.current as Record<string, unknown>;
+        const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+        const fields = { ...action.fields } as Record<string, unknown>;
+        for (const field of Object.keys(fields)) {
+          if (!same(now[field], before[field])) {
+            skipped.push(FIELD_LABELS[field as keyof typeof FIELD_LABELS] ?? field);
+            delete fields[field];
+          }
+        }
+        if (Object.keys(fields).length === 0) {
+          result(sid, `Not applied — you changed ${skipped.join(', ')} since this was suggested.`, false);
+          return;
+        }
+        toApply = { ...action, fields } as ScenarioAgentAction;
+      }
       if (action.tool === 'attach_knowledge' && action.mode === 'documents') {
         // Add to what the admin already attached — never drop their picks.
         const existing = draftRef.current.knowledge_slugs ?? [];
@@ -354,7 +397,12 @@ export function CopilotPanel(props: CopilotPanelProps) {
       }
       const { draft: next, changed } = applyAgentAction(draftRef.current, toApply);
       patchDraft(next, changed);
-      result(sid, changed.length ? `Applied: ${changed.join(', ')}` : 'Already up to date', true);
+      const applied = changed.length ? `Applied: ${changed.join(', ')}` : 'Already up to date';
+      result(
+        sid,
+        skipped.length ? `${applied} — kept your own ${skipped.join(', ')} (changed since this was suggested)` : applied,
+        true,
+      );
     },
     [result, patchDraft, knownSlugsRef],
   );
@@ -842,13 +890,15 @@ function TranscriptItem({
       if (!surface) return null;
       return (
         <div className={anim} data-kind="card" style={{ minWidth: 0 }}>
-          <A2uiSurface
-            surface={surface}
-            onAction={onAction}
-            onDataChange={onDataChange}
-            busy={busy}
-            readOnly={readOnly}
-          />
+          <SurfaceBoundary key={item.surfaceId}>
+            <A2uiSurface
+              surface={surface}
+              onAction={onAction}
+              onDataChange={onDataChange}
+              busy={busy}
+              readOnly={readOnly}
+            />
+          </SurfaceBoundary>
         </div>
       );
     }

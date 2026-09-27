@@ -223,6 +223,18 @@ export function App() {
   const tab =
     tabs.find((t) => t.key === hashRoute?.tab)?.key ?? defaultTab(item, perms) ?? '';
 
+  // Canonicalise the address bar: a hash the fallback above resolved to a
+  // DIFFERENT destination or tab (a forbidden screen, a tab this role can't
+  // open) would otherwise sit in the URL while another screen renders — and
+  // be what Back and a copied link return to.
+  useEffect(() => {
+    if (!hashRoute) return;
+    const wantTab = tab || null;
+    if (hashRoute.screen !== item.key || (hashRoute.tab ?? null) !== wantTab) {
+      navigate({ screen: item.key, tab: wantTab }, true);
+    }
+  }, [hashRoute, item.key, tab, navigate]);
+
   const go = (screen: AdminScreen, nextTab?: string) => {
     // Clear the shared search on destination change — a filter typed on one
     // screen silently constraining every other one is a bug people report as

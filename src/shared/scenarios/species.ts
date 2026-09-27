@@ -40,16 +40,17 @@ export function lifeStageLabel(stage: string | null | undefined, species: unknow
 
 /**
  * Knowledge-scope species key (`tags.species[]` in knowledge_chunks) for a
- * scenario. `undefined` when the scenario never declared a species — legacy
- * scenarios keep their un-scoped retrieval. A dog under one year maps to the
- * `puppy` scope (the knowledge vocabulary splits them); a kitten stays `cat`.
+ * scenario. Absent = dog here too: a legacy or trainee-built scenario is a
+ * dog scenario everywhere else (prompt wording, labels), so it must not be
+ * the one place a cat-only document can still reach — the scope is HARD in
+ * both directions. A dog under one year maps to the `puppy` scope (the
+ * knowledge vocabulary splits them); a kitten stays `cat`.
  */
 export function retrievalSpeciesFor(
   species: unknown,
   lifeStage: string | null | undefined,
-): 'dog' | 'puppy' | 'cat' | undefined {
-  if (!isScenarioSpecies(species)) return undefined;
-  if (species === 'cat') return 'cat';
+): 'dog' | 'puppy' | 'cat' {
+  if (speciesOf(species) === 'cat') return 'cat';
   return lifeStage === 'Puppy (<1)' ? 'puppy' : 'dog';
 }
 
@@ -58,7 +59,9 @@ export function retrievalSpeciesFor(
  * example quotes, ACT goals, rubric examples, locale rule blocks). Whole
  * words only, case-preserving; English plus the French forms the fr-CA copy
  * uses ("mon chien file pas"). `chienne` is intentionally absent: its naive
- * feminine counterpart is a vulgarity in Québec French.
+ * feminine counterpart is a vulgarity in Québec French. `canine` is absent
+ * too: it names product lines ("Royal Canin Canine …") and anatomy ("canine
+ * teeth", « les canines »), and a renamed product is a different product.
  */
 const CAT_WORDS: Record<string, string> = {
   dog: 'cat',
@@ -73,9 +76,6 @@ const CAT_WORDS: Record<string, string> = {
   Puppies: 'Kittens',
   PUPPY: 'KITTEN',
   PUPPIES: 'KITTENS',
-  canine: 'feline',
-  canines: 'felines',
-  Canine: 'Feline',
   chien: 'chat',
   chiens: 'chats',
   Chien: 'Chat',

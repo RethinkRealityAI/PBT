@@ -42,15 +42,18 @@ describe('scenarioRetrievalQuery', () => {
 });
 
 describe('scenarioRetrievalFilters — species scope', () => {
-  it('adds no species key for a legacy scenario (filters unchanged)', () => {
+  it('scopes a legacy (species-less) scenario as the dog it is — puppy under one year', () => {
     expect(scenarioRetrievalFilters({ focusArea: 'gi', age: 'Adult (3-7)' })).toEqual({
       focus: 'gi',
+      species: 'dog',
     });
     expect(
       scenarioRetrievalFilters({ knowledgeSlugs: ['doc-1'], age: 'Puppy (<1)' }),
-    ).toEqual({ docSlugs: ['doc-1'] });
-    expect(scenarioRetrievalFilters({ age: 'Adult (3-7)' })).toBeUndefined();
-    expect(scenarioRetrievalFilters(dog)?.species).toBeUndefined();
+    ).toEqual({ docSlugs: ['doc-1'], species: 'puppy' });
+    // Absent = dog: a species-less scenario is scoped to dog knowledge, so a
+    // cat-only document can never ground it (the scope is HARD both ways).
+    expect(scenarioRetrievalFilters({ age: 'Adult (3-7)' })).toEqual({ species: 'dog' });
+    expect(scenarioRetrievalFilters(dog).species).toBe('dog');
   });
 
   it('scopes a cat scenario to cat documents — kittens included', () => {

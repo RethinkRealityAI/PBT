@@ -178,7 +178,7 @@ export default async (req: Request): Promise<Response> => {
   // `scenarios.read` gets you into the endpoint, but the two halves reveal
   // more than scenarios: the prompt carries the admin-tuned personas and the
   // GLOBAL notes (AI tuning), the passages carry document titles/citations
-  // (the public rag-retrieve strips those). Anyone who edits scenarios needs
+  // (the public rag-retrieve strips slug and title). Anyone who edits scenarios needs
   // both to do the job; a read-only role needs the matching read permission.
   const canBriefing = can(ctx, 'scenarios.write') || can(ctx, 'simulation.read');
   const canPassages = can(ctx, 'scenarios.write') || can(ctx, 'knowledge.read');

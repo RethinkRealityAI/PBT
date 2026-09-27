@@ -3,6 +3,8 @@ import { ACT_STEPS } from './actGuide';
 import {
   BCS_BLURB,
   CALORIE_FORMULA_BLURB,
+  CAT_BCS_BLURB,
+  CAT_CALORIE_FORMULA_BLURB,
   MCS_BLURB,
   NON_SHAMING_FRAMING,
   PRODUCT_ANCHORS,
@@ -68,26 +70,6 @@ function petNoun(species: unknown): string {
 }
 
 /**
- * Feline counterparts of the canine clinical blurbs in `clinicalReference.ts`.
- * Kept generic on purpose: the canine blurbs carry dog-specific cut-offs and
- * DMER multipliers, and the product anchors quote a canine trial. Nothing
- * here introduces a feline number that the clinic's own charts don't own.
- */
-const CAT_BCS_BLURB = `
-Body Condition Score (BCS) is scored 1–9 for cats too. Use the clinic's feline
-BCS chart for the exact bands: the ideal sits mid-scale, higher scores indicate
-progressive overweight and obesity, lower scores underweight. Never apply
-canine cut-offs to a cat.
-`.trim();
-
-const CAT_CALORIE_FORMULA_BLURB = `
-Resting energy requirement (RER) ≈ 70 × kg^0.75 (the standard formula, used
-for cats as well). Feline maintenance and weight-loss targets use cat-specific
-factors, not the canine DMER multipliers — expect staff to defer to the
-clinic's calculated feeding plan, based on ideal (not current) weight.
-`.trim();
-
-/**
  * Product claims the scorer may credit once earned. For a cat, the canine
  * trial percentages are left out: quoting "97% of dogs…" to a cat owner is
  * not evidence about their cat.
@@ -109,17 +91,31 @@ function productClaimsLine(species: unknown): string {
  */
 export type PromptMode = 'text' | 'voice';
 
-/** Render retrieved knowledge chunks as a named prompt section (RAG). */
+/**
+ * Render retrieved knowledge chunks as a named prompt section (RAG).
+ *
+ * Passages are quoted exactly as written — a canine study must not be
+ * rewritten to say "cats". For a cat scenario the block therefore carries a
+ * framing line instead: most of the corpus was written about dogs, and the
+ * species scope only keeps out documents filed as dog-ONLY, so a passage
+ * shared by both species can still quote a canine trial. The model is told
+ * how to read it. A dog prompt gains no bytes.
+ */
 function formatRetrievedBlock(
   retrieved: RetrievedChunk[] | undefined,
   heading: string,
   instruction: string,
+  species?: unknown,
 ): string {
   if (!retrieved || retrieved.length === 0) return '';
   const lines = retrieved.map(
     (c) => `- ${c.content.replace(/\s+/g, ' ').trim()}${c.citation ? ` [${c.citation}]` : ''}`,
   );
-  return `# ${heading}\n${instruction}\n${lines.join('\n')}\n\n`;
+  const speciesNote =
+    speciesOf(species) === 'cat'
+      ? '\nThis scenario is about a CAT. Most of these passages were written about dogs and their owners: the behaviour and communication findings carry over, but any percentage, kcal figure, body-condition cut-off or product outcome in them is a canine result — never present it as being about a cat.'
+      : '';
+  return `# ${heading}\n${instruction}${speciesNote}\n${lines.join('\n')}\n\n`;
 }
 
 /**
@@ -422,6 +418,7 @@ export function buildCustomerSystemPrompt({
     retrieved,
     'REFERENCE — WHAT RESEARCH SAYS ABOUT OWNERS LIKE YOU',
     'Ground your behaviour in these findings. EMBODY them — never quote the studies, never cite authors or years in dialogue, never mention research exists.',
+    species,
   );
   const driver = driverForSpecies(resolveDriverKnowledge(scenario.suggestedDriver, config), species);
   const pushback = resolvePushbackKnowledge(scenario.pushback.id, config);
@@ -535,6 +532,7 @@ export function buildScoringSystemPrompt({
     retrieved,
     'EVIDENCE BASE',
     'Peer-reviewed findings relevant to this conversation. Ground your coaching in them and cite as (Author, Year) in the critique when relevant.',
+    species,
   );
   // Quote the normalised share, not the raw config weight: `overall` is
   // computed from resolveWeights, so the raw number would mis-calibrate the

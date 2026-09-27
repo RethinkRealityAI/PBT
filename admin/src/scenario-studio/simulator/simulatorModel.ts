@@ -21,6 +21,7 @@ import {
 } from '../../../../src/services/types';
 import type { ScenarioDraftLike } from '../../../../src/shared/scenarios/draftToScenario';
 import type { SimulatorNotes } from '../api';
+import { ApiError } from '../../lib/api';
 import { COLOR } from '../../lib/tokens';
 import type { ScenarioOverrideRow } from '../../data/types';
 import { FIELD_LABELS, type StudioDraft, type StudioStepKey } from '../studioModel';
@@ -338,7 +339,16 @@ export function canSend(state: SimState): boolean {
 
 /** Can the admin end the conversation and score it right now? */
 export function canEnd(state: SimState): boolean {
-  return state.phase === 'awaitingTrainee' && traineeTurnCount(state.messages) >= 1;
+  return state.phase === 'awaitingTrainee' && isScorable(state.messages);
+}
+
+/**
+ * A conversation the scorer can rate: the trainee said something. The rubric
+ * scores the STAFF turns, so an owner monologue has nothing to score — it is
+ * neither scored nor counted as a test drive.
+ */
+export function isScorable(messages: readonly ChatMessage[]): boolean {
+  return traineeTurnCount(messages) >= 1;
 }
 
 export function isConversationActive(state: SimState): boolean {
@@ -369,7 +379,16 @@ export function simReducer(state: SimState, action: SimAction): SimState {
         : state.messages;
       const end = endReasonAfterCustomerTurn(customerTurnCount(messages), tokenSeen);
       if (end) {
-        return { ...state, messages, error: null, phase: 'ended', endReason: end, testedPending: true };
+        // An owner who ends on their own opening line tested nothing — the
+        // admin never spoke. That run is not "the test" for this draft.
+        return {
+          ...state,
+          messages,
+          error: null,
+          phase: 'ended',
+          endReason: end,
+          testedPending: isScorable(messages),
+        };
       }
       return { ...state, messages, error: null, phase: 'awaitingTrainee' };
     }
@@ -439,6 +458,13 @@ export const RATE_LIMIT_COPY = 'You’re going a little fast — wait a few seco
  * down."); the transport's are not ("Failed to fetch", "Request failed (502)").
  */
 export function describeSimError(err: unknown): Omit<SimError, 'kind'> {
+  // The transport keeps the status; branch on it first, wording second.
+  if (err instanceof ApiError) {
+    if (err.status === 429) return { reason: RATE_LIMIT_COPY, rateLimited: true };
+    if (err.status === 401) return { reason: 'you’ve been signed out — sign in again', rateLimited: false };
+    if (err.status === 403) return { reason: 'your account isn’t allowed to run this', rateLimited: false };
+    if (err.status >= 500) return { reason: 'the AI service had a hiccup', rateLimited: false };
+  }
   const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
   const msg = raw.trim();
   if (/\b429\b|too many|rate[\s_-]?limit|slow down/i.test(msg)) {

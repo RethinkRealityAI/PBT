@@ -207,9 +207,9 @@ export interface ScenarioOverrideRow {
   suggested_driver: DriverKey | null;
   weight_kg: number | null;
   /**
-   * 'dog' | 'cat' (null/absent = dog). Column added by the DEFERRED migration
-   * 20260925000000_scenario_species.sql — rows read before it is applied
-   * have no such key.
+   * 'dog' | 'cat' (null/absent = dog). Column added by migration
+   * 20260925000000_scenario_species.sql (applied to production 2026-09-27);
+   * rows read from a project that has not run it have no such key.
    */
   species?: ScenarioSpecies | null;
   /** Clinical focus area key (see src/shared/knowledge/focusAreas.ts). */

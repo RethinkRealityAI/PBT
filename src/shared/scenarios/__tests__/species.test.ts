@@ -57,10 +57,13 @@ describe('lifeStageLabel', () => {
 });
 
 describe('retrievalSpeciesFor', () => {
-  it('is undefined when the scenario never declared a species (legacy retrieval)', () => {
+  it('treats an absent or unknown species as a dog — absent = dog everywhere, retrieval included', () => {
+    // A legacy or trainee-built scenario is a dog scenario in every prompt;
+    // leaving its retrieval un-scoped would let a cat-only document ground
+    // it, the one direction the species scope used to leave open.
     for (const v of JUNK) {
-      expect(retrievalSpeciesFor(v, 'Adult (3-7)'), String(v)).toBeUndefined();
-      expect(retrievalSpeciesFor(v, 'Puppy (<1)'), String(v)).toBeUndefined();
+      expect(retrievalSpeciesFor(v, 'Adult (3-7)'), String(v)).toBe('dog');
+      expect(retrievalSpeciesFor(v, 'Puppy (<1)'), String(v)).toBe('puppy');
     }
   });
 
@@ -105,5 +108,19 @@ describe('adaptPetWords', () => {
     expect(adaptPetWords(text, 'dog')).toBe(text);
     expect(adaptPetWords(text, undefined)).toBe(text);
     expect(adaptPetWords(text, null)).toBe(text);
+  });
+
+  it('never renames a product line or anatomy — "canine" is not a pet noun', () => {
+    // "Royal Canin Canine …" is a different product from a feline one, and
+    // « les canines » are teeth. Only the animal words move.
+    const text = 'Royal Canin Canine Gastrointestinal for your dog; check the canine teeth. Les canines.';
+    expect(adaptPetWords(text, 'cat')).toBe(
+      'Royal Canin Canine Gastrointestinal for your cat; check the canine teeth. Les canines.',
+    );
+  });
+
+  it('leaves words that merely contain "dog" alone', () => {
+    const text = 'dogma, hotdog, underdog, watchdog, doggedly, Bulldog, puppet';
+    expect(adaptPetWords(text, 'cat')).toBe(text);
   });
 });

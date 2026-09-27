@@ -175,8 +175,8 @@ export interface StudioContext {
    */
   wrongSpeciesTitles?: string[];
   /**
-   * The database can't store `species` yet (the deferred migration is
-   * pending): a cat scenario would reach trainees as a dog.
+   * The database can't store `species` (a project that has not run the
+   * species migration): a cat scenario would reach trainees as a dog.
    */
   speciesUnsupported?: boolean;
 }
@@ -587,10 +587,34 @@ function fingerprintOf(draft: StudioDraft, skip: ReadonlySet<string>): string {
   const keys = Object.keys(src)
     .filter((k) => !skip.has(k) && !isBlankValue(src[k]))
     .sort();
-  return JSON.stringify(keys.map((k) => [k, src[k]]));
+  // Document lists are sets: re-ticking the same documents in another order
+  // is not a change (the Test drive's stale check compares them sorted too).
+  const value = (v: unknown) =>
+    Array.isArray(v) && v.every((x) => typeof x === 'string') ? [...(v as string[])].sort() : v;
+  return JSON.stringify(keys.map((k) => [k, value(src[k])]));
 }
 
 const SKIP_NOTHING: ReadonlySet<string> = new Set();
+
+/**
+ * The draft as trainees would receive it: a library / trainee-built scenario
+ * inherits the built-in value wherever the draft is blank (that is exactly
+ * what `diffAgainstBase` + `applyScenarioOverride` do at save and play
+ * time). Used for the Test drive, the readiness check and "What you're
+ * testing", so an admin who clears the opening line tests the SEED line the
+ * trainees will hear — not an owner improvising one. `visible` and
+ * `scenario_id` are the draft's own.
+ */
+export function withBaseFallback(draft: StudioDraft, base: StudioDraft): StudioDraft {
+  const out: Record<string, unknown> = { ...draft };
+  const src = draft as Record<string, unknown>;
+  const from = base as Record<string, unknown>;
+  for (const key of Object.keys(from)) {
+    if (key === 'scenario_id' || key === 'visible') continue;
+    if (isBlankValue(src[key]) && !isBlankValue(from[key])) out[key] = from[key];
+  }
+  return out as StudioDraft;
+}
 
 /**
  * A stable identity for what a draft would save. Key order doesn't matter and

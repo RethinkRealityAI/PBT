@@ -220,9 +220,14 @@ export function buildActionSurface(
   switch (action.tool) {
     case 'update_fields': {
       const note = noteParts(action.note);
-      const apply = applyRow();
+      // `before` = the draft's values when this card was built. The panel
+      // compares them with the draft at Apply time so an admin's later edit
+      // to the same field is kept rather than overwritten.
+      const apply = applyRow({ before: { path: '/before' } });
       const species = action.fields.species ?? draft.species;
       const fields = AGENT_FIELDS.filter((f) => action.fields[f] !== undefined);
+      const before: Record<string, unknown> = {};
+      for (const f of fields) before[f] = draft[f] ?? null;
       const fieldParts: A2uiComponent[] = [];
       const fieldIds: string[] = [];
       for (const field of fields) {
@@ -248,7 +253,7 @@ export function buildActionSurface(
           });
         }
       }
-      return surface(surfaceId, { proposal: { ...action } }, [
+      return surface(surfaceId, { proposal: { ...action }, before }, [
         { id: 'root', component: 'Card', child: 'body' },
         { id: 'body', component: 'Column', children: ['heading', ...note.ids, ...fieldIds, ...apply.ids] },
         text('heading', 'Suggested changes', 'h4'),

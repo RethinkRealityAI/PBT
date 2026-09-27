@@ -1,5 +1,6 @@
 /**
- * The deferred `scenario_overrides.species` column
+ * The `scenario_overrides.species` column (applied to production 2026-09-27;
+ * a project that has not run the migration still degrades safely)
  * (supabase/migrations/20260925000000_scenario_species.sql) — one test for
  * "this error means the column isn't there yet", shared by the write path
  * (admin-scenario-overrides) and the trainee snapshot (flags-resolve).
@@ -11,7 +12,7 @@ export type DbError = { code?: string; message?: string } | null | undefined;
  * PostgREST's schema-cache miss (PGRST204 "Could not find the 'species'
  * column of 'scenario_overrides' in the schema cache") or Postgres' own
  * undefined_column (42703). Must name `species` — a missing column that is
- * NOT this deferred one is a real fault and keeps failing loudly.
+ * NOT this one is a real fault and keeps failing loudly.
  */
 export function isMissingSpeciesColumn(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;

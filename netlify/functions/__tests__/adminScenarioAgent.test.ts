@@ -46,6 +46,7 @@ import agent, {
   agentRetrievalQuery,
   catalogueForSpecies,
   loadRoleplayCatalogue,
+  __clearAgentCatalogueCache,
   parseAgentAnswer,
   pruneNoOpActions,
   relevantFromChunks,
@@ -160,6 +161,8 @@ const request = (body: unknown, headers?: Record<string, string>) =>
 const firstTurn = [{ role: 'user', content: 'A chubby Lab whose owner says he is just big-boned' }];
 
 beforeEach(() => {
+  // The catalogue is memoised per instance; every test wants its own fixture.
+  __clearAgentCatalogueCache();
   setFunctionEnv();
   __resetRateLimits();
   __resetAiCaches();
@@ -425,12 +428,12 @@ describe('admin-scenario-agent — a turn', () => {
     });
   });
 
-  it('retrieves un-scoped by species when the draft declares none', async () => {
+  it('retrieves as a dog when the draft declares no species (absent = dog, retrieval included)', async () => {
     const headers = adminHeaders();
     mocks.generateContent.mockResolvedValueOnce(modelSays({ reply: 'Dog or cat?', actionsJson: '[]' }));
     await request({ messages: firstTurn, draft: {} }, headers);
-    expect(mocks.retrieveChunks.mock.calls[0][1].filters).toEqual({ tool: 'roleplay' });
-    expect(mocks.retrieveChunks.mock.calls[1][1].filters).toEqual({ tool: 'scenario-builder' });
+    expect(mocks.retrieveChunks.mock.calls[0][1].filters).toEqual({ tool: 'roleplay', species: 'dog' });
+    expect(mocks.retrieveChunks.mock.calls[1][1].filters).toEqual({ tool: 'scenario-builder', species: 'dog' });
   });
 
   it('a dog under one retrieves inside the puppy scope', async () => {

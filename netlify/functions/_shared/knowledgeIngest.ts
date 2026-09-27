@@ -43,15 +43,19 @@ export interface BundledStudy {
 }
 
 export const BUNDLED_STUDIES: BundledStudy[] = [
+  // The two owner-preference papers are about ONE animal each. Species is a
+  // HARD retrieval scope, so filing them that way is what keeps a cat
+  // scenario from being grounded in dog-owner findings (and vice versa).
+  // The three communication papers apply to both.
   {
     file: 'davies-2024-dog-owner-preferences-obesity.pdf',
     slug: 'study:davies-2024',
-    tags: { focus: 'weight', ...STUDY_SCOPE },
+    tags: { focus: 'weight', ...STUDY_SCOPE, species: ['dog', 'puppy'] },
   },
   {
     file: 'sutherland-2024-cat-owner-preferences-obesity.pdf',
     slug: 'study:sutherland-2024-cat',
-    tags: { focus: 'weight', ...STUDY_SCOPE },
+    tags: { focus: 'weight', ...STUDY_SCOPE, species: ['cat'] },
   },
   {
     file: 'sutherland-2024-client-obesity-communication.pdf',

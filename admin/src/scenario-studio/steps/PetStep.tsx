@@ -216,7 +216,7 @@ export function PetStep({ draft, patch, canWrite, base, askAssistant }: StepProp
           value={draft.weight_kg ?? null}
           onChange={(kg) => patch({ weight_kg: kg })}
           disabled={!canWrite}
-          hint={TYPICAL_WEIGHT_HINT[species]}
+          hint={weightCaution(draft.weight_kg ?? null, species) ?? TYPICAL_WEIGHT_HINT[species]}
         />
         <BuiltInHint
           base={base}
@@ -230,6 +230,23 @@ export function PetStep({ draft, patch, canWrite, base, askAssistant }: StepProp
       </StudioSection>
     </StepBody>
   );
+}
+
+/**
+ * A weight the server accepts but that is implausible for THIS animal — a
+ * 60 kg cat saves and plays silently. Advisory (it replaces the hint, never
+ * blocks): a Newfoundland is real, a typo is far more common.
+ */
+export function weightCaution(kg: number | null, species: ScenarioSpecies): string | null {
+  if (kg === null || !Number.isFinite(kg)) return null;
+  if (species === 'cat' && kg > 15) return `⚠ ${kg} kg is unusually heavy for a cat — double-check the number.`;
+  if (species === 'dog' && kg > 100) return `⚠ ${kg} kg is unusually heavy for a dog — double-check the number.`;
+  return null;
+}
+
+/** "12,5" and "12.5" are the same weight; anything else that isn't a number is NaN. */
+export function parseWeightText(text: string): number {
+  return Number(text.trim().replace(',', '.'));
 }
 
 /** The problem with a weight, or null when it is fine (or empty). */
@@ -267,7 +284,7 @@ function WeightField({
   // Follow outside changes (the assistant, "Use built-in") without fighting
   // the admin's own half-typed text.
   useEffect(() => {
-    const parsed = text.trim() === '' ? null : Number(text);
+    const parsed = text.trim() === '' ? null : parseWeightText(text);
     if (parsed !== value && !(Number.isNaN(parsed) && value === null)) {
       setText(value === null ? '' : String(value));
     }
@@ -277,14 +294,16 @@ function WeightField({
   const problem = weightProblem(value);
   return (
     <FieldBlock label="Weight in kilograms" htmlFor={id} hint={hint} error={focused ? null : problem}>
+      {/* A text field, not type="number": a browser set to English silently
+          empties "12,5" out of a number input while the box still shows it,
+          and the fr-CA admin's weight is dropped with no error. The decimal
+          keyboard still comes up on a phone. */}
       <UnitInput
         id={id}
         unit="kg"
-        type="number"
+        type="text"
         inputMode="decimal"
-        step="0.1"
-        min={0.1}
-        max={SCENARIO_LIMITS.weightMaxKg}
+        autoComplete="off"
         value={text}
         disabled={disabled}
         aria-invalid={!focused && problem ? true : undefined}
@@ -298,7 +317,7 @@ function WeightField({
             onChange(null);
             return;
           }
-          const n = Number(next);
+          const n = parseWeightText(next);
           if (Number.isFinite(n)) onChange(n);
         }}
       />

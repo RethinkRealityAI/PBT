@@ -76,11 +76,22 @@ describe('rag-retrieve', () => {
     );
   });
 
-  it('ignores a client-supplied tool / species — the public scope is fixed', async () => {
+  it('honours a client species (it only ever narrows) — the browser then records the same passages the server grounded on', async () => {
+    __clearRetrievalCache();
+    sb.rpc.mockReset();
+    sb.rpc.mockResolvedValueOnce({ data: [ROW], error: null });
+    await ragRetrieve(post({ query: 'stool score', filters: { species: 'cat' } }));
+    expect((sb.rpc.mock.calls[0][1] as { filter: object }).filter).toEqual({
+      tools: ['roleplay'],
+      species: ['cat'],
+    });
+  });
+
+  it('ignores a client-supplied tool — the public TOOL scope is fixed', async () => {
     for (const filters of [
-      { tool: 'fecal-scan', species: 'dog' },
+      { tool: 'fecal-scan' },
       { tool: 'not-a-tool' },
-      { species: 'cat' },
+      { species: 'hamster' },
       {},
       undefined,
     ]) {
@@ -144,12 +155,18 @@ describe('rag-retrieve', () => {
     expect(await res.json()).toEqual({ results: [] });
   });
 
-  it('caches by query + k + filters', async () => {
+  it('caches results by query + k + filters, and the query embedding by query alone', async () => {
     sb.rpc.mockResolvedValue({ data: [ROW], error: null });
     await retrieveChunks('same', { k: 4 });
     await retrieveChunks('same', { k: 4 });
+    expect(sb.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.embedContent).toHaveBeenCalledTimes(1);
+    // A different k is a different result set — but the same question, so
+    // the embedding is reused rather than bought again.
     await retrieveChunks('same', { k: 5 });
+    expect(sb.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.embedContent).toHaveBeenCalledTimes(1);
+    await retrieveChunks('different', { k: 5 });
     expect(mocks.embedContent).toHaveBeenCalledTimes(2);
   });
 });

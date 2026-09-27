@@ -366,7 +366,12 @@ describe('admin-scenario-inspect — a complete draft', () => {
     const res = await request({ draft: { ...rest, focus_area: 'weight' } }, headers);
     const body = await res.json();
     expect(body.knowledge).toMatchObject({ mode: 'focus', focusRelaxed: true, appliedFilter: { tools: ['roleplay'] } });
-    expect(mocks.retrieveChunksDetailed.mock.calls[0][1].filters).toEqual({ focus: 'weight', tool: 'roleplay' });
+    // No species on the draft = a dog scenario, in retrieval as everywhere.
+    expect(mocks.retrieveChunksDetailed.mock.calls[0][1].filters).toEqual({
+      focus: 'weight',
+      species: 'dog',
+      tool: 'roleplay',
+    });
   });
 
   it('with research switched off: no retrieval, no passages, a prompt without a reference block', async () => {

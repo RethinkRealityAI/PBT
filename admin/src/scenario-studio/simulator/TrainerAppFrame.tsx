@@ -202,10 +202,12 @@ function FrameBody({
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <Button tone="primary" onClick={() => start('text')} disabled={!ready}>
+            {/* Disabled while a run is starting: a second run posted before
+                the first one's opener lands would mix two drafts' turns. */}
+            <Button tone="primary" onClick={() => start('text')} disabled={!ready || status.kind === 'running'}>
               Start text chat
             </Button>
-            <Button onClick={() => start('voice')} disabled={!ready}>
+            <Button onClick={() => start('voice')} disabled={!ready || status.kind === 'running'}>
               🎙 Start voice
             </Button>
             <Button tone="ghost" onClick={restart}>

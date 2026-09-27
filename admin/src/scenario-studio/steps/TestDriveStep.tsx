@@ -213,6 +213,10 @@ function WhatYoureTesting({ draft, goTo }: { draft: StudioDraft; goTo: (s: Studi
           </li>
         ))}
       </ul>
+      <p style={{ margin: '12px 0 0', fontSize: 12, lineHeight: 1.5, color: COLOR.inkMute }}>
+        The owner speaks English here. To hear the French owner, open the scenario in the trainee
+        app and switch its language — the AI is briefed in French from the same scenario.
+      </p>
     </Panel>
   );
 }

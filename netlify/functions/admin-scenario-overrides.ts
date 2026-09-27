@@ -10,28 +10,46 @@
  * prompt + scoring rubric remain authoritative — these wrap the customer
  * turn only.
  *
- * Species (dog / cat) — DEFERRED COLUMN. `scenario_overrides.species` arrives
- * with the hand-run migration 20260925000000_scenario_species.sql. Until it is
- * applied, a write that carries `species` fails at PostgREST with "column not
- * found"; instead of failing the admin's save, the upsert / duplicate is
- * retried ONCE without `species` and — when a species (dog or cat) was
- * actually requested — the response is the saved row plus
+ * Species (dog / cat) — `scenario_overrides.species`, migration
+ * 20260925000000_scenario_species.sql (applied to production 2026-09-27).
+ * The degrade path is kept for a project that has not run it: a write that
+ * carries `species` fails at PostgREST with "column not found"; instead of
+ * failing the admin's save, the upsert / duplicate is retried ONCE without
+ * `species` and — when a species (dog or cat) was actually requested — the
+ * response is the saved row plus
  *
  *   "_notice": "species_column_missing"
  *
  * (a non-column key the Studio shows as "saved — species not stored yet").
  * The scenario then runs exactly as it did before species existed: a dog.
  * Any other database error is unchanged (500).
+ *
+ * Concurrency: a save may carry `baseUpdatedAt` — the row's `updated_at` as
+ * the editor last saw it. When it no longer matches, the save is refused
+ * with 409 `{ code: 'stale', current }` so the editor can re-apply the
+ * admin's own edits on top of the row that won, instead of two admins
+ * silently overwriting each other whole-row (library saves write NULL for
+ * every field equal to the seed, so the loser's edits used to vanish).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 import { isMissingSpeciesColumn } from './_shared/speciesColumn';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import { isLifeStage, isPersona, isPushbackId } from '../../src/shared/scenarios/enums';
+import { SCENARIO_LIMITS } from '../../src/shared/scenarios/limits';
 import { isScenarioSpecies } from '../../src/shared/scenarios/species';
+
+/** Request bodies are small rows; anything bigger is not a scenario. */
+const MAX_BODY_BYTES = 64 * 1024;
 
 export interface OverrideUpsert {
   scenario_id: string;
+  /**
+   * Optimistic-concurrency token: the row's `updated_at` the editor loaded
+   * (`null` = "there was no row"). Not a column — never written. Omit to
+   * skip the check (older clients).
+   */
+  baseUpdatedAt?: string | null;
   visible?: boolean;
   sort_order?: number | null;
   title_override?: string | null;
@@ -55,7 +73,7 @@ export interface OverrideUpsert {
   pushback_notes?: string | null;
   suggested_driver?: string | null;
   weight_kg?: number | null;
-  /** 'dog' | 'cat' | null (null = dog). Deferred column — see the header. */
+  /** 'dog' | 'cat' | null (null = dog). See the header for the degrade path. */
   species?: string | null;
   // Knowledge & focus — restrict what RAG retrieval may draw on.
   focus_area?: string | null;
@@ -104,17 +122,30 @@ export function pickWritable(body: OverrideUpsert): Record<string, unknown> {
   return out;
 }
 
-const MAX_PROMPT_LEN = 1500;
-const MAX_KNOWLEDGE_SLUGS = 40;
-const MAX_SLUG_LEN = 200;
-const MAX_CARD_TITLE_LEN = 120;
-const MAX_CARD_SUBTITLE_LEN = 240;
-const MAX_INFO_BODY_LEN = 4000;
-const MAX_START_BTN_LEN = 40;
-const MAX_BREED_LEN = 80;
+// One source for every cap: src/shared/scenarios/limits.ts (the Studio counts
+// against the same numbers while the admin types).
+const MAX_PROMPT_LEN = SCENARIO_LIMITS.promptMax;
+const MAX_KNOWLEDGE_SLUGS = SCENARIO_LIMITS.knowledgeSlugsMax;
+const MAX_SLUG_LEN = SCENARIO_LIMITS.knowledgeSlugLenMax;
 /** Body weight sanity window, kg. Open interval — 0 is not a weight. */
-const MAX_WEIGHT_KG = 200;
+const MAX_WEIGHT_KG = SCENARIO_LIMITS.weightMaxKg;
 const DRIVERS = ['Activator', 'Energizer', 'Analyzer', 'Harmonizer'];
+
+/** Every text column and its cap. Card fields are also DB CHECKs. */
+const TEXT_CAPS: ReadonlyArray<readonly [keyof OverrideUpsert, number]> = [
+  ['prompt_prefix', MAX_PROMPT_LEN],
+  ['prompt_suffix', MAX_PROMPT_LEN],
+  ['card_title_override', SCENARIO_LIMITS.cardTitleMax],
+  ['card_subtitle_override', SCENARIO_LIMITS.cardSubtitleMax],
+  ['info_modal_title', SCENARIO_LIMITS.infoTitleMax],
+  ['info_modal_body', SCENARIO_LIMITS.infoBodyMax],
+  ['start_button_label', SCENARIO_LIMITS.startButtonMax],
+  ['title_override', SCENARIO_LIMITS.titleMax],
+  ['context_override', SCENARIO_LIMITS.contextMax],
+  ['opening_line_override', SCENARIO_LIMITS.openingLineMax],
+  ['pushback_notes', SCENARIO_LIMITS.pushbackNotesMax],
+  ['breed', SCENARIO_LIMITS.breedMax],
+];
 
 /**
  * @param options.requireAdminFields — admin-authored scenarios normally must
@@ -128,18 +159,24 @@ export function validateOverride(
 ): string | null {
   const { requireAdminFields = true } = options;
   if (!o.scenario_id || typeof o.scenario_id !== 'string') return 'scenario_id required';
-  if (o.prompt_prefix && o.prompt_prefix.length > MAX_PROMPT_LEN)
-    return `prompt_prefix too long (max ${MAX_PROMPT_LEN})`;
-  if (o.prompt_suffix && o.prompt_suffix.length > MAX_PROMPT_LEN)
-    return `prompt_suffix too long (max ${MAX_PROMPT_LEN})`;
-  if (o.card_title_override && o.card_title_override.length > MAX_CARD_TITLE_LEN)
-    return `card_title_override too long (max ${MAX_CARD_TITLE_LEN})`;
-  if (o.card_subtitle_override && o.card_subtitle_override.length > MAX_CARD_SUBTITLE_LEN)
-    return `card_subtitle_override too long (max ${MAX_CARD_SUBTITLE_LEN})`;
-  if (o.info_modal_body && o.info_modal_body.length > MAX_INFO_BODY_LEN)
-    return `info_modal_body too long (max ${MAX_INFO_BODY_LEN})`;
-  if (o.start_button_label && o.start_button_label.length > MAX_START_BTN_LEN)
-    return `start_button_label too long (max ${MAX_START_BTN_LEN})`;
+  if (o.visible != null && typeof o.visible !== 'boolean') return 'visible must be true or false';
+  if (o.sort_order != null) {
+    if (
+      typeof o.sort_order !== 'number' ||
+      !Number.isInteger(o.sort_order) ||
+      Math.abs(o.sort_order) > SCENARIO_LIMITS.sortOrderMax
+    ) {
+      return `sort_order must be a whole number within ±${SCENARIO_LIMITS.sortOrderMax}`;
+    }
+  }
+  // Every text column: a string (a number here used to 500 at the database)
+  // and within its cap.
+  for (const [field, max] of TEXT_CAPS) {
+    const v = o[field];
+    if (v == null) continue;
+    if (typeof v !== 'string') return `${field} must be text`;
+    if (v.length > max) return `${field} too long (max ${max})`;
+  }
   if (o.card_driver_override && !DRIVERS.includes(o.card_driver_override))
     return 'card_driver_override must be a known driver';
   if (o.suggested_driver && !DRIVERS.includes(o.suggested_driver))
@@ -156,6 +193,11 @@ export function validateOverride(
   // fail loudly — it quietly produces a degraded roleplay. Reject at the door.
   if (o.pushback_id != null && !isPushbackId(o.pushback_id))
     return 'pushback_id must be a known pushback category';
+  // "Something else" only works when the owner knows what they object to —
+  // the notes ARE the pushback. The Studio blocks this client-side; the
+  // server must too, or an API caller publishes an owner with nothing to say.
+  if (o.pushback_id === 'custom' && !(typeof o.pushback_notes === 'string' && o.pushback_notes.trim()))
+    return 'a custom pushback needs pushback_notes — what the owner is objecting to';
   if (o.life_stage != null && !isLifeStage(o.life_stage))
     return 'life_stage must be a known life stage';
   if (o.persona_override != null && !isPersona(o.persona_override))
@@ -170,8 +212,6 @@ export function validateOverride(
     if (o.weight_kg <= 0 || o.weight_kg > MAX_WEIGHT_KG)
       return `weight_kg must be between 0 and ${MAX_WEIGHT_KG}`;
   }
-  if (o.breed != null && o.breed.length > MAX_BREED_LEN)
-    return `breed too long (max ${MAX_BREED_LEN})`;
   if (o.knowledge_slugs != null) {
     if (!Array.isArray(o.knowledge_slugs)) return 'knowledge_slugs must be an array';
     if (o.knowledge_slugs.length > MAX_KNOWLEDGE_SLUGS)
@@ -210,32 +250,61 @@ type DbError = { code?: string; message?: string } | null;
 export { isMissingSpeciesColumn };
 
 /**
- * Upsert one override row; if the deferred `species` column is missing,
- * retry the SAME write without it. Only retried when the payload actually
- * carried a `species` key. `speciesDropped` (→ the notice) is true when the
- * admin asked for a species (dog or cat) that could not be stored; a
- * `species: null` dropped the same way loses nothing (null already means
- * dog), so it saves silently.
+ * Write one override row. For a row that already exists this is an UPDATE
+ * guarded by `deleted_at is null`, so a soft-delete that lands between the
+ * handler's read and its write cannot be overwritten (`conflict: true` — no
+ * row matched); a brand-new id is an upsert.
+ *
+ * If the `species` column is missing (a project that has not run
+ * 20260925000000_scenario_species.sql), the SAME write is retried without
+ * it. Only retried when the payload actually carried a `species` key.
+ * `speciesDropped` (→ the notice) is true when the admin asked for a species
+ * (dog or cat) that could not be stored; a `species: null` dropped the same
+ * way loses nothing (null already means dog), so it saves silently.
  */
 export async function upsertOverrideRow(
   sb: SupabaseClient,
   payload: Record<string, unknown>,
-): Promise<{ data: unknown; error: DbError; speciesDropped: boolean }> {
-  const first = await sb.from('scenario_overrides').upsert(payload).select('*').maybeSingle();
+  options: { existing?: boolean } = {},
+): Promise<{ data: unknown; error: DbError; speciesDropped: boolean; conflict: boolean }> {
+  const write = (row: Record<string, unknown>) => {
+    if (options.existing) {
+      // The same payload as the upsert path (the primary key set to itself is
+      // a no-op), so both paths carry identical column sets.
+      return sb
+        .from('scenario_overrides')
+        .update(row)
+        .eq('scenario_id', row.scenario_id as string)
+        .is('deleted_at', null)
+        .select('*')
+        .maybeSingle();
+    }
+    return sb.from('scenario_overrides').upsert(row).select('*').maybeSingle();
+  };
+  const first = await write(payload);
   if (!first.error || !('species' in payload) || !isMissingSpeciesColumn(first.error)) {
-    return { data: first.data, error: first.error, speciesDropped: false };
+    return {
+      data: first.data,
+      error: first.error,
+      speciesDropped: false,
+      conflict: Boolean(options.existing && !first.error && !first.data),
+    };
   }
   console.warn(
     '[admin-scenario-overrides] species column missing — apply 20260925000000_scenario_species.sql; saving without it',
   );
   const { species: requestedSpecies, ...withoutSpecies } = payload;
-  const retry = await sb
-    .from('scenario_overrides')
-    .upsert(withoutSpecies)
-    .select('*')
-    .maybeSingle();
-  return { data: retry.data, error: retry.error, speciesDropped: !retry.error && requestedSpecies != null };
+  const retry = await write(withoutSpecies);
+  return {
+    data: retry.data,
+    error: retry.error,
+    speciesDropped: !retry.error && Boolean(retry.data) && requestedSpecies != null,
+    conflict: Boolean(options.existing && !retry.error && !retry.data),
+  };
 }
+
+const DELETED_MESSAGE =
+  'This scenario was deleted. Ask an admin to restore it from Audit → Revert, or use Duplicate to save your version as a new scenario.';
 
 /** The saved row, plus the notice when `species` could not be stored. */
 function savedResponse(data: unknown, speciesDropped: boolean): Response {
@@ -250,9 +319,10 @@ export default async (req: Request): Promise<Response> => {
 
   if (req.method === 'GET') {
     // `?op=capabilities` — what this database can store. Today: whether the
-    // DEFERRED `species` column exists, so the Studio can refuse to publish a
-    // cat scenario that would reach trainees as a dog (and say why) BEFORE a
-    // save, and keep saying it after a reload.
+    // `species` column exists (it does in production since 2026-09-27; a
+    // project that has not run the migration answers false), so the Studio
+    // can refuse to publish a cat scenario that would reach trainees as a
+    // dog (and say why) BEFORE a save, and keep saying it after a reload.
     if (new URL(req.url).searchParams.get('op') === 'capabilities') {
       const probe = await ctx.sb.from('scenario_overrides').select('species').limit(1);
       if (probe.error && !isMissingSpeciesColumn(probe.error)) {
@@ -280,9 +350,14 @@ export default async (req: Request): Promise<Response> => {
   const op = new URL(req.url).searchParams.get('op') ?? 'upsert';
   let body: OverrideUpsert;
   try {
-    body = (await req.json()) as OverrideUpsert;
+    const text = await req.text();
+    if (text.length > MAX_BODY_BYTES) return errorResponse(413, 'Request too large');
+    body = JSON.parse(text) as OverrideUpsert;
   } catch {
     return errorResponse(400, 'Invalid JSON');
+  }
+  if (!body || typeof body !== 'object' || typeof body.scenario_id !== 'string' || !body.scenario_id) {
+    return errorResponse(400, 'scenario_id required');
   }
 
   if (op === 'delete') {
@@ -337,10 +412,14 @@ export default async (req: Request): Promise<Response> => {
         .maybeSingle()
     ).data;
     if (!src) return errorResponse(404, 'Source scenario not found');
-    const { scenario_id: _sid, updated_at: _ua, updated_by: _ub, ...rest } = src as Record<
-      string,
-      unknown
-    >;
+    // Identity and timestamps are the copy's own, never the source's.
+    const {
+      scenario_id: _sid,
+      updated_at: _ua,
+      updated_by: _ub,
+      created_at: _ca,
+      ...rest
+    } = src as Record<string, unknown>;
     const newId = `admin:${crypto.randomUUID()}`;
     // `??` binds tighter than `?:`, so the old expression was
     // `(x ?? null) ? … : …` — a truthiness test wearing a nullish-coalescing
@@ -383,26 +462,44 @@ export default async (req: Request): Promise<Response> => {
       .select('*')
       .eq('scenario_id', body.scenario_id)
       .maybeSingle()
-  ).data;
+  ).data as (Record<string, unknown> & { deleted_at?: string | null; updated_at?: string | null }) | null;
   // A soft-deleted admin scenario is a tombstone kept for Audit → Revert.
-  // Upserting over it would leave `deleted_at` set (it is not writable), so
+  // Writing over it would leave `deleted_at` set (it is not writable), so
   // the save would "succeed" while the scenario stayed invisible to everyone
   // — e.g. a draft resumed in one browser after another admin deleted it.
   // Say so instead; restoring is Audit's job, or the admin saves a copy.
-  if (before && (before as { deleted_at?: string | null }).deleted_at) {
-    return errorResponse(
-      409,
-      'This scenario was deleted. Restore it from Audit → Revert, or use Duplicate to save your version as a new scenario.',
-    );
+  if (before?.deleted_at) return errorResponse(409, DELETED_MESSAGE);
+  // Optimistic concurrency (see the header). `null` means the editor saw no
+  // row; any mismatch means someone else saved since — including creating a
+  // row for a library scenario that had none.
+  if (body.baseUpdatedAt !== undefined) {
+    const current = before?.updated_at ?? null;
+    if ((body.baseUpdatedAt ?? null) !== current) {
+      return jsonResponse(
+        {
+          error:
+            'Someone else saved this scenario after you opened it. Your edits are still here — they have been re-applied on top of the latest version; review and save again.',
+          code: 'stale',
+          current: before ?? null,
+        },
+        { status: 409 },
+      );
+    }
   }
   const isNewAdmin =
     body.scenario_id.startsWith('admin:') && (!before || before.created_by == null);
-  const { data, error, speciesDropped } = await upsertOverrideRow(ctx.sb, {
-    ...pickWritable(body),
-    updated_by: ctx.user.id,
-    ...(isNewAdmin ? { created_by: ctx.user.id } : {}),
-  });
+  const { data, error, speciesDropped, conflict } = await upsertOverrideRow(
+    ctx.sb,
+    {
+      ...pickWritable(body),
+      updated_by: ctx.user.id,
+      ...(isNewAdmin ? { created_by: ctx.user.id } : {}),
+    },
+    { existing: Boolean(before) },
+  );
   if (error) return errorResponse(500, error.message ?? 'Database error');
+  // The row was soft-deleted between our read and our write.
+  if (conflict) return errorResponse(409, DELETED_MESSAGE);
   await writeAuditLog(ctx, {
     entity_type: 'scenario_override',
     entity_id: body.scenario_id,

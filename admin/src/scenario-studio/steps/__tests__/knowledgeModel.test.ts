@@ -87,8 +87,10 @@ describe('docStatus', () => {
 });
 
 describe('draftRetrievalSpecies', () => {
-  it('mirrors the server: none for legacy, puppy for a young dog, cat for any cat', () => {
-    expect(draftRetrievalSpecies(draft())).toBeUndefined();
+  it('mirrors the server: a dog when none is declared, puppy for a young dog, cat for any cat', () => {
+    // Absent = dog everywhere — retrieval included, so a cat-only document
+    // never grounds a scenario that never chose a species.
+    expect(draftRetrievalSpecies(draft())).toBe('dog');
     expect(draftRetrievalSpecies(draft({ species: 'dog', life_stage: 'Puppy (<1)' }))).toBe('puppy');
     expect(draftRetrievalSpecies(draft({ species: 'dog', life_stage: 'Adult (3-7)' }))).toBe('dog');
     expect(draftRetrievalSpecies(draft({ species: 'cat', life_stage: 'Puppy (<1)' }))).toBe('cat');

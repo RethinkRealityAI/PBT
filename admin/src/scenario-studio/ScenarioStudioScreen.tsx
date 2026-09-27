@@ -43,6 +43,7 @@ import type { KnowledgeState } from './types';
 import { StudioHome, type ComposerSpecies, type ResumableDraft } from './StudioHome';
 import { StudioEditor } from './StudioEditor';
 import { fetchScenarioCapabilities } from './api';
+import { setSimulatorSessionsOwner } from './simulator/simulatorSession';
 
 interface OpenState {
   id: string;
@@ -78,8 +79,10 @@ export function ScenarioStudioScreen({
   /** The signed-in admin — browser-kept drafts are stored per account. */
   meUserId?: string;
 }) {
-  // Before anything below reads local drafts (render-time, idempotent).
+  // Before anything below reads local drafts or Test drive sessions
+  // (render-time, idempotent — both only act when the owner changes).
   setLocalDraftsOwner(meUserId);
+  setSimulatorSessionsOwner(meUserId);
   const [refreshKey, setRefreshKey] = useState(0);
   const overrides = useScenarioOverrides(refreshKey);
   const userScenarios = useUserScenarios(500);
@@ -91,7 +94,7 @@ export function ScenarioStudioScreen({
 
   const [open, setOpen] = useState<OpenState | null>(null);
   const [localNonce, setLocalNonce] = useState(0);
-  /** What the database can store (the deferred species column), probed once. */
+  /** What the database can store (whether the species column exists), probed once. */
   const [capabilities, setCapabilities] = useState<{ species?: boolean }>({});
   useEffect(() => {
     let cancelled = false;
@@ -238,7 +241,11 @@ export function ScenarioStudioScreen({
       setLocalNonce((n) => n + 1);
       return;
     }
-    openEditor({ id, seed: local.draft, resume: true, step: local.step });
+    // Not on the server (never saved, or deleted by someone else since):
+    // whatever `visible` the draft remembers from when it WAS live is no
+    // longer true, and publish state always comes from the server. Open it
+    // as the hidden draft it now is — Publish is still one click away.
+    openEditor({ id, seed: { ...local.draft, visible: false }, resume: true, step: local.step });
   }
 
   // A failed read must never reach the home or the editor (see header).
@@ -300,6 +307,14 @@ export function ScenarioStudioScreen({
           isOnlyVisible={visibleScenarioCount(entries, open.id) === 0}
           canWrite={canWrite}
           knowledge={knowledge}
+          baseUpdatedAt={entry?.override?.updated_at ?? null}
+          hydrateRow={(row) =>
+            buildInitialDraft(
+              { id: open.id, source, override: row },
+              entry?.manifest ?? null,
+              entry?.userScenario ?? null,
+            )
+          }
           speciesSupported={capabilities.species}
           initialStep={open.step}
           openAssistant={open.openAssistant}

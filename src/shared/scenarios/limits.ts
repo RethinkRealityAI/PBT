@@ -18,6 +18,42 @@ export const SCENARIO_LIMITS = {
   /** Open interval (0, weightMaxKg]. */
   weightMaxKg: 200,
   difficultyLevels: [1, 2, 3, 4] as readonly number[],
+  /**
+   * Hard caps on the prose the AI reads (no DB CHECK — enforced by the
+   * server and mirrored by the editors). Generous for real writing, but a
+   * bound: a scenario's text is posted to `ai-roleplay` on every turn, so
+   * unbounded prose is unbounded model spend and, past the function's body
+   * cap, a scenario trainees cannot start.
+   */
+  titleMax: 120,
+  infoTitleMax: 120,
+  contextMax: 4000,
+  openingLineMax: 1000,
+  pushbackNotesMax: 2000,
+  /** `sort_order` is a Postgres `int`; an out-of-range number is a 500. */
+  sortOrderMax: 1_000_000,
+} as const;
+
+/**
+ * What `sanitizeScenario` (netlify/functions/_shared/ai.ts) accepts on the
+ * wire for the scenario object every AI call carries. Vocabulary-shaped
+ * fields over their cap are REJECTED (they are ids and labels, not prose);
+ * the three prose fields are TRUNCATED so an over-long saved scenario stays
+ * playable while its cost stays bounded.
+ */
+export const SCENARIO_WIRE_MAX = {
+  breed: SCENARIO_LIMITS.breedMax,
+  age: 40,
+  persona: 60,
+  pushbackId: 60,
+  pushbackTitle: 120,
+  pushbackExample: 600,
+  context: SCENARIO_LIMITS.contextMax,
+  pushbackNotes: SCENARIO_LIMITS.pushbackNotesMax,
+  openingLine: SCENARIO_LIMITS.openingLineMax,
+  weightKg: 16,
+  focusArea: 40,
+  overrideId: 120,
 } as const;
 
 /**

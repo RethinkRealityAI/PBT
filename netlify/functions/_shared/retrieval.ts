@@ -80,6 +80,24 @@ export interface DetailedRetrieval extends CachedRetrieval {
 /** Test hook — the retrieval cache is module state. */
 export function __clearRetrievalCache(): void {
   cache.clear();
+  embeddingCache.clear();
+}
+
+/**
+ * Query embeddings, memoised separately from results: the result cache is
+ * keyed on the SCOPE too, so one caller asking the same question under two
+ * tools (the Scenario Studio assistant retrieves as `roleplay` AND as
+ * `scenario-builder` every turn) used to pay for the same embedding twice.
+ */
+const embeddingCache = new Map<string, { value: number[]; expiresAt: number }>();
+
+async function embedQuery(query: string): Promise<number[]> {
+  const hit = embeddingCache.get(query);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+  const [embedding] = await embedTexts([query], 'RETRIEVAL_QUERY');
+  if (embeddingCache.size > 200) embeddingCache.clear();
+  embeddingCache.set(query, { value: embedding, expiresAt: Date.now() + CACHE_TTL_MS });
+  return embedding;
 }
 
 /** Ignore-don't-reject validation: anything unrecognised is simply dropped. */
@@ -185,7 +203,7 @@ export async function retrieveChunksDetailed(
     const hit = cache.get(cacheKey);
     if (hit && hit.expiresAt > Date.now()) return { ...hit.value, latencyMs: elapsed() };
 
-    const [embedding] = await embedTexts([query], 'RETRIEVAL_QUERY');
+    const embedding = await embedQuery(query);
     const sb = opts.sb ?? getServiceClient();
     const literal = toPgvectorLiteral(embedding);
 

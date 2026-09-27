@@ -11,11 +11,58 @@ import {
   canSkipExtraction,
   planKnowledgeSync,
   readSyncMeta,
+  scopeHashFor,
   sha256Hex,
   summarizeSync,
   withSyncMeta,
   type ExistingKnowledgeRow,
 } from '../_shared/knowledgeSync';
+
+describe('scopeHashFor — a moved default scope re-syncs a document whose body did not change', () => {
+  it('is undefined for the vocabulary default scope, so un-scoped seeds keep matching', () => {
+    expect(scopeHashFor(undefined)).toBeUndefined();
+    expect(scopeHashFor({})).toBeUndefined();
+    expect(scopeHashFor({ focus: 'weight' })).toBeUndefined();
+    expect(scopeHashFor({ species: ['dog', 'puppy', 'cat'] })).toBeUndefined();
+  });
+
+  it('fingerprints a narrowed scope, order-insensitively', () => {
+    const a = scopeHashFor({ species: ['dog', 'puppy'] });
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(scopeHashFor({ species: ['puppy', 'dog'] })).toBe(a);
+    expect(scopeHashFor({ species: ['cat'] })).not.toBe(a);
+    expect(scopeHashFor({ tools: ['fecal-scan'], species: ['cat'] })).not.toBe(scopeHashFor({ species: ['cat'] }));
+  });
+
+  it('planKnowledgeSync updates a document whose scope moved, even with a matching body hash and chunks', () => {
+    const row = {
+      ...syncedRow('clinical:reference', 'h1'),
+      chunk_count: 4,
+    } as ExistingKnowledgeRow;
+    // Stored with the default scope (no scopeHash); the seed now narrows it.
+    const narrowed = { slug: 'clinical:reference', contentHash: 'h1', scopeHash: scopeHashFor({ species: ['dog', 'puppy'] }) };
+    expect(planKnowledgeSync([narrowed], [row]).update.map((d) => d.slug)).toEqual(['clinical:reference']);
+    // Same body and the same default scope → still a skip.
+    expect(planKnowledgeSync([doc('clinical:reference', 'h1')], [row]).skip.length).toBe(1);
+    // Stored narrowed, seed widened back to the default → update as well.
+    const narrowedRow = {
+      ...row,
+      metadata: withSyncMeta({}, { contentHash: 'h1', scopeHash: narrowed.scopeHash }),
+    } as ExistingKnowledgeRow;
+    expect(planKnowledgeSync([doc('clinical:reference', 'h1')], [narrowedRow]).update.length).toBe(1);
+    expect(planKnowledgeSync([narrowed], [narrowedRow]).skip.length).toBe(1);
+  });
+
+  it('canSkipExtraction re-extracts a study whose scope moved (a re-write needs the body)', () => {
+    const src = sha256Hex('pdf-bytes');
+    const row = {
+      ...syncedRow('study:davies-2024', 'body', { sourceHash: src }),
+      chunk_count: 3,
+    } as ExistingKnowledgeRow;
+    expect(canSkipExtraction(row, src)).toBe(true);
+    expect(canSkipExtraction(row, src, scopeHashFor({ species: ['dog', 'puppy'] }))).toBe(false);
+  });
+});
 
 const doc = (slug: string, contentHash: string) => ({ slug, contentHash });
 

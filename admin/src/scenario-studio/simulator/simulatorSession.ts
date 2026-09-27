@@ -15,6 +15,7 @@ import { simulateCustomerTurn, simulateScore } from '../api';
 import {
   describeSimError,
   initialSimState,
+  isScorable,
   simReducer,
   type SimAction,
   type SimConversation,
@@ -52,8 +53,10 @@ export function createSimulatorSession(): SimulatorSession {
     state = simReducer(state, action);
     if (state === prev) return;
     listeners.forEach((l) => l());
-    // Every way into `ended` (token, cap, End & score) scores straight away.
-    if (prev.phase !== 'ended' && state.phase === 'ended') void score();
+    // Every way into `ended` (token, cap, End & score) scores straight away —
+    // unless the trainee never spoke (the owner ended on their opening
+    // line): there is nothing for the rubric to rate, and the UI says so.
+    if (prev.phase !== 'ended' && state.phase === 'ended' && isScorable(state.messages)) void score();
   }
 
   async function requestCustomerTurn() {
@@ -129,6 +132,22 @@ export function createSimulatorSession(): SimulatorSession {
 
 const MAX_SESSIONS = 12;
 const sessions = new Map<string, SimulatorSession>();
+
+/**
+ * Conversations belong to the admin who had them. Signing out and in as
+ * someone else in the same tab must not show the previous admin's Test
+ * drive (or fire its pending "tested" notice against the new admin's
+ * draft) — the same rule the browser-kept drafts follow. Set by the Studio
+ * from the signed-in identity; a change of owner forgets every session.
+ */
+let owner: string | null = null;
+
+export function setSimulatorSessionsOwner(userId: string | null | undefined): void {
+  const next = userId && userId.trim() ? userId : null;
+  if (next === owner) return;
+  owner = next;
+  sessions.clear();
+}
 
 /** The (lazily created) session for a scenario id. */
 export function getSimulatorSession(scenarioId: string): SimulatorSession {

@@ -61,31 +61,64 @@ function readStore(): Store {
   }
 }
 
-function writeStore(store: Store): void {
-  try {
-    const now = Date.now();
-    const kept = Object.entries(store)
-      .filter(([, e]) => e && typeof e.savedAt === 'number' && now - e.savedAt < MAX_AGE_MS)
-      .sort(([, a], [, b]) => b.savedAt - a.savedAt)
-      .slice(0, MAX_ENTRIES);
-    localStorage.setItem(storageKey(), JSON.stringify(Object.fromEntries(kept)));
-  } catch {
-    /* storage full or blocked — resume is a convenience, not a guarantee */
-  }
+/**
+ * One entry, as it must look to be resumable. Both readers use this, so a
+ * broken entry (a hand-edited store, an older shape) is invisible everywhere
+ * instead of listed by one and refused by the other — or worse, crashing the
+ * editor on `transcript.items.length`.
+ */
+function isValidEntry(e: unknown): e is LocalDraftEntry {
+  if (!e || typeof e !== 'object') return false;
+  const bag = e as Record<string, unknown>;
+  const transcript = bag.transcript as Record<string, unknown> | undefined;
+  return (
+    !!bag.draft &&
+    typeof bag.draft === 'object' &&
+    typeof bag.baseline === 'string' &&
+    typeof bag.savedAt === 'number' &&
+    (bag.title === undefined || typeof bag.title === 'string') &&
+    !!transcript &&
+    typeof transcript === 'object' &&
+    Array.isArray(transcript.items)
+  );
+}
+
+/**
+ * Write the store. Returns whether the browser actually kept it — storage
+ * can be full or blocked, and the editor's "kept in this browser" must not
+ * be a promise it cannot keep. When the whole store does not fit (one
+ * oversized assistant transcript used to stop EVERY draft from persisting),
+ * the oldest entries are dropped and the write is retried once.
+ */
+function writeStore(store: Store): boolean {
+  const now = Date.now();
+  const kept = Object.entries(store)
+    .filter(([, e]) => e && typeof e.savedAt === 'number' && now - e.savedAt < MAX_AGE_MS)
+    .sort(([, a], [, b]) => b.savedAt - a.savedAt)
+    .slice(0, MAX_ENTRIES);
+  const attempt = (entries: typeof kept): boolean => {
+    try {
+      localStorage.setItem(storageKey(), JSON.stringify(Object.fromEntries(entries)));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (attempt(kept)) return true;
+  // Keep the newest entry (the one being edited) and try again with less.
+  return kept.length > 1 ? attempt(kept.slice(0, Math.max(1, Math.floor(kept.length / 2)))) : false;
 }
 
 export function readLocalDraft(id: string): LocalDraftEntry | null {
   const entry = readStore()[id];
-  if (!entry || typeof entry !== 'object' || !entry.draft || typeof entry.baseline !== 'string') {
-    return null;
-  }
-  return entry;
+  return isValidEntry(entry) ? entry : null;
 }
 
-export function writeLocalDraft(id: string, entry: LocalDraftEntry): void {
+/** True when the browser kept the draft; false when storage refused it. */
+export function writeLocalDraft(id: string, entry: LocalDraftEntry): boolean {
   const store = readStore();
   store[id] = entry;
-  writeStore(store);
+  return writeStore(store);
 }
 
 export function clearLocalDraft(id: string): void {
@@ -95,15 +128,10 @@ export function clearLocalDraft(id: string): void {
   writeStore(store);
 }
 
-/** Every resumable entry, newest first. */
+/** Every resumable entry, newest first — the same validity rule as `readLocalDraft`. */
 export function listLocalDrafts(): Array<{ id: string } & LocalDraftEntry> {
   return Object.entries(readStore())
-    .filter(([, e]) => e && typeof e.savedAt === 'number' && e.draft)
+    .filter((pair): pair is [string, LocalDraftEntry] => isValidEntry(pair[1]))
     .sort(([, a], [, b]) => b.savedAt - a.savedAt)
     .map(([id, e]) => ({ id, ...e }));
-}
-
-/** Does this entry hold edits the server doesn't have? */
-export function isUnsaved(entry: Pick<LocalDraftEntry, 'draft' | 'baseline'>): boolean {
-  return JSON.stringify(entry.draft) !== entry.baseline;
 }

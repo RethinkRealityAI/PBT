@@ -19,6 +19,12 @@
  * Pure module: no I/O, no Supabase, no Gemini. `node:crypto` only.
  */
 import { createHash } from 'node:crypto';
+import {
+  ALL_KNOWLEDGE_SPECIES,
+  DEFAULT_KNOWLEDGE_TOOLS,
+  normalizeKnowledgeSpecies,
+  normalizeKnowledgeTools,
+} from '../../../src/shared/knowledge/knowledgeScopes';
 
 /**
  * Fingerprint format version. Bump to invalidate every stored hash and force
@@ -31,6 +37,14 @@ export interface SyncMeta {
   version: number;
   contentHash: string;
   sourceHash?: string;
+  /**
+   * Fingerprint of the seed's DEFAULT tool / species scope when it narrows
+   * the vocabulary default (absent = the default scope). Chunks carry the
+   * scope as tags, so a doc whose body is unchanged but whose default scope
+   * moved (a study re-filed as dog-only) must still be re-written — the body
+   * hash alone would call it fresh and leave the stale tags in place.
+   */
+  scopeHash?: string;
   syncedAt: string;
 }
 
@@ -50,6 +64,7 @@ export function readSyncMeta(metadata: unknown): SyncMeta | null {
     version: typeof bag.version === 'number' ? bag.version : 0,
     contentHash: bag.contentHash,
     sourceHash: typeof bag.sourceHash === 'string' ? bag.sourceHash : undefined,
+    scopeHash: typeof bag.scopeHash === 'string' ? bag.scopeHash : undefined,
     syncedAt: typeof bag.syncedAt === 'string' ? bag.syncedAt : '',
   };
 }
@@ -57,15 +72,34 @@ export function readSyncMeta(metadata: unknown): SyncMeta | null {
 /** Stamp a fresh `sync` record onto a metadata bag (never mutates the input). */
 export function withSyncMeta(
   metadata: Record<string, unknown>,
-  args: { contentHash: string; sourceHash?: string; syncedAt?: string },
+  args: { contentHash: string; sourceHash?: string; scopeHash?: string; syncedAt?: string },
 ): Record<string, unknown> {
   const sync: SyncMeta = {
     version: SYNC_VERSION,
     contentHash: args.contentHash,
     ...(args.sourceHash ? { sourceHash: args.sourceHash } : {}),
+    ...(args.scopeHash ? { scopeHash: args.scopeHash } : {}),
     syncedAt: args.syncedAt ?? new Date().toISOString(),
   };
   return { ...metadata, sync };
+}
+
+/**
+ * The scope fingerprint of a seed's default tags — `undefined` when the seed
+ * leaves the vocabulary default (every training tool, every species), so the
+ * many un-scoped documents keep matching their stored fingerprint and only a
+ * document whose default scope actually moved is re-synced (both ways: a
+ * narrowed scope and one widened back to the default).
+ */
+export function scopeHashFor(tags: Record<string, unknown> | undefined): string | undefined {
+  const tools = normalizeKnowledgeTools(tags?.tools);
+  const species = normalizeKnowledgeSpecies(tags?.species);
+  const sameSet = (a: readonly string[], b: readonly string[]) =>
+    a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i]);
+  if (sameSet(tools, DEFAULT_KNOWLEDGE_TOOLS) && sameSet(species, ALL_KNOWLEDGE_SPECIES)) {
+    return undefined;
+  }
+  return sha256Hex(JSON.stringify({ tools: [...tools].sort(), species: [...species].sort() }));
 }
 
 /** A row as the planner sees it. `chunk_count` is what makes a skip safe. */
@@ -87,6 +121,8 @@ export interface PlannableDoc {
   slug: string;
   /** sha256 of the body this sync would write. */
   contentHash: string;
+  /** `scopeHashFor(tags)` of the seed's default scope; absent = default scope. */
+  scopeHash?: string;
 }
 
 export interface KnowledgeSyncPlan<T extends PlannableDoc> {
@@ -164,6 +200,7 @@ export function planKnowledgeSync<T extends PlannableDoc>(
       sync !== null &&
       sync.version === SYNC_VERSION &&
       sync.contentHash === doc.contentHash &&
+      (sync.scopeHash ?? null) === (doc.scopeHash ?? null) &&
       (row.chunk_count ?? 0) > 0;
     if (fresh) plan.skip.push(doc);
     else plan.update.push(doc);
@@ -193,10 +230,14 @@ export function planKnowledgeSync<T extends PlannableDoc>(
 export function canSkipExtraction(
   row: ExistingKnowledgeRow | undefined,
   sourceHash: string,
+  scopeHash?: string,
 ): boolean {
   if (!row) return false;
   const sync = readSyncMeta(row.metadata);
   if (!sync || sync.version !== SYNC_VERSION || sync.sourceHash !== sourceHash) return false;
+  // A moved default scope re-writes the document (see `scopeHash`), and a
+  // re-write needs the body — so the PDF must be extracted again.
+  if ((sync.scopeHash ?? null) !== (scopeHash ?? null)) return false;
   if (row.deleted_at) return true;
   return (row.chunk_count ?? 0) > 0;
 }

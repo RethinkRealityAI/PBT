@@ -176,7 +176,12 @@ export function PublishStep(props: PublishStepProps) {
                 onChange={(e) => {
                   const raw = e.target.value;
                   const n = Number(raw);
-                  patch({ sort_order: raw === '' || !Number.isFinite(n) ? null : Math.round(n) });
+                  // A Postgres `int`: clamp so "1e21" can't turn a save into a 500.
+                  const max = SCENARIO_LIMITS.sortOrderMax;
+                  patch({
+                    sort_order:
+                      raw === '' || !Number.isFinite(n) ? null : Math.max(-max, Math.min(max, Math.round(n))),
+                  });
                 }}
               />
             </FieldBlock>

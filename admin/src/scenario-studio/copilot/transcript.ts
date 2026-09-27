@@ -10,14 +10,19 @@
  * ids stay unique across a session even after old items are dropped.
  */
 import { applySurfaceMessages, setPath, type A2uiMessage, type SurfaceState } from '../../lib/a2ui';
-import { AGENT_LIMITS, mergeWireTurns, type AgentTurn } from '../../../../src/shared/ai/scenarioAgent';
+import {
+  AGENT_LIMITS,
+  TOOL_RESULT_PREFIX,
+  mergeWireTurns,
+  type AgentTurn,
+} from '../../../../src/shared/ai/scenarioAgent';
 import { EMPTY_TRANSCRIPT, type CopilotItem, type CopilotTranscript } from './types';
 
 /** Items kept; older ones (and the cards they pointed at) are dropped. */
 export const TRANSCRIPT_MAX_ITEMS = 60;
 
-/** Prefix that marks a card outcome on the wire. */
-export const TOOL_RESULT_PREFIX = '[tool_result]';
+/** Prefix that marks a card outcome on the wire (shared with the server's turn clamp). */
+export { TOOL_RESULT_PREFIX };
 
 /** Keep the newest items and only the surfaces they still reference. */
 function bound(t: CopilotTranscript): CopilotTranscript {
@@ -166,13 +171,21 @@ export function lastUserText(t: CopilotTranscript): string | null {
 export function transcriptToWire(t: CopilotTranscript): AgentTurn[] {
   const turns: AgentTurn[] = [];
   for (const item of t.items) {
-    if (item.kind === 'user') turns.push({ role: 'user', content: item.text });
-    else if (item.kind === 'assistant' && !item.offline) turns.push({ role: 'assistant', content: item.text });
-    else if (item.kind === 'result') turns.push({ role: 'user', content: `${TOOL_RESULT_PREFIX} ${item.text}` });
+    if (item.kind === 'user') {
+      turns.push({ role: 'user', content: item.text.slice(0, AGENT_LIMITS.maxTurnChars) });
+    } else if (item.kind === 'assistant' && !item.offline) {
+      turns.push({ role: 'assistant', content: item.text.slice(0, AGENT_LIMITS.maxTurnChars) });
+    } else if (item.kind === 'result') {
+      // Result pills are our own short lines; capped so a run of them can't
+      // push the admin's message past the server's per-turn cap (which
+      // leaves a margin for exactly these — see `sanitizeAgentTurns`).
+      turns.push({
+        role: 'user',
+        content: `${TOOL_RESULT_PREFIX} ${item.text.slice(0, AGENT_LIMITS.maxToolResultChars)}`,
+      });
+    }
   }
-  const merged = mergeWireTurns(
-    turns.map((turn) => ({ ...turn, content: turn.content.slice(0, AGENT_LIMITS.maxTurnChars) })),
-  ).slice(-AGENT_LIMITS.maxTurns);
+  const merged = mergeWireTurns(turns).slice(-AGENT_LIMITS.maxTurns);
   while (merged.length && merged[0].role !== 'user') merged.shift();
   return merged;
 }

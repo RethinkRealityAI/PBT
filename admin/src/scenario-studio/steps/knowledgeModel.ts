@@ -95,8 +95,8 @@ export function switchKnowledgeMode(draft: StudioDraft, mode: KnowledgeMode): Mo
 
 export type RetrievalSpecies = 'dog' | 'puppy' | 'cat';
 
-/** The species scope retrieval will apply for this draft (undefined = none). */
-export function draftRetrievalSpecies(draft: StudioDraft): RetrievalSpecies | undefined {
+/** The species scope retrieval will apply for this draft (absent species = dog). */
+export function draftRetrievalSpecies(draft: StudioDraft): RetrievalSpecies {
   return retrievalSpeciesFor(draft.species, draft.life_stage);
 }
 

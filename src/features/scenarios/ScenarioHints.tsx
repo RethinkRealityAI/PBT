@@ -2,6 +2,7 @@ import type { Scenario } from '../../data/scenarios';
 import { useT } from '../../i18n/useT';
 import { useLanguage } from '../../app/providers/LanguageProvider';
 import { localizedPushbackHints } from '../../i18n/dataL10n/pushbacks';
+import { adaptPetWords } from '../../shared/scenarios/species';
 
 /**
  * Pre-session coaching hints — surfaces three ACT-aligned cue groups
@@ -23,10 +24,13 @@ export function ScenarioHints({ scenario }: { scenario: Scenario }) {
   const { locale } = useLanguage();
   const pb = localizedPushbackHints(scenario.pushback.id, locale);
   if (!pb) return null;
+  // Canned taxonomy copy is written about a dog ("…for you and your dog?");
+  // say it about the animal this scenario is actually about.
+  const cues = (items: string[]) => items.slice(0, 2).map((s) => adaptPetWords(s, scenario.species));
   const sections: Array<{ id: string; heading: string; items: string[] }> = [
-    { id: 'acknowledge', heading: t('create.hints.acknowledge'), items: pb.acknowledgePatterns.slice(0, 2) },
-    { id: 'clarify', heading: t('create.hints.clarify'), items: pb.clarifyQuestions.slice(0, 2) },
-    { id: 'takeAction', heading: t('create.hints.takeAction'), items: pb.takeActionPatterns.slice(0, 2) },
+    { id: 'acknowledge', heading: t('create.hints.acknowledge'), items: cues(pb.acknowledgePatterns) },
+    { id: 'clarify', heading: t('create.hints.clarify'), items: cues(pb.clarifyQuestions) },
+    { id: 'takeAction', heading: t('create.hints.takeAction'), items: cues(pb.takeActionPatterns) },
   ];
   return (
     <div style={{ marginBottom: 12 }}>

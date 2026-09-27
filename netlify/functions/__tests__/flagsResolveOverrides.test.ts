@@ -1,5 +1,66 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetSpeciesProbe, selectOverrideRows } from '../flags-resolve';
+import {
+  publicOverrideRows,
+  publicSimulationConfig,
+  resetSpeciesProbe,
+  selectOverrideRows,
+} from '../flags-resolve';
+
+/**
+ * flags-resolve is PUBLIC (`cache-control: public`). The trainee app renders
+ * scenario cards and plays them; the admin's AI notes and the unpublished
+ * drafts are not part of that, so they must never be in the response.
+ */
+describe('flags-resolve — what the public snapshot may carry', () => {
+  const live = {
+    scenario_id: 'admin:live',
+    visible: true,
+    sort_order: 2,
+    breed: 'Lab',
+    prompt_prefix: 'Only yield once a recheck date is offered.',
+    prompt_suffix: 'Never mention the discount.',
+    title_override: 'Buddy',
+  };
+  const hidden = {
+    scenario_id: 'admin:draft',
+    visible: false,
+    sort_order: null,
+    breed: 'Maine Coon',
+    pushback_notes: 'Unpublished draft the team has not reviewed',
+    prompt_prefix: 'answer key',
+  };
+
+  it('strips the AI notes from every live row and keeps the rest', () => {
+    const [row] = publicOverrideRows([live as never]) as unknown as Array<Record<string, unknown>>;
+    expect(row.prompt_prefix).toBeNull();
+    expect(row.prompt_suffix).toBeNull();
+    expect(row.breed).toBe('Lab');
+    expect(row.title_override).toBe('Buddy');
+    expect(row.visible).toBe(true);
+  });
+
+  it('reduces a hidden row to "this scenario is hidden" — no draft content leaves the server', () => {
+    const [row] = publicOverrideRows([hidden as never]) as unknown as Array<Record<string, unknown>>;
+    expect(row).toEqual({ scenario_id: 'admin:draft', visible: false, sort_order: null });
+  });
+
+  it('drops the global prompt tuning from the published simulation config, nothing else', () => {
+    const cfg = {
+      customerPromptPrefix: 'global answer key',
+      customerPromptSuffix: 'x',
+      scoring: { promptPrefix: 'scorer secret', promptSuffix: 'y', dimensions: [{ key: 'acknowledge', weight: 2 }] },
+      rag: { enabled: true, k: 4 },
+      drivers: { Activator: { style: 'fast' } },
+    };
+    expect(publicSimulationConfig(cfg)).toEqual({
+      scoring: { dimensions: [{ key: 'acknowledge', weight: 2 }] },
+      rag: { enabled: true, k: 4 },
+      drivers: { Activator: { style: 'fast' } },
+    });
+    expect(publicSimulationConfig(null)).toBeNull();
+    expect(publicSimulationConfig({ rag: { k: 2 } })).toEqual({ rag: { k: 2 } });
+  });
+});
 
 /**
  * The trainee snapshot must survive a deploy that lands before a hand-run

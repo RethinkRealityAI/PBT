@@ -1,9 +1,11 @@
 -- PBT Scenario Studio — dog / cat species on scenario_overrides.
 -- Run after 20260923000000_knowledge_sync_lease.sql.
 --
--- ⚠ DEFERRED — written 2026-09-25, NOT applied. Apply it by hand (Supabase
--- SQL editor, MCP `apply_migration`, or `supabase db push`), then confirm with
--- `npm run verify:db` (which only WARNS about this column until then).
+-- Written 2026-09-25 (deferred at the owner's request); APPLIED to production
+-- (project pkouwgnfwerlllqghjjs) on 2026-09-27 via the Supabase MCP
+-- `apply_migration`, column + CHECK + comment verified, `verify:db`
+-- equivalent green (26 relations, 282 columns). On a project that has not run
+-- it, the app degrades safely (see below) and `verify:db` fails on the column.
 --
 -- What it adds:
 --   • scenario_overrides.species — which animal a scenario is about: 'dog' |

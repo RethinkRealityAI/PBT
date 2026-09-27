@@ -36,6 +36,7 @@ import {
 } from '../../../src/shared/ai/retrievalQuery';
 import { DRIVER_KEYS } from '../../../src/design-system/tokens';
 import { isScenarioSpecies } from '../../../src/shared/scenarios/species';
+import { SCENARIO_LIMITS, SCENARIO_WIRE_MAX } from '../../../src/shared/scenarios/limits';
 import { DEFAULT_LOCALE, isLocale, type Locale } from '../../../src/i18n/locales';
 
 // ─── Responses ─────────────────────────────────────────────────────────────
@@ -513,14 +514,25 @@ export function sanitizeTurns(
   return out.length > maxTurns ? out.slice(out.length - maxTurns) : out;
 }
 
-const OPTIONAL_STRING_FIELDS = [
-  'context',
-  'pushbackNotes',
-  'openingLine',
-  'weightKg',
-  'focusArea',
-  '_overrideId',
-] as const;
+/**
+ * Optional string fields and what happens past their cap: `truncate` keeps
+ * the scenario playable (prose the model reads — bounded, never rejected);
+ * `reject` is for ids and labels, where over-length means a bad client.
+ */
+const OPTIONAL_STRING_FIELDS: ReadonlyArray<
+  readonly [
+    key: 'context' | 'pushbackNotes' | 'openingLine' | 'weightKg' | 'focusArea' | '_overrideId',
+    max: number,
+    over: 'truncate' | 'reject',
+  ]
+> = [
+  ['context', SCENARIO_WIRE_MAX.context, 'truncate'],
+  ['pushbackNotes', SCENARIO_WIRE_MAX.pushbackNotes, 'truncate'],
+  ['openingLine', SCENARIO_WIRE_MAX.openingLine, 'truncate'],
+  ['weightKg', SCENARIO_WIRE_MAX.weightKg, 'reject'],
+  ['focusArea', SCENARIO_WIRE_MAX.focusArea, 'reject'],
+  ['_overrideId', SCENARIO_WIRE_MAX.overrideId, 'reject'],
+];
 
 function nonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim() !== '';
@@ -528,51 +540,84 @@ function nonEmptyString(v: unknown): v is string {
 
 /**
  * Structural validation of a client-supplied scenario. The scenario is the
- * trainee's own content and passes through as-is — but the prompt builders
- * dereference these fields (an unknown driver would throw inside
- * `resolveDriverKnowledge`), so the shape is enforced. Returns null → 400.
+ * trainee's own content — but the prompt builders dereference these fields
+ * (an unknown driver would throw inside `resolveDriverKnowledge`), so the
+ * shape is enforced. Returns null → 400.
+ *
+ * Only the fields the prompt builders know are kept: the request used to be
+ * spread wholesale, so unknown keys rode into the prompt and into the
+ * caller's own `training_sessions.scenario`. Every string has a cap
+ * (`SCENARIO_WIRE_MAX`): before them a 400 KB `context` was accepted and
+ * became an ~800 k-character customer prompt, paid for on every turn and,
+ * with telemetry opted out, invisible in AI Quality.
  */
 export function sanitizeScenario(input: unknown): Scenario | null {
   if (!isPlainObject(input)) return null;
   const s = input;
-  if (!nonEmptyString(s.breed) || !nonEmptyString(s.age) || !nonEmptyString(s.persona)) {
+  const label = (v: unknown, max: number): v is string => nonEmptyString(v) && v.length <= max;
+  if (
+    !label(s.breed, SCENARIO_WIRE_MAX.breed) ||
+    !label(s.age, SCENARIO_WIRE_MAX.age) ||
+    !label(s.persona, SCENARIO_WIRE_MAX.persona)
+  ) {
     return null;
   }
   if (
     !isPlainObject(s.pushback) ||
-    !nonEmptyString(s.pushback.id) ||
-    !nonEmptyString(s.pushback.title)
+    !label(s.pushback.id, SCENARIO_WIRE_MAX.pushbackId) ||
+    !label(s.pushback.title, SCENARIO_WIRE_MAX.pushbackTitle)
   ) {
     return null;
   }
-  if (s.pushback.example !== undefined && typeof s.pushback.example !== 'string') return null;
+  const example = s.pushback.example;
+  if (
+    example !== undefined &&
+    (typeof example !== 'string' || example.length > SCENARIO_WIRE_MAX.pushbackExample)
+  ) {
+    return null;
+  }
   if (!(DRIVER_KEYS as readonly string[]).includes(s.suggestedDriver as string)) return null;
   if (typeof s.difficulty !== 'number' || !Number.isFinite(s.difficulty)) return null;
 
-  const out: Record<string, unknown> = { ...s };
-  out.difficulty = Math.max(1, Math.min(4, Math.round(s.difficulty))) as Difficulty;
-  for (const key of OPTIONAL_STRING_FIELDS) {
+  const out: Record<string, unknown> = {
+    breed: s.breed,
+    age: s.age,
+    pushback: {
+      id: s.pushback.id,
+      title: s.pushback.title,
+      ...(example !== undefined ? { example } : {}),
+    },
+    persona: s.persona,
+    difficulty: Math.max(1, Math.min(4, Math.round(s.difficulty))) as Difficulty,
+    suggestedDriver: s.suggestedDriver,
+  };
+  for (const [key, max, over] of OPTIONAL_STRING_FIELDS) {
     const v = s[key];
-    if (v === undefined || v === null) {
-      delete out[key];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== 'string') return null;
+    if (v.length > max) {
+      if (over === 'reject') return null;
+      out[key] = v.slice(0, max);
       continue;
     }
-    if (typeof v !== 'string') return null;
+    out[key] = v;
   }
   if (s.knowledgeSlugs !== undefined && s.knowledgeSlugs !== null) {
     if (
       !Array.isArray(s.knowledgeSlugs) ||
-      !s.knowledgeSlugs.every((x) => typeof x === 'string')
+      s.knowledgeSlugs.length > SCENARIO_LIMITS.knowledgeSlugsMax ||
+      !s.knowledgeSlugs.every(
+        (x) => typeof x === 'string' && x.length <= SCENARIO_LIMITS.knowledgeSlugLenMax,
+      )
     ) {
       return null;
     }
-  } else {
-    delete out.knowledgeSlugs;
+    out.knowledgeSlugs = s.knowledgeSlugs;
   }
   // `species` switches the prompt wording and the HARD knowledge scope, so
   // only the two values the prompt builders know may pass. Anything else is
   // dropped (not rejected): the scenario simply runs as the dog it would
   // have been before species existed.
-  if (!isScenarioSpecies(s.species)) delete out.species;
+  if (isScenarioSpecies(s.species)) out.species = s.species;
   return out as unknown as Scenario;
 }

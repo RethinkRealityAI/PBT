@@ -252,10 +252,21 @@ export interface AgentTurn {
   content: string;
 }
 
+/**
+ * Prefix of a user-role wire turn that reports what the admin did with a
+ * card ("[tool_result] Applied: Breed"). Written by the Studio's transcript,
+ * recognised by `sanitizeAgentTurns` — one constant, both sides.
+ */
+export const TOOL_RESULT_PREFIX = '[tool_result]';
+
 export const AGENT_LIMITS = {
   maxActions: 3,
   maxTurns: 24,
   maxTurnChars: 2000,
+  /** Extra room on a user turn that carries card-result lines (see `sanitizeAgentTurns`). */
+  toolResultMarginChars: 1200,
+  /** One card-result line ("Applied: Breed, Weight (kg)") — our own text, always short. */
+  maxToolResultChars: 300,
   maxSuggestions: 3,
   maxSuggestionChars: 90,
   maxQuestionChars: 240,
@@ -393,8 +404,11 @@ export function normalizeWeightKg(raw: unknown): number | undefined {
   if (typeof raw === 'number') n = raw;
   else if (typeof raw === 'string') n = Number(raw.replace(/kg|kilograms?/gi, '').trim());
   else return undefined;
-  if (!Number.isFinite(n) || n <= 0 || n > SCENARIO_LIMITS.weightMaxKg) return undefined;
-  return Math.round(n * 10) / 10;
+  if (!Number.isFinite(n) || n > SCENARIO_LIMITS.weightMaxKg) return undefined;
+  // Round first: "0.04" is a positive number that rounds to 0 kg, which the
+  // editor and the server both (rightly) refuse.
+  const rounded = Math.round(n * 10) / 10;
+  return rounded > 0 ? rounded : undefined;
 }
 
 /**
@@ -545,9 +559,14 @@ function normalizeAsk(a: Record<string, unknown>): ScenarioAgentAction | null {
       value = cleanText(rawValue, AGENT_LIMITS.maxOptionLabelChars);
     }
     if (value === undefined || seen.has(value)) continue;
-    const label =
-      cleanText(rawLabel, AGENT_LIMITS.maxOptionLabelChars) ??
-      (field ? formatFieldValue(field, field === 'difficulty_override' ? Number(value) : value) : value);
+    // A field-bound option whose label is just the bare stored value ("2")
+    // gets the human label ("2 · Coachable") — the same one a value with no
+    // label gets. A label that is a word of its own ("Hostile") stays.
+    const derived = field
+      ? formatFieldValue(field, field === 'difficulty_override' ? Number(value) : value)
+      : value;
+    const explicit = cleanText(rawLabel, AGENT_LIMITS.maxOptionLabelChars);
+    const label = explicit !== undefined && !(field && explicit === value) ? explicit : derived;
     seen.add(value);
     options.push({ label, value });
   }
@@ -567,7 +586,8 @@ function normalizeOffer(a: Record<string, unknown>): ScenarioAgentAction | null 
     const v = normalizeFieldValue(field, isRecord(item) ? (item.value ?? item.label) : item);
     if (typeof v === 'string' && !options.includes(v)) options.push(v);
   }
-  if (options.length === 0) return null;
+  // "Pick one" needs something to pick between — the prompt promises 2–4.
+  if (options.length < AGENT_LIMITS.minOptions) return null;
   return { tool: 'offer_options', field, options, note: note(a.note ?? a.why) };
 }
 
@@ -702,7 +722,11 @@ export function applyAgentAction<D extends ScenarioAgentDraft>(
         set('focus_area', action.focus_area ?? null);
         set('knowledge_slugs', null);
       } else {
+        // Attached documents replace the topic (documents win over focus in
+        // retrieval, so a kept focus_area would be saved but ignored — the
+        // Knowledge step's own attach path clears it for the same reason).
         set('knowledge_slugs', action.slugs && action.slugs.length ? action.slugs : null);
+        set('focus_area', null);
       }
       break;
     default:
@@ -799,7 +823,14 @@ export function sanitizeAgentTurns(raw: unknown): AgentTurn[] | null {
     if (!isRecord(item)) continue;
     const role = item.role === 'assistant' || item.role === 'model' ? 'assistant' : item.role === 'user' ? 'user' : null;
     if (!role || typeof item.content !== 'string') continue;
-    const content = item.content.slice(0, AGENT_LIMITS.maxTurnChars);
+    // A user turn that opens with card results ("[tool_result] Applied: …")
+    // is the admin's message PLUS those lines; the margin keeps the END of
+    // the admin's message from being what the cap cuts.
+    const cap =
+      role === 'user' && item.content.startsWith(TOOL_RESULT_PREFIX)
+        ? AGENT_LIMITS.maxTurnChars + AGENT_LIMITS.toolResultMarginChars
+        : AGENT_LIMITS.maxTurnChars;
+    const content = item.content.slice(0, cap);
     if (!content.trim()) continue;
     turns.push({ role, content });
   }

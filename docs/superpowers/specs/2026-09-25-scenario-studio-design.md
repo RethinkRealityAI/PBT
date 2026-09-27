@@ -137,15 +137,22 @@ citation, snippet) + the applied filter. Read-only.
 - `Scenario.species?: 'dog' | 'cat'` (absent = dog, for every legacy row).
 - Prompt builders swap *dog* nouns for *cat* only when `species === 'cat'`;
   the English dog prompt stays byte-identical (parity fixtures).
-- Retrieval passes a species scope when a scenario declares one (dog +
-  Puppy life stage → `puppy`), so a cat scenario never grounds on dog-only
-  documents.
+- Retrieval carries every scenario's species as a HARD scope (absent = dog;
+  dog + Puppy life stage → `puppy`), so a cat scenario never grounds on
+  dog-only documents and a dog scenario never grounds on cat-only ones. The
+  canine clinical reference and the dog-owner study are filed dog/puppy, the
+  cat study and a new `clinical:reference-cat` seed are filed cat, and a cat
+  prompt's retrieved block is framed ("these passages were written about
+  dogs — figures are canine") because most of the corpus is shared.
 - Life stage stays one stored vocabulary; `Puppy (<1)` *displays* as
   "Kitten (<1)" for cats (admin + consumer, en + fr).
-- **Deferred migration** `20260925000000_scenario_species.sql` adds
-  `scenario_overrides.species`. Until it is applied, the overrides function
-  retries the save without the column and tells the admin the species was
-  not stored (it degrades to today's dog behaviour — never a failed save).
+- Migration `20260925000000_scenario_species.sql` adds
+  `scenario_overrides.species`. Written deferred (the owner's ask) and
+  **applied to production on 2026-09-27**. The degrade path stays for a
+  project that has not run it: the overrides function retries the save
+  without the column and tells the admin the species was not stored (dog
+  behaviour — never a failed save), and the Studio refuses to publish a cat
+  scenario while the column is missing.
 
 ## 6. Out of scope / follow-ups
 

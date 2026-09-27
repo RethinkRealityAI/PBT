@@ -218,12 +218,20 @@ export function diffAgainstBase(
   if (entry.source === 'admin') return { ...draft };
   const base = buildBaseLayer(entry, manifest, userScenario) as Record<string, unknown>;
   const out: Record<string, unknown> = { ...draft };
+  // Blank text and an empty list both mean "inherit"; lists compare by
+  // content (not reference) so an untouched document list is never written
+  // as an override of itself.
+  const norm = (v: unknown): unknown => {
+    if (typeof v === 'string') return v.trim() || null;
+    if (Array.isArray(v)) return v.length ? v : null;
+    return v ?? null;
+  };
+  const same = (a: unknown, b: unknown): boolean =>
+    Array.isArray(a) && Array.isArray(b) ? JSON.stringify(a) === JSON.stringify(b) : a === b;
   for (const [key, value] of Object.entries(out)) {
     if (key === 'scenario_id' || key === 'visible') continue;
-    const norm = typeof value === 'string' ? value.trim() || null : value;
-    const baseVal = base[key];
-    const baseNorm = typeof baseVal === 'string' ? baseVal.trim() || null : (baseVal ?? null);
-    out[key] = norm !== null && norm !== baseNorm ? norm : null;
+    const v = norm(value);
+    out[key] = v !== null && !same(v, norm(base[key])) ? v : null;
   }
   return out as Partial<ScenarioOverrideRow>;
 }

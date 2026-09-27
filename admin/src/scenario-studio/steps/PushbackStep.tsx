@@ -21,7 +21,7 @@ import {
   PUSHBACK_IDS,
   PUSHBACK_LABELS,
 } from '../../../../src/shared/scenarios/enums';
-import { speciesOf, type ScenarioSpecies } from '../../../../src/shared/scenarios/species';
+import { adaptPetWords, speciesOf, type ScenarioSpecies } from '../../../../src/shared/scenarios/species';
 import { hasText } from '../studioModel';
 import { BuiltInHint, FitGrid, Group, StepBody } from './stepParts';
 
@@ -33,8 +33,9 @@ export function pushbackTitle(id: string): string {
 /** The example line, spoken about the right animal. Display only. */
 export function pushbackExample(id: string, species: ScenarioSpecies): string {
   if (id === 'custom') return 'Describe it in your own words below.';
-  const example = PUSHBACK_EXAMPLES[id] ?? '';
-  return species === 'cat' ? example.replace(/\bdog\b/g, 'cat') : example;
+  // The same word map the prompts use, so the tile never disagrees with
+  // what the AI owner will actually say ("Dog", "puppy", …).
+  return adaptPetWords(PUSHBACK_EXAMPLES[id] ?? '', species);
 }
 
 const NOTES_PLACEHOLDER: Record<string, string> = {

@@ -99,8 +99,9 @@ const OVERRIDE_COLUMNS_BASE =
   'scenario_id, visible, sort_order, title_override, context_override, opening_line_override, difficulty_override, persona_override, prompt_prefix, prompt_suffix, card_title_override, card_subtitle_override, info_modal_title, info_modal_body, start_button_label, card_driver_override, breed, life_stage, pushback_id, pushback_notes, suggested_driver, weight_kg';
 const OVERRIDE_COLUMNS_FULL = `${OVERRIDE_COLUMNS_BASE}, focus_area, knowledge_slugs`;
 /**
- * Scenario Studio's `species` (dog | cat) rides a DEFERRED migration
- * (20260925000000_scenario_species.sql). It is tried first and dropped on
+ * Scenario Studio's `species` (dog | cat) column arrived with migration
+ * 20260925000000_scenario_species.sql (applied to production 2026-09-27; a
+ * project that has not run it must still boot). It is tried first and dropped on
  * failure WITHOUT losing focus_area/knowledge_slugs — folding it into FULL
  * would have sent a pre-migration deploy all the way down to BASE.
  */
@@ -178,9 +179,55 @@ async function loadSnapshot(): Promise<{
   return {
     flags: (flagsRes.data ?? []) as FlagRow[],
     rules: (rulesRes.data ?? []) as RuleRow[],
-    overrides: (overrideRows ?? []) as unknown as OverrideRow[],
-    simulationConfig: (simCfgRes.data?.config ?? null) as Record<string, unknown> | null,
+    overrides: publicOverrideRows((overrideRows ?? []) as unknown as OverrideRow[]),
+    simulationConfig: publicSimulationConfig(
+      (simCfgRes.data?.config ?? null) as Record<string, unknown> | null,
+    ),
   };
+}
+
+/**
+ * What an ANONYMOUS caller may see of the override rows. This endpoint is
+ * public (`cache-control: public`), so it must publish only what the trainee
+ * app actually renders:
+ *   • `prompt_prefix` / `prompt_suffix` are the admin's AI notes — often the
+ *     answer key ("only yield once a recheck date is offered"). The server
+ *     loads them by `_overrideId` when it builds the prompt; the browser
+ *     never needs them (outside preview, where they arrive by postMessage).
+ *   • A hidden row (`visible: false`) is the Studio's "not published" state.
+ *     The app needs to know the scenario is hidden — nothing else about it.
+ */
+export function publicOverrideRows(rows: OverrideRow[]): OverrideRow[] {
+  return rows.map((row) => {
+    if (row.visible === false) {
+      return {
+        scenario_id: row.scenario_id,
+        visible: false,
+        sort_order: row.sort_order ?? null,
+      } as OverrideRow;
+    }
+    return { ...row, prompt_prefix: null, prompt_suffix: null };
+  });
+}
+
+/**
+ * The simulation config minus the prompt tuning. The consumer reads `rag`
+ * and the scoring dimension labels / weights from it; the global customer
+ * and scorer prefix / suffix are applied server-side and are AI-tuning text
+ * that `admin-scenario-inspect` deliberately withholds from roles without
+ * `simulation.read` — publishing it here would make that gate pointless.
+ */
+export function publicSimulationConfig(
+  config: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!config) return config;
+  const { customerPromptPrefix: _cp, customerPromptSuffix: _cs, ...rest } = config;
+  const scoring = rest.scoring;
+  if (scoring && typeof scoring === 'object' && !Array.isArray(scoring)) {
+    const { promptPrefix: _sp, promptSuffix: _ss, ...scoringRest } = scoring as Record<string, unknown>;
+    return { ...rest, scoring: scoringRest };
+  }
+  return rest;
 }
 
 /**
