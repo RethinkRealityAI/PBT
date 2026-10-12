@@ -150,15 +150,12 @@ function expectedSchemaFromMigrations() {
  * failure. Remove the entry once its migration is applied everywhere — from
  * then on the column is checked like any other.
  */
-const OBJECTIONS_MIGRATION = '20261012000000_scenario_objections.sql';
 const DEFERRED_COLUMNS = new Map([
   // `scenario_overrides.species` sat here from 2026-09-25 until its migration
-  // was applied to production on 2026-09-27. Add an entry only for a
-  // migration that is written but deliberately not yet run.
-  // Written 2026-10-12, not yet applied: the trainee save retries without
-  // `species`, and the Studio save retries without `copied_from`.
-  ['user_scenarios.species', OBJECTIONS_MIGRATION],
-  ['scenario_overrides.copied_from', OBJECTIONS_MIGRATION],
+  // was applied to production on 2026-09-27, and `user_scenarios.species` /
+  // `scenario_overrides.copied_from` from 2026-10-12 until
+  // 20261012000000_scenario_objections.sql was applied the same day. Add an
+  // entry only for a migration that is written but deliberately not yet run.
 ]);
 
 /**
@@ -168,8 +165,8 @@ const DEFERRED_COLUMNS = new Map([
  * answers a plain "run the migration" 503). Remove once applied.
  */
 const DEFERRED_RELATIONS = new Map([
-  ['scenario_objections', OBJECTIONS_MIGRATION],
-  ['scenario_objection_categories', OBJECTIONS_MIGRATION],
+  // `scenario_objections` and `scenario_objection_categories` sat here until
+  // 20261012000000_scenario_objections.sql was applied (2026-10-12).
 ]);
 
 const base = URL_ENV.replace(/\/$/, '');

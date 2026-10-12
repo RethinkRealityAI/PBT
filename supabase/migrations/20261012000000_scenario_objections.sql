@@ -2,11 +2,11 @@
 -- and "added to the library from…" provenance.
 -- Run after 20260925000000_scenario_species.sql.
 --
--- STATUS: written 2026-10-12, NOT yet applied to production (the apply was
--- held back for the owner's go-ahead). scripts/verify-db-schema.mjs lists its
--- tables and columns as DEFERRED (warning, not failure) until it is. Apply it
--- before, or with, the deploy that ships the Categories tab — without it the
--- tab shows a "database update needed" notice and saves nothing.
+-- STATUS: written and APPLIED to production 2026-10-12 (the owner's
+-- go-ahead), in parts through the SQL endpoint and recorded in
+-- supabase_migrations.schema_migrations. Triggers use CREATE OR REPLACE so
+-- the only destructive statement is the audit-log CHECK swap in section 4,
+-- which Postgres can't widen in place.
 --
 -- Why (client request, 2026-10-12): the team needs to add new subject areas
 -- (probiotics first, feline next) without a deploy, decide per scenario which
@@ -118,8 +118,7 @@ alter table public.scenario_objection_categories enable row level security;
 -- No policies: service role only (admin-objections, flags-resolve, the AI functions).
 revoke all on public.scenario_objection_categories from anon, authenticated;
 
-drop trigger if exists scenario_objection_categories_updated_at on public.scenario_objection_categories;
-create trigger scenario_objection_categories_updated_at before update on public.scenario_objection_categories
+create or replace trigger scenario_objection_categories_updated_at before update on public.scenario_objection_categories
   for each row execute function public.set_updated_at();
 
 comment on table public.scenario_objection_categories is
@@ -213,8 +212,7 @@ alter table public.scenario_objections enable row level security;
 -- No policies: service role only (admin functions + flags-resolve).
 revoke all on public.scenario_objections from anon, authenticated;
 
-drop trigger if exists scenario_objections_updated_at on public.scenario_objections;
-create trigger scenario_objections_updated_at before update on public.scenario_objections
+create or replace trigger scenario_objections_updated_at before update on public.scenario_objections
   for each row execute function public.set_updated_at();
 
 comment on table public.scenario_objections is

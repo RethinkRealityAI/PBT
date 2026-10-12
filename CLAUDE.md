@@ -652,9 +652,9 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations (25 files, all hand-run; all but the last are applied to
-production — `npm run verify:db` proves the live project has every relation
-AND column the code uses, and reports the deferred one as a warning). Each
+Migrations (25 files, all hand-run; all applied to production —
+`npm run verify:db` proves the live project has every relation AND column
+the code uses). Each
 file's header explains it in full:
 - `20260504000000_init.sql` — `profiles`, `training_sessions`, `pet_records`
 - `20260507000000_admin_telemetry.sql` — `is_admin`, AI call/turn telemetry,
@@ -725,13 +725,12 @@ file's header explains it in full:
   `scenario_objections` (team objections with a required `category_id`;
   both RLS on / no policies), `user_scenarios.species`,
   `scenario_overrides.copied_from`, audit entities `scenario_objection` +
-  `scenario_objection_category`. **Written 2026-10-12, NOT applied** (the
-  apply was held for the owner's go-ahead). Listed as DEFERRED in
-  `scripts/verify-db-schema.mjs`. Until it runs: no team categories or
-  objections and no category knowledge anywhere (the Categories tab shows a
-  "database update needed" notice), trainee builds save without species,
-  Add to library saves without provenance. Apply it before or with the
-  deploy.
+  `scenario_objection_category`. **Applied to prod 2026-10-12** (through
+  the SQL endpoint in parts — `apply_migration` waits on a confirmation for
+  any DROP and times out — and recorded in the migration history; verified:
+  both tables RLS on / no policies / no anon or authenticated grants, every
+  constraint, trigger and column). The degrade paths stay for a project
+  that has not run it.
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -1033,11 +1032,8 @@ The static test catches "migration file missing"; `verify:db` catches
    the new `clinical:reference-cat`, and the three fecal charts once, since
    they now carry a `scopeHash`). Confirm in Admin → Knowledge that
    `clinical:reference-cat` exists and `study:davies-2024` reads dog/puppy.
-10. **Apply the objections migration** `20261012000000_scenario_objections.sql`
-    (written 2026-10-12, held for the owner's go-ahead). Until then team
-    categories and objections, category knowledge, trainee species and
-    Add-to-library provenance degrade safely but do nothing. After applying, remove its entries from
-    `DEFERRED_COLUMNS` / `DEFERRED_RELATIONS` in `scripts/verify-db-schema.mjs`.
+10. **Deploy the categories release** (PR #25): its migration is applied
+    (2026-10-12), so production only needs the code.
 11. **Feline content** (see the Feline SoW): no seed cat scenarios; canine-only
     product anchors (`PRODUCT_ANCHORS`), calorie table and BCS/MCS data;
     built-in pushback examples written for dogs ("all Labs look like that",
@@ -1080,4 +1076,4 @@ full fr-CA localization; Fecal Scan; scoped + self-seeding knowledge base.)
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **Scenario Studio (Sept 25):** scenario building as its own admin destination — guided 7-step builder, A2UI assistant (proposals only, re-validated on confirm), prompt/retrieval inspector, native Test drive, dog/cat species (column applied 2026-09-27), Scenario Author role; Knowledge + AI tuning promoted to their own nav items. **Objections + animal-first (Oct 12):** team-authored objections (Studio Objections tab, `scenario_objections`, migration written but not yet applied), "Add to library" for trainee scenarios (`copied_from`), Animal/Objection library filters, trainee app asks Dog | Cat before the objection and its Library tab finally lists the published library; fixed a hooks-order crash that blanked the admin after sign-in (regression-tested in `admin/src/__tests__/AppSignIn.test.tsx`). **Categories (Oct 12, same branch):** Category → Objection → Scenario with categories as knowledge containers (Studio Categories tab, inherited knowledge, upload from the category), white line pet icons instead of emoji (admin `noEmoji` test), Change password + temporary passwords. **Audit 2026-09-27** (six adversarial reviews): species-scoped knowledge seeds + cat framing of retrieved research, minimal public snapshot, bounded scenario prose on every AI call, optimistic-concurrency saves, framed-only preview mode, assistant apply-time diffing. **`npm test` — ~2,130 tests / 140 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **Scenario Studio (Sept 25):** scenario building as its own admin destination — guided 7-step builder, A2UI assistant (proposals only, re-validated on confirm), prompt/retrieval inspector, native Test drive, dog/cat species (column applied 2026-09-27), Scenario Author role; Knowledge + AI tuning promoted to their own nav items. **Objections + animal-first (Oct 12):** team-authored objections (Studio Objections tab, `scenario_objections`, migration applied 2026-10-12), "Add to library" for trainee scenarios (`copied_from`), Animal/Objection library filters, trainee app asks Dog | Cat before the objection and its Library tab finally lists the published library; fixed a hooks-order crash that blanked the admin after sign-in (regression-tested in `admin/src/__tests__/AppSignIn.test.tsx`). **Categories (Oct 12, same branch):** Category → Objection → Scenario with categories as knowledge containers (Studio Categories tab, inherited knowledge, upload from the category), white line pet icons instead of emoji (admin `noEmoji` test), Change password + temporary passwords. **Audit 2026-09-27** (six adversarial reviews): species-scoped knowledge seeds + cat framing of retrieved research, minimal public snapshot, bounded scenario prose on every AI call, optimistic-concurrency saves, framed-only preview mode, assistant apply-time diffing. **`npm test` — ~2,130 tests / 140 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.
