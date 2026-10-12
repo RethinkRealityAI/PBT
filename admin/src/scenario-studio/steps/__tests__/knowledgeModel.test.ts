@@ -242,13 +242,31 @@ describe('readKnowledgeSource', () => {
         knowledgeSource: 'category',
         knowledgeCategory: { id: 'weight', name: 'Obesity & weight loss', focusArea: null, knowledgeSlugs: ['a'] },
       }),
-    ).toEqual({ source: 'category', categoryId: 'weight', categoryName: 'Obesity & weight loss', categoryHasKnowledge: true });
+    ).toEqual({
+      source: 'category',
+      categoryId: 'weight',
+      categoryName: 'Obesity & weight loss',
+      categoryHasKnowledge: true,
+      categoryDocCount: 1,
+    });
     expect(readKnowledgeSource({ knowledgeSource: 'library', knowledgeCategory: null })).toEqual({
       source: 'library',
       categoryId: null,
       categoryName: null,
       categoryHasKnowledge: false,
+      categoryDocCount: 0,
     });
+  });
+
+  it('an inheriting scenario’s search reads “only the N attached” of its category, not “whole library”', () => {
+    const src = readKnowledgeSource({
+      knowledgeSource: 'category',
+      knowledgeCategory: { id: 'category:dental', name: 'Dental', focusArea: null, knowledgeSlugs: ['custom:a'] },
+    })!;
+    // The applied filter never lists doc slugs (they ride a separate RPC argument).
+    expect(scopeSentence({ tools: ['roleplay'], species: ['cat'] }, 'documents', src.categoryDocCount)).toBe(
+      'Searching: roleplay documents · cats · only the 1 attached',
+    );
   });
 
   it('is null when an older server didn’t say', () => {

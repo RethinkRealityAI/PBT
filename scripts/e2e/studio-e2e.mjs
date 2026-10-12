@@ -284,6 +284,8 @@ async function buildAnimal(page, a) {
   report.data[`${label}PreviewPassages`] = previewText.slice(0, 2000);
   check(`[${label}] Knowledge preview retrieves the ${a.marker} document`, previewText.includes(a.marker), firstLine(previewText));
   check(`[${label}] Knowledge preview never shows the other animal's ${other.marker} document`, !previewText.includes(other.marker));
+  const scope = await main(page).getByText(/^Searching:/).first().innerText().catch(() => '');
+  check(`[${label}] the preview says the search is limited to the category's document`, /only the 1 attached/.test(scope), scope);
   await shot(page, `${label}-step-knowledge-preview`, { fullPage: true });
   await continueTo(page, 'AI brief');
 
@@ -340,7 +342,12 @@ async function buildAnimal(page, a) {
   check(`[${label}] Test drive: the AI owner answered every trainee turn`, ownerTurns >= a.trainee.length, `${ownerTurns} owner turns`);
   check(`[${label}] Test drive: the conversation was scored`, Boolean(scoreName), scoreName ?? 'no score (Retry scoring shown?)');
   report.data[`${label}OwnerCitedMarker`] = transcript.includes(a.marker) || /37%|2\.5/.test(transcript);
-  const skills = await main(page).getByRole('meter').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') || e.textContent || '').filter(Boolean)).catch(() => []);
+  const skills = await main(page)
+    .getByRole('meter')
+    .evaluateAll((els) =>
+      els.map((e) => `${e.getAttribute('aria-label') || e.textContent || ''}: ${e.getAttribute('aria-valuenow') ?? '?'}`),
+    )
+    .catch(() => []);
   appendTranscript(a, transcript, scoreName, skills);
   await shot(page, `${label}-test-drive-scored`, { fullPage: true });
 
@@ -440,6 +447,7 @@ async function probe(page) {
     const warn = dlg.getByText('Not every scenario here can read these');
     const shown = await warn.waitFor({ timeout: 20_000 }).then(() => true).catch(() => false);
     check('probe: the category editor warns that the cat document can’t reach dog scenarios', shown);
+    if (shown) await warn.scrollIntoViewIfNeeded().catch(() => {});
     await shot(page, 'probe-category-warning');
     await dlg.getByRole('button', { name: 'Cancel' }).click();
     const discard = page.getByRole('button', { name: 'Discard changes' });
@@ -457,6 +465,18 @@ async function probe(page) {
 await signInApi();
 const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-proxy-server'] });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+// Netlify's deploy-preview toolbar ("Collaborate on this Deploy Preview") is
+// a fixed bar at max z-index over the bottom of every PREVIEW page — it
+// intercepts clicks near the bottom of the viewport. Production has none.
+await context.addInitScript(() => {
+  const hide = () => {
+    const s = document.createElement('style');
+    s.textContent = '[data-netlify-deploy-id]{display:none!important}';
+    document.head?.appendChild(s);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hide);
+  else hide();
+});
 const page = await context.newPage();
 const pageErrors = [];
 page.on('pageerror', (e) => pageErrors.push(e.message));

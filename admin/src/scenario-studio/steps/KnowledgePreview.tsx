@@ -40,8 +40,14 @@ export function KnowledgePreview({
   const localMissing = missingScenarioFields(draft, objections);
   const data = inspect.data;
   const loading = inspect.status === 'loading';
-  const attached = draft.knowledge_slugs?.length ?? 0;
   const source = data ? readKnowledgeSource(data) : null;
+  // What the search was limited to: the scenario's own documents, or — when
+  // it inherits — its category's (the applied filter never lists doc slugs;
+  // they ride a separate argument). Inherited documents that matched nothing
+  // widen to the library, as a real session does.
+  const attached =
+    source?.source === 'category' ? source.categoryDocCount : (draft.knowledge_slugs?.length ?? 0);
+  const relaxed = Boolean(data?.knowledge.docsRelaxed);
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -109,7 +115,11 @@ export function KnowledgePreview({
                   lineHeight: 1.45,
                 }}
               >
-                {scopeSentence(data.knowledge.appliedFilter, data.knowledge.mode ?? knowledgeModeOf(draft), attached)}
+                {scopeSentence(
+                  data.knowledge.appliedFilter,
+                  relaxed ? 'library' : (data.knowledge.mode ?? knowledgeModeOf(draft)),
+                  attached,
+                )}
               </div>
               {!data.knowledge.enabled && (
                 <InlineAlert tone="info" title="Research grounding is switched off">

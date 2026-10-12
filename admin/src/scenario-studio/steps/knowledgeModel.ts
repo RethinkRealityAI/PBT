@@ -397,6 +397,8 @@ export function readKnowledgeSource(res: unknown): {
   categoryName: string | null;
   /** The category has documents or a topic attached (it would be read without an override). */
   categoryHasKnowledge: boolean;
+  /** How many documents the category attaches (what an inheriting scenario searches). */
+  categoryDocCount: number;
 } | null {
   if (!res || typeof res !== 'object') return null;
   const r = res as Record<string, unknown>;
@@ -413,6 +415,7 @@ export function readKnowledgeSource(res: unknown): {
     categoryId: str(cat?.id),
     categoryName: str(cat?.name),
     categoryHasKnowledge: slugs > 0 || Boolean(str(cat?.focusArea)),
+    categoryDocCount: slugs,
   };
 }
 
