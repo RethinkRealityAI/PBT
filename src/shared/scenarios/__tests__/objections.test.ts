@@ -24,7 +24,7 @@ const probiotics = (over: Partial<TeamObjection> = {}): TeamObjection => ({
   titleFr: null,
   exampleFr: null,
   species: ['dog', 'cat'],
-  focusArea: 'gi',
+  categoryId: 'category:probiotics',
   coaching: { rootConcerns: ['Thinks supplements are an upsell'] },
   visible: true,
   sortOrder: null,
@@ -78,7 +78,7 @@ describe('rowToTeamObjection', () => {
       title_fr: 'Probiotiques',
       example_fr: '',
       species: ['cat', 'dog', 'horse'],
-      focus_area: 'gi',
+      category_id: 'category:probiotics',
       coaching: { rootConcerns: ['a', 'a', ' ', 'b'], bogus: ['x'] },
       visible: false,
       sort_order: 3.6,
@@ -91,7 +91,7 @@ describe('rowToTeamObjection', () => {
       titleFr: 'Probiotiques',
       exampleFr: null,
       species: ['dog', 'cat'],
-      focusArea: 'gi',
+      categoryId: 'category:probiotics',
       coaching: { rootConcerns: ['a', 'b'] },
       visible: false,
       sortOrder: 4,
@@ -103,8 +103,11 @@ describe('rowToTeamObjection', () => {
     expect(rowToTeamObjection(null)).toBeNull();
     expect(rowToTeamObjection({ id: 'cost', title: 'x', species: ['dog'] })).toBeNull();
     expect(rowToTeamObjection({ id: 'team:x1', title: ' ', species: ['dog'] })).toBeNull();
-    expect(rowToTeamObjection({ id: 'team:x1', title: 'X', species: [] })).toBeNull();
-    expect(rowToTeamObjection({ id: 'team:x1', title: 'X', species: ['dog'], focus_area: 'nope' })?.focusArea).toBeNull();
+    expect(rowToTeamObjection({ id: 'team:x1', title: 'X', species: [], category_id: 'weight' })).toBeNull();
+    // Every team objection belongs to a category (built-in or team-shaped id).
+    expect(rowToTeamObjection({ id: 'team:x1', title: 'X', species: ['dog'] })).toBeNull();
+    expect(rowToTeamObjection({ id: 'team:x1', title: 'X', species: ['dog'], category_id: 'nope' })).toBeNull();
+    expect(rowToTeamObjection({ id: 'team:x1', title: 'X', species: ['dog'], category_id: 'weight' })?.categoryId).toBe('weight');
   });
 
   it('round-trips the camelCase snapshot shape', () => {
@@ -119,7 +122,7 @@ describe('validateObjectionInput', () => {
     title: 'Probiotics',
     example: 'Yogurt is enough',
     species: ['dog'],
-    focusArea: 'gi',
+    categoryId: 'category:probiotics',
     coaching: {},
     ...over,
   });
@@ -145,7 +148,8 @@ describe('validateObjectionInput', () => {
     expect(err({ example: '' })).toMatch(/owner would typically say/);
     expect(err({ species: [] })).toMatch(/animals/);
     expect(err({ species: ['dog', 'horse'] })).toMatch(/animals/);
-    expect(err({ focusArea: 'probiotics' })).toMatch(/topic/);
+    expect(err({ categoryId: undefined })).toMatch(/category/);
+    expect(err({ categoryId: 'Probiotics' })).toMatch(/category/);
     expect(err({ titleFr: 5 })).toMatch(/text/);
     expect(err({ visible: 'yes' })).toMatch(/visible/);
     expect(validateObjectionInput(null).ok).toBe(false);
@@ -156,7 +160,7 @@ describe('validateObjectionInput', () => {
     expect(r.ok && teamObjectionToRow(r.value)).toMatchObject({
       id: 'team:probiotics',
       title_fr: 'Probiotiques',
-      focus_area: 'gi',
+      category_id: 'category:probiotics',
       species: ['dog'],
     });
   });

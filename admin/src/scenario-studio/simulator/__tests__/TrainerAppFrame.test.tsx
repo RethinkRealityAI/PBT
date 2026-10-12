@@ -86,7 +86,7 @@ describe('TrainerAppFrame', () => {
       titleFr: null,
       exampleFr: null,
       species: ['cat'],
-      focusArea: null,
+      categoryId: 'everyday-nutrition',
       coaching: {},
       visible: true,
       sortOrder: null,

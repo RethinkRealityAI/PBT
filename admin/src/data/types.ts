@@ -28,7 +28,14 @@ export type UserAction =
       displayName?: string;
       roleKey?: string | null;
     }
-  | { op: 'delete'; userId: string };
+  | { op: 'delete'; userId: string }
+  /**
+   * A temporary password (12–72 characters). Needs `team.manage`; never your
+   * own account; an owner's only by an owner. The server flags the account
+   * (`user_metadata.must_change_password`) so they choose their own at
+   * next sign-in.
+   */
+  | { op: 'set_password'; userId: string; password: string };
 
 export interface AdminSession {
   id: string;

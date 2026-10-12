@@ -99,7 +99,7 @@ export const PUSHBACK_LABELS: Record<string, string> = {
 
 /**
  * A pushback id as a person reads it — built-in or team-authored. Team
- * objections (`team:<slug>`, authored on the Studio's Objections tab) are
+ * objections (`team:<slug>`, authored on the Studio's Categories tab) are
  * named by their own title when `team` holds them; otherwise by their slug in
  * words, so a raw `team:` id never reaches the screen.
  */

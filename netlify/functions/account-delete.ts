@@ -33,8 +33,10 @@
  * trail of admin actions must survive the actor, and it is anonymised by the
  * FK. Same for the `updated_by` columns on shared/global content
  * (scenario_overrides, simulation_config, knowledge_documents) and for
- * `scenario_objections.created_by` / `updated_by` (team-authored objections
- * are shared content every scenario built on them depends on).
+ * `scenario_objections.created_by` / `updated_by` and
+ * `scenario_objection_categories.created_by` / `updated_by` (team-authored
+ * objections and their categories are shared content every scenario built
+ * on them depends on — the FKs set null).
  */
 import { errorResponse, jsonResponse, requireUser, type AdminCtx } from './_shared/admin';
 

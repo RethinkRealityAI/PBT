@@ -17,7 +17,10 @@ import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import { ScenarioHints } from '../features/scenarios/ScenarioHints';
 import { useResolvedLibraryScenarios } from '../data/useResolvedScenarios';
 import { useTrainingSpecies } from '../features/scenarios/useTrainingSpecies';
-import { Segmented } from '../design-system/Segmented';
+import { Segmented, type SegmentedOption } from '../design-system/Segmented';
+import { SpeciesIcon } from '../design-system/SpeciesIcon';
+import { useObjectionCatalog } from '../features/scenarios/useObjectionCatalog';
+import { objectionCategoryId } from '../shared/scenarios/objectionCategories';
 import { speciesOf, type ScenarioSpecies } from '../shared/scenarios/species';
 import { useFlag, useFlagValue, useFlags, useSimulationConfig, IfFlag } from '../app/providers/FlagProvider';
 import { resolveDimensions, resolveWeights } from '../data/knowledge/simulationConfig';
@@ -346,6 +349,8 @@ export function HomeScreen() {
   const dark = resolvedTheme === 'dark';
   const resolvedLibrary = useResolvedLibraryScenarios();
   const [trainSpecies, setTrainSpecies] = useTrainingSpecies();
+  // Today's pick names its category (the subject area) above the title.
+  const { teamObjections, categoryById } = useObjectionCatalog();
   const headlineOverride = useFlagValue<string>('field.home.headline', '');
   const showActCard = useFlag('component.home.act_guide_card', true);
   const showLibraryCard = useFlag('component.home.library_card', true);
@@ -438,9 +443,11 @@ export function HomeScreen() {
       age: localizedLifeStage(todaysPick.age, locale, todaysPick.species),
       driver: todaysPick.suggestedDriver,
     });
-  const speciesOptions: { value: ScenarioSpecies; label: string }[] = [
-    { value: 'dog', label: t('create.animal.dog') },
-    { value: 'cat', label: t('create.animal.cat') },
+  const pickCategory =
+    categoryById(objectionCategoryId(todaysPick.pushback.id, teamObjections))?.label ?? null;
+  const speciesOptions: SegmentedOption<ScenarioSpecies>[] = [
+    { value: 'dog', label: t('create.animal.dog'), icon: <SpeciesIcon species="dog" size={14} /> },
+    { value: 'cat', label: t('create.animal.cat'), icon: <SpeciesIcon species="cat" size={14} /> },
   ];
   const changePickSpecies = (next: ScenarioSpecies) => {
     if (next === trainSpecies) return;
@@ -915,6 +922,25 @@ export function HomeScreen() {
                 </div>
               </div>
 
+              {pickCategory && (
+                <div
+                  style={{
+                    margin: '0 0 4px',
+                    paddingRight: 108,
+                    fontFamily: 'var(--pbt-font-mono)',
+                    fontSize: 9,
+                    fontWeight: 600,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color: 'var(--pbt-text-muted)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {pickCategory}
+                </div>
+              )}
               <h2
                 style={{
                   margin: '0 0 6px',

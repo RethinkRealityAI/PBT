@@ -9,7 +9,7 @@
  *
  *   Monitor   Overview · Analytics [insights|traffic|quality] · Activity [sessions|analyzer]
  *   People    People   [users|members|roles|invites]
- *   Content   Scenario Studio [studio|objections|trainee] · Knowledge · AI tuning · Feedback [sessions|reports]
+ *   Content   Scenario Studio [studio|categories|trainee] · Knowledge · AI tuning · Feedback [sessions|reports]
  *   Platform  Email    [templates|settings|log] · Flags · Audit · Preview
  *
  * Content used to be a single "Library" destination with four unrelated jobs
@@ -124,9 +124,11 @@ export const NAV_SECTIONS: NavSection[] = [
         requires: 'scenarios.read',
         tabs: [
           { key: 'studio', label: 'Studio', requires: 'scenarios.read' },
-          // The pushbacks scenarios are built on — the team adds its own
-          // (a new subject such as probiotics) without a deploy.
-          { key: 'objections', label: 'Objections', requires: 'scenarios.read' },
+          // The subjects training is organised by (Probiotics, GI, …): the
+          // objections inside each and the knowledge its scenarios read. The
+          // team adds its own without a deploy. Was `objections` — old links
+          // are rewritten by `legacyRoute()`.
+          { key: 'categories', label: 'Categories', requires: 'scenarios.read' },
           { key: 'trainee', label: 'Trainee-built', requires: 'scenarios.read' },
         ],
       },
@@ -204,12 +206,16 @@ export function defaultTab(item: NavItem, permissions: readonly string[]): strin
 /**
  * Where an old `#/library/…` link lives now. The Library destination was split
  * into Scenario Studio, Knowledge and AI tuning; bookmarks, shared links and
- * links in old emails must keep landing on the same screen.
+ * links in old emails must keep landing on the same screen. Likewise the
+ * Studio's old `#/scenarios/objections` tab, now `#/scenarios/categories`.
  *
  * Any route that isn't a Library one comes back as the SAME object, so a
  * caller can test `legacyRoute(r) !== r` to decide whether to rewrite the URL.
  */
 export function legacyRoute(route: AdminRoute): AdminRoute {
+  // The Studio's "Objections" tab became "Categories" (objections now live
+  // inside their category on the same screen).
+  if (route.screen === 'scenarios' && route.tab === 'objections') return { screen: 'scenarios', tab: 'categories' };
   if (route.screen !== 'library') return route;
   switch (route.tab) {
     case 'scenarios':

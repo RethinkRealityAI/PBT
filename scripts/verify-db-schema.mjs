@@ -167,7 +167,10 @@ const DEFERRED_COLUMNS = new Map([
  * "none" (flags-resolve serves built-in objections only; admin-objections
  * answers a plain "run the migration" 503). Remove once applied.
  */
-const DEFERRED_RELATIONS = new Map([['scenario_objections', OBJECTIONS_MIGRATION]]);
+const DEFERRED_RELATIONS = new Map([
+  ['scenario_objections', OBJECTIONS_MIGRATION],
+  ['scenario_objection_categories', OBJECTIONS_MIGRATION],
+]);
 
 const base = URL_ENV.replace(/\/$/, '');
 const headers = { apikey: KEY_ENV, Authorization: `Bearer ${KEY_ENV}` };

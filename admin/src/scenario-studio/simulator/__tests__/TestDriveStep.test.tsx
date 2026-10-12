@@ -52,7 +52,9 @@ describe('TestDriveStep', () => {
   it('summarises what is being tested in plain words (species-aware)', () => {
     const rows = summariseDraft(DRAFT);
     const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
-    expect(byLabel.Pet).toBe('🐈 Maine Coon · Kitten (<1) · 3.2 kg');
+    // The animal is an icon beside the text now, never an emoji inside it.
+    expect(byLabel.Pet).toBe('Maine Coon · Kitten (<1) · 3.2 kg');
+    expect(rows.find((r) => r.label === 'Pet')!.species).toBe('cat');
     expect(byLabel.Pushback).toBe('Weight / obesity denial — “She’s just fluffy, not fat.”');
     expect(byLabel.Owner).toBe('Harmonizer · Devoted · difficulty 3 of 4 (Hostile)');
     expect(byLabel['Opening line']).toBe('The AI writes its own');

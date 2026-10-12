@@ -1,6 +1,7 @@
 /**
- * Team-authored objections (`scenario_objections`, migration
- * 20261012000000_scenario_objections.sql) — the server's one way to READ them
+ * Team-authored objections (`scenario_objections`) and objection categories
+ * (`scenario_objection_categories`), both from migration
+ * 20261012000000_scenario_objections.sql — the server's one way to READ them
  * and to recognise "that migration has not been applied yet".
  *
  * Writes live in `admin-objections` only. Readers:
@@ -9,11 +10,16 @@
  *   • _shared/ai.ts       — merges their coaching into the simulation config
  *                           the AI functions build prompts from;
  *   • admin-scenario-*    — the Studio assistant, inspector and save path.
+ * Categories (`readCategories`) have the same readers: the snapshot publishes
+ * the stored rows, and every server-side retrieval reads a category's
+ * knowledge for a scenario that picked none of its own.
  *
  * Until the migration runs every reader degrades to "no team objections"
- * (built-ins only) — never a failed request. `isMissingObjectionsTable` is
- * the test for that state; any OTHER database error is reported as such so a
- * real fault is never mistaken for "not migrated yet".
+ * (built-ins only) and "no stored categories" (the built-in ones, with no
+ * knowledge attached) — never a failed request. `isMissingObjectionsTable` /
+ * `isMissingCategoriesTable` are the tests for that state; any OTHER database
+ * error is reported as such so a real fault is never mistaken for "not
+ * migrated yet".
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -21,12 +27,17 @@ import {
   sortTeamObjections,
   type TeamObjection,
 } from '../../../src/shared/scenarios/objections';
+import {
+  rowToCategory,
+  sortCategories,
+  type ObjectionCategory,
+} from '../../../src/shared/scenarios/objectionCategories';
 
 export const OBJECTIONS_MIGRATION = '20261012000000_scenario_objections.sql';
 
 /** What the app needs to resolve and play an objection (no authorship columns). */
 export const OBJECTION_READ_COLUMNS =
-  'id, title, example, title_fr, example_fr, species, focus_area, coaching, visible, sort_order, updated_at';
+  'id, title, example, title_fr, example_fr, species, category_id, coaching, visible, sort_order, updated_at';
 
 /** The admin list adds the lifecycle columns. */
 export const OBJECTION_ADMIN_COLUMNS = `${OBJECTION_READ_COLUMNS}, created_at, deleted_at`;
@@ -50,6 +61,22 @@ export function isMissingObjectionsTable(error: unknown): boolean {
   const e = codeAndMessage(error);
   if (!e || (e.code !== 'PGRST205' && e.code !== '42P01')) return false;
   return /\bscenario_objections\b/i.test(e.message);
+}
+
+/**
+ * True when the error says `scenario_objection_categories` does not exist
+ * yet — same codes as `isMissingObjectionsTable`, and it must NAME this
+ * table (the two names differ, so neither test matches the other's table).
+ */
+export function isMissingCategoriesTable(error: unknown): boolean {
+  const e = codeAndMessage(error);
+  if (!e || (e.code !== 'PGRST205' && e.code !== '42P01')) return false;
+  return /\bscenario_objection_categories\b/i.test(e.message);
+}
+
+/** Either table of the objections migration is missing. */
+export function isMissingObjectionsMigration(error: unknown): boolean {
+  return isMissingObjectionsTable(error) || isMissingCategoriesTable(error);
 }
 
 /**
@@ -124,4 +151,57 @@ export async function checkTeamObjection(
   }
   const row = data as { deleted_at?: string | null } | null;
   return row && !row.deleted_at ? 'ok' : 'unknown';
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Categories
+// ─────────────────────────────────────────────────────────────────────────
+
+/** What the app needs of a stored category (no authorship columns). */
+export const CATEGORY_READ_COLUMNS =
+  'id, name, name_fr, description, focus_area, knowledge_slugs, sort_order, updated_at';
+
+/** The admin list adds the lifecycle columns. */
+export const CATEGORY_ADMIN_COLUMNS = `${CATEGORY_READ_COLUMNS}, created_at, deleted_at`;
+
+export interface CategoriesRead {
+  /**
+   * Usable, non-deleted STORED categories, display order: the team's own
+   * plus admin edits of the built-ins. Merge with `mergeCategories` before
+   * use — the built-ins themselves are not rows.
+   */
+  categories: ObjectionCategory[];
+  /** The table does not exist (migration pending). */
+  missing: boolean;
+  /** Any failure, including `missing`; null on success. */
+  error: DbError;
+}
+
+/** Stored rows → usable categories. A malformed row is dropped. */
+export function toCategories(rows: unknown): ObjectionCategory[] {
+  if (!Array.isArray(rows)) return [];
+  const out: ObjectionCategory[] = [];
+  for (const row of rows) {
+    const c = rowToCategory(row);
+    if (c) out.push(c);
+  }
+  return sortCategories(out);
+}
+
+/** Every non-deleted stored category. Never throws. */
+export async function readCategories(sb: SupabaseClient): Promise<CategoriesRead> {
+  try {
+    const { data, error } = await sb
+      .from('scenario_objection_categories')
+      .select(CATEGORY_READ_COLUMNS)
+      .is('deleted_at', null);
+    if (error) return { categories: [], missing: isMissingCategoriesTable(error), error };
+    return { categories: toCategories(data), missing: false, error: null };
+  } catch (err) {
+    return {
+      categories: [],
+      missing: false,
+      error: { message: err instanceof Error ? err.message : String(err) },
+    };
+  }
 }

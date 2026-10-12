@@ -5,9 +5,10 @@
  *
  * The trust boundary these helpers implement is spelled out in
  * `src/shared/ai/contract.ts`. In short:
- *   • the simulation config (with the team's objection coaching merged in)
- *     and admin prompt overrides are loaded HERE from the database — never
- *     read from the request (except preview overrides, which wrap the
+ *   • the simulation config (with the team's objection coaching merged in),
+ *     the objection categories (whose knowledge a scenario without its own
+ *     reads) and admin prompt overrides are loaded HERE from the database —
+ *     never read from the request (except preview overrides, which wrap the
  *     customer turn only);
  *   • the caller is identified from the Supabase JWT when one is sent, and
  *     an INVALID token is a 401 (never silently downgraded to anonymous);
@@ -16,7 +17,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient } from './admin';
-import { readTeamObjections } from './objectionsStore';
+import { readCategories, readTeamObjections } from './objectionsStore';
 import { retrieveChunks } from './retrieval';
 import type { Difficulty, Scenario } from '../../../src/data/scenarios';
 import type { ChatMessage } from '../../../src/services/types';
@@ -31,6 +32,13 @@ import {
   teamObjectionKnowledge,
   type TeamObjection,
 } from '../../../src/shared/scenarios/objections';
+import {
+  categoryKnowledgeFor,
+  effectiveKnowledge,
+  mergeCategories,
+  type KnowledgeSelection,
+  type ObjectionCategory,
+} from '../../../src/shared/scenarios/objectionCategories';
 import type { RetrievedChunk } from '../../../src/services/ragShared';
 import {
   AI_LIMITS,
@@ -310,6 +318,7 @@ export async function parseJsonBody<T>(
 const CONFIG_TTL_MS = 60_000;
 let simCache: { value: SimulationConfig | undefined; expiresAt: number } | null = null;
 let teamCache: { value: TeamObjection[]; expiresAt: number } | null = null;
+let categoriesCache: { value: ObjectionCategory[]; expiresAt: number } | null = null;
 /** Last merge, so an unchanged config + objection list keeps its identity. */
 let mergeMemo: {
   base: SimulationConfig | undefined;
@@ -391,6 +400,47 @@ export async function loadTeamObjections(sb: SupabaseClient): Promise<TeamObject
 
 /** One shared empty list, so "no objections" keeps the merge memo warm. */
 const NO_TEAM_OBJECTIONS: TeamObjection[] = [];
+
+/**
+ * Non-deleted STORED objection categories (the team's own + admin edits of
+ * the built-ins), cached 60 s exactly like `loadTeamObjections`: a missing
+ * table is cached as "none", any other read error serves the last good list
+ * (or none) and is retried on the next call. Never throws.
+ */
+export async function loadStoredCategories(sb: SupabaseClient): Promise<ObjectionCategory[]> {
+  const now = Date.now();
+  if (categoriesCache && categoriesCache.expiresAt > now) return categoriesCache.value;
+  const read = await readCategories(sb);
+  if (read.error && !read.missing) {
+    console.warn('[ai] scenario_objection_categories fetch failed', read.error.message);
+    return categoriesCache?.value ?? [];
+  }
+  categoriesCache = { value: read.categories, expiresAt: now + CONFIG_TTL_MS };
+  return read.categories;
+}
+
+/**
+ * The knowledge the scenario's CATEGORY gives it (`categoryKnowledgeFor`
+ * over the server-loaded team objections and categories), or null when its
+ * objection has no category, the category has no knowledge attached, or
+ * anything failed. ALWAYS server-loaded: a request can neither supply nor
+ * widen it — `sanitizeScenario` keeps no such key, and nothing reads one
+ * from the body. Fail-open: an error is "no category knowledge" (the
+ * scenario retrieves exactly as before categories existed), never a failed
+ * AI call.
+ */
+export async function loadCategoryKnowledge(
+  sb: SupabaseClient,
+  objectionId: string | null | undefined,
+): Promise<KnowledgeSelection | null> {
+  try {
+    const [team, stored] = await Promise.all([loadTeamObjections(sb), loadStoredCategories(sb)]);
+    return categoryKnowledgeFor(objectionId, team, mergeCategories(stored));
+  } catch (err) {
+    console.warn('[ai] category knowledge unavailable', errorMessage(err));
+    return null;
+  }
+}
 
 /**
  * The global admin simulation config as STORED (scoring weights/prompt,
@@ -485,6 +535,7 @@ export async function loadPromptOverrides(
 export function __resetAiCaches(): void {
   simCache = null;
   teamCache = null;
+  categoriesCache = null;
   mergeMemo = null;
   overrideCache.clear();
 }
@@ -497,6 +548,13 @@ export function __resetAiCaches(): void {
  * `src/shared/knowledge/knowledgeScopes.ts`): only documents an admin filed
  * for that tool can come back, on every fallback path. Required rather than
  * defaulted — an unscoped caller would quietly read the whole corpus.
+ *
+ * A scenario that chose no knowledge of its own reads its CATEGORY's
+ * (`loadCategoryKnowledge` — server-loaded, never from the request); one
+ * that chose its own ignores the category entirely (`effectiveKnowledge`),
+ * so the category is not even loaded. Built-in categories carry no
+ * knowledge until an admin attaches some, so every existing scenario
+ * retrieves exactly as before.
  */
 export async function retrieveForScenario(
   sb: SupabaseClient,
@@ -507,9 +565,11 @@ export async function retrieveForScenario(
   try {
     const rag = resolveRag(config);
     if (!rag.enabled) return [];
+    const ownChoice = effectiveKnowledge(scenario, null).source === 'scenario';
+    const categoryKnowledge = ownChoice ? null : await loadCategoryKnowledge(sb, scenario.pushback?.id);
     return await retrieveChunks(scenarioRetrievalQuery(scenario), {
       k: rag.k,
-      filters: { ...scenarioRetrievalFilters(scenario), tool },
+      filters: { ...scenarioRetrievalFilters(scenario, { categoryKnowledge }), tool },
       sb,
     });
   } catch {

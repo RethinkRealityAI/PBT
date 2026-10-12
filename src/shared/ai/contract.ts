@@ -259,11 +259,35 @@ export interface ScenarioInspectResponse {
     globalPrefix: string | null;
     globalSuffix: string | null;
   };
+  /**
+   * Whose knowledge the scenario reads (`effectiveKnowledge`): its OWN
+   * choice (documents or a topic on the Knowledge step), its CATEGORY's
+   * (the scenario chose none and its objection's category has knowledge
+   * attached), or the whole `library`. Optional: absent from an older server.
+   */
+  knowledgeSource?: 'scenario' | 'category' | 'library';
+  /**
+   * The category the draft's objection belongs to (server-loaded, fresh),
+   * whether or not its knowledge is used — so the Studio can say "Using
+   * Probiotics' knowledge" or "Your documents replace Probiotics' knowledge".
+   * Null for "Other pushback", an unknown objection, or a deleted category.
+   */
+  knowledgeCategory?: {
+    id: string;
+    name: string;
+    focusArea: string | null;
+    knowledgeSlugs: string[];
+  } | null;
   knowledge: {
     /** False when research grounding is switched off in AI tuning. */
     enabled: boolean;
     /** Passages retrieved per conversation (config `rag.k`). */
     k: number;
+    /**
+     * What retrieval actually targets — the EFFECTIVE knowledge, so a
+     * scenario reading its category's documents is `documents` (see
+     * `knowledgeSource` for whose they are).
+     */
     mode: 'library' | 'focus' | 'documents';
     /** The retrieval scope actually applied (tool, species, focus, docSlugs). */
     appliedFilter: Record<string, unknown>;

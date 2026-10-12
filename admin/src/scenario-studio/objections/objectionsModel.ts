@@ -29,6 +29,10 @@ import {
 } from '../../../../src/shared/scenarios/objections';
 import { PUSHBACK_LABELS } from '../../../../src/shared/scenarios/enums';
 import {
+  categoriesForSpecies,
+  type ObjectionCategory,
+} from '../../../../src/shared/scenarios/objectionCategories';
+import {
   SCENARIO_SPECIES,
   speciesOf,
   type ScenarioSpecies,
@@ -147,7 +151,8 @@ export interface PushbackOption {
   example: string;
   builtIn: boolean;
   species: ScenarioSpecies[];
-  focusArea: string | null;
+  /** The category it lives in (null only for "Something else"). */
+  categoryId: string | null;
 }
 
 /**
@@ -170,7 +175,7 @@ export function pushbackOptionsFor(
       example: o.example,
       builtIn: true,
       species: [...o.species],
-      focusArea: null,
+      categoryId: o.categoryId,
     }));
   const visible = sortTeamObjections(team).filter((o) => o.visible);
   const fits = visible.filter((o) => objectionAppliesTo(o, animal));
@@ -182,29 +187,54 @@ export function pushbackOptionsFor(
       example: o.example,
       builtIn: false,
       species: [...o.species],
-      focusArea: o.focusArea,
+      categoryId: o.categoryId,
     })),
     hiddenForSpecies: visible.length - fits.length,
   };
 }
 
+/** One category on the Pushback step, with the objections it offers for the animal. */
+export interface CategoryChoice<C extends Pick<ObjectionCategory, 'id' | 'name'> = ObjectionCategory> {
+  category: C;
+  builtIn: PushbackOption[];
+  team: PushbackOption[];
+  /** Active team objections in it left out because they're for the other animal. */
+  hiddenForSpecies: number;
+}
+
 /**
- * Picking an objection: the change to the draft, plus the knowledge topic
- * that was filled in along the way (or null). A team objection that belongs
- * to a topic sets the scenario's topic too — but only while the admin hasn't
- * chosen any knowledge yet, so a choice they made is never overwritten.
+ * The Pushback step's categories for an animal: every category holding at
+ * least one objection on offer for it (`categoriesForSpecies`), plus any id in
+ * `keep` (the draft's own category, one just created) even while it has none —
+ * in category display order, each with its built-in and team options.
  */
-export function pickObjectionPatch(
-  draft: { focus_area?: string | null; knowledge_slugs?: string[] | null },
-  option: Pick<PushbackOption, 'id' | 'focusArea'>,
-): { patch: { pushback_id: string; focus_area?: string }; focusSet: string | null } {
-  const noKnowledgeYet =
-    !(typeof draft.focus_area === 'string' && draft.focus_area.trim() !== '') &&
-    (draft.knowledge_slugs?.length ?? 0) === 0;
-  if (option.focusArea && noKnowledgeYet) {
-    return { patch: { pushback_id: option.id, focus_area: option.focusArea }, focusSet: option.focusArea };
-  }
-  return { patch: { pushback_id: option.id }, focusSet: null };
+export function pushbackChoicesFor<C extends ObjectionCategory>(
+  species: unknown,
+  team: readonly TeamObjection[],
+  categories: readonly C[],
+  keep: ReadonlyArray<string | null | undefined> = [],
+): CategoryChoice<C>[] {
+  const animal = speciesOf(species);
+  const options = pushbackOptionsFor(animal, team);
+  const offered = new Set(
+    categoriesForSpecies(
+      categories,
+      [...options.builtIn, ...options.team].map((o) => ({ categoryId: o.categoryId, species: o.species, visible: true })),
+      animal,
+    ).map((c) => c.id),
+  );
+  for (const id of keep) if (id) offered.add(id);
+  const visibleTeam = team.filter((o) => o.visible);
+  return categories
+    .filter((c) => offered.has(c.id))
+    .map((category) => ({
+      category,
+      builtIn: options.builtIn.filter((o) => o.categoryId === category.id),
+      team: options.team.filter((o) => o.categoryId === category.id),
+      hiddenForSpecies: visibleTeam.filter(
+        (o) => o.categoryId === category.id && !objectionAppliesTo(o, animal),
+      ).length,
+    }));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -217,7 +247,7 @@ export type ObjectionCheck =
   | { state: 'retired'; id: string; title: string; species: ScenarioSpecies[]; fits: boolean }
   /** Set up for the other animal only. */
   | { state: 'wrong-species'; id: string; title: string; species: ScenarioSpecies[] }
-  /** Soft-deleted — restorable from the Objections tab. */
+  /** Soft-deleted — restorable from the Categories tab. */
   | { state: 'deleted'; id: string; title: string }
   /** Nothing by that id (or the table doesn't exist). */
   | { state: 'unknown'; id: string; title: string }
@@ -295,7 +325,8 @@ export interface ObjectionForm {
   titleFr: string;
   exampleFr: string;
   species: ScenarioSpecies[];
-  focusArea: string | null;
+  /** The category it belongs to — required (the category owns the knowledge). */
+  categoryId: string | null;
   /** One coaching line per text line, per list (the editor's textareas). */
   coaching: Record<CoachingKey, string>;
   visible: boolean;
@@ -306,7 +337,10 @@ function emptyCoachingText(): Record<CoachingKey, string> {
   return Object.fromEntries(COACHING_KEYS.map((k) => [k, ''])) as Record<CoachingKey, string>;
 }
 
-export function emptyObjectionForm(species?: readonly ScenarioSpecies[] | null): ObjectionForm {
+export function emptyObjectionForm(
+  species?: readonly ScenarioSpecies[] | null,
+  categoryId: string | null = null,
+): ObjectionForm {
   const animals = species && species.length ? SCENARIO_SPECIES.filter((s) => species.includes(s)) : [...SCENARIO_SPECIES];
   return {
     id: null,
@@ -315,7 +349,7 @@ export function emptyObjectionForm(species?: readonly ScenarioSpecies[] | null):
     titleFr: '',
     exampleFr: '',
     species: animals,
-    focusArea: null,
+    categoryId,
     coaching: emptyCoachingText(),
     visible: true,
     sortOrder: null,
@@ -332,7 +366,7 @@ export function formFromObjection(o: TeamObjection): ObjectionForm {
     titleFr: o.titleFr ?? '',
     exampleFr: o.exampleFr ?? '',
     species: [...o.species],
-    focusArea: o.focusArea,
+    categoryId: o.categoryId,
     coaching,
     visible: o.visible,
     sortOrder: o.sortOrder,
@@ -361,14 +395,21 @@ export function formToWrite(form: ObjectionForm): Record<string, unknown> {
     titleFr: form.titleFr.trim() || null,
     exampleFr: form.exampleFr.trim() || null,
     species: SCENARIO_SPECIES.filter((s) => form.species.includes(s)),
-    focusArea: form.focusArea,
+    categoryId: form.categoryId,
     coaching,
     visible: form.visible,
     sortOrder: form.sortOrder,
   };
 }
 
-export type ObjectionFormField = 'title' | 'example' | 'species' | 'titleFr' | 'exampleFr' | CoachingKey;
+export type ObjectionFormField =
+  | 'title'
+  | 'example'
+  | 'species'
+  | 'categoryId'
+  | 'titleFr'
+  | 'exampleFr'
+  | CoachingKey;
 
 /**
  * Everything wrong with the form, per field, in words — checked before the
@@ -389,6 +430,7 @@ export function objectionFormErrors(
     out.example = `Keep the owner’s line under ${L.exampleMax} characters (now ${example.length}).`;
   }
   if (form.species.length === 0) out.species = 'Choose at least one animal.';
+  if (!form.categoryId) out.categoryId = 'Choose the category this objection belongs to, e.g. Probiotics.';
   if (form.titleFr.trim().length > L.titleMax) out.titleFr = `Keep the French name under ${L.titleMax} characters.`;
   if (form.exampleFr.trim().length > L.exampleMax) {
     out.exampleFr = `Keep the French line under ${L.exampleMax} characters.`;

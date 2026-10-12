@@ -23,7 +23,7 @@ import { FeedbackScreen } from './screens/FeedbackScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { FlagsScreen } from './screens/FlagsScreen';
 import { ScenarioStudioScreen } from './scenario-studio/ScenarioStudioScreen';
-import { ObjectionsScreen } from './scenario-studio/objections/ObjectionsScreen';
+import { CategoriesScreen } from './scenario-studio/objections/CategoriesScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
 import { SimulationScreen } from './screens/SimulationScreen';
@@ -31,6 +31,8 @@ import { KnowledgeScreen } from './screens/KnowledgeScreen';
 import { TeamScreen } from './screens/TeamScreen';
 import { EmailScreen } from './screens/EmailScreen';
 import { InviteAcceptPage, ResetPasswordPage } from './screens/AuthPages';
+import { ChangePasswordDialog, ChooseOwnPasswordScreen } from './screens/PasswordScreens';
+import { mustChangePassword } from './lib/passwords';
 import { SignInGate } from './screens/SignInGate';
 import type { Whoami } from './data/access';
 import type { TeamTab } from './screens/TeamScreen';
@@ -41,7 +43,12 @@ type AdminState =
   | { status: 'signed_out' }
   | { status: 'not_admin' }
   | { status: 'error'; message: string }
-  | { status: 'admin'; me: Whoami };
+  | {
+      status: 'admin';
+      me: Whoami;
+      /** Signed in with a temporary password someone set — must choose their own first. */
+      mustChangePassword: boolean;
+    };
 
 /**
  * Two paths under /admin render before the auth gate: accepting an invitation
@@ -59,9 +66,13 @@ export function App() {
   const [auth, setAuth] = useState<AdminState>({ status: 'loading' });
   const [range, setRange] = useState<Range>('28d');
   const [query, setQuery] = useState('');
+  /** The temporary password was replaced this session (the flag may lag in the session). */
+  const [passwordChosen, setPasswordChosen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [rawHashRoute, navigate] = useHashRoute();
   // Old `#/library/…` links (the Library destination was split into Scenario
-  // Studio, Knowledge and AI tuning) resolve to their new home this render,
+  // Studio, Knowledge and AI tuning) and `#/scenarios/objections` (now
+  // Categories) resolve to their new home this render,
   // and the URL is rewritten in place so Back doesn't return to the old one.
   const hashRoute = rawHashRoute ? legacyRoute(rawHashRoute) : null;
   useEffect(() => {
@@ -87,7 +98,7 @@ export function App() {
       // deployment issues are debuggable).
       try {
         const me = await apiFetch<Whoami>('admin-whoami');
-        if (!cancelled) setAuth({ status: 'admin', me });
+        if (!cancelled) setAuth({ status: 'admin', me, mustChangePassword: mustChangePassword(session.user) });
       } catch (err) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : 'Auth check failed';
@@ -221,6 +232,19 @@ export function App() {
     );
   }
 
+  // A temporary password (set by another admin) is replaced before the
+  // portal opens. Rendered after every hook above — see the note on
+  // `resolved` — so the extra screen can't change the hook count.
+  if (auth.mustChangePassword && !passwordChosen) {
+    return (
+      <ChooseOwnPasswordScreen
+        email={auth.me.email}
+        onDone={() => setPasswordChosen(true)}
+        onSignOut={() => void getSupabase().auth.signOut()}
+      />
+    );
+  }
+
   const { me } = auth;
   const perms = me.permissions;
 
@@ -284,6 +308,7 @@ export function App() {
           role: me.role_name || me.role || 'admin',
         }}
         onSignOut={() => void getSupabase().auth.signOut()}
+        onChangePassword={() => setChangePasswordOpen(true)}
         collapsed={sidebar.collapsed}
         onToggleCollapsed={() => sidebar.setCollapsed(!sidebar.collapsed)}
         compact={sidebar.compact}
@@ -356,8 +381,8 @@ export function App() {
           {item.key === 'scenarios' && tab === 'studio' && (
             <ScenarioStudioScreen query={query} onQuery={setQuery} meUserId={me.user_id} />
           )}
-          {item.key === 'scenarios' && tab === 'objections' && (
-            <ObjectionsScreen query={query} onQuery={setQuery} />
+          {item.key === 'scenarios' && tab === 'categories' && (
+            <CategoriesScreen query={query} onQuery={setQuery} />
           )}
           {item.key === 'scenarios' && tab === 'trainee' && (
             <ScenariosScreen query={query} onQuery={setQuery} onOpenStudio={() => go('scenarios', 'studio')} />
@@ -384,6 +409,8 @@ export function App() {
           {item.key === 'preview' && <PreviewScreen />}
         </SectionTabsProvider>
       </div>
+      {/* Outside the sidebar: its backdrop-filter would trap a fixed dialog. */}
+      <ChangePasswordDialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} />
     </div>
     </ConfirmProvider>
     </ToastProvider>

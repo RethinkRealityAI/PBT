@@ -33,6 +33,8 @@ export const create: Record<keyof typeof en, string> = {
   'create.library.startAria': 'Lancer : {title}',
   'create.library.filterAria': 'Filtrer par objection',
   'create.library.filterAll': 'Toutes',
+  'create.library.categoryAria': 'Filtrer par catégorie',
+  'create.library.categoryAll': 'Toutes les catégories',
   'create.library.emptyDog': 'Aucun scénario sur un chien dans la bibliothèque pour l’instant.',
   'create.library.emptyCat': 'Aucun scénario sur un chat dans la bibliothèque pour l’instant.',
   'create.library.emptyCta': 'En créer un',
@@ -40,6 +42,7 @@ export const create: Record<keyof typeof en, string> = {
   // ── Titres de section ─────────────────────────────────────
   'create.section.breed': 'Race',
   'create.section.lifeStage': 'Stade de vie',
+  'create.section.category': 'Catégorie',
   'create.section.pushback': "L'objection",
   'create.section.persona': 'Profil du propriétaire',
   'create.section.driver': 'Moteur ECHO',
@@ -54,6 +57,9 @@ export const create: Record<keyof typeof en, string> = {
   'create.weight.unit': 'kg',
   'create.weight.labelDog': 'Poids du chien (facultatif)',
   'create.weight.labelCat': 'Poids du chat (facultatif)',
+
+  // ── Sélecteur de catégorie (le sujet; filtre la liste d'objections) ──
+  'create.category.aria': 'Choisir une catégorie',
 
   // ── Sélecteur d'objection ─────────────────────────────────
   'create.pushback.selectAria': "Choisir un type d'objection",

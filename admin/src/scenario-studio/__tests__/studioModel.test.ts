@@ -10,6 +10,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALL_OBJECTIONS,
+  NO_CATEGORY,
+  entryCategoryId,
+  entryCategoryName,
   FIELD_LABELS,
   GALLERY_FILTERS,
   buildTraineeLibraryDraft,
@@ -57,6 +60,7 @@ import { STUDIO_STEP_KEYS } from '../../../../src/shared/ai/scenarioAgent';
 import { PERSONAS, PUSHBACK_IDS } from '../../../../src/shared/scenarios/enums';
 import { SERVER_MANAGED_COLUMNS } from '../../data/scenarioManifest';
 import type { ScenarioOverrideRow, UserScenario } from '../../data/types';
+import { BUILT_IN_CATEGORIES, type ObjectionCategory } from '../../../../src/shared/scenarios/objectionCategories';
 
 /**
  * Every column of the override row, classified. A `Record` over
@@ -769,13 +773,33 @@ const PRO = {
   titleFr: null,
   exampleFr: null,
   species: ['dog', 'cat'] as Array<'dog' | 'cat'>,
-  focusArea: 'gi',
+  categoryId: 'category:probiotics',
   coaching: {},
   visible: true,
   sortOrder: null,
   updatedAt: null,
 };
-const BORED = { ...PRO, id: 'team:cat-bored', title: 'Cat gets bored', species: ['cat'] as Array<'dog' | 'cat'>, focusArea: null };
+const BORED = {
+  ...PRO,
+  id: 'team:cat-bored',
+  title: 'Cat gets bored',
+  species: ['cat'] as Array<'dog' | 'cat'>,
+  categoryId: 'everyday-nutrition',
+};
+const CATEGORIES: ObjectionCategory[] = [
+  ...BUILT_IN_CATEGORIES,
+  {
+    id: 'category:probiotics',
+    name: 'Probiotics',
+    nameFr: null,
+    description: '',
+    focusArea: 'gi',
+    knowledgeSlugs: ['study:a'],
+    sortOrder: 40,
+    builtIn: false,
+    updatedAt: null,
+  },
+];
 
 describe('team objections in the checklist', () => {
   const withObjections = (draft: StudioDraft, deleted: Array<{ id: string; title: string }> = []) =>
@@ -959,5 +983,78 @@ describe('galleryFacets', () => {
   it('searches by the objection’s name', () => {
     const f = galleryFacets(entries, all, 'probiotics', [PRO, BORED]);
     expect(f.shown.map((e) => e.id).sort()).toEqual(['admin:cat', 'admin:dog']);
+  });
+
+  it('lists the categories in use, in category order (Something else last), with counts', () => {
+    const f = galleryFacets(entries, all, '', [PRO, BORED], CATEGORIES);
+    // The three seeds: cost (Everyday nutrition) ×2, weight-denial (Obesity…) ×1 — see LIBRARY_MANIFEST.
+    expect(f.categories.map((c) => c.id)).toEqual([
+      ...f.categories.map((c) => c.id).filter((id) => id !== 'category:probiotics' && id !== NO_CATEGORY),
+      'category:probiotics',
+      NO_CATEGORY,
+    ]);
+    expect(f.categories).toContainEqual({ id: 'category:probiotics', label: 'Probiotics', count: 2 });
+    expect(f.categories).toContainEqual({ id: NO_CATEGORY, label: 'Something else / not set yet', count: 1 });
+    const everyday = f.categories.find((c) => c.id === 'everyday-nutrition')!;
+    expect(everyday.label).toBe('Everyday nutrition');
+    expect(f.categoryTotal).toBe(7);
+  });
+
+  it('a category narrows the scenarios AND the objection options', () => {
+    const pro = galleryFacets(entries, { ...all, category: 'category:probiotics' }, '', [PRO, BORED], CATEGORIES);
+    expect(pro.shown.map((e) => e.id).sort()).toEqual(['admin:cat', 'admin:dog']);
+    expect(pro.objections).toEqual([{ id: PRO.id, label: 'Probiotics: not needed', count: 2 }]);
+    expect(pro.objectionTotal).toBe(2);
+    // Animal counts follow the category too.
+    expect(pro.animal).toEqual({ all: 2, dog: 1, cat: 1 });
+    // The category list itself is not narrowed by the chosen category.
+    expect(pro.categories.length).toBeGreaterThan(1);
+
+    const other = galleryFacets(entries, { ...all, category: NO_CATEGORY }, '', [PRO, BORED], CATEGORIES);
+    expect(other.shown.map((e) => e.id)).toEqual(['user:u1']);
+  });
+
+  it('keeps the chosen category listed when nothing matches it any more', () => {
+    const f = galleryFacets(entries, { ...all, animal: 'dog', category: 'everyday-nutrition', objection: ALL_OBJECTIONS }, '', [PRO, BORED], CATEGORIES);
+    expect(f.categories.some((c) => c.id === 'everyday-nutrition')).toBe(true);
+  });
+
+  it('names each card’s category, and finds scenarios by it', () => {
+    const cat = entries.find((e) => e.id === 'admin:cat')!;
+    expect(entryCategoryName(cat, [PRO, BORED], CATEGORIES)).toBe('Probiotics');
+    expect(entryCategoryName(entries.find((e) => e.id === 'user:u1')!, [PRO, BORED], CATEGORIES)).toBeNull();
+    expect(entryCategoryId(entries.find((e) => e.id === 'admin:bored')!, [PRO, BORED])).toBe('everyday-nutrition');
+    const found = galleryFacets(entries, all, 'everyday nutrition', [PRO, BORED], CATEGORIES);
+    expect(found.shown.map((e) => e.id)).toContain('admin:bored');
+  });
+});
+
+describe('category knowledge in the context', () => {
+  it('names the category whose knowledge an unchosen scenario reads', () => {
+    const draft = { ...complete, pushback_id: PRO.id };
+    const c = buildStudioContext({
+      draft,
+      source: 'admin',
+      tested: true,
+      docs: null,
+      objections: { team: [PRO, BORED], loaded: true },
+      categories: CATEGORIES,
+    });
+    expect(c.categoryKnowledge).toEqual({ id: 'category:probiotics', name: 'Probiotics' });
+    expect(stepStatus('knowledge', draft, c)).toEqual({ status: 'optional', detail: 'Using the Probiotics knowledge' });
+    // Its own choice wins.
+    expect(stepStatus('knowledge', { ...draft, focus_area: 'weight' }, c)).toEqual({ status: 'done' });
+    // A category with nothing attached: the whole library.
+    const bored = { ...complete, pushback_id: BORED.id };
+    const c2 = buildStudioContext({
+      draft: bored,
+      source: 'admin',
+      tested: true,
+      docs: null,
+      objections: { team: [PRO, BORED], loaded: true },
+      categories: CATEGORIES,
+    });
+    expect(c2.categoryKnowledge ?? null).toBeNull();
+    expect(stepStatus('knowledge', bored, c2)).toEqual({ status: 'optional', detail: 'Using the whole knowledge library' });
   });
 });

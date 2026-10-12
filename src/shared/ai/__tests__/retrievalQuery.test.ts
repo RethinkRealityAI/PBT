@@ -153,3 +153,28 @@ describe('scenarioRetrievalFilters — species scope', () => {
     }
   });
 });
+
+describe('scenarioRetrievalFilters — category knowledge', () => {
+  const category = { focusArea: 'gi', knowledgeSlugs: ['custom:probiotics-monograph'] };
+
+  it('a scenario with no knowledge of its own reads its category’s documents', () => {
+    expect(scenarioRetrievalFilters({ age: 'Adult (3-7)' }, { categoryKnowledge: category })).toEqual({
+      docSlugs: ['custom:probiotics-monograph'],
+      species: 'dog',
+    });
+    expect(
+      scenarioRetrievalFilters({ age: 'Adult (3-7)' }, { categoryKnowledge: { focusArea: 'gi', knowledgeSlugs: [] } }),
+    ).toEqual({ focus: 'gi', species: 'dog' });
+  });
+
+  it('the scenario’s own choice replaces the category’s', () => {
+    expect(
+      scenarioRetrievalFilters({ focusArea: 'weight', age: 'Adult (3-7)' }, { categoryKnowledge: category }),
+    ).toEqual({ focus: 'weight', species: 'dog' });
+  });
+
+  it('without category knowledge nothing changes (every existing scenario)', () => {
+    expect(scenarioRetrievalFilters({ age: 'Adult (3-7)' })).toEqual({ species: 'dog' });
+    expect(scenarioRetrievalFilters({ age: 'Adult (3-7)' }, { categoryKnowledge: null })).toEqual({ species: 'dog' });
+  });
+});

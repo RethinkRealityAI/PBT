@@ -131,4 +131,24 @@ describe("HomeScreen — Today's pick animal switch", () => {
     await user.click(within(switchGroup()!).getByRole('tab', { name: 'Dog' }));
     expect(counter()).toMatch(/\/3$/);
   });
+
+  it('draws pet icons (no emoji) on the Dog | Cat switch', () => {
+    flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
+    render(<HomeScreen />);
+    for (const name of ['Dog', 'Cat']) {
+      const tab = within(switchGroup()!).getByRole('tab', { name });
+      expect(tab.querySelector('svg')).not.toBeNull();
+      expect(tab).toHaveTextContent(new RegExp(`^${name}$`));
+    }
+  });
+
+  it("names the pick's category above its title", async () => {
+    flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
+    const user = userEvent.setup();
+    render(<HomeScreen />);
+    await user.click(within(switchGroup()!).getByRole('tab', { name: 'Cat' }));
+    // The cat pick is a cost scenario → the built-in "Everyday nutrition".
+    const title = screen.getByRole('heading', { level: 2, name: /Cost/ });
+    expect(title.previousElementSibling).toHaveTextContent('Everyday nutrition');
+  });
 });

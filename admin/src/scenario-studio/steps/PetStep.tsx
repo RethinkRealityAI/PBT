@@ -12,7 +12,7 @@ import {
   Chip,
   FieldBlock,
   OptionTile,
-  SPECIES_GLYPH,
+  PetBadge,
   StudioSection,
   TextInput,
   useFieldId,
@@ -93,7 +93,7 @@ export function PetStep({ draft, patch, canWrite, base, askAssistant }: StepProp
                 selected={draft.species === s}
                 onSelect={() => patch({ species: s })}
                 disabled={!canWrite}
-                glyph={<span aria-hidden>{SPECIES_GLYPH[s]}</span>}
+                glyph={<PetBadge species={s} size={40} />}
                 title={SPECIES_LABELS[s]}
                 description={SPECIES_DESCRIPTIONS[s]}
               />

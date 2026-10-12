@@ -735,6 +735,7 @@ describe('team objections in the AI prompts', () => {
     title: 'Probiotics',
     example: '"He does not need them."',
     species: ['dog', 'cat'],
+    category_id: 'category:probiotics',
     coaching: { rootConcerns: ['Believes probiotics are a supplement-aisle fad'] },
     visible: false, // retired — must still play
   };
@@ -786,5 +787,87 @@ describe('team objections in the AI prompts', () => {
     expect(res.status).toBe(200);
     const system = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
     expect(system).not.toContain('# UNDER THE SURFACE');
+  });
+});
+
+// ── Category knowledge reaches retrieval from the DATABASE only ──────────
+
+describe('category knowledge in the AI functions', () => {
+  // `scenario` (SEED_SCENARIOS[0]) is a weight-denial dog scenario with no
+  // knowledge of its own, so it reads the "weight" category's knowledge.
+  const WEIGHT_EDIT = {
+    id: 'weight',
+    name: 'Weight management',
+    name_fr: null,
+    description: '',
+    focus_area: null,
+    knowledge_slugs: ['study:weight-1'],
+    sort_order: 20,
+    updated_at: '2026-10-12T10:00:00+00:00',
+  };
+  const INJECTED = { focusArea: 'gi', knowledgeSlugs: ['fecal:dog'] };
+  const filtersOf = (call = 0) => (mocks.retrieveChunks.mock.calls[call][1] as { filters: unknown }).filters;
+
+  it('ai-roleplay retrieves inside the category the SERVER loaded, and ignores any sent in the body', async () => {
+    sb.setHandler('scenario_objection_categories', () => ({ data: [WEIGHT_EDIT], error: null }));
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ emotion: 'yellow', text: 'Hm.' }) });
+    const res = await roleplay(
+      jsonRequest('ai-roleplay', {
+        scenario: { ...scenario, categoryKnowledge: INJECTED, category: INJECTED },
+        history: [],
+        categoryKnowledge: INJECTED,
+        objectionCategories: [{ id: 'weight', name: 'Weight', knowledgeSlugs: ['fecal:dog'] }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(filtersOf()).toEqual({ docSlugs: ['study:weight-1'], species: 'dog', tool: 'roleplay' });
+  });
+
+  it('with no stored knowledge, a body cannot add any — retrieval is exactly as before categories', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ emotion: 'yellow', text: 'Hm.' }) });
+    const res = await roleplay(
+      jsonRequest('ai-roleplay', {
+        scenario: { ...scenario, categoryKnowledge: INJECTED },
+        history: [],
+        categoryKnowledge: INJECTED,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(filtersOf()).toEqual({ species: 'dog', tool: 'roleplay' });
+  });
+
+  it('ai-voice-token and ai-evaluate read the same server-loaded category knowledge', async () => {
+    sb.setHandler('scenario_objection_categories', () => ({ data: [WEIGHT_EDIT], error: null }));
+    mocks.authTokensCreate.mockResolvedValueOnce({ name: 'auth_tokens/abc123' });
+    expect((await voiceToken(jsonRequest('ai-voice-token', { scenario, categoryKnowledge: INJECTED }))).status).toBe(
+      200,
+    );
+    expect(filtersOf(0)).toEqual({ docSlugs: ['study:weight-1'], species: 'dog', tool: 'roleplay' });
+
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+    const res = await evaluate(
+      jsonRequest('ai-evaluate', {
+        scenario,
+        categoryKnowledge: INJECTED,
+        transcript: [
+          { role: 'ai', text: 'Not fat.', timestamp: 1 },
+          { role: 'user', text: 'I hear you.', timestamp: 2 },
+        ],
+        mode: 'text',
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(filtersOf(1)).toEqual({ docSlugs: ['study:weight-1'], species: 'dog', tool: 'scoring' });
+  });
+
+  it('an AI call never fails over categories — the table may not exist yet', async () => {
+    sb.setHandler('scenario_objection_categories', () => ({
+      data: null,
+      error: { code: '42P01', message: 'relation "public.scenario_objection_categories" does not exist' },
+    }));
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ emotion: 'yellow', text: 'Hm.' }) });
+    const res = await roleplay(jsonRequest('ai-roleplay', { scenario, history: [] }));
+    expect(res.status).toBe(200);
+    expect(filtersOf()).toEqual({ species: 'dog', tool: 'roleplay' });
   });
 });

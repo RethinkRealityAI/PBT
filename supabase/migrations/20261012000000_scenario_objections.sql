@@ -4,23 +4,38 @@
 --
 -- STATUS: written 2026-10-12, NOT yet applied to production (the apply was
 -- held back for the owner's go-ahead). scripts/verify-db-schema.mjs lists its
--- table and columns as DEFERRED (warning, not failure) until it is. Apply it
--- before, or with, the deploy that ships the Objections tab — without it the
--- Objections tab shows a "database update needed" notice and saves nothing.
+-- tables and columns as DEFERRED (warning, not failure) until it is. Apply it
+-- before, or with, the deploy that ships the Categories tab — without it the
+-- tab shows a "database update needed" notice and saves nothing.
 --
 -- Why (client request, 2026-10-12): the team needs to add new subject areas
 -- (probiotics first, feline next) without a deploy, decide per scenario which
 -- animal it is for, and turn a trainee's own scenario into a library scenario.
 --
 -- What it adds:
+--   0. public.scenario_objection_categories — the subject areas training is
+--      organised by ("Weight management", "Probiotics", "GI", …) and the
+--      KNOWLEDGE CONTAINER for everything inside them.
+--        • id = one of the three BUILT-IN category ids ('everyday-nutrition',
+--          'weight', 'prescription-diets' — the code knows them even with no
+--          row; a row with a built-in id is an admin's EDIT of it: name,
+--          French name, attached knowledge) or 'category:<slug>' for one the
+--          team created. Built-ins are never deleted (admin-objections).
+--        • focus_area (knowledge topic, soft filter) + knowledge_slugs
+--          (documents from knowledge_documents) — what every scenario on an
+--          objection in this category reads unless the scenario picks its own
+--          (src/shared/scenarios/objectionCategories.ts::effectiveKnowledge).
+--      RLS on with NO policies, like the other Studio tables.
 --   1. public.scenario_objections — objections ("pushback categories")
 --      authored in the Studio, alongside the seven built into the code.
 --        • id 'team:<slug>' (CHECK) — can never collide with a built-in id,
 --          which is what scenario_overrides.pushback_id /
 --          user_scenarios.pushback_id / training_sessions.pushback_id store.
+--        • category_id — the category it belongs to (built-in id or
+--          'category:<slug>'; CHECKed for shape, existence enforced by
+--          admin-objections since built-ins have no row to reference).
 --        • species text[] — which animals it applies to ('dog','cat'; never
---          empty); focus_area — the knowledge topic it belongs to (same
---          vocabulary as scenario_overrides.focus_area, validated in code).
+--          empty).
 --        • coaching jsonb — the same lists as the built-in taxonomy
 --          (rootConcerns, acknowledgePatterns, clarifyQuestions,
 --          takeActionPatterns, watchOuts); the server merges them into the
@@ -39,7 +54,8 @@
 --      the source id ('user:<uuid>' / 'seed:<n>' / 'admin:<uuid>'). Display
 --      only — the Studio shows "Already in the library" on the trainee's card.
 --      Stripped from the public flags snapshot.
---   4. admin_audit_log entity_type gains 'scenario_objection'.
+--   4. admin_audit_log entity_type gains 'scenario_objection' and
+--      'scenario_objection_category'.
 --
 -- Until this is applied the app degrades safely, never fails:
 --   • flags-resolve serves no team objections (built-ins only);
@@ -50,6 +66,67 @@
 -- Idempotent and guarded: safe to re-run; cross-table alters are skipped on a
 -- project where the table does not exist yet.
 
+-- ── 0. scenario_objection_categories ──────────────────────────────────────
+create table if not exists public.scenario_objection_categories (
+  id text primary key,
+  name text not null,
+  name_fr text,
+  description text not null default '',
+  focus_area text,
+  knowledge_slugs text[] not null default array[]::text[],
+  sort_order integer,
+  created_by uuid references auth.users (id) on delete set null,
+  updated_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'scenario_objection_categories_id_check'
+      and conrelid = 'public.scenario_objection_categories'::regclass
+  ) then
+    alter table public.scenario_objection_categories
+      add constraint scenario_objection_categories_id_check
+      check (
+        id in ('everyday-nutrition', 'weight', 'prescription-diets')
+        or id ~ '^category:[a-z0-9][a-z0-9-]{0,58}[a-z0-9]$'
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'scenario_objection_categories_text_check'
+      and conrelid = 'public.scenario_objection_categories'::regclass
+  ) then
+    alter table public.scenario_objection_categories
+      add constraint scenario_objection_categories_text_check
+      check (
+        char_length(btrim(name)) between 1 and 60
+        and (name_fr is null or char_length(name_fr) <= 60)
+        and char_length(description) <= 300
+        and (focus_area is null or char_length(focus_area) <= 40)
+        and cardinality(knowledge_slugs) <= 40
+      );
+  end if;
+end $$;
+
+alter table public.scenario_objection_categories enable row level security;
+-- No policies: service role only (admin-objections, flags-resolve, the AI functions).
+revoke all on public.scenario_objection_categories from anon, authenticated;
+
+drop trigger if exists scenario_objection_categories_updated_at on public.scenario_objection_categories;
+create trigger scenario_objection_categories_updated_at before update on public.scenario_objection_categories
+  for each row execute function public.set_updated_at();
+
+comment on table public.scenario_objection_categories is
+  'Subject areas for objections (Weight management, Probiotics, GI, …) and the knowledge their scenarios read. Built-in ids are edits of code-defined categories; category:<slug> = team-created. Service role only.';
+comment on column public.scenario_objection_categories.knowledge_slugs is
+  'knowledge_documents.slug values every scenario in this category reads, unless the scenario picks its own knowledge.';
+
 -- ── 1. scenario_objections ────────────────────────────────────────────────
 create table if not exists public.scenario_objections (
   id text primary key,
@@ -58,7 +135,7 @@ create table if not exists public.scenario_objections (
   title_fr text,
   example_fr text,
   species text[] not null default array['dog', 'cat']::text[],
-  focus_area text,
+  category_id text not null,
   coaching jsonb not null default '{}'::jsonb,
   visible boolean not null default true,
   sort_order integer,
@@ -93,8 +170,20 @@ begin
         and char_length(example) <= 300
         and (title_fr is null or char_length(title_fr) <= 80)
         and (example_fr is null or char_length(example_fr) <= 300)
-        and (focus_area is null or char_length(focus_area) <= 40)
         and octet_length(coaching::text) <= 60000
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'scenario_objections_category_check'
+      and conrelid = 'public.scenario_objections'::regclass
+  ) then
+    alter table public.scenario_objections
+      add constraint scenario_objections_category_check
+      check (
+        category_id in ('everyday-nutrition', 'weight', 'prescription-diets')
+        or category_id ~ '^category:[a-z0-9][a-z0-9-]{0,58}[a-z0-9]$'
       );
   end if;
 
@@ -122,6 +211,11 @@ create trigger scenario_objections_updated_at before update on public.scenario_o
 
 comment on table public.scenario_objections is
   'Team-authored objections (pushback categories) for scenarios, beside the seven built into the code. id = team:<slug>. Service role only.';
+create index if not exists scenario_objections_category_idx
+  on public.scenario_objections (category_id) where deleted_at is null;
+
+comment on column public.scenario_objections.category_id is
+  'The category (subject area) it belongs to — built-in id or category:<slug>. The category owns the knowledge.';
 comment on column public.scenario_objections.species is
   'Animals the objection applies to: subset of {dog, cat}, never empty.';
 comment on column public.scenario_objections.coaching is
@@ -189,6 +283,7 @@ begin
           'flag_rule',
           'scenario_override',
           'scenario_objection',
+          'scenario_objection_category',
           'simulation_config',
           'user',
           'role',

@@ -72,7 +72,7 @@ describe('KnowledgeStep — modes', () => {
   it('derives the mode from the draft', () => {
     renderStep(KnowledgeStep, { draft: completeDraft({ knowledge_slugs: ['study:obesity'] }), knowledge: knowledgeState({ docs: DOCS }) });
     expect(modeTile(/^Whole library/)).toHaveAttribute('aria-pressed', 'false');
-    expect(modeTile(/Specific documents/)).toHaveAttribute('aria-pressed', 'true');
+    expect(modeTile(/Pick documents for this scenario only/)).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('switching to one topic detaches the documents, says so, and can be undone', () => {
@@ -88,7 +88,7 @@ describe('KnowledgeStep — modes', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     expect(patchSpy).toHaveBeenLastCalledWith({ focus_area: null, knowledge_slugs: ['study:obesity', 'study:urinary'] });
-    expect(modeTile(/Specific documents/)).toHaveAttribute('aria-pressed', 'true');
+    expect(modeTile(/Pick documents for this scenario only/)).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('switching to the whole library clears the topic', () => {
@@ -115,11 +115,11 @@ describe('KnowledgeStep — modes', () => {
 
   it('stays on Specific documents when the admin unticks the last one', () => {
     renderStep(KnowledgeStep, { draft: completeDraft(), knowledge: knowledgeState({ docs: DOCS }) });
-    fireEvent.click(modeTile(/Specific documents/));
+    fireEvent.click(modeTile(/Pick documents for this scenario only/));
     const box = screen.getByRole('checkbox', { name: /Obesity study/ });
     fireEvent.click(box);
     fireEvent.click(box);
-    expect(modeTile(/Specific documents/)).toHaveAttribute('aria-pressed', 'true');
+    expect(modeTile(/Pick documents for this scenario only/)).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('follows changes made elsewhere (the assistant, a revert)', () => {
@@ -129,7 +129,7 @@ describe('KnowledgeStep — modes', () => {
     });
     expect(modeTile(/One topic/)).toHaveAttribute('aria-pressed', 'true');
     outside({ focus_area: null, knowledge_slugs: ['study:obesity'] });
-    expect(modeTile(/Specific documents/)).toHaveAttribute('aria-pressed', 'true');
+    expect(modeTile(/Pick documents for this scenario only/)).toHaveAttribute('aria-pressed', 'true');
     outside({ knowledge_slugs: null });
     expect(modeTile(/Whole library/)).toHaveAttribute('aria-pressed', 'true');
   });
@@ -142,7 +142,7 @@ describe('KnowledgeStep — specific documents', () => {
       { draft: completeDraft(draftOver), knowledge: knowledgeState({ docs: DOCS }) },
       permissions ? { permissions } : {},
     );
-    if (!('knowledge_slugs' in draftOver)) fireEvent.click(modeTile(/Specific documents/));
+    if (!('knowledge_slugs' in draftOver)) fireEvent.click(modeTile(/Pick documents for this scenario only/));
     return r;
   }
 
@@ -207,7 +207,7 @@ describe('KnowledgeStep — specific documents', () => {
     expect(modeTile(/One topic/)).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: /Obesity study/ })).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: /Obesity study/ })).toBeChecked();
-    expect(screen.queryByRole('button', { name: /Upload a document/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Upload/ })).not.toBeInTheDocument();
   });
 });
 
@@ -238,7 +238,7 @@ describe('KnowledgeStep — upload', () => {
       knowledge,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /Upload a document/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Upload for this scenario/ }));
     const dialog = screen.getByRole('dialog', { name: 'Upload a document' });
     fireEvent.click(within(dialog).getByRole('button', { name: /Paste text/ }));
     fireEvent.change(within(dialog).getByLabelText('The text'), { target: { value: LONG_TEXT } });
@@ -269,7 +269,7 @@ describe('KnowledgeStep — upload', () => {
     );
     expect(knowledge.refetch).toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: 'Upload a document' })).not.toBeInTheDocument();
-    expect(modeTile(/Specific documents/)).toHaveAttribute('aria-pressed', 'true');
+    expect(modeTile(/Pick documents for this scenario only/)).toHaveAttribute('aria-pressed', 'true');
     // Not yet in the refetched list, but it must not read as "missing".
     expect(screen.queryByText('Attached to documents that no longer exist')).not.toBeInTheDocument();
   });
@@ -278,7 +278,7 @@ describe('KnowledgeStep — upload', () => {
     analyzeKnowledge.mockResolvedValue({ ...ANALYSIS, extractedMarkdown: '# Extracted', extractedCitation: 'From the PDF' });
     ingestKnowledge.mockResolvedValue({ ok: true, slug: 'custom:pdf', chunks: 2 });
     renderStep(KnowledgeStep, { draft: completeDraft(), knowledge: knowledgeState({ docs: DOCS }) });
-    fireEvent.click(screen.getByRole('button', { name: /Upload a document/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Upload for this scenario/ }));
     const dialog = screen.getByRole('dialog', { name: 'Upload a document' });
     const file = new File(['%PDF-1.4 hello'], 'protocol.pdf', { type: 'application/pdf' });
     fireEvent.change(within(dialog).getByLabelText('PDF file'), { target: { files: [file] } });
@@ -300,7 +300,7 @@ describe('KnowledgeStep — upload', () => {
     analyzeKnowledge.mockRejectedValue(new Error('Gemini is busy'));
     ingestKnowledge.mockRejectedValue(new Error('Embedding failed'));
     renderStep(KnowledgeStep, { draft: completeDraft(), knowledge: knowledgeState({ docs: DOCS }) });
-    fireEvent.click(screen.getByRole('button', { name: /Upload a document/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Upload for this scenario/ }));
     const dialog = screen.getByRole('dialog', { name: 'Upload a document' });
     fireEvent.click(within(dialog).getByRole('button', { name: /Paste text/ }));
     fireEvent.change(within(dialog).getByLabelText('Title', { exact: false }), { target: { value: 'My notes' } });
@@ -320,7 +320,7 @@ describe('KnowledgeStep — upload', () => {
       { draft: completeDraft(), knowledge: knowledgeState({ docs: DOCS }) },
       { permissions: ['scenarios.read', 'scenarios.write', 'knowledge.read'] },
     );
-    expect(screen.queryByRole('button', { name: /Upload a document/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Upload/ })).not.toBeInTheDocument();
     expect(screen.getByText(/Ask someone with knowledge access/)).toBeInTheDocument();
   });
 });
@@ -369,5 +369,98 @@ describe('KnowledgeStep — preview', () => {
     renderStep(KnowledgeStep, { draft: completeDraft({ focus_area: 'aging' }), knowledge: knowledgeState({ docs: DOCS }) });
     fireEvent.click(screen.getByRole('button', { name: 'Preview what the AI will read' }));
     expect(await screen.findByText(/Nothing on this topic matched, so the search widened/)).toBeInTheDocument();
+  });
+});
+
+// ── A scenario reads its CATEGORY's knowledge unless it picks its own ──
+
+// eslint-disable-next-line import/first
+import type { StepProps } from '../../types';
+// eslint-disable-next-line import/first
+import { NO_OBJECTIONS, ObjectionsProvider } from '../../objections/ObjectionsContext';
+// eslint-disable-next-line import/first
+import type { ObjectionsApi } from '../../objections/useObjections';
+// eslint-disable-next-line import/first
+import { builtInAdminCategories } from '../../objections/categoriesModel';
+
+function withCategories(over: Partial<ObjectionsApi> = {}) {
+  const categories = builtInAdminCategories().map((c) =>
+    c.id === 'weight'
+      ? { ...c, name: 'Obesity & weight loss', knowledgeSlugs: ['study:obesity'], focusArea: 'weight', customised: true }
+      : c,
+  );
+  const value: ObjectionsApi = {
+    ...NO_OBJECTIONS,
+    status: 'ready',
+    loaded: true,
+    available: true,
+    loadedAt: 1,
+    categories,
+    ...over,
+  };
+  return function Wrapped(props: StepProps) {
+    return (
+      <ObjectionsProvider value={value}>
+        <KnowledgeStep {...props} />
+      </ObjectionsProvider>
+    );
+  };
+}
+
+describe('KnowledgeStep — category knowledge', () => {
+  it('uses the category’s knowledge by default, and lists it', () => {
+    renderStep(withCategories(), {
+      draft: completeDraft({ pushback_id: 'weight-denial' }),
+      knowledge: knowledgeState({ docs: DOCS }),
+    });
+    const tile = modeTile(/Use the Obesity & weight loss knowledge/);
+    expect(tile).toHaveAttribute('aria-pressed', 'true');
+    expect(tile).toHaveTextContent('1 document · Weight management');
+    expect(screen.queryByRole('button', { name: /^Whole library/ })).not.toBeInTheDocument();
+    const attached = screen.getByRole('list', { name: 'Documents attached to Obesity & weight loss' });
+    expect(within(attached).getByText('Obesity study')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit Obesity & weight loss' })).toBeInTheDocument();
+  });
+
+  it('a scenario’s own documents replace the category’s — and going back clears them', () => {
+    const { patchSpy } = renderStep(withCategories(), {
+      draft: completeDraft({ pushback_id: 'weight-denial', knowledge_slugs: ['study:urinary'] }),
+      knowledge: knowledgeState({ docs: DOCS }),
+    });
+    expect(modeTile(/Pick documents for this scenario only/)).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/This replaces the Obesity & weight loss knowledge for this scenario only/)).toBeInTheDocument();
+    fireEvent.click(modeTile(/Use the Obesity & weight loss knowledge/));
+    expect(patchSpy).toHaveBeenLastCalledWith({ focus_area: null, knowledge_slugs: null });
+  });
+
+  it('when the category has nothing attached, says so and offers to add documents to it', async () => {
+    renderStep(withCategories(), {
+      draft: completeDraft({ pushback_id: 'cost' }),
+      knowledge: knowledgeState({ docs: DOCS }),
+    });
+    expect(modeTile(/^Whole library/)).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Everyday nutrition has no knowledge attached yet')).toBeInTheDocument();
+    // Next to the per-scenario upload, and in the notice.
+    expect(screen.getByRole('button', { name: /Upload for this scenario/ })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add documents to Everyday nutrition' })[0]);
+    const dialog = await screen.findByRole('dialog', { name: 'Edit category' });
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('Everyday nutrition');
+    expect(within(dialog).getByRole('checkbox', { name: /Obesity study/ })).not.toBeChecked();
+  });
+
+  it('the preview says whose knowledge the server used', async () => {
+    inspectScenario.mockResolvedValue({
+      ...inspectResponse({ mode: 'documents' }),
+      knowledgeSource: 'category',
+      knowledgeCategory: { id: 'weight', name: 'Obesity & weight loss', focusArea: 'weight', knowledgeSlugs: ['study:obesity'] },
+    });
+    renderStep(withCategories(), {
+      draft: completeDraft({ pushback_id: 'weight-denial' }),
+      knowledge: knowledgeState({ docs: DOCS }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview what the AI will read' }));
+    expect(
+      await screen.findByText('Reading the knowledge attached to its category, Obesity & weight loss.'),
+    ).toBeInTheDocument();
   });
 });

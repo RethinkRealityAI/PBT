@@ -144,7 +144,7 @@ const PROBIOTICS = {
   titleFr: null,
   exampleFr: null,
   species: ['dog', 'cat'],
-  focusArea: 'gi',
+  categoryId: 'everyday-nutrition',
   coaching: {},
   visible: true,
   sortOrder: null,

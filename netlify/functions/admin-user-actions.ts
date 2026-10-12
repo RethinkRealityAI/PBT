@@ -7,6 +7,10 @@
  *   { op: 'set_disabled',  userId, value: boolean } — disable / enable (Auth ban)
  *   { op: 'create',        email, password, displayName?, roleKey? }
  *   { op: 'delete',        userId }
+ *   { op: 'set_password',  userId, password }       — a TEMPORARY password the
+ *                                                     admin hands to the user;
+ *                                                     sets user_metadata
+ *                                                     .must_change_password
  *   { op: 'set_admin',     userId, value }          — legacy alias for set_role
  *
  * Guardrails (return 4xx rather than lock the platform out):
@@ -14,6 +18,11 @@
  *   - You cannot leave the platform with zero active owners.
  *   - Only an owner may act on another owner, or grant the owner role.
  *   - You cannot grant a role holding permissions you don't hold yourself.
+ *   - You cannot set your OWN password here (use "Change password"), nor
+ *     the password of an account holding permissions you don't hold (a
+ *     password you choose is that account — the same rule as granting a
+ *     role); a temporary password is 12–72 characters (72 = bcrypt's byte
+ *     limit). The password is never logged, audited or returned.
  *
  * Every action is mirrored to admin_audit_log (entity_type 'user').
  * Disable is mirrored to a Supabase Auth ban so the user can't sign in.
@@ -21,12 +30,14 @@
 import {
   OWNER_ROLE,
   isPermission,
+  resolveAccess,
   type Permission,
 } from '../../src/shared/access/permissions';
 import {
   can,
   errorResponse,
   jsonResponse,
+  loadRoles,
   requireAdmin,
   writeAuditLog,
   type AdminCtx,
@@ -34,6 +45,21 @@ import {
 import { loadEmailSettings, sendTemplateEmail } from './_shared/mailer';
 
 const BAN_FOREVER = '876000h'; // ~100 years
+
+/** Temporary-password bounds (72 = the bcrypt input limit Supabase Auth hashes with). */
+export const TEMP_PASSWORD_MIN = 12;
+export const TEMP_PASSWORD_MAX = 72;
+export const SELF_PASSWORD_MESSAGE = 'Use “Change password” in your account menu.';
+export const TEMP_PASSWORD_LENGTH_MESSAGE = `A temporary password must be ${TEMP_PASSWORD_MIN}–${TEMP_PASSWORD_MAX} characters.`;
+
+/** Length check in characters AND UTF-8 bytes (bcrypt silently truncates past 72 bytes). */
+export function tempPasswordProblem(password: unknown): string | null {
+  if (typeof password !== 'string') return TEMP_PASSWORD_LENGTH_MESSAGE;
+  if (password.length < TEMP_PASSWORD_MIN) return TEMP_PASSWORD_LENGTH_MESSAGE;
+  if (password.length > TEMP_PASSWORD_MAX) return TEMP_PASSWORD_LENGTH_MESSAGE;
+  if (new TextEncoder().encode(password).length > TEMP_PASSWORD_MAX) return TEMP_PASSWORD_LENGTH_MESSAGE;
+  return null;
+}
 
 interface ProfileRow {
   user_id: string;
@@ -303,6 +329,63 @@ export default async (req: Request): Promise<Response> => {
         after: { disabled: value },
       });
       if (value) void notifyDisabled(ctx, userId, target.display_name).catch(() => {});
+      return jsonResponse({ ok: true });
+    }
+
+    // ── Temporary password ─────────────────────────────────────
+    // `team.manage` (checked above) + the owner guard (blockedByOwnership,
+    // above): only an owner may set another owner's password. The password
+    // never reaches a log, the audit trail or the response.
+    if (op === 'set_password') {
+      if (userId === actingId) return errorResponse(400, SELF_PASSWORD_MESSAGE);
+      const problem = tempPasswordProblem(body.password);
+      if (problem) return errorResponse(400, problem);
+      const password = body.password as string;
+
+      // Choosing someone's password is signing in as them, so it follows the
+      // escalation rule for roles: a non-owner may not take over an account
+      // that holds permissions they don't (owners are covered above).
+      if (!ctx.access.isOwner) {
+        const targetAccess = resolveAccess({
+          role: target.admin_role,
+          roles: await loadRoles(ctx.sb),
+          overrides: target.permission_overrides,
+          legacyIsAdmin: target.is_admin === true,
+        });
+        const beyond = targetAccess.permissions.filter((p) => !ctx.access.permissions.includes(p));
+        if (beyond.length > 0) {
+          return errorResponse(
+            403,
+            `That account holds permissions you don't: ${beyond.join(', ')}. Ask an owner to set its password.`,
+          );
+        }
+      }
+
+      // Read the existing metadata first so nothing else in it is lost.
+      const { data: existing, error: getErr } = await ctx.sb.auth.admin.getUserById(userId);
+      if (getErr || !existing?.user) return errorResponse(404, 'User not found');
+      const meta = existing.user.user_metadata;
+      const metadata = meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {};
+
+      const { error: updErr } = await ctx.sb.auth.admin.updateUserById(userId, {
+        password,
+        user_metadata: { ...metadata, must_change_password: true },
+      });
+      if (updErr) {
+        // Auth's own refusal (e.g. a password it considers weak) is the
+        // admin's to fix; anything else is ours. Its message never echoes
+        // the password.
+        const status = (updErr as { status?: number }).status;
+        const userFixable = typeof status === 'number' && status >= 400 && status < 500;
+        return errorResponse(userFixable ? 400 : 500, updErr.message || 'Could not set the password');
+      }
+      await writeAuditLog(ctx, {
+        entity_type: 'user',
+        entity_id: userId,
+        action: 'update',
+        after: { must_change_password: true },
+        note: 'Temporary password set',
+      });
       return jsonResponse({ ok: true });
     }
 

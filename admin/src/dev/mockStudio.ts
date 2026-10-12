@@ -5,9 +5,12 @@
  * function name); `STUDIO_POST_HANDLERS` answers POSTs from the request body.
  * Covered: admin-scenario-agent (assistant turns with A2UI-able proposals),
  * admin-scenario-inspect (prompt + passages), ai-roleplay / ai-evaluate (the
- * Test drive), admin-objections (the team's objections — probiotics, a
- * cat-only one from the client's spreadsheet, one recently deleted; writes
- * are kept in memory for the session), a few trainee-built scenarios (a cat
+ * Test drive), admin-objections (the categories — the built-in "Weight
+ * management" renamed "Obesity & weight loss" with two documents attached,
+ * the team's "Probiotics" (topic GI, one document) and "GI", one recently
+ * deleted — and the objections inside them: probiotics, a cat-only one from
+ * the client's spreadsheet, one recently deleted; writes are kept in memory
+ * for the session), a few trainee-built scenarios (a cat
  * one with no ECHO driver, a dog one already added to the library) and a few
  * saved scenario rows so the gallery isn't empty.
  *
@@ -41,6 +44,18 @@ import {
   validateObjectionInput,
   type AdminObjection,
 } from '../../../src/shared/scenarios/objections';
+import {
+  BUILT_IN_CATEGORIES,
+  categoryIdFromName,
+  categoryKnowledgeFor,
+  effectiveKnowledge,
+  isBuiltInCategoryId,
+  mergeCategories,
+  objectionCategoryId,
+  validateCategoryInput,
+  type AdminObjectionCategory,
+  type ObjectionCategory,
+} from '../../../src/shared/scenarios/objectionCategories';
 import type { Scenario } from '../../../src/data/scenarios';
 import type { AiEmotion, ChatMessage, ScoreReport } from '../../../src/services/types';
 import type { ScenarioOverrideRow, UserScenario } from '../data/types';
@@ -60,19 +75,114 @@ const MOCK_DOCS: Record<string, string> = {
   'driver:Activator': 'ECHO driver — Activator',
 };
 const KNOWN_SLUGS: ReadonlySet<string> = new Set(Object.keys(MOCK_DOCS));
+/** Every document mockApi's library holds (plus what its ingest mock answers). */
+const ALL_DOC_SLUGS: ReadonlySet<string> = new Set([
+  ...KNOWN_SLUGS,
+  'fecal:dog',
+  'fecal:cat',
+  'fecal:puppy',
+  'custom:stool-colour',
+  'custom:new-document',
+]);
+
+// ── Categories (admin-objections) ────────────────────────────────────────
+
+const PROBIOTICS = 'category:probiotics';
+const GI = 'category:gi';
+
+/** Stored category rows: an admin's edit of a built-in, the team's own, one deleted. */
+let CATEGORY_ROWS: Array<ObjectionCategory & { createdAt: string | null; deletedAt: string | null }> = [
+  {
+    ...BUILT_IN_CATEGORIES.find((c) => c.id === 'weight')!,
+    name: 'Obesity & weight loss',
+    nameFr: 'Obésité et perte de poids',
+    knowledgeSlugs: ['study:davies-2024', 'clinical:reference'],
+    updatedAt: ago(4 * DAY),
+    createdAt: ago(4 * DAY),
+    deletedAt: null,
+  },
+  {
+    id: PROBIOTICS,
+    name: 'Probiotics',
+    nameFr: 'Probiotiques',
+    description: 'Owners who doubt a daily probiotic — or think yogurt does the same job.',
+    focusArea: 'gi',
+    knowledgeSlugs: ['clinical:reference'],
+    sortOrder: 40,
+    builtIn: false,
+    updatedAt: ago(3 * DAY),
+    createdAt: ago(6 * DAY),
+    deletedAt: null,
+  },
+  {
+    id: GI,
+    name: 'GI',
+    nameFr: null,
+    description: 'Digestive upsets, sensitive stomachs and gastrointestinal diets.',
+    focusArea: null,
+    knowledgeSlugs: [],
+    sortOrder: 50,
+    builtIn: false,
+    updatedAt: ago(2 * DAY),
+    createdAt: ago(2 * DAY),
+    deletedAt: null,
+  },
+  {
+    id: 'category:dental',
+    name: 'Dental',
+    nameFr: null,
+    description: 'Dental diets and chews.',
+    focusArea: null,
+    knowledgeSlugs: [],
+    sortOrder: 60,
+    builtIn: false,
+    updatedAt: ago(30 * HOUR),
+    createdAt: ago(9 * DAY),
+    deletedAt: ago(30 * HOUR),
+  },
+];
+
+function liveCategories(): ObjectionCategory[] {
+  return mergeCategories(CATEGORY_ROWS.filter((c) => !c.deletedAt));
+}
+
+function categoryUsage(id: string): { objections: number; scenarios: number } {
+  const objections = liveObjections().filter((o) => o.categoryId === id);
+  const scenarios = SCENARIO_ROWS.filter(
+    (r) => r.pushback_id && objectionCategoryId(r.pushback_id, liveObjections()) === id,
+  ).length;
+  return { objections: objections.length, scenarios };
+}
+
+function adminCategory(c: ObjectionCategory): AdminObjectionCategory {
+  const row = CATEGORY_ROWS.find((r) => r.id === c.id);
+  return {
+    ...c,
+    createdAt: row?.createdAt ?? null,
+    deletedAt: row?.deletedAt ?? null,
+    customised: Boolean(row) && isBuiltInCategoryId(c.id),
+    usage: categoryUsage(c.id),
+  };
+}
+
+function categoriesAnswer(): AdminObjectionCategory[] {
+  const deleted = CATEGORY_ROWS.filter((c) => c.deletedAt).map((c) => adminCategory(c));
+  return [...liveCategories().map(adminCategory), ...deleted];
+}
 
 // ── Team objections (admin-objections) ───────────────────────────────────
 
 const PROBIOTICS_NOT_NEEDED = 'team:probiotics-my-pet-doesnt-need-them';
 const PROBIOTICS_YOGURT = 'team:probiotics-yogurt-is-enough';
 const CAT_BORED = 'team:cat-gets-bored-with-the-same-food';
+const SENSITIVE_STOMACH = 'team:its-just-a-sensitive-stomach';
 
 function objection(over: Partial<AdminObjection> & Pick<AdminObjection, 'id' | 'title' | 'example'>): AdminObjection {
   return {
     titleFr: null,
     exampleFr: null,
     species: ['dog', 'cat'],
-    focusArea: null,
+    categoryId: 'everyday-nutrition',
     coaching: {},
     visible: true,
     sortOrder: null,
@@ -92,7 +202,7 @@ let OBJECTIONS: AdminObjection[] = [
     example: '“He eats a good food already — why would he need probiotics?”',
     titleFr: 'Probiotiques : « mon animal n’en a pas besoin »',
     exampleFr: '« Il mange déjà une bonne nourriture — pourquoi aurait-il besoin de probiotiques? »',
-    focusArea: 'gi',
+    categoryId: PROBIOTICS,
     coaching: {
       rootConcerns: [
         'Thinks probiotics are an upsell on top of a food that already works.',
@@ -110,7 +220,14 @@ let OBJECTIONS: AdminObjection[] = [
     id: PROBIOTICS_YOGURT,
     title: 'Probiotics: ‘yogurt is enough’',
     example: '“I give her a spoon of yogurt every morning — isn’t that the same thing?”',
-    focusArea: 'gi',
+    categoryId: PROBIOTICS,
+  }),
+  objection({
+    id: SENSITIVE_STOMACH,
+    title: 'It’s just a sensitive stomach',
+    example: '“He’s always had a funny tummy — it settles down on its own.”',
+    categoryId: GI,
+    usage: { scenarios: 0, live: 0, trainee: 0 },
   }),
   objection({
     id: CAT_BORED,
@@ -124,6 +241,7 @@ let OBJECTIONS: AdminObjection[] = [
     title: 'Raw goat milk cures everything',
     example: '“My neighbour swears by raw goat milk for gut health.”',
     species: ['dog'],
+    categoryId: GI,
     deletedAt: ago(26 * HOUR),
   }),
 ];
@@ -146,6 +264,9 @@ function objectionsMock(body: Record<string, unknown>): unknown {
         );
       const valid = validateObjectionInput({ ...raw, id: newId });
       if (!valid.ok) return new MockHttpError(400, { error: valid.error });
+      if (!liveCategories().some((c) => c.id === valid.value.categoryId)) {
+        return new MockHttpError(400, { error: 'That category no longer exists — pick another one.' });
+      }
       const saved: AdminObjection = {
         ...valid.value,
         updatedAt: new Date().toISOString(),
@@ -171,9 +292,61 @@ function objectionsMock(body: Record<string, unknown>): unknown {
     case 'restore':
       OBJECTIONS = OBJECTIONS.map((o) => (o.id === id ? { ...o, deletedAt: null } : o));
       return { objection: OBJECTIONS.find((o) => o.id === id) ?? null };
+    case 'upsert-category':
+      return upsertCategoryMock(body);
+    case 'delete-category': {
+      if (isBuiltInCategoryId(id)) {
+        return new MockHttpError(400, { error: 'Built-in categories can be renamed, but not deleted.' });
+      }
+      const inside = liveObjections().filter((o) => o.categoryId === id);
+      if (inside.length > 0) {
+        return new MockHttpError(409, {
+          error: 'Objections still live in this category.',
+          code: 'in_use',
+          objections: inside.map((o) => ({ id: o.id, title: o.title })),
+        });
+      }
+      CATEGORY_ROWS = CATEGORY_ROWS.map((c) => (c.id === id ? { ...c, deletedAt: new Date().toISOString() } : c));
+      return { ok: true };
+    }
+    case 'restore-category': {
+      CATEGORY_ROWS = CATEGORY_ROWS.map((c) => (c.id === id ? { ...c, deletedAt: null } : c));
+      const row = CATEGORY_ROWS.find((c) => c.id === id);
+      return { category: row ? adminCategory(row) : null };
+    }
     default:
       return new MockHttpError(400, { error: "op must be 'upsert', 'delete' or 'restore'" });
   }
+}
+
+function upsertCategoryMock(body: Record<string, unknown>): unknown {
+  const raw = (body.category ?? {}) as Record<string, unknown>;
+  const existing =
+    typeof raw.id === 'string' ? liveCategories().find((c) => c.id === raw.id) : undefined;
+  const id =
+    existing?.id ??
+    categoryIdFromName(
+      typeof raw.name === 'string' ? raw.name : '',
+      CATEGORY_ROWS.map((c) => c.id),
+    );
+  const valid = validateCategoryInput({ ...raw, id });
+  if (!valid.ok) return new MockHttpError(400, { error: valid.error });
+  const name = valid.value.name.toLowerCase();
+  if (liveCategories().some((c) => c.id !== id && c.name.toLowerCase() === name)) {
+    return new MockHttpError(400, { error: `There’s already a category called “${valid.value.name}”.` });
+  }
+  const dropped = valid.value.knowledgeSlugs.filter((s) => !ALL_DOC_SLUGS.has(s));
+  const stored = CATEGORY_ROWS.find((c) => c.id === id);
+  const next = {
+    ...valid.value,
+    knowledgeSlugs: valid.value.knowledgeSlugs.filter((s) => ALL_DOC_SLUGS.has(s)),
+    builtIn: isBuiltInCategoryId(id),
+    updatedAt: new Date().toISOString(),
+    createdAt: stored?.createdAt ?? new Date().toISOString(),
+    deletedAt: null,
+  };
+  CATEGORY_ROWS = stored ? CATEGORY_ROWS.map((c) => (c.id === id ? next : c)) : [...CATEGORY_ROWS, next];
+  return { category: adminCategory(next), ...(dropped.length ? { _dropped: dropped } : {}) };
 }
 
 /** A handler's way of answering with a non-2xx status (see mockApi's POST branch). */
@@ -541,9 +714,24 @@ async function inspectMock(body: Record<string, unknown>): Promise<ScenarioInspe
     globalPrefix: null,
     globalSuffix: 'Keep every reply under 60 words.',
   };
-  const mode: ScenarioInspectResponse['knowledge']['mode'] = draft.knowledge_slugs?.length
+  // The same rule the server runs: the scenario's own choice, else its
+  // category's knowledge, else the whole library.
+  const categories = liveCategories();
+  const effective = effectiveKnowledge(
+    { focusArea: draft.focus_area, knowledgeSlugs: draft.knowledge_slugs },
+    categoryKnowledgeFor(draft.pushback_id, liveObjections(), categories),
+  );
+  const categoryId = objectionCategoryId(draft.pushback_id, liveObjections());
+  const category = categories.find((c) => c.id === categoryId) ?? null;
+  const source: Pick<ScenarioInspectResponse, 'knowledgeSource' | 'knowledgeCategory'> = {
+    knowledgeSource: effective.source,
+    knowledgeCategory: category
+      ? { id: category.id, name: category.name, focusArea: category.focusArea, knowledgeSlugs: [...category.knowledgeSlugs] }
+      : null,
+  };
+  const mode: ScenarioInspectResponse['knowledge']['mode'] = effective.knowledgeSlugs.length
     ? 'documents'
-    : draft.focus_area
+    : effective.focusArea
       ? 'focus'
       : 'library';
   const missing = missingScenarioFields(draft, liveObjections());
@@ -553,20 +741,23 @@ async function inspectMock(body: Record<string, unknown>): Promise<ScenarioInspe
       missing,
       prompt: null,
       adminNotes,
+      ...source,
       knowledge: { enabled: true, k: 4, mode, appliedFilter: {}, focusRelaxed: false, passages: [] },
     };
   }
   const appliedFilter: Record<string, unknown> = { tools: ['roleplay'] };
   if (draft.species) appliedFilter.species = [draft.species === 'cat' ? 'cat' : 'dog'];
-  if (mode === 'focus') appliedFilter.focus = draft.focus_area;
+  if (mode === 'focus') appliedFilter.focus = effective.focusArea;
+  if (mode === 'documents') appliedFilter.docSlugs = effective.knowledgeSlugs;
   const passages =
     mode === 'documents'
-      ? PASSAGES.filter((p) => p.slug && draft.knowledge_slugs?.includes(p.slug))
+      ? PASSAGES.filter((p) => p.slug && effective.knowledgeSlugs.includes(p.slug))
       : PASSAGES;
   return {
     missing: [],
     prompt: mockPrompt(scenario, draft),
     adminNotes,
+    ...source,
     knowledge: {
       enabled: true,
       k: 4,
@@ -838,7 +1029,7 @@ export const STUDIO_ROUTES: Record<string, unknown> = {
   'admin-scenarios': TRAINEE_SCENARIOS,
   // A getter, so the list reflects this session's writes.
   get 'admin-objections'() {
-    return { objections: OBJECTIONS };
+    return { objections: OBJECTIONS, categories: categoriesAnswer() };
   },
 };
 

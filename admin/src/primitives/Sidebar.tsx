@@ -14,6 +14,7 @@
  * drawer left open across navigations is a nuisance on a phone.
  */
 import { useEffect, useState } from 'react';
+import { KeyRound } from 'lucide-react';
 import { COLOR } from '../lib/tokens';
 import {
   visibleSections,
@@ -72,6 +73,7 @@ export function Sidebar({
   permissions,
   identity,
   onSignOut,
+  onChangePassword,
   collapsed,
   onToggleCollapsed,
   compact,
@@ -83,6 +85,8 @@ export function Sidebar({
   permissions: readonly string[];
   identity: { name: string; email: string | null; role: string };
   onSignOut: () => void;
+  /** Opens "Change password" (rendered by the caller, outside the rail). */
+  onChangePassword?: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   compact: boolean;
@@ -308,6 +312,11 @@ export function Sidebar({
                     {identity.role}
                   </div>
                 </div>
+                {onChangePassword && (
+                  <RailButton label="Change password" onClick={onChangePassword}>
+                    <KeyRound aria-hidden size={13} style={{ verticalAlign: '-2px' }} />
+                  </RailButton>
+                )}
                 <RailButton label="Sign out" onClick={onSignOut}>
                   ⏻
                 </RailButton>

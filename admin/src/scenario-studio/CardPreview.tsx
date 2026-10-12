@@ -13,7 +13,7 @@
  */
 import { COLOR, DRIVERS, type DriverKey } from '../lib/tokens';
 import { lifeStageLabel, speciesOf } from '../../../src/shared/scenarios/species';
-import { SPECIES_GLYPH } from './ui';
+import { PetBadge } from './ui';
 import type { StudioDraft } from './studioModel';
 import { objectionLabel, type ObjectionRef } from './objections/objectionsModel';
 import { useObjectionsContext } from './objections/ObjectionsContext';
@@ -109,26 +109,17 @@ export function CardPreview({
         }}
       />
       {compact && (
-        <span
-          aria-hidden
+        <PetBadge
+          species={species}
+          size={28}
           title={species === 'cat' ? 'Cat' : 'Dog'}
           style={{
             position: 'absolute',
             right: 10,
             top: 10,
-            width: 28,
-            height: 28,
-            borderRadius: 999,
-            background: 'rgba(255,255,255,0.85)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 15,
             boxShadow: '0 2px 8px -4px rgba(60,20,15,0.3)',
           }}
-        >
-          {SPECIES_GLYPH[species]}
-        </span>
+        />
       )}
       <div
         style={{

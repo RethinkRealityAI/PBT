@@ -17,31 +17,36 @@ import { LoadingShimmer } from '../primitives';
 import { useConfirm } from '../primitives/Confirm';
 import { COLOR } from '../lib/tokens';
 import { speciesOf, type ScenarioSpecies } from '../../../src/shared/scenarios/species';
+import type { ObjectionCategory } from '../../../src/shared/scenarios/objectionCategories';
 import {
   ASSIST_GRADIENT,
   AssistMark,
   Chip,
   Kicker,
+  PetBadge,
+  PetIcon,
   StatusDot,
   TextArea,
 } from './ui';
 import { CardPreview } from './CardPreview';
 import {
+  ALL_CATEGORIES,
   ALL_OBJECTIONS,
   ANIMAL_FILTERS,
   GALLERY_FILTERS,
   SOURCE_LABELS,
   difficultyText,
+  entryCategoryName,
   entryStatusText,
   galleryFacets,
   relativeTime,
   scenarioSummary,
   type AnimalFilter,
   type GalleryFilter,
+  type GalleryObjectionRef,
   type StudioEntry,
 } from './studioModel';
-import { objectionLabel, type ObjectionRef } from './objections/objectionsModel';
-import { SPECIES_GLYPH } from './ui';
+import { objectionLabel } from './objections/objectionsModel';
 
 /** Species choice on the composer; null = let the assistant decide. */
 export type ComposerSpecies = ScenarioSpecies | null;
@@ -86,8 +91,10 @@ export interface StudioHomeProps {
   onAddToLibrary: (entry: StudioEntry) => void;
   /** Saved library copies of each trainee scenario, by the trainee entry's id. */
   libraryCopies: ReadonlyMap<string, StudioEntry[]>;
-  /** The team's objections (active + retired), for objection names. */
-  objections: readonly ObjectionRef[];
+  /** The team's objections (active + retired), for objection names and their categories. */
+  objections: readonly GalleryObjectionRef[];
+  /** Every category (built-ins included), for the Category filter and card labels. */
+  categories?: readonly Pick<ObjectionCategory, 'id' | 'name'>[];
   resumable: ResumableDraft[];
   onResume: (id: string) => void;
   onDiscardLocal: (id: string) => void;
@@ -137,6 +144,7 @@ export function StudioHome(props: StudioHomeProps) {
           onAddToLibrary={props.onAddToLibrary}
           libraryCopies={props.libraryCopies}
           objections={props.objections}
+          categories={props.categories ?? []}
           unsavedIds={unsavedIds}
         />
       </ScreenShell>
@@ -294,10 +302,10 @@ function Composer({ onCreate }: { onCreate: StudioHomeProps['onCreate'] }) {
   );
 }
 
-const SPECIES_OPTIONS: Array<{ value: ComposerSpecies; glyph: string; label: string }> = [
-  { value: 'dog', glyph: '🐕', label: 'Dog' },
-  { value: 'cat', glyph: '🐈', label: 'Cat' },
-  { value: null, glyph: '✦', label: 'Let the assistant decide' },
+const SPECIES_OPTIONS: Array<{ value: ComposerSpecies; label: string }> = [
+  { value: 'dog', label: 'Dog' },
+  { value: 'cat', label: 'Cat' },
+  { value: null, label: 'Let the assistant decide' },
 ];
 
 function SpeciesToggle({
@@ -369,9 +377,13 @@ function SpeciesToggle({
               cursor: 'pointer',
             }}
           >
-            <span aria-hidden style={o.value === null ? { color: 'oklch(0.55 0.18 320)' } : undefined}>
-              {o.glyph}
-            </span>
+            {o.value === null ? (
+              <span aria-hidden style={{ color: 'oklch(0.55 0.18 320)' }}>
+                ✦
+              </span>
+            ) : (
+              <PetIcon species={o.value} />
+            )}
             {o.label}
           </button>
         );
@@ -478,6 +490,7 @@ function Gallery({
   onAddToLibrary,
   libraryCopies,
   objections,
+  categories,
   unsavedIds,
 }: {
   entries: StudioEntry[];
@@ -489,24 +502,29 @@ function Gallery({
   onDuplicate: (entry: StudioEntry) => void;
   onAddToLibrary: (entry: StudioEntry) => void;
   libraryCopies: ReadonlyMap<string, StudioEntry[]>;
-  objections: readonly ObjectionRef[];
+  objections: readonly GalleryObjectionRef[];
+  categories: readonly Pick<ObjectionCategory, 'id' | 'name'>[];
   unsavedIds: ReadonlySet<string>;
 }) {
   const [filter, setFilter] = useState<GalleryFilter>('all');
   const [animal, setAnimal] = useState<AnimalFilter>('all');
+  const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [objection, setObjection] = useState<string>(ALL_OBJECTIONS);
   const [limit, setLimit] = useState(PAGE);
   const objectionId = useId();
+  const categoryId = useId();
 
   const facets = useMemo(
-    () => galleryFacets(entries, { status: filter, animal, objection }, query, objections),
-    [entries, filter, animal, objection, query, objections],
+    () => galleryFacets(entries, { status: filter, animal, category, objection }, query, objections, categories),
+    [entries, filter, animal, category, objection, query, objections, categories],
   );
   const shown = facets.shown;
-  const filtered = filter !== 'all' || animal !== 'all' || objection !== ALL_OBJECTIONS;
+  const filtered =
+    filter !== 'all' || animal !== 'all' || category !== ALL_CATEGORIES || objection !== ALL_OBJECTIONS;
   const showAll = () => {
     setFilter('all');
     setAnimal('all');
+    setCategory(ALL_CATEGORIES);
     setObjection(ALL_OBJECTIONS);
   };
 
@@ -549,17 +567,39 @@ function Gallery({
                 setLimit(PAGE);
               }}
             >
-              {f.key !== 'all' && (
-                <span aria-hidden style={{ marginRight: 5 }}>
-                  {SPECIES_GLYPH[f.key]}
-                </span>
-              )}
-              {f.label}
-              <Count loading={loading} n={facets.animal[f.key]} />
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                {f.key !== 'all' && <PetIcon species={f.key} size={14} />}
+                {f.label}
+                <Count loading={loading} n={facets.animal[f.key]} />
+              </span>
             </Chip>
           ))}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 240px', minWidth: 0, maxWidth: 420 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 220px', minWidth: 0, maxWidth: 360 }}>
+          <label htmlFor={categoryId} style={{ fontSize: 12.5, fontWeight: 700, color: COLOR.inkSoft, flexShrink: 0 }}>
+            Category
+          </label>
+          <select
+            id={categoryId}
+            className="pbt-studio-field"
+            value={category}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              // The objection options are scoped to the category.
+              setObjection(ALL_OBJECTIONS);
+              setLimit(PAGE);
+            }}
+            style={filterSelect}
+          >
+            <option value={ALL_CATEGORIES}>All categories{loading ? '' : ` (${facets.categoryTotal})`}</option>
+            {facets.categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label} ({c.count})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 220px', minWidth: 0, maxWidth: 420 }}>
           <label htmlFor={objectionId} style={{ fontSize: 12.5, fontWeight: 700, color: COLOR.inkSoft, flexShrink: 0 }}>
             Objection
           </label>
@@ -571,17 +611,7 @@ function Gallery({
               setObjection(e.target.value);
               setLimit(PAGE);
             }}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              padding: '7px 10px',
-              borderRadius: 12,
-              border: '1px solid rgba(60,20,15,0.14)',
-              background: 'rgba(255,255,255,0.78)',
-              fontSize: 13,
-              fontFamily: 'var(--pbt-font)',
-              color: COLOR.ink,
-            }}
+            style={filterSelect}
           >
             <option value={ALL_OBJECTIONS}>All objections{loading ? '' : ` (${facets.objectionTotal})`}</option>
             {facets.objections.map((o) => (
@@ -617,6 +647,7 @@ function Gallery({
                   entry={e}
                   canWrite={canWrite}
                   objections={objections}
+                  categoryName={entryCategoryName(e, objections, categories)}
                   copies={libraryCopies.get(e.id) ?? []}
                   unsaved={unsavedIds.has(e.id)}
                   onOpen={onOpen}
@@ -647,6 +678,18 @@ function Count({ loading, n }: { loading: boolean; n: number }) {
   );
 }
 
+const filterSelect: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  padding: '7px 10px',
+  borderRadius: 12,
+  border: '1px solid rgba(60,20,15,0.14)',
+  background: 'rgba(255,255,255,0.78)',
+  fontSize: 13,
+  fontFamily: 'var(--pbt-font)',
+  color: COLOR.ink,
+};
+
 const cardGrid: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))',
@@ -657,6 +700,7 @@ function GalleryCard({
   entry,
   canWrite,
   objections,
+  categoryName,
   copies,
   unsaved,
   onOpen,
@@ -665,7 +709,9 @@ function GalleryCard({
 }: {
   entry: StudioEntry;
   canWrite: boolean;
-  objections: readonly ObjectionRef[];
+  objections: readonly GalleryObjectionRef[];
+  /** The category its objection lives in (null: "Something else" / none). */
+  categoryName: string | null;
   /** For a trainee's scenario: its saved library copies, newest first. */
   copies: StudioEntry[];
   /** There are edits to it kept in this browser. */
@@ -700,13 +746,38 @@ function GalleryCard({
     >
       <CardPreview draft={{ ...entry.draft, card_title_override: entry.title }} compact />
       <div style={{ padding: '0 4px', display: 'grid', gap: 6, flex: 1 }}>
-        <div style={{ fontSize: 13, color: COLOR.ink, fontWeight: 650, overflowWrap: 'anywhere' }}>
-          <span aria-hidden style={{ marginRight: 5 }}>
-            {SPECIES_GLYPH[species]}
-          </span>
-          {species === 'cat' ? 'Cat' : 'Dog'} ·{' '}
-          <span style={{ fontWeight: 700 }}>
-            {entry.draft.pushback_id ? objectionLabel(entry.draft.pushback_id, objections) : 'No objection yet'}
+        {categoryName && (
+          <div
+            style={{
+              fontFamily: 'var(--pbt-mono)',
+              fontSize: 10.5,
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: COLOR.inkMute,
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {categoryName}
+          </div>
+        )}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            fontSize: 13,
+            color: COLOR.ink,
+            fontWeight: 650,
+            minWidth: 0,
+          }}
+        >
+          <PetBadge species={species} size={22} />
+          <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+            {species === 'cat' ? 'Cat' : 'Dog'} ·{' '}
+            <span style={{ fontWeight: 700 }}>
+              {entry.draft.pushback_id ? objectionLabel(entry.draft.pushback_id, objections) : 'No objection yet'}
+            </span>
           </span>
         </div>
         <div style={{ fontSize: 12.5, color: COLOR.inkSoft, overflowWrap: 'anywhere' }}>

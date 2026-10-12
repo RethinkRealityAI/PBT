@@ -19,7 +19,7 @@ import { lifeStageLabel, speciesOf } from '../../../../src/shared/scenarios/spec
 import { Glass } from '../../primitives';
 import { Button } from '../../primitives/form';
 import { COLOR, RADIUS } from '../../lib/tokens';
-import { Kicker, SPECIES_GLYPH } from '../ui';
+import { Kicker, PetIcon } from '../ui';
 import { hasText, type StudioDraft, type StudioStepKey } from '../studioModel';
 import type { TestDriveProps } from '../types';
 import { Simulator } from '../simulator/Simulator';
@@ -89,6 +89,8 @@ export function summariseDraft(
   step: StudioStepKey;
   label: string;
   value: string;
+  /** The animal, for the Pet row (shown as an icon beside the value). */
+  species?: 'dog' | 'cat';
   /** What this row still needs before the owner can talk ("Needs a breed"). */
   needs?: string;
 }> {
@@ -139,7 +141,8 @@ export function summariseDraft(
     {
       step: 'pet',
       label: 'Pet',
-      value: petBits.length ? `${SPECIES_GLYPH[species]} ${petBits.join(' · ')}` : NOT_SET,
+      value: petBits.length ? petBits.join(' · ') : NOT_SET,
+      ...(petBits.length ? { species } : {}),
       needs: needs('pet'),
     },
     {
@@ -191,7 +194,14 @@ function WhatYoureTesting({ draft, goTo }: { draft: StudioDraft; goTo: (s: Studi
                   overflowWrap: 'anywhere',
                 }}
               >
-                {r.value}
+                {r.species ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <PetIcon species={r.species} size={14} title={r.species === 'cat' ? 'Cat' : 'Dog'} />
+                    {r.value}
+                  </span>
+                ) : (
+                  r.value
+                )}
               </div>
               {r.needs && (
                 <div style={{ marginTop: 2, fontSize: 12, fontWeight: 700, color: COLOR.danger }}>

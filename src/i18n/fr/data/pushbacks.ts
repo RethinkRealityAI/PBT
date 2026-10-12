@@ -41,6 +41,26 @@ export const pushbacks: PushbackDataOverlay = {
     },
   },
 
+  // Catégories intégrées (les grands sujets qui regroupent les objections).
+  // Les catégories créées par l'équipe portent leur propre nom français.
+  objectionCategories: {
+    'everyday-nutrition': {
+      name: 'Nutrition au quotidien',
+      description:
+        'Le coût, les changements de nourriture, les conseils de l\'éleveur et les modes alimentaires — les objections que soulèvent la plupart des recommandations alimentaires.',
+    },
+    weight: {
+      name: 'Gestion du poids',
+      description:
+        'Les animaux en surpoids ou obèses, et les propriétaires qui ne le voient pas ou ne veulent rien changer.',
+    },
+    'prescription-diets': {
+      name: 'Diètes vétérinaires',
+      description:
+        'Les diètes thérapeutiques (Rx) que le vétérinaire a recommandées pour un problème de santé.',
+    },
+  },
+
   difficulties: {
     1: {
       label: 'Réceptif',

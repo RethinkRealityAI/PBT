@@ -73,7 +73,8 @@ import {
 } from './localDrafts';
 import { EMPTY_TRANSCRIPT, type CopilotTranscript } from './copilot/types';
 import type { KnowledgeState, StepProps } from './types';
-import { StatusDot, StepHeading, SPECIES_GLYPH } from './ui';
+import { PawPrint } from 'lucide-react';
+import { IconBadge, PetBadge, StatusDot, StepHeading } from './ui';
 import { StepRail, type RailStep } from './StepRail';
 import { useObjectionsContext } from './objections/ObjectionsContext';
 import { missingCoreFields } from './objections/objectionsModel';
@@ -383,6 +384,7 @@ export function StudioEditor(props: StudioEditorProps) {
           deleted: objectionsApi.deleted,
           loaded: objectionsApi.loaded,
         },
+        categories: objectionsApi.categories,
       }),
     [
       draft,
@@ -394,6 +396,7 @@ export function StudioEditor(props: StudioEditorProps) {
       objectionsApi.objections,
       objectionsApi.deleted,
       objectionsApi.loaded,
+      objectionsApi.categories,
     ],
   );
   const dirty = draftsDiffer(draft, baseline);
@@ -928,12 +931,15 @@ export function StudioEditor(props: StudioEditorProps) {
         ? `${RAIL_WIDTH}px minmax(0, 1fr) ${DOCK_WIDTH}px`
         : `${RAIL_WIDTH}px minmax(0, 1fr)`;
 
+  // A brand-new scenario with no animal yet shows a paw, not a dog it isn't.
   const speciesGlyph =
-    draft.species === 'cat' || draft.species === 'dog'
-      ? SPECIES_GLYPH[draft.species]
-      : source === 'admin' && !savedOnce
-        ? '🐾'
-        : SPECIES_GLYPH[speciesOf(draft.species)];
+    draft.species === 'cat' || draft.species === 'dog' ? (
+      <PetBadge species={draft.species} size={30} />
+    ) : source === 'admin' && !savedOnce ? (
+      <IconBadge icon={PawPrint} size={30} />
+    ) : (
+      <PetBadge species={speciesOf(draft.species)} size={30} />
+    );
 
   const saveState: { tone: 'success' | 'warn' | 'neutral'; text: string } =
     keptLocally === false && (dirty || !savedOnce)

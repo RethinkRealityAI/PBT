@@ -35,7 +35,7 @@ const PROBIOTICS: TeamObjection = {
   titleFr: null,
   exampleFr: null,
   species: ['dog', 'cat'],
-  focusArea: 'gi',
+  categoryId: 'category:gi',
   coaching: {
     acknowledgePatterns: ['It makes sense to question adding something new.', 'Second ack', 'Third ack'],
     clarifyQuestions: ['What have you noticed about his stools lately?'],

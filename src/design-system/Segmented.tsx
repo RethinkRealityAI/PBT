@@ -4,6 +4,12 @@ import { useTheme } from '../app/providers/ThemeProvider';
 export interface SegmentedOption<V extends string> {
   value: V;
   label: ReactNode;
+  /**
+   * Optional decorative icon drawn before the label (e.g. `SpeciesIcon`). It
+   * should paint in `currentColor`: white on the active gradient, muted on an
+   * inactive option. Hidden from assistive tech — the label names the tab.
+   */
+  icon?: ReactNode;
 }
 
 export interface SegmentedProps<V extends string> {
@@ -76,6 +82,19 @@ export function Segmented<V extends string>({
               gap: 6,
             }}
           >
+            {opt.icon != null && (
+              <span
+                aria-hidden
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  color: active ? 'inherit' : 'var(--pbt-text-muted)',
+                  transition: 'color 0.2s',
+                }}
+              >
+                {opt.icon}
+              </span>
+            )}
             {opt.label}
           </button>
         );

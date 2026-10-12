@@ -25,7 +25,7 @@ import { lifeStageLabel, speciesOf } from '../../../../src/shared/scenarios/spec
 import { Glass } from '../../primitives';
 import { Button, InlineAlert } from '../../primitives/form';
 import { COLOR, DRIVERS, RADIUS, type DriverKey } from '../../lib/tokens';
-import { Kicker, SPECIES_GLYPH, Spinner, TypingDots } from '../ui';
+import { Kicker, PetIcon, Spinner, TypingDots } from '../ui';
 import { hasText, type StudioDraft, type StudioStepKey } from '../studioModel';
 import { ScoreSummary } from './ScoreSummary';
 import {
@@ -262,9 +262,12 @@ function OwnerHeader({
   const driver = driverKey && DRIVERS[driverKey] ? DRIVERS[driverKey] : null;
   const persona = scenario?.persona ?? (hasText(draft.persona_override) ? draft.persona_override : 'Skeptical');
   const who = [persona, driver?.key].filter(Boolean).join(', ');
-  const pet = scenario
-    ? `${SPECIES_GLYPH[speciesOf(scenario.species)]} ${scenario.breed} · ${lifeStageLabel(scenario.age, scenario.species)}`
-    : null;
+  const pet = scenario ? (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      <PetIcon species={speciesOf(scenario.species)} size={14} />
+      {`${scenario.breed} · ${lifeStageLabel(scenario.age, scenario.species)}`}
+    </span>
+  ) : null;
 
   return (
     <div
@@ -314,7 +317,7 @@ function OwnerHeader({
             color: COLOR.inkMute,
           }}
         >
-          {pet && <span>{pet}</span>}
+          {pet}
           {started && turns > 0 && (
             <span
               style={{
@@ -520,7 +523,12 @@ function ScenarioFacts({ scenario }: { scenario: Scenario }) {
   const facts: Array<{ label: string; value: ReactNode; sub?: string }> = [
     {
       label: 'Pet',
-      value: `${SPECIES_GLYPH[speciesOf(scenario.species)]} ${scenario.breed}`,
+      value: (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <PetIcon species={speciesOf(scenario.species)} size={15} />
+          {scenario.breed}
+        </span>
+      ),
       sub: lifeStageLabel(scenario.age, scenario.species),
     },
     {

@@ -12,6 +12,7 @@
  */
 import type { SimulationConfig } from '../data/knowledge/simulationConfig';
 import type { TeamObjection } from '../shared/scenarios/objections';
+import type { ObjectionCategory } from '../shared/scenarios/objectionCategories';
 
 export type FlagKey =
   | 'screen.analyzer.enabled'
@@ -113,6 +114,12 @@ export interface FlagSnapshot {
    * Absent on an older server or before the migration — treat as none.
    */
   objections?: TeamObjection[];
+  /**
+   * Stored categories (`scenario_objection_categories`, non-deleted): the
+   * team's own plus admin edits of the built-in ones. Merge with the code's
+   * built-ins via `mergeCategories` — never read raw. Absent = none.
+   */
+  objectionCategories?: ObjectionCategory[];
   fetchedAt: number;
 }
 

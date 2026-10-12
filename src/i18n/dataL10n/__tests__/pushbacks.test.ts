@@ -12,8 +12,16 @@ import type { TeamObjection } from '../../../shared/scenarios/objections';
 import { localizedScenario } from '../scenarios';
 import { PUSHBACK_KNOWLEDGE } from '../../../data/knowledge/pushbackTaxonomy';
 import {
+  BUILT_IN_CATEGORIES,
+  BUILT_IN_CATEGORY_IDS,
+  mergeCategories,
+  type ObjectionCategory,
+} from '../../../shared/scenarios/objectionCategories';
+import {
   DIFFICULTY_LEVELS,
+  OBJECTION_CATEGORY_IDS,
   PUSHBACK_IDS,
+  localizedObjectionCategory,
   localizedDifficulty,
   localizedDifficultyLabel,
   localizedPushbackCategory,
@@ -182,7 +190,7 @@ describe('team objections (Scenario Studio) — display localisation', () => {
     titleFr: 'Probiotiques : « mon chien n’en a pas besoin »',
     exampleFr: '« Il mange bien. »',
     species: ['dog'],
-    focusArea: 'gi',
+    categoryId: 'category:gi',
     coaching: {},
     visible: true,
     sortOrder: null,
@@ -253,5 +261,71 @@ describe('team objections (Scenario Studio) — display localisation', () => {
     expect(localizedSessionSummary(`${cost.title} · Lab`, 'cost', 'fr')).toBe(
       `${overlay.categories.cost.title} · Lab`,
     );
+  });
+});
+
+describe('objection categories — display localisation', () => {
+  const builtIn = (id: string) => mergeCategories().find((c) => c.id === id)!;
+
+  it('OBJECTION_CATEGORY_IDS mirrors the built-in categories', () => {
+    expect([...OBJECTION_CATEGORY_IDS]).toEqual([...BUILT_IN_CATEGORY_IDS]);
+  });
+
+  it('French covers every built-in category with non-empty, non-English text', () => {
+    for (const category of BUILT_IN_CATEGORIES) {
+      const l10n = overlay.objectionCategories[category.id as (typeof OBJECTION_CATEGORY_IDS)[number]];
+      expect(l10n, `missing fr overlay for ${category.id}`).toBeDefined();
+      expect(l10n.name.trim().length).toBeGreaterThan(0);
+      expect(l10n.description.trim().length).toBeGreaterThan(0);
+      expect(l10n.name).not.toBe(category.name);
+      expect(l10n.description).not.toBe(category.description);
+    }
+  });
+
+  it('a built-in reads canonical English in en and the overlay in fr', () => {
+    const weight = builtIn('weight');
+    expect(localizedObjectionCategory(weight, 'en')).toEqual({
+      name: 'Weight management',
+      description: weight.description,
+    });
+    expect(localizedObjectionCategory(weight, 'fr')).toEqual(overlay.objectionCategories.weight);
+  });
+
+  it("an admin's edit of a built-in wins over the shipped translation", () => {
+    const base = builtIn('everyday-nutrition');
+    // French name given: shown in fr; English untouched.
+    const withFr = mergeCategories([{ ...base, nameFr: 'Alimentation de tous les jours' }])[0];
+    expect(localizedObjectionCategory(withFr, 'fr').name).toBe('Alimentation de tous les jours');
+    expect(localizedObjectionCategory(withFr, 'en').name).toBe('Everyday nutrition');
+    // Renamed without French: the admin's name in both locales (never the
+    // translation of the OLD name); an unchanged description keeps its overlay.
+    const renamed = mergeCategories([{ ...base, name: 'Daily feeding' }])[0];
+    expect(localizedObjectionCategory(renamed, 'en').name).toBe('Daily feeding');
+    expect(localizedObjectionCategory(renamed, 'fr')).toEqual({
+      name: 'Daily feeding',
+      description: overlay.objectionCategories['everyday-nutrition'].description,
+    });
+    const redescribed = mergeCategories([{ ...base, description: 'Food questions.' }])[0];
+    expect(localizedObjectionCategory(redescribed, 'fr').description).toBe('Food questions.');
+  });
+
+  it('a team category uses its own French name, English when none', () => {
+    const team: ObjectionCategory = {
+      id: 'category:probiotics',
+      name: 'Probiotics',
+      nameFr: 'Probiotiques',
+      description: 'Gut health supplements.',
+      focusArea: null,
+      knowledgeSlugs: [],
+      sortOrder: null,
+      builtIn: false,
+      updatedAt: null,
+    };
+    expect(localizedObjectionCategory(team, 'fr')).toEqual({
+      name: 'Probiotiques',
+      description: 'Gut health supplements.',
+    });
+    expect(localizedObjectionCategory(team, 'en').name).toBe('Probiotics');
+    expect(localizedObjectionCategory({ ...team, nameFr: null }, 'fr').name).toBe('Probiotics');
   });
 });

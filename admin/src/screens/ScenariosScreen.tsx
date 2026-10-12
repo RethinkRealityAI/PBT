@@ -16,6 +16,7 @@ import { fmtAgo } from '../lib/format';
 import { pushbackLabel } from '../lib/labels';
 import { Button } from '../primitives/form';
 import { lifeStageLabel, speciesOf } from '../../../src/shared/scenarios/species';
+import { SpeciesIcon } from '../../../src/design-system/SpeciesIcon';
 import type { UserScenario } from '../data/types';
 import { ScenarioDetailModal } from './ScenarioDetailModal';
 
@@ -26,7 +27,6 @@ const DIFFICULTY_LABEL: Record<number, string> = {
   4: 'Combative',
 };
 
-const SPECIES_GLYPH = { dog: '🐕', cat: '🐈' } as const;
 
 export function ScenariosScreen({
   query,
@@ -270,9 +270,12 @@ export function ScenariosScreen({
                 </div>
               </div>
               <div style={{ fontSize: 12, color: COLOR.inkSoft }}>
-                <span role="img" aria-label={speciesOf(s.species) === 'cat' ? 'Cat' : 'Dog'} style={{ marginRight: 4 }}>
-                  {SPECIES_GLYPH[speciesOf(s.species)]}
-                </span>
+                <SpeciesIcon
+                  species={speciesOf(s.species)}
+                  size={14}
+                  title={speciesOf(s.species) === 'cat' ? 'Cat' : 'Dog'}
+                  style={{ marginRight: 4, verticalAlign: '-2px' }}
+                />
                 {s.breed ?? '—'} · {lifeStageLabel(s.life_stage, s.species) || '—'}
               </div>
               <div

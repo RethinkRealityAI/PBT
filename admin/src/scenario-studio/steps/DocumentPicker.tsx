@@ -36,6 +36,7 @@ export function DocumentPicker({
   scope,
   canWrite,
   canUpload,
+  holder = 'scenario',
 }: {
   docs: readonly KnowledgeDocument[];
   loading: boolean;
@@ -47,6 +48,8 @@ export function DocumentPicker({
   canWrite: boolean;
   /** The upload card is offered below (changes the empty-library wording). */
   canUpload: boolean;
+  /** What the documents are attached to — "scenario" (the Knowledge step) or "category". */
+  holder?: 'scenario' | 'category';
 }) {
   const [query, setQuery] = useState('');
   const shown = useMemo(() => filterKnowledgeDocs([...docs], { query }), [docs, query]);
@@ -77,7 +80,7 @@ export function DocumentPicker({
       {missing.length > 0 && (
         <div style={{ display: 'grid', gap: 8 }}>
           <InlineAlert tone="warn" title="Attached to documents that no longer exist">
-            They were deleted from the library, so this scenario reads nothing from them. Remove them —
+            They were deleted from the library, so this {holder} reads nothing from them. Remove them —
             or restore the document from “Recently deleted” in Knowledge.
           </InlineAlert>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -141,7 +144,7 @@ export function DocumentPicker({
 
       {atCap && (
         <InlineAlert tone="info">
-          {KNOWLEDGE_CAP} documents attached — the most a scenario can hold. Untick one before adding
+          {KNOWLEDGE_CAP} documents attached — the most a {holder} can hold. Untick one before adding
           another.
         </InlineAlert>
       )}
@@ -153,7 +156,7 @@ export function DocumentPicker({
       ) : docs.length === 0 ? (
         <div style={{ padding: 16, fontSize: 13, color: COLOR.inkMute, textAlign: 'center' }}>
           {canUpload
-            ? 'The library is empty — upload the first document below.'
+            ? `The library is empty — upload the first document ${holder === 'category' ? 'above' : 'below'}.`
             : 'The library is empty — someone with knowledge access can add documents in Knowledge.'}
         </div>
       ) : (

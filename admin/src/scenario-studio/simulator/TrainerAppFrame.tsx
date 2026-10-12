@@ -16,6 +16,7 @@
  * Every message is origin-checked both ways (`window.location.origin`).
  */
 import { useEffect, useRef, useState } from 'react';
+import { Mic } from 'lucide-react';
 import type { ScenarioOverrideRow } from '../../data/types';
 import { useObjectionsContext } from '../objections/ObjectionsContext';
 import { Modal, ModalCloseButton, StatusPill } from '../../primitives';
@@ -214,7 +215,8 @@ function FrameBody({
               Start text chat
             </Button>
             <Button onClick={() => start('voice')} disabled={!ready || status.kind === 'running'}>
-              🎙 Start voice
+              <Mic aria-hidden size={15} style={{ marginRight: 6, verticalAlign: '-2px' }} />
+              Start voice
             </Button>
             <Button tone="ghost" onClick={restart}>
               ↺ Restart

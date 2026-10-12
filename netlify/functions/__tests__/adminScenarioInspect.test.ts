@@ -214,6 +214,9 @@ describe('admin-scenario-inspect — an incomplete draft', () => {
         globalPrefix: null,
         globalSuffix: 'Keep replies short.',
       },
+      // The draft chose its own topic; with no pushback there is no category.
+      knowledgeSource: 'scenario',
+      knowledgeCategory: null,
       knowledge: {
         enabled: true,
         k: 6,
@@ -509,7 +512,7 @@ describe('admin-scenario-inspect — team objections', () => {
     title: 'Probiotics doubts',
     example: '"His gut is fine."',
     species: ['dog'],
-    focus_area: 'gi',
+    category_id: 'category:probiotics',
     coaching: { rootConcerns: ['Thinks probiotics are a fad'] },
     visible: false, // retired: existing scenarios must still preview
   };
@@ -555,5 +558,153 @@ describe('admin-scenario-inspect — team objections', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).missing).toEqual(['Pushback']);
     expect(mocks.retrieveChunksDetailed).not.toHaveBeenCalled();
+  });
+});
+
+// ── Category knowledge ───────────────────────────────────────────────────
+
+describe('admin-scenario-inspect — category knowledge', () => {
+  // DRAFT is a weight-denial scenario → the built-in "weight" category.
+  const WEIGHT_EDIT = {
+    id: 'weight',
+    name: 'Weight & obesity',
+    name_fr: null,
+    description: '',
+    focus_area: 'weight',
+    knowledge_slugs: ['study:weight-1', 'study:weight-2'],
+    sort_order: 20,
+    updated_at: '2026-10-12T10:00:00+00:00',
+  };
+  const noOwnKnowledge = { ...DRAFT, knowledge_slugs: [], focus_area: null };
+
+  it("a draft that chose no knowledge reads its category's — and says whose it is", async () => {
+    const headers = adminHeaders();
+    sb.setHandler('scenario_objection_categories', () => ({ data: [WEIGHT_EDIT], error: null }));
+    const body = await (await request({ draft: noOwnKnowledge }, headers)).json();
+    expect(body.missing).toEqual([]);
+    expect(body.knowledgeSource).toBe('category');
+    expect(body.knowledgeCategory).toEqual({
+      id: 'weight',
+      name: 'Weight & obesity',
+      focusArea: 'weight',
+      knowledgeSlugs: ['study:weight-1', 'study:weight-2'],
+    });
+    expect(body.knowledge.mode).toBe('documents');
+    const [, opts] = mocks.retrieveChunksDetailed.mock.calls[0];
+    expect(opts.filters).toEqual({ docSlugs: ['study:weight-1', 'study:weight-2'], species: 'dog', tool: 'roleplay' });
+  });
+
+  it("a draft's own documents replace the category's (the category is still named)", async () => {
+    const headers = adminHeaders();
+    sb.setHandler('scenario_objection_categories', () => ({ data: [WEIGHT_EDIT], error: null }));
+    const body = await (await request({ draft: DRAFT }, headers)).json();
+    expect(body.knowledgeSource).toBe('scenario');
+    expect(body.knowledgeCategory).toMatchObject({ id: 'weight', name: 'Weight & obesity' });
+    expect(body.knowledge.mode).toBe('documents');
+    expect(mocks.retrieveChunksDetailed.mock.calls[0][1].filters).toEqual({
+      docSlugs: ['study:davies-2024'],
+      species: 'dog',
+      tool: 'roleplay',
+    });
+  });
+
+  it('no knowledge anywhere is the whole library; "Other pushback" has no category', async () => {
+    const headers = adminHeaders();
+    let body = await (await request({ draft: noOwnKnowledge }, headers)).json();
+    expect(body.knowledgeSource).toBe('library');
+    // The built-in category exists (shipped), it just carries no knowledge.
+    expect(body.knowledgeCategory).toEqual({ id: 'weight', name: 'Weight management', focusArea: null, knowledgeSlugs: [] });
+    expect(body.knowledge.mode).toBe('library');
+
+    body = await (
+      await request({ draft: { ...noOwnKnowledge, pushback_id: 'custom', pushback_notes: 'Grain-free worries.' } }, headers)
+    ).json();
+    expect(body.knowledgeSource).toBe('library');
+    expect(body.knowledgeCategory).toBeNull();
+  });
+
+  it('a team objection reads ITS category (read fresh, so a just-attached document shows at once)', async () => {
+    const headers = adminHeaders();
+    sb.setHandler('scenario_objections', () => ({
+      data: [
+        {
+          id: 'team:probiotics',
+          title: 'Probiotics doubts',
+          example: '"His gut is fine."',
+          species: ['dog'],
+          category_id: 'category:probiotics',
+          coaching: {},
+          visible: true,
+        },
+      ],
+      error: null,
+    }));
+    const categories = vi.fn(() => ({
+      data: [{ ...WEIGHT_EDIT, id: 'category:probiotics', name: 'Probiotics', focus_area: null, knowledge_slugs: [] }],
+      error: null,
+    }));
+    sb.setHandler('scenario_objection_categories', categories);
+    const draft = { ...noOwnKnowledge, pushback_id: 'team:probiotics' };
+    let body = await (await request({ draft }, headers)).json();
+    expect(body.knowledgeSource).toBe('library');
+
+    categories.mockImplementation(() => ({
+      data: [{ ...WEIGHT_EDIT, id: 'category:probiotics', name: 'Probiotics', focus_area: null, knowledge_slugs: ['study:gut'] }],
+      error: null,
+    }));
+    body = await (await request({ draft }, headers)).json();
+    expect(body.knowledgeSource).toBe('category');
+    expect(body.knowledgeCategory).toMatchObject({ id: 'category:probiotics', knowledgeSlugs: ['study:gut'] });
+    expect(mocks.retrieveChunksDetailed.mock.calls[1][1].filters).toEqual({
+      docSlugs: ['study:gut'],
+      species: 'dog',
+      tool: 'roleplay',
+    });
+    expect(categories).toHaveBeenCalledTimes(2);
+  });
+
+  it('category knowledge is never taken from the request', async () => {
+    const headers = adminHeaders();
+    const injected = { id: 'weight', name: 'X', focusArea: 'gi', knowledgeSlugs: ['fecal:dog'] };
+    const body = await (
+      await request(
+        {
+          draft: { ...noOwnKnowledge, category_knowledge: injected, categoryKnowledge: injected },
+          categoryKnowledge: injected,
+          categories: [injected],
+        },
+        headers,
+      )
+    ).json();
+    expect(body.knowledgeSource).toBe('library');
+    expect(mocks.retrieveChunksDetailed.mock.calls[0][1].filters).toEqual({ species: 'dog', tool: 'roleplay' });
+  });
+
+  it('a categories read failure is "no category knowledge", never a 500', async () => {
+    const headers = adminHeaders();
+    sb.setHandler('scenario_objection_categories', () => ({ data: null, error: { code: '57014', message: 'timeout' } }));
+    const res = await request({ draft: noOwnKnowledge }, headers);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.knowledgeSource).toBe('library');
+    expect(body.knowledgeCategory).toMatchObject({ id: 'weight', name: 'Weight management' });
+  });
+
+  it('matches retrieveForScenario when the category supplies the knowledge', async () => {
+    sb.setHandler('scenario_objection_categories', () => ({ data: [WEIGHT_EDIT], error: null }));
+    const scenario = draftToScenario(pickAgentDraft({ ...noOwnKnowledge, species: null }))!;
+    await retrieveForScenario(sb.client as unknown as SupabaseClient, scenario, undefined, 'roleplay');
+    const [, liveOpts] = mocks.retrieveChunks.mock.calls[0];
+    expect(
+      inspectRetrievalFilters(scenario, { focusArea: 'weight', knowledgeSlugs: ['study:weight-1', 'study:weight-2'] }),
+    ).toEqual(liveOpts.filters);
+  });
+
+  it('knowledgeModeOf follows the effective knowledge', () => {
+    const cat = { focusArea: 'gi', knowledgeSlugs: [] };
+    expect(knowledgeModeOf({}, cat)).toBe('focus');
+    expect(knowledgeModeOf({}, { focusArea: null, knowledgeSlugs: ['a'] })).toBe('documents');
+    expect(knowledgeModeOf({ focus_area: 'weight' }, { focusArea: null, knowledgeSlugs: ['a'] })).toBe('focus');
+    expect(knowledgeModeOf({}, null)).toBe('library');
   });
 });

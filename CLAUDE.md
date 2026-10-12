@@ -277,19 +277,25 @@ shape: 400 / 404 / 502 (Gemini). Tests:
 
 - **Animal first**: "Which animal?" Dog | Cat at the top (`useTrainingSpecies`,
   `pbt:train_species`, shared with Home), then the Build / Library tabs.
+  Pets are white line icons (`src/design-system/SpeciesIcon.tsx`: lucide
+  `Dog`/`Cat` — `SpeciesIcon`, `SpeciesBadge`), never emoji; `Segmented`
+  takes an optional per-option `icon`.
 - **Library** tab = the RESOLVED library (`useResolvedLibraryScenarios`: the
   three `LIBRARY_SCENARIOS` with overrides + every published `admin:`
-  scenario), filtered to the animal, with objection filter chips (≥ 2
-  objections) and an honest empty state. A card with a custom title shows
-  its objection as an eyebrow. (It used to list the static three, so
-  scenarios the admins published never appeared there.)
+  scenario), filtered to the animal, with CATEGORY chips (when ≥ 2 groups;
+  "Other pushback" and unresolvable team objections share one group), then
+  objection chips that narrow a CHOSEN category, and an honest empty state. A card with a custom title shows its objection
+  as an eyebrow. (It used to list the static three, so scenarios the
+  admins published never appeared there.)
 - **Build** tab: breed chips from `POPULAR_BREEDS[species]`, kitten-aware
-  life stages, per-animal weight label. Pushback **dropdown** = visible
-  built-ins + visible team objections for that animal (`useObjectionCatalog`);
-  **Other pushback** remains a separate card. A cat build carries
-  `species: 'cat'` (dog builds omit it — prompt byte-parity); a team
-  objection adds its `focusArea`. `persistScenario` writes
-  `user_scenarios.species`, retrying without it if the column is missing.
+  life stages, per-animal weight label. **Category chips → Pushback
+  dropdown** of that category's visible built-ins + visible team objections
+  for that animal (`useObjectionCatalog`, which also returns the merged
+  categories); **Other pushback** remains a separate card. A cat build
+  carries `species: 'cat'` (dog builds omit it — prompt byte-parity).
+  `persistScenario` writes `user_scenarios.species`, retrying without it
+  if the column is missing. The chat's provenance retrieval passes the
+  category's knowledge (`scenarioRetrievalFilters(s, { categoryKnowledge })`).
 - **Home**: the Dog | Cat switch appears on Today's pick only when the
   published library holds BOTH animals (never an empty hero because of a
   preference); Chat prev/next walks the resolved library for the same animal.
@@ -299,8 +305,9 @@ shape: 400 / 404 / 502 (Gemini). Tests:
 ## Scenario Studio (admin) — `admin/src/scenario-studio/`
 
 Spec: `docs/superpowers/specs/2026-09-25-scenario-studio-design.md`. Its own
-nav destination (`#/scenarios/studio`; tab `objections` = the objection
-catalogue, tab `trainee` = trainee-built analytics). A non-technical admin describes a scenario in plain words (the
+nav destination (`#/scenarios/studio`; tab `categories` = categories, their
+knowledge and the objections inside them, tab `trainee` = trainee-built
+analytics). A non-technical admin describes a scenario in plain words (the
 assistant drafts it) or builds it in **seven one-at-a-time steps**: Pet
 (dog/cat, breed, life stage, weight) → Pushback → Owner (ECHO driver, persona,
 difficulty, opening line) → Knowledge (whole library / one topic / specific
@@ -402,14 +409,46 @@ editable `scenario_overrides` column exactly once (unit-tested).
   too, never a save into a tombstone. `sanitizeScenario` (every AI call)
   keeps only known `Scenario` keys and caps every string
   (`SCENARIO_WIRE_MAX`: prose truncated, labels/ids rejected).
+- **Categories** (`src/shared/scenarios/objectionCategories.ts`). Structure:
+  **Category** (a subject — Weight management, Probiotics, GI — and the
+  KNOWLEDGE CONTAINER: `knowledgeSlugs` + optional `focusArea` topic) →
+  **Objection** (what an owner says; animals; coaching; ONE category) →
+  **Scenario** (inherits its category's knowledge unless it picks its own:
+  own documents/topic REPLACE the category's — `effectiveKnowledge`,
+  `source: 'scenario' | 'category' | 'library'`). The animal is a filter
+  across categories, never a category. Built-in categories:
+  `everyday-nutrition` (cost, breeder-advice, raw-food, brand-switch),
+  `weight` (weight-denial), `prescription-diets` (rx-diet); `custom` has
+  none (`BUILT_IN_OBJECTION_CATEGORY`). Built-ins carry NO knowledge by
+  default (dog prompts stay byte-identical) and are editable (a stored row
+  with the same id = the admin's edit: name, French name, knowledge) but
+  never deletable; team categories are `category:<slug>` in
+  `scenario_objection_categories`. `mergeCategories(stored)` is the one
+  merge; `categoryKnowledgeFor(objId, team, categories)` the one lookup.
+  Category knowledge is ALWAYS server-loaded for the AI
+  (`_shared/ai.ts::loadCategoryKnowledge`, 60 s cache, fail-open, skipped
+  when the scenario has its own) and fed to
+  `scenarioRetrievalFilters(s, { categoryKnowledge })` — never from a
+  request body. `flags-resolve` publishes `snapshot.objectionCategories`
+  (stored rows; a failed cold read = degraded, `no-store`) so the trainee
+  app groups and filters by category and its provenance retrieval matches.
+  `admin-objections` ops `upsert-category` (`baseUpdatedAt` → 409 `stale`;
+  duplicate names refused; ≤ 50 team categories; knowledge slugs not live
+  in `knowledge_documents` are dropped and listed in `_dropped`),
+  `delete-category` (built-ins 400; 409 `in_use` while any non-deleted
+  objection — retired included — uses it), `restore-category`. The
+  inspector reports `knowledgeSource` + `knowledgeCategory`; the assistant's
+  DATA block lists OBJECTION CATEGORIES with their objections.
 - **Objections** (`src/shared/scenarios/objections.ts` — ONE contract for
   the consumer, admin and functions). Built-ins = the seven code ids
   (unchanged). TEAM objections live in `scenario_objections` (migration
   `20261012000000_scenario_objections.sql`): id `team:<slug>` (DB CHECK),
-  `species[]` (dog/cat, never empty), optional knowledge `focus_area`,
-  optional French name/line, and coaching lists shaped like
-  `PushbackKnowledge`. Studio tab `#/scenarios/objections`
-  (`admin/src/scenario-studio/objections/`); endpoint `admin-objections`
+  `species[]` (dog/cat, never empty), a REQUIRED `category_id` (built-in or
+  a live team category — checked by `admin-objections`), optional French
+  name/line, and coaching lists shaped like `PushbackKnowledge`. Studio tab
+  `#/scenarios/categories` (old `#/scenarios/objections` links are
+  rewritten by `legacyRoute()`; `admin/src/scenario-studio/objections/`
+  — objections are edited inside their category); endpoint `admin-objections`
   (GET `scenarios.read`; POST `scenarios.write`: `upsert` with
   `baseUpdatedAt` → 409 `stale`, duplicate names refused, ≤ 100 live;
   `delete` refused 409 `in_use` while any non-deleted scenario uses it, then
@@ -436,8 +475,14 @@ editable `scenario_overrides` column exactly once (unit-tested).
   `team:` pushback id only if that objection exists. The assistant lists
   them in its DATA block and the normaliser accepts their ids/titles
   (`AgentNormalizeContext.objections`), dropping one proposed for the wrong
-  animal. Picking one with a topic on the Pushback step fills the knowledge
-  topic if none is set (with Undo). Retrieval for a `custom` ("Other")
+  animal. The Pushback step offers category chips (with counts) → that
+  category's objections → "Something else", plus "+ New objection in
+  <category>" / "+ New category" inline; the Knowledge step's default tile
+  is "Use the <Category> knowledge" (overrides: documents / one topic for
+  this scenario only; "whole library" appears only when the category has
+  no knowledge). The category editor attaches documents (roleplay-readable
+  only) and uploads new ones with the category's defaults (topic, roleplay +
+  scoring, its objections' animals; needs `knowledge.write`). Retrieval for a `custom` ("Other")
   pushback with notes now searches on the notes (first 160 chars) instead
   of the generic "Other pushback" title (`scenarioRetrievalQuery`) — a
   deliberate change: dog prompts stay byte-identical from the builders, but
@@ -495,6 +540,17 @@ editable `scenario_overrides` column exactly once (unit-tested).
   guard, explicit deletes for every `on delete set null` relation before
   `auth.admin.deleteUser`. UI: typed-confirm `DeleteAccountModal` in Settings,
   which wipes local storage and reloads on success.
+- **Admin passwords** (`admin/src/lib/passwords.ts`, `screens/PasswordScreens.tsx`,
+  `screens/TemporaryPassword.tsx`): a key button by Sign out opens "Change
+  password" (`supabase.auth.updateUser({ password, data: {
+  must_change_password: false } })`, 12–72 chars). People → user → Manage
+  → "Set a temporary password" (`team.manage`; never yourself; an owner's
+  only by an owner) calls `admin-user-actions` op `set_password`, which
+  also refuses a non-owner setting the password of an account holding
+  permissions they don't, and sets `user_metadata.must_change_password`;
+  signing in with that flag shows a blocking "Choose your own password"
+  screen before the portal. The password is never logged, audited or
+  returned.
 - **Privacy opt-out** (spec §8.3): `pbt:allow_training_use` read via
   `src/lib/privacy.ts`; gates `logEvent`, AI call/turn telemetry, and RAG
   document assembly. The user's own sessions/feedback/reports are NOT gated.
@@ -650,14 +706,18 @@ file's header explains it in full:
   request), **applied to prod 2026-09-27** (verified: column + CHECK +
   comment; 26 relations / 282 columns present). The code keeps a degrade
   path for a project that has not run it (see "Scenario Studio").
-- `20261012000000_scenario_objections.sql` — `scenario_objections` (team
-  objections, RLS on / no policies), `user_scenarios.species`,
-  `scenario_overrides.copied_from`, audit entity `scenario_objection`.
-  **Written 2026-10-12, NOT applied** (the apply was held for the owner's
-  go-ahead). Listed as DEFERRED in `scripts/verify-db-schema.mjs`. Until it
-  runs: no team objections anywhere (the Objections tab shows a "database
-  update needed" notice), trainee builds save without species, Add to
-  library saves without provenance. Apply it before or with the deploy.
+- `20261012000000_scenario_objections.sql` — `scenario_objection_categories`
+  (categories + their knowledge; built-in ids or `category:<slug>`),
+  `scenario_objections` (team objections with a required `category_id`;
+  both RLS on / no policies), `user_scenarios.species`,
+  `scenario_overrides.copied_from`, audit entities `scenario_objection` +
+  `scenario_objection_category`. **Written 2026-10-12, NOT applied** (the
+  apply was held for the owner's go-ahead). Listed as DEFERRED in
+  `scripts/verify-db-schema.mjs`. Until it runs: no team categories or
+  objections and no category knowledge anywhere (the Categories tab shows a
+  "database update needed" notice), trainee builds save without species,
+  Add to library saves without provenance. Apply it before or with the
+  deploy.
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -808,7 +868,7 @@ Active keys:
 
 | Want                     | Edit                                                                                               |
 | ------------------------ | -------------------------------------------------------------------------------------------------- |
-| New objection (no deploy) | Admin → Scenario Studio → **Objections** → "+ New objection" (animals, topic, coaching) |
+| New category / objection (no deploy) | Admin → Scenario Studio → **Categories** → "+ New category" (name, knowledge), then "+ Add objection" on its card (animals, coaching) |
 | New BUILT-IN pushback    | `src/data/scenarios.ts` `PUSHBACK_CATEGORIES` + `src/data/knowledge/pushbackTaxonomy.ts` + `src/shared/scenarios/enums.ts` + the fr overlay (`src/i18n/fr/data/pushbacks.ts`) + parity tests |
 | New scenario in rotation | `src/data/scenarios.ts` `SEED_SCENARIOS`                                                           |
 | Tweak driver content     | `src/data/echoDrivers.ts` (UI) + `src/data/knowledge/driverProfiles.ts` (AI)                       |
@@ -961,8 +1021,8 @@ The static test catches "migration file missing"; `verify:db` catches
    `clinical:reference-cat` exists and `study:davies-2024` reads dog/puppy.
 10. **Apply the objections migration** `20261012000000_scenario_objections.sql`
     (written 2026-10-12, held for the owner's go-ahead). Until then team
-    objections, trainee species and Add-to-library provenance degrade
-    safely but do nothing. After applying, remove its entries from
+    categories and objections, category knowledge, trainee species and
+    Add-to-library provenance degrade safely but do nothing. After applying, remove its entries from
     `DEFERRED_COLUMNS` / `DEFERRED_RELATIONS` in `scripts/verify-db-schema.mjs`.
 11. **Feline content** (see the Feline SoW): no seed cat scenarios; canine-only
     product anchors (`PRODUCT_ANCHORS`), calorie table and BCS/MCS data;
@@ -1006,4 +1066,4 @@ full fr-CA localization; Fecal Scan; scoped + self-seeding knowledge base.)
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **Scenario Studio (Sept 25):** scenario building as its own admin destination — guided 7-step builder, A2UI assistant (proposals only, re-validated on confirm), prompt/retrieval inspector, native Test drive, dog/cat species (column applied 2026-09-27), Scenario Author role; Knowledge + AI tuning promoted to their own nav items. **Objections + animal-first (Oct 12):** team-authored objections (Studio Objections tab, `scenario_objections`, migration written but not yet applied), "Add to library" for trainee scenarios (`copied_from`), Animal/Objection library filters, trainee app asks Dog | Cat before the objection and its Library tab finally lists the published library; fixed a hooks-order crash that blanked the admin after sign-in (regression-tested in `admin/src/__tests__/AppSignIn.test.tsx`). **Audit 2026-09-27** (six adversarial reviews): species-scoped knowledge seeds + cat framing of retrieved research, minimal public snapshot, bounded scenario prose on every AI call, optimistic-concurrency saves, framed-only preview mode, assistant apply-time diffing. **`npm test` — ~1,950 tests / 132 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **Scenario Studio (Sept 25):** scenario building as its own admin destination — guided 7-step builder, A2UI assistant (proposals only, re-validated on confirm), prompt/retrieval inspector, native Test drive, dog/cat species (column applied 2026-09-27), Scenario Author role; Knowledge + AI tuning promoted to their own nav items. **Objections + animal-first (Oct 12):** team-authored objections (Studio Objections tab, `scenario_objections`, migration written but not yet applied), "Add to library" for trainee scenarios (`copied_from`), Animal/Objection library filters, trainee app asks Dog | Cat before the objection and its Library tab finally lists the published library; fixed a hooks-order crash that blanked the admin after sign-in (regression-tested in `admin/src/__tests__/AppSignIn.test.tsx`). **Categories (Oct 12, same branch):** Category → Objection → Scenario with categories as knowledge containers (Studio Categories tab, inherited knowledge, upload from the category), white line pet icons instead of emoji (admin `noEmoji` test), Change password + temporary passwords. **Audit 2026-09-27** (six adversarial reviews): species-scoped knowledge seeds + cat framing of retrieved research, minimal public snapshot, bounded scenario prose on every AI call, optimistic-concurrency saves, framed-only preview mode, assistant apply-time diffing. **`npm test` — ~2,130 tests / 140 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.

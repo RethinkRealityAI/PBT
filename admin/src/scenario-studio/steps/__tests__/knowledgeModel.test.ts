@@ -178,3 +178,89 @@ describe('preview helpers', () => {
     expect(stepForMissing('ECHO driver')).toBe('customer');
   });
 });
+
+// ── Category knowledge (inherited) ───────────────────────────
+
+// eslint-disable-next-line import/first
+import { inheritedKnowledge, knowledgeSourceSentence, readKnowledgeSource } from '../knowledgeModel';
+// eslint-disable-next-line import/first
+import { BUILT_IN_CATEGORIES } from '../../../../../src/shared/scenarios/objectionCategories';
+
+describe('inheritedKnowledge', () => {
+  const categories = [
+    ...BUILT_IN_CATEGORIES.map((c) => (c.id === 'weight' ? { ...c, knowledgeSlugs: ['study:obesity'] } : c)),
+    {
+      ...BUILT_IN_CATEGORIES[0],
+      id: 'category:probiotics',
+      name: 'Probiotics',
+      builtIn: false,
+      focusArea: 'gi',
+      knowledgeSlugs: [],
+    },
+  ];
+  const team = [{ id: 'team:pro', categoryId: 'category:probiotics' }];
+
+  it('a scenario with no choice of its own reads its category’s knowledge', () => {
+    const r = inheritedKnowledge(draft({ pushback_id: 'weight-denial' }), team, categories);
+    expect(r.category?.id).toBe('weight');
+    expect(r.knowledge).toEqual({ focusArea: null, knowledgeSlugs: ['study:obesity'] });
+    expect(r.source).toBe('category');
+    // A topic alone counts as knowledge.
+    expect(inheritedKnowledge(draft({ pushback_id: 'team:pro' }), team, categories)).toMatchObject({
+      knowledge: { focusArea: 'gi', knowledgeSlugs: [] },
+      source: 'category',
+    });
+  });
+
+  it('its own documents or topic replace the category’s', () => {
+    expect(inheritedKnowledge(draft({ pushback_id: 'weight-denial', focus_area: 'urinary' }), team, categories).source).toBe(
+      'scenario',
+    );
+    expect(
+      inheritedKnowledge(draft({ pushback_id: 'weight-denial', knowledge_slugs: ['study:a'] }), team, categories).source,
+    ).toBe('scenario');
+  });
+
+  it('a category with nothing attached, "Something else" and no objection read the whole library', () => {
+    expect(inheritedKnowledge(draft({ pushback_id: 'cost' }), team, categories)).toMatchObject({
+      knowledge: null,
+      source: 'library',
+    });
+    expect(inheritedKnowledge(draft({ pushback_id: 'custom' }), team, categories)).toEqual({
+      category: null,
+      knowledge: null,
+      source: 'library',
+    });
+    expect(inheritedKnowledge(draft(), team, categories).category).toBeNull();
+  });
+});
+
+describe('readKnowledgeSource', () => {
+  it('reads the inspector’s knowledgeSource + knowledgeCategory', () => {
+    expect(
+      readKnowledgeSource({
+        knowledgeSource: 'category',
+        knowledgeCategory: { id: 'weight', name: 'Obesity & weight loss', focusArea: null, knowledgeSlugs: ['a'] },
+      }),
+    ).toEqual({ source: 'category', categoryId: 'weight', categoryName: 'Obesity & weight loss', categoryHasKnowledge: true });
+    expect(readKnowledgeSource({ knowledgeSource: 'library', knowledgeCategory: null })).toEqual({
+      source: 'library',
+      categoryId: null,
+      categoryName: null,
+      categoryHasKnowledge: false,
+    });
+  });
+
+  it('is null when an older server didn’t say', () => {
+    expect(readKnowledgeSource({ knowledge: {} })).toBeNull();
+    expect(readKnowledgeSource({ knowledgeSource: 'elsewhere' })).toBeNull();
+    expect(readKnowledgeSource(null)).toBeNull();
+  });
+
+  it('says it in one plain line', () => {
+    expect(knowledgeSourceSentence('category', 'Probiotics')).toBe('Reading the knowledge attached to its category, Probiotics.');
+    expect(knowledgeSourceSentence('scenario', 'Probiotics', true)).toMatch(/replaces what Probiotics gives its scenarios/);
+    expect(knowledgeSourceSentence('scenario', 'Probiotics', false)).toBe('Reading this scenario’s own choice of knowledge.');
+    expect(knowledgeSourceSentence('library', null)).toMatch(/^Reading the whole library/);
+  });
+});

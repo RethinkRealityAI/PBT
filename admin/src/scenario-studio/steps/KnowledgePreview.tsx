@@ -1,7 +1,9 @@
 /**
  * "Preview what the AI will read" — the server runs the SAME roleplay
  * retrieval a real session runs, for the draft on screen, and hands back the
- * passages plus the scope it actually applied. Read-only.
+ * passages, the scope it actually applied, and where the knowledge came from
+ * (the scenario's own choice, its category's, or the whole library).
+ * Read-only.
  */
 import { COLOR } from '../../lib/tokens';
 import { StatusPill } from '../../primitives';
@@ -11,7 +13,13 @@ import { missingScenarioFields } from '../../../../src/shared/scenarios/draftToS
 import { useObjectionsContext } from '../objections/ObjectionsContext';
 import type { StudioDraft, StudioStepKey } from '../studioModel';
 import { Spinner } from '../ui';
-import { knowledgeModeOf, relevanceLabel, scopeSentence } from './knowledgeModel';
+import {
+  knowledgeModeOf,
+  knowledgeSourceSentence,
+  readKnowledgeSource,
+  relevanceLabel,
+  scopeSentence,
+} from './knowledgeModel';
 import { MissingNotice } from './stepParts';
 import { useInspect } from './useInspect';
 
@@ -20,9 +28,12 @@ const MISSING_LEAD = 'Finish the pet, pushback and owner steps first so there’
 export function KnowledgePreview({
   draft,
   goTo,
+  categoryName = null,
 }: {
   draft: StudioDraft;
   goTo: (step: StudioStepKey) => void;
+  /** The draft's category, to name it when the server didn't. */
+  categoryName?: string | null;
 }) {
   const inspect = useInspect(draft, 'knowledge');
   const { objections } = useObjectionsContext();
@@ -30,6 +41,7 @@ export function KnowledgePreview({
   const data = inspect.data;
   const loading = inspect.status === 'loading';
   const attached = draft.knowledge_slugs?.length ?? 0;
+  const source = data ? readKnowledgeSource(data) : null;
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -78,6 +90,14 @@ export function KnowledgePreview({
             <MissingNotice missing={data.missing} goTo={goTo} lead={MISSING_LEAD} />
           ) : (
             <>
+              {source && (
+                <div
+                  role="status"
+                  style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink, lineHeight: 1.5 }}
+                >
+                  {knowledgeSourceSentence(source.source, source.categoryName ?? categoryName, source.categoryHasKnowledge)}
+                </div>
+              )}
               <div
                 style={{
                   padding: '9px 13px',

@@ -19,8 +19,10 @@ import {
   aiError,
   clientIp,
   isUuid,
+  loadCategoryKnowledge,
   loadPromptOverrides,
   loadSimulationConfig,
+  loadStoredCategories,
   loadStoredSimulationConfig,
   loadTeamObjections,
   ok,
@@ -400,7 +402,7 @@ const TEAM_ROW = {
   title_fr: null,
   example_fr: null,
   species: ['dog', 'cat'],
-  focus_area: 'gi',
+  category_id: 'category:probiotics',
   coaching: {
     rootConcerns: ['Believes probiotics are a supplement-aisle fad', 'Already spends a lot on food'],
     watchOuts: ['Leading with the product name'],
@@ -418,7 +420,7 @@ function teamObjection(over: Partial<TeamObjection> = {}): TeamObjection {
     titleFr: null,
     exampleFr: null,
     species: ['dog', 'cat'],
-    focusArea: 'gi',
+    categoryId: 'category:probiotics',
     coaching: { rootConcerns: ['Believes probiotics are a supplement-aisle fad'] },
     visible: true,
     sortOrder: null,
@@ -634,6 +636,126 @@ describe('retrieveForScenario', () => {
     expect(mocks.retrieveChunks).not.toHaveBeenCalled();
     mocks.retrieveChunks.mockRejectedValue(new Error('down'));
     expect(await retrieveForScenario(client(), SEED_SCENARIOS[0], undefined, 'roleplay')).toEqual([]);
+  });
+});
+
+/**
+ * Category knowledge: a scenario that chose no knowledge of its own reads its
+ * objection's CATEGORY's documents / topic — loaded from the database by the
+ * server, never from the request. Built-in categories carry none until an
+ * admin attaches some, so every existing scenario retrieves byte-identically.
+ */
+describe('retrieveForScenario — category knowledge', () => {
+  const client = () => sb.client as unknown as SupabaseClient;
+  const filtersOf = (call = 0) => (mocks.retrieveChunks.mock.calls[call][1] as { filters: unknown }).filters;
+  // SEED_SCENARIOS[0] is a weight-denial (built-in "weight" category) dog scenario with no knowledge.
+  const WEIGHT_EDIT = {
+    id: 'weight',
+    name: 'Weight management',
+    name_fr: null,
+    description: '',
+    focus_area: 'weight',
+    knowledge_slugs: ['study:weight-1', 'study:weight-2'],
+    sort_order: 20,
+    updated_at: '2026-10-12T10:00:00+00:00',
+  };
+  const PROBIOTICS_CATEGORY = {
+    ...WEIGHT_EDIT,
+    id: 'category:probiotics',
+    name: 'Probiotics',
+    focus_area: 'gi',
+    knowledge_slugs: [],
+    sort_order: null,
+  };
+
+  it('with no stored categories every scenario retrieves exactly as before (built-ins carry no knowledge)', async () => {
+    for (const scenario of SEED_SCENARIOS.slice(0, 3)) {
+      mocks.retrieveChunks.mockClear();
+      await retrieveForScenario(client(), scenario, undefined, 'roleplay');
+      expect(filtersOf()).toEqual({ species: scenario.age === 'Puppy (<1)' ? 'puppy' : 'dog', tool: 'roleplay' });
+    }
+  });
+
+  it("a scenario with no knowledge of its own reads its built-in category's documents (an admin's edit)", async () => {
+    sb.setHandler('scenario_objection_categories', () => ({ data: [WEIGHT_EDIT], error: null }));
+    await retrieveForScenario(client(), SEED_SCENARIOS[0], undefined, 'scoring');
+    expect(filtersOf()).toEqual({ docSlugs: ['study:weight-1', 'study:weight-2'], species: 'dog', tool: 'scoring' });
+    // Another category's knowledge never leaks: a cost scenario reads the library.
+    mocks.retrieveChunks.mockClear();
+    await retrieveForScenario(client(), SEED_SCENARIOS[1], undefined, 'roleplay');
+    expect(filtersOf()).toEqual({ species: 'dog', tool: 'roleplay' });
+  });
+
+  it("a team objection's scenario reads ITS category (a topic here), retired objection included", async () => {
+    sb.setHandler('scenario_objections', () => ({ data: [{ ...TEAM_ROW, visible: false }], error: null }));
+    sb.setHandler('scenario_objection_categories', () => ({ data: [PROBIOTICS_CATEGORY], error: null }));
+    const scenario = {
+      ...SEED_SCENARIOS[0],
+      species: 'cat' as const,
+      pushback: { id: 'team:probiotics', title: 'Probiotics', example: '"He does not need them."' },
+    };
+    await retrieveForScenario(client(), scenario, undefined, 'roleplay');
+    expect(filtersOf()).toEqual({ focus: 'gi', species: 'cat', tool: 'roleplay' });
+  });
+
+  it('a scenario that chose its own knowledge ignores the category — which is not even read', async () => {
+    const categories = vi.fn(() => ({ data: [WEIGHT_EDIT], error: null }));
+    sb.setHandler('scenario_objection_categories', categories);
+    await retrieveForScenario(client(), { ...SEED_SCENARIOS[0], knowledgeSlugs: ['mine:1'] }, undefined, 'roleplay');
+    expect(filtersOf()).toEqual({ docSlugs: ['mine:1'], species: 'dog', tool: 'roleplay' });
+    mocks.retrieveChunks.mockClear();
+    await retrieveForScenario(client(), { ...SEED_SCENARIOS[0], focusArea: 'gi' }, undefined, 'roleplay');
+    expect(filtersOf()).toEqual({ focus: 'gi', species: 'dog', tool: 'roleplay' });
+    expect(categories).not.toHaveBeenCalled();
+  });
+
+  it('fails open: a missing table or a read error is "no category knowledge", never a failed retrieval', async () => {
+    sb.setHandler('scenario_objection_categories', () => ({
+      data: null,
+      error: { code: 'PGRST205', message: "Could not find the table 'public.scenario_objection_categories'" },
+    }));
+    await retrieveForScenario(client(), SEED_SCENARIOS[0], undefined, 'roleplay');
+    expect(filtersOf()).toEqual({ species: 'dog', tool: 'roleplay' });
+
+    __resetAiCaches();
+    mocks.retrieveChunks.mockClear();
+    const categories = vi.fn(() => ({ data: null, error: { code: '57014', message: 'timeout' } }));
+    sb.setHandler('scenario_objection_categories', categories as never);
+    await retrieveForScenario(client(), SEED_SCENARIOS[0], undefined, 'roleplay');
+    expect(filtersOf()).toEqual({ species: 'dog', tool: 'roleplay' });
+    // Not cached: the next call reads again and picks the knowledge up.
+    categories.mockImplementation((() => ({ data: [WEIGHT_EDIT], error: null })) as never);
+    mocks.retrieveChunks.mockClear();
+    await retrieveForScenario(client(), SEED_SCENARIOS[0], undefined, 'roleplay');
+    expect(filtersOf()).toMatchObject({ docSlugs: ['study:weight-1', 'study:weight-2'] });
+    expect(categories).toHaveBeenCalledTimes(2);
+  });
+
+  it('loadStoredCategories caches a good read for 60 s and asks for live rows only', async () => {
+    const categories = vi.fn(() => ({ data: [WEIGHT_EDIT], error: null }));
+    sb.setHandler('scenario_objection_categories', categories);
+    const a = await loadStoredCategories(client());
+    const b = await loadStoredCategories(client());
+    expect(b).toBe(a);
+    expect(categories).toHaveBeenCalledTimes(1);
+    expect(sb.callsFor('scenario_objection_categories')[0].ops.find((o) => o.op === 'is')?.args).toEqual([
+      'deleted_at',
+      null,
+    ]);
+  });
+
+  it('loadCategoryKnowledge: null for "Other pushback", an unknown objection, or a category without knowledge', async () => {
+    sb.setHandler('scenario_objection_categories', () => ({ data: [WEIGHT_EDIT, PROBIOTICS_CATEGORY], error: null }));
+    sb.setHandler('scenario_objections', () => ({ data: [TEAM_ROW], error: null }));
+    expect(await loadCategoryKnowledge(client(), 'weight-denial')).toEqual({
+      focusArea: 'weight',
+      knowledgeSlugs: ['study:weight-1', 'study:weight-2'],
+    });
+    expect(await loadCategoryKnowledge(client(), 'team:probiotics')).toEqual({ focusArea: 'gi', knowledgeSlugs: [] });
+    expect(await loadCategoryKnowledge(client(), 'custom')).toBeNull();
+    expect(await loadCategoryKnowledge(client(), 'team:unknown')).toBeNull();
+    expect(await loadCategoryKnowledge(client(), 'cost')).toBeNull();
+    expect(await loadCategoryKnowledge(client(), undefined)).toBeNull();
   });
 });
 

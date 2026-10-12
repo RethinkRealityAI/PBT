@@ -13,7 +13,7 @@ import {
   missingCoreFields,
   objectionFormErrors,
   objectionLabel,
-  pickObjectionPatch,
+  pushbackChoicesFor,
   pushbackOptionsFor,
   splitObjections,
   toAdminObjection,
@@ -21,6 +21,7 @@ import {
 } from '../objectionsModel';
 import { pushbackLabel } from '../../../lib/labels';
 import type { TeamObjection } from '../../../../../src/shared/scenarios/objections';
+import { BUILT_IN_CATEGORIES, type ObjectionCategory } from '../../../../../src/shared/scenarios/objectionCategories';
 
 function team(over: Partial<TeamObjection> & Pick<TeamObjection, 'id' | 'title'>): TeamObjection {
   return {
@@ -28,7 +29,7 @@ function team(over: Partial<TeamObjection> & Pick<TeamObjection, 'id' | 'title'>
     titleFr: null,
     exampleFr: null,
     species: ['dog', 'cat'],
-    focusArea: null,
+    categoryId: 'everyday-nutrition',
     coaching: {},
     visible: true,
     sortOrder: null,
@@ -37,8 +38,9 @@ function team(over: Partial<TeamObjection> & Pick<TeamObjection, 'id' | 'title'>
   };
 }
 
-const PRO = team({ id: 'team:probiotics-not-needed', title: 'Probiotics: not needed', focusArea: 'gi' });
-const YOGURT = team({ id: 'team:yogurt-is-enough', title: 'Yogurt is enough', focusArea: 'gi' });
+const PROBIOTICS = 'category:probiotics';
+const PRO = team({ id: 'team:probiotics-not-needed', title: 'Probiotics: not needed', categoryId: PROBIOTICS });
+const YOGURT = team({ id: 'team:yogurt-is-enough', title: 'Yogurt is enough', categoryId: PROBIOTICS });
 const BORED = team({ id: 'team:cat-bored', title: 'Cat gets bored', species: ['cat'] });
 const RETIRED = team({ id: 'team:old-one', title: 'Old one', visible: false });
 
@@ -133,28 +135,65 @@ describe('pushbackOptionsFor', () => {
   });
 });
 
-describe('pickObjectionPatch', () => {
-  it('points an empty scenario at the objection’s knowledge topic', () => {
-    expect(pickObjectionPatch({}, PRO)).toEqual({
-      patch: { pushback_id: PRO.id, focus_area: 'gi' },
-      focusSet: 'gi',
-    });
-    expect(pickObjectionPatch({ focus_area: '  ', knowledge_slugs: [] }, PRO).focusSet).toBe('gi');
+describe('pushbackChoicesFor (the Pushback step: category first)', () => {
+  const CATEGORIES: ObjectionCategory[] = [
+    ...BUILT_IN_CATEGORIES,
+    {
+      id: PROBIOTICS,
+      name: 'Probiotics',
+      nameFr: null,
+      description: '',
+      focusArea: 'gi',
+      knowledgeSlugs: [],
+      sortOrder: 40,
+      builtIn: false,
+      updatedAt: null,
+    },
+    {
+      id: 'category:empty',
+      name: 'Empty',
+      nameFr: null,
+      description: '',
+      focusArea: null,
+      knowledgeSlugs: [],
+      sortOrder: 50,
+      builtIn: false,
+      updatedAt: null,
+    },
+  ];
+  const CAT_ONLY = team({ id: 'team:hairballs', title: 'Hairballs are normal', species: ['cat'], categoryId: PROBIOTICS });
+  const list = [PRO, YOGURT, BORED, RETIRED, CAT_ONLY];
+
+  it('offers the categories holding an objection for the animal, in display order, with their objections', () => {
+    const dog = pushbackChoicesFor('dog', list, CATEGORIES);
+    expect(dog.map((c) => c.category.id)).toEqual(['everyday-nutrition', 'weight', 'prescription-diets', PROBIOTICS]);
+    const everyday = dog[0];
+    expect(everyday.builtIn.map((o) => o.id)).toEqual(['cost', 'breeder-advice', 'raw-food', 'brand-switch']);
+    // BORED is cat-only; RETIRED is never offered.
+    expect(everyday.team).toEqual([]);
+    expect(everyday.hiddenForSpecies).toBe(1);
+    const probiotics = dog[3];
+    expect(probiotics.builtIn).toEqual([]);
+    expect(probiotics.team.map((o) => o.id)).toEqual([PRO.id, YOGURT.id]);
+    expect(probiotics.team[0].categoryId).toBe(PROBIOTICS);
+    expect(probiotics.hiddenForSpecies).toBe(1);
   });
 
-  it('never overwrites knowledge the admin already chose', () => {
-    expect(pickObjectionPatch({ focus_area: 'weight' }, PRO)).toEqual({ patch: { pushback_id: PRO.id }, focusSet: null });
-    expect(pickObjectionPatch({ knowledge_slugs: ['study:a'] }, PRO)).toEqual({
-      patch: { pushback_id: PRO.id },
-      focusSet: null,
-    });
+  it('a cat sees the cat-only objections and no "hidden" count for them', () => {
+    const cat = pushbackChoicesFor('cat', list, CATEGORIES);
+    const probiotics = cat.find((c) => c.category.id === PROBIOTICS)!;
+    expect(probiotics.team.map((o) => o.id)).toEqual([CAT_ONLY.id, PRO.id, YOGURT.id]);
+    expect(probiotics.hiddenForSpecies).toBe(0);
+    expect(cat[0].team.map((o) => o.id)).toEqual([BORED.id]);
   });
 
-  it('a built-in (no topic) changes only the pushback', () => {
-    expect(pickObjectionPatch({}, { id: 'cost', focusArea: null })).toEqual({
-      patch: { pushback_id: 'cost' },
-      focusSet: null,
-    });
+  it('leaves out a category with nothing for the animal — unless asked to keep it (the draft’s own, one just created)', () => {
+    expect(pushbackChoicesFor('dog', list, CATEGORIES).some((c) => c.category.id === 'category:empty')).toBe(false);
+    const kept = pushbackChoicesFor('dog', list, CATEGORIES, ['category:empty', null]);
+    const empty = kept.find((c) => c.category.id === 'category:empty')!;
+    expect(empty).toMatchObject({ builtIn: [], team: [], hiddenForSpecies: 0 });
+    // Still in category order.
+    expect(kept.map((c) => c.category.id).slice(-1)).toEqual(['category:empty']);
   });
 });
 
@@ -204,9 +243,11 @@ describe('missingCoreFields', () => {
 });
 
 describe('the editor form', () => {
-  it('starts a new objection for the scenario’s animal, or both', () => {
+  it('starts a new objection for the scenario’s animal, or both — in the category it was opened from', () => {
     expect(emptyObjectionForm(['cat']).species).toEqual(['cat']);
     expect(emptyObjectionForm().species).toEqual(['dog', 'cat']);
+    expect(emptyObjectionForm().categoryId).toBeNull();
+    expect(emptyObjectionForm(null, PROBIOTICS).categoryId).toBe(PROBIOTICS);
     expect(emptyObjectionForm().visible).toBe(true);
     expect(formToWrite(emptyObjectionForm())).not.toHaveProperty('id');
   });
@@ -226,7 +267,7 @@ describe('the editor form', () => {
       titleFr: 'Probiotiques',
       exampleFr: null,
       species: ['dog', 'cat'],
-      focusArea: 'gi',
+      categoryId: PROBIOTICS,
       coaching: { rootConcerns: ['Upsell', 'Daily for life'], watchOuts: ['Product first'] },
       visible: true,
       sortOrder: null,
@@ -244,6 +285,8 @@ describe('the editor form', () => {
     expect(errors.title).toBe('Give the objection a short name.');
     expect(errors.example).toBe('Add the line an owner would typically say.');
     expect(errors.species).toBe('Choose at least one animal.');
+    // The category is required: it owns the knowledge the objection's scenarios read.
+    expect(errors.categoryId).toBe('Choose the category this objection belongs to, e.g. Probiotics.');
 
     const long = objectionFormErrors({
       ...emptyObjectionForm(),
@@ -254,6 +297,12 @@ describe('the editor form', () => {
     expect(long.title).toMatch(/under 80 characters/);
     expect(long.watchOuts).toBe('Up to 6 lines here (now 7).');
 
-    expect(objectionFormErrors({ ...emptyObjectionForm(), title: 'Probiotics', example: '“Not needed.”' })).toEqual({});
+    expect(
+      objectionFormErrors({ ...emptyObjectionForm(null, PROBIOTICS), title: 'Probiotics', example: '“Not needed.”' }),
+    ).toEqual({});
+    expect(formToWrite({ ...emptyObjectionForm(null, PROBIOTICS), title: 'T', example: 'E' })).toMatchObject({
+      categoryId: PROBIOTICS,
+    });
+    expect(formToWrite(emptyObjectionForm())).not.toHaveProperty('focusArea');
   });
 });

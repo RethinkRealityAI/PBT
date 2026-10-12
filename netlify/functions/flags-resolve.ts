@@ -3,8 +3,11 @@
  *
  * Consumer apps (anonymous + authed) POST a small audience descriptor and
  * receive a `{ flagKey: value }` map for every registered flag, plus any
- * scenario_overrides keyed by scenario_id, and the team-authored objections
- * (`objections`, see `loadPublicObjections`).
+ * scenario_overrides keyed by scenario_id, the team-authored objections
+ * (`objections`, see `loadPublicObjections`) and the stored objection
+ * categories (`objectionCategories`, see `loadPublicCategories` — the team's
+ * own plus admin edits of the built-ins; clients merge them with the code's
+ * built-ins via `mergeCategories`).
  *
  * Caching: in-function memoization keyed by (audience hash). TTL 60s. The
  * function itself reads with the service role; no JWT required from the
@@ -23,9 +26,15 @@
  */
 import { errorResponse, getServiceClient, jsonResponse } from './_shared/admin';
 import { isMissingSpeciesColumn } from './_shared/speciesColumn';
-import { readTeamObjections, type TeamObjectionsRead } from './_shared/objectionsStore';
+import {
+  readCategories,
+  readTeamObjections,
+  type CategoriesRead,
+  type TeamObjectionsRead,
+} from './_shared/objectionsStore';
 import { triggerKnowledgeSync, type NetlifyContextLike } from './_shared/knowledgeTrigger';
 import type { TeamObjection } from '../../src/shared/scenarios/objections';
+import type { ObjectionCategory } from '../../src/shared/scenarios/objectionCategories';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -85,6 +94,8 @@ interface ResolvedSnapshot {
   simulationConfig: Record<string, unknown> | null;
   /** Team-authored objections (non-deleted; retired ones with visible:false). */
   objections: TeamObjection[];
+  /** Stored objection categories (non-deleted). */
+  objectionCategories: ObjectionCategory[];
   fetchedAt: number;
 }
 
@@ -249,15 +260,87 @@ export async function loadPublicObjections(
   return lastGoodObjections;
 }
 
+/**
+ * Objection categories (`scenario_objection_categories`, same migration) —
+ * the same degrade rules as the objections, with their own state: a MISSING
+ * table is remembered for ten minutes (none: the built-in categories, with
+ * no knowledge attached, which is how every scenario retrieved before
+ * categories existed); a transient error serves the last good list, and on
+ * an instance that never read one it degrades the snapshot (served
+ * `no-store`, not cached) — a category's knowledge would otherwise silently
+ * vanish from every trainee's provenance retrieval for a cache period.
+ */
+let categoriesTableMissingAt: number | null = null;
+let lastGoodCategories: ObjectionCategory[] = [];
+let hadGoodCategoriesRead = false;
+let categoriesDegraded = false;
+
+/** The last categories load fell back to an empty list it never read. */
+export function categoriesReadDegraded(): boolean {
+  return categoriesDegraded;
+}
+
+/**
+ * Either half of the objection catalogue was built on a failed COLD read:
+ * the snapshot is served but never cached (here or by the browser).
+ */
+export function catalogueReadDegraded(): boolean {
+  return objectionsDegraded || categoriesDegraded;
+}
+
+/** Test hook: forget a remembered missing categories table and the last good list. */
+export function resetCategoriesProbe(): void {
+  categoriesTableMissingAt = null;
+  lastGoodCategories = [];
+  hadGoodCategoriesRead = false;
+  categoriesDegraded = false;
+}
+
+/**
+ * The stored categories the snapshot publishes: every non-deleted row, in
+ * the public `ObjectionCategory` shape (`rowToCategory` — never `created_by`
+ * / `updated_by`). Never throws.
+ */
+export async function loadPublicCategories(
+  read: () => Promise<CategoriesRead>,
+  now = Date.now(),
+): Promise<ObjectionCategory[]> {
+  if (categoriesTableMissingAt !== null && now - categoriesTableMissingAt < OBJECTIONS_REPROBE_MS) {
+    categoriesDegraded = false;
+    return [];
+  }
+  const res = await read();
+  if (!res.error) {
+    categoriesTableMissingAt = null;
+    hadGoodCategoriesRead = true;
+    categoriesDegraded = false;
+    lastGoodCategories = res.categories;
+    return lastGoodCategories;
+  }
+  if (res.missing) {
+    categoriesTableMissingAt = now;
+    categoriesDegraded = false;
+    lastGoodCategories = [];
+    console.warn(
+      '[flags-resolve] scenario_objection_categories missing — apply 20261012000000_scenario_objections.sql; serving built-in categories only',
+    );
+    return [];
+  }
+  console.warn('[flags-resolve] scenario_objection_categories fetch failed; serving the last good list', res.error);
+  categoriesDegraded = !hadGoodCategoriesRead;
+  return lastGoodCategories;
+}
+
 async function loadSnapshot(): Promise<{
   flags: FlagRow[];
   rules: RuleRow[];
   overrides: OverrideRow[];
   simulationConfig: Record<string, unknown> | null;
   objections: TeamObjection[];
+  objectionCategories: ObjectionCategory[];
 }> {
   const sb = getServiceClient();
-  const [flagsRes, rulesRes, overrideRows, simCfgRes, objections] = await Promise.all([
+  const [flagsRes, rulesRes, overrideRows, simCfgRes, objections, objectionCategories] = await Promise.all([
     sb.from('flags').select('key, default_value, value_type'),
     sb
       .from('flag_rules')
@@ -271,6 +354,7 @@ async function loadSnapshot(): Promise<{
     ),
     sb.from('simulation_config').select('config').eq('id', 'global').maybeSingle(),
     loadPublicObjections(() => readTeamObjections(sb)),
+    loadPublicCategories(() => readCategories(sb)),
   ]);
   if (flagsRes.error) throw flagsRes.error;
   if (rulesRes.error) throw rulesRes.error;
@@ -284,6 +368,7 @@ async function loadSnapshot(): Promise<{
       (simCfgRes.data?.config ?? null) as Record<string, unknown> | null,
     ),
     objections,
+    objectionCategories,
   };
 }
 
@@ -434,10 +519,12 @@ export default async (req: Request, context?: NetlifyContextLike): Promise<Respo
           scenarioOverrides: raw.overrides,
           simulationConfig: raw.simulationConfig,
           objections: raw.objections,
+          objectionCategories: raw.objectionCategories,
           fetchedAt: now,
         },
-        // Built on a failed cold objections read: serve it, don't keep it.
-        expiresAt: objectionsReadDegraded() ? now : now + CACHE_TTL_MS,
+        // Built on a failed cold objections OR categories read: serve it,
+        // don't keep it.
+        expiresAt: catalogueReadDegraded() ? now : now + CACHE_TTL_MS,
       };
       // Stash the raw rows on the snapshot for resolve.
       (snapshotCache.value as ResolvedSnapshot & {
@@ -469,11 +556,12 @@ export default async (req: Request, context?: NetlifyContextLike): Promise<Respo
         scenarioOverrides: snap.scenarioOverrides,
         simulationConfig: snap.simulationConfig,
         objections: snap.objections,
+        objectionCategories: snap.objectionCategories,
         fetchedAt: snapshotCache.value.fetchedAt,
       },
       {
         headers: {
-          'cache-control': objectionsReadDegraded() ? 'no-store' : 'public, max-age=30',
+          'cache-control': catalogueReadDegraded() ? 'no-store' : 'public, max-age=30',
         },
       },
     );

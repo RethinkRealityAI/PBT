@@ -1,16 +1,18 @@
 /**
- * The objection editor — "+ New objection" on the Objections tab and on the
+ * The objection editor — "+ Add objection" on the Categories tab and on the
  * Pushback step, and "Edit" on a team objection.
  *
  * A dialog (the shared `Modal`: focus trap, Escape, scrim), full width on a
- * phone. Name and the owner's line are required; the animals decide where it
- * is offered; the knowledge topic decides what the AI reads; French text and
- * coaching are optional and folded away. The server validates again and
- * allocates the id; a save carries the version the editor opened
- * (`baseUpdatedAt`) so two admins can't silently overwrite each other.
+ * phone. Name, the owner's line and the CATEGORY are required (the category
+ * owns the knowledge its scenarios read — "+ New category" right here opens
+ * the category editor and picks the result); the animals decide where it is
+ * offered; French text and coaching are optional and folded away. The server
+ * validates again and allocates the id; a save carries the version the
+ * editor opened (`baseUpdatedAt`) so two admins can't silently overwrite
+ * each other.
  */
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Modal, ModalCloseButton } from '../../primitives';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Modal } from '../../primitives';
 import { Button, InlineAlert } from '../../primitives/form';
 import { useConfirm } from '../../primitives/Confirm';
 import { useToast } from '../../primitives/Toast';
@@ -23,9 +25,12 @@ import {
   type AdminObjection,
   type TeamObjection,
 } from '../../../../src/shared/scenarios/objections';
-import { FOCUS_AREAS } from '../../../../src/shared/knowledge/focusAreas';
 import type { ScenarioSpecies } from '../../../../src/shared/scenarios/species';
-import { Chip, FieldBlock, Kicker, TextArea, TextInput } from '../ui';
+import { Chip, FieldBlock, PetIcon, TextArea, TextInput } from '../ui';
+import type { KnowledgeState } from '../types';
+import { BodyPortal, Disclosure, EditorFrame, selectStyle } from './editorParts';
+import { CategoryEditor, NO_KNOWLEDGE } from './CategoryEditor';
+import { hasCategoryKnowledge, knowledgeOf, knowledgeSummaryText } from './categoriesModel';
 import {
   coachingLines,
   emptyObjectionForm,
@@ -44,6 +49,10 @@ export interface ObjectionEditorProps {
   objection?: TeamObjection | null;
   /** Animals a NEW objection starts with (the scenario's species on the Pushback step). */
   defaultSpecies?: readonly ScenarioSpecies[] | null;
+  /** The category a NEW objection starts in (the one it was opened from). */
+  defaultCategoryId?: string | null;
+  /** The knowledge library, for "+ New category" (its Knowledge section). */
+  knowledge?: KnowledgeState;
   /** False for read-only roles: every control disabled, no Save. */
   canWrite: boolean;
   /** After a successful save, with the objection as the server stored it. */
@@ -64,15 +73,17 @@ export function ObjectionEditor(props: ObjectionEditorProps) {
   );
 }
 
-const SPECIES_CHOICES: Array<{ value: ScenarioSpecies; label: string; glyph: string }> = [
-  { value: 'dog', label: 'Dogs', glyph: '🐕' },
-  { value: 'cat', label: 'Cats', glyph: '🐈' },
+const SPECIES_CHOICES: Array<{ value: ScenarioSpecies; label: string }> = [
+  { value: 'dog', label: 'Dogs' },
+  { value: 'cat', label: 'Cats' },
 ];
 
 function EditorBody({
   onClose,
   objection,
   defaultSpecies,
+  defaultCategoryId,
+  knowledge,
   canWrite,
   onSaved,
   heading,
@@ -84,7 +95,7 @@ function EditorBody({
   const ids = {
     title: useId(),
     example: useId(),
-    topic: useId(),
+    category: useId(),
     titleFr: useId(),
     exampleFr: useId(),
     animals: useId(),
@@ -92,7 +103,7 @@ function EditorBody({
   };
 
   const initial = useMemo<ObjectionForm>(
-    () => (objection ? formFromObjection(objection) : emptyObjectionForm(defaultSpecies)),
+    () => (objection ? formFromObjection(objection) : emptyObjectionForm(defaultSpecies, defaultCategoryId ?? null)),
     // Opened once per objection (the body is keyed on it).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -110,6 +121,9 @@ function EditorBody({
     COACHING_KEYS.some((k) => initial.coaching[k].trim() !== ''),
   );
   const alertRef = useRef<HTMLDivElement | null>(null);
+  const [newCategoryOpen, setNewCategoryOpen] = useState(false);
+  const categories = api.categories;
+  const chosenCategory = categories.find((c) => c.id === form.categoryId) ?? null;
 
   // A stale save reloads the list; once the winning version is in, take its
   // token so the next Save goes through (the admin's edits stay on screen).
@@ -138,7 +152,7 @@ function EditorBody({
   }
 
   guard.current = () => {
-    if (busy) return false;
+    if (busy || newCategoryOpen) return false;
     if (canWrite && dirty) {
       void requestClose();
       return false;
@@ -208,35 +222,28 @@ function EditorBody({
   const fieldErrorCount = Object.keys(visibleErrors).filter((k) => k !== 'general').length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '88vh', minHeight: 0 }}>
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: 12,
-          padding: '18px 18px 12px 20px',
-          borderBottom: `1px solid ${COLOR.borderSoft}`,
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Kicker>Objection</Kicker>
-          <h2 style={{ margin: '6px 0 0', fontSize: 19, fontWeight: 750, color: COLOR.ink, letterSpacing: '-0.02em' }}>
-            {heading}
-          </h2>
-          {objection && (
-            <div style={{ fontSize: 12.5, color: COLOR.inkMute, marginTop: 2, overflowWrap: 'anywhere' }}>
-              {objection.title}
-            </div>
-          )}
-        </div>
-        <span style={{ flexShrink: 0 }}>
-          <ModalCloseButton onClose={onClose} />
-        </span>
-      </div>
-
-      {/* Body */}
-      <div className="pbt-studio-scroll" style={{ overflowY: 'auto', padding: '16px 20px 20px', display: 'grid', gap: 18 }}>
+    <EditorFrame
+      kicker="Objection"
+      heading={heading}
+      sub={objection?.title}
+      onClose={onClose}
+      footer={
+        canWrite ? (
+          <>
+            <Button tone="ghost" onClick={() => void requestClose()} disabled={busy}>
+              Cancel
+            </Button>
+            <Button tone="primary" busy={busy} onClick={() => void save()}>
+              {objection ? 'Save changes' : 'Add objection'}
+            </Button>
+          </>
+        ) : (
+          <Button tone="secondary" onClick={onClose}>
+            Close
+          </Button>
+        )
+      }
+    >
         <div ref={alertRef} tabIndex={-1} style={{ outline: 'none', display: 'grid', gap: 8 }}>
           {error && (
             <InlineAlert tone="error" title="Not saved">
@@ -269,6 +276,46 @@ function EditorBody({
             </InlineAlert>
           )}
         </div>
+
+        <FieldBlock
+          label="Category"
+          htmlFor={ids.category}
+          hint={
+            chosenCategory
+              ? hasCategoryKnowledge(chosenCategory)
+                ? `Scenarios on it read ${knowledgeOf(chosenCategory.name)}: ${knowledgeSummaryText(chosenCategory)}.`
+                : `“${chosenCategory.name}” has no knowledge attached yet, so its scenarios read the whole library.`
+              : 'The subject it belongs to, e.g. Probiotics. The category holds the knowledge its scenarios read.'
+          }
+          error={visibleErrors.categoryId}
+        >
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <select
+              id={ids.category}
+              className="pbt-studio-field"
+              value={form.categoryId ?? ''}
+              disabled={!canWrite}
+              onChange={(e) => update({ categoryId: e.target.value || null })}
+              style={{ ...selectStyle, flex: '1 1 200px', width: 'auto' }}
+            >
+              <option value="" disabled>
+                Choose a category…
+              </option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+              {/* A retired objection may sit in a category this list no longer has. */}
+              {form.categoryId && !chosenCategory && <option value={form.categoryId}>{form.categoryId}</option>}
+            </select>
+            {canWrite && api.available && (
+              <Button size="sm" tone="secondary" onClick={() => setNewCategoryOpen(true)}>
+                + New category
+              </Button>
+            )}
+          </div>
+        </FieldBlock>
 
         <FieldBlock
           label="Name"
@@ -317,10 +364,10 @@ function EditorBody({
                 disabled={!canWrite}
                 onClick={() => toggleSpecies(s.value)}
               >
-                <span aria-hidden style={{ marginRight: 6 }}>
-                  {s.glyph}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <PetIcon species={s.value} />
+                  {s.label}
                 </span>
-                {s.label}
               </Chip>
             ))}
           </div>
@@ -335,28 +382,6 @@ function EditorBody({
             </div>
           )}
         </div>
-
-        <FieldBlock
-          label="Knowledge topic"
-          htmlFor={ids.topic}
-          hint="Scenarios on this objection read the documents filed under this topic. Probiotics fit under Digestive health (GI)."
-        >
-          <select
-            id={ids.topic}
-            className="pbt-studio-field"
-            value={form.focusArea ?? ''}
-            disabled={!canWrite}
-            onChange={(e) => update({ focusArea: e.target.value || null })}
-            style={selectStyle}
-          >
-            <option value="">No specific topic</option>
-            {FOCUS_AREAS.map((f) => (
-              <option key={f.key} value={f.key}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </FieldBlock>
 
         <Disclosure
           title="French version"
@@ -452,100 +477,19 @@ function EditorBody({
             </span>
           </span>
         </label>
-      </div>
 
-      {/* Footer */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-          padding: '12px 20px 16px',
-          borderTop: `1px solid ${COLOR.borderSoft}`,
-        }}
-      >
-        {canWrite ? (
-          <>
-            <Button tone="ghost" onClick={() => void requestClose()} disabled={busy}>
-              Cancel
-            </Button>
-            <Button tone="primary" busy={busy} onClick={() => void save()}>
-              {objection ? 'Save changes' : 'Add objection'}
-            </Button>
-          </>
-        ) : (
-          <Button tone="secondary" onClick={onClose}>
-            Close
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const selectStyle: React.CSSProperties = {
-  width: '100%',
-  boxSizing: 'border-box',
-  padding: '10px 12px',
-  borderRadius: 12,
-  border: '1px solid rgba(60,20,15,0.14)',
-  background: 'rgba(255,255,255,0.78)',
-  fontSize: 14,
-  fontFamily: 'var(--pbt-font)',
-  color: COLOR.ink,
-};
-
-function Disclosure({
-  title,
-  note,
-  open,
-  onToggle,
-  children,
-}: {
-  title: string;
-  note: string;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  const panelId = useId();
-  return (
-    <div style={{ borderRadius: 14, border: `1px solid ${COLOR.borderSoft}`, background: 'rgba(255,255,255,0.55)' }}>
-      <button
-        type="button"
-        className="pbt-focusable"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={onToggle}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: 10,
-          flexWrap: 'wrap',
-          padding: '12px 14px',
-          border: 'none',
-          background: 'transparent',
-          cursor: 'pointer',
-          textAlign: 'left',
-          fontFamily: 'var(--pbt-font)',
-          borderRadius: 14,
-        }}
-      >
-        <span aria-hidden style={{ fontSize: 11, color: COLOR.inkMute, transform: open ? 'rotate(90deg)' : 'none', display: 'inline-block' }}>
-          ▶
-        </span>
-        <span style={{ fontSize: 13.5, fontWeight: 750, color: COLOR.ink }}>{title}</span>
-        <span style={{ fontSize: 12, color: COLOR.inkMute }}>{note}</span>
-      </button>
-      {open && (
-        <div id={panelId} style={{ padding: '2px 14px 14px', display: 'grid', gap: 14 }}>
-          {children}
-        </div>
+      {canWrite && api.available && (
+        <BodyPortal>
+          <CategoryEditor
+            open={newCategoryOpen}
+            onClose={() => setNewCategoryOpen(false)}
+            canWrite={canWrite}
+            knowledge={knowledge ?? NO_KNOWLEDGE}
+            onSaved={(saved) => update({ categoryId: saved.id })}
+          />
+        </BodyPortal>
       )}
-    </div>
+    </EditorFrame>
   );
 }
 

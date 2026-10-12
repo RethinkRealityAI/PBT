@@ -23,7 +23,9 @@ import {
   type ReactNode,
   type TextareaHTMLAttributes,
 } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { COLOR, RADIUS } from '../lib/tokens';
+import { SpeciesBadge, SpeciesIcon, type SpeciesKey } from '../../../src/design-system/SpeciesIcon';
 
 export const ASSIST_GRADIENT =
   'linear-gradient(135deg, oklch(0.60 0.22 22) 0%, oklch(0.55 0.18 320) 55%, oklch(0.55 0.16 250) 100%)';
@@ -567,5 +569,62 @@ export function StatusDot({
   );
 }
 
-/** Species glyphs — friendly, dependency-free. */
-export const SPECIES_GLYPH: Record<'dog' | 'cat', string> = { dog: '🐕', cat: '🐈' };
+// ── Icons ────────────────────────────────────────────────────
+
+/**
+ * The pet artwork — white line icons (lucide, shared with the trainee app)
+ * instead of emoji, which rendered differently on every platform. A badge
+ * (white icon on the brand colour) on cards and tiles; the bare icon, in the
+ * text colour, inside chips and sentences.
+ */
+export function PetBadge({
+  species,
+  size = 24,
+  title,
+  style,
+}: {
+  species: SpeciesKey;
+  size?: number;
+  /** Accessible name when the badge is the only thing saying which animal. */
+  title?: string;
+  style?: CSSProperties;
+}) {
+  return <SpeciesBadge species={species} size={size} background={COLOR.brand} title={title} style={style} />;
+}
+
+export function PetIcon({ species, size = 15, title }: { species: SpeciesKey; size?: number; title?: string }) {
+  return <SpeciesIcon species={species} size={size} title={title} />;
+}
+
+/** Any lucide icon as a white glyph on a filled circle — matches `PetBadge`. */
+export function IconBadge({
+  icon: Icon,
+  size = 28,
+  background = COLOR.brand,
+  style,
+}: {
+  icon: LucideIcon;
+  size?: number;
+  background?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: size,
+        height: size,
+        borderRadius: 999,
+        background,
+        color: '#fff',
+        flexShrink: 0,
+        ...style,
+      }}
+    >
+      <Icon size={Math.round(size * 0.55)} strokeWidth={2} aria-hidden focusable={false} />
+    </span>
+  );
+}

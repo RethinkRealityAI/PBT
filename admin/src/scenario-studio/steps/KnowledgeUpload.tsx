@@ -1,7 +1,8 @@
 /**
- * "Upload a document" — the Knowledge step's inline way to bring a new
- * study, protocol or handout into the library AND attach it to this
- * scenario, without leaving the Studio.
+ * "Upload a document" — the Knowledge step's (and the category editor's)
+ * inline way to bring a new study, protocol or handout into the library AND
+ * attach it to this scenario — or to a category, so every scenario in it
+ * reads the document — without leaving the Studio.
  *
  *   1. Choose a PDF (≤ 4 MB) or paste text.
  *   2. "Read it for me" — the tag assistant (`admin-knowledge-analyze`)
@@ -12,9 +13,11 @@
  *      analysis: a PDF the assistant already extracted goes in as TEXT with
  *      its citation (never extracted twice), filed for the training tools
  *      (always including the roleplay customer and the scorer) and, by
- *      default, for this scenario's animal.
+ *      default, for this scenario's animal (a category: the animals its
+ *      objections cover, and its knowledge topic).
  */
 import { useRef, useState } from 'react';
+import { FileText, PenLine } from 'lucide-react';
 import { Modal, ModalCloseButton, StatusPill } from '../../primitives';
 import { Button, InlineAlert } from '../../primitives/form';
 import { COLOR } from '../../lib/tokens';
@@ -46,7 +49,21 @@ import {
   studioUploadTools,
   toggleSpeciesKey,
   uploadSpeciesDefault,
+  type RetrievalSpecies,
 } from './knowledgeModel';
+
+/**
+ * Upload for a CATEGORY rather than the scenario on screen: the document is
+ * attached to the category, so every scenario in it reads it.
+ */
+export interface CategoryUploadTarget {
+  /** The category's name, for the copy. */
+  name: string;
+  /** Its knowledge topic — what a new document is filed under by default. */
+  focus: string | null;
+  /** Animals a new document is filed for by default (`categoryUploadSpecies`). */
+  species: string[];
+}
 
 /** Same cap the server's PDF extraction enforces (`MAX_PDF_BYTES`). */
 export const MAX_UPLOAD_PDF_BYTES = 4 * 1024 * 1024;
@@ -90,18 +107,23 @@ function confidenceTone(c: number): { label: string; tone: 'success' | 'warn' | 
 export function KnowledgeUpload({
   open,
   onClose,
-  draft,
+  draft: draftProp,
+  forCategory = null,
   atCap,
   onAdded,
 }: {
   open: boolean;
   onClose: () => void;
-  draft: StudioDraft;
-  /** The scenario already has the maximum number of documents attached. */
+  /** The scenario the document is attached to (omit with `forCategory`). */
+  draft?: StudioDraft;
+  /** Attach to this category instead of the scenario. */
+  forCategory?: CategoryUploadTarget | null;
+  /** The scenario (or category) already has the maximum number of documents attached. */
   atCap: boolean;
   /** Ingest succeeded — the parent attaches the slug and refetches. */
   onAdded: (res: IngestResult, title: string) => void;
 }) {
+  const draft: StudioDraft = draftProp ?? {};
   const titleId = useFieldId();
   const textId = useFieldId();
   const fileId = useFieldId();
@@ -120,13 +142,16 @@ export function KnowledgeUpload({
     citation: null,
   });
   const [readError, setReadError] = useState<string | null>(null);
-  const [form, setForm] = useState<Form>(() => blankForm(draft));
+  const [form, setForm] = useState<Form>(() => blankForm(draft, forCategory));
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const ticket = useRef(0);
 
-  const scope = draftRetrievalSpecies(draft);
+  // A category has no single animal to insist on; a scenario does.
+  const scope: RetrievalSpecies | undefined = forCategory ? undefined : draftRetrievalSpecies(draft);
   const mode = knowledgeModeOf(draft);
+  const holder = forCategory ? 'category' : 'scenario';
+  const attachedTo = forCategory ? `“${forCategory.name}”` : 'this scenario';
 
   function reset() {
     ticket.current += 1;
@@ -139,7 +164,7 @@ export function KnowledgeUpload({
     setAnalysis(null);
     setExtracted({ markdown: null, citation: null });
     setReadError(null);
-    setForm(blankForm(draft));
+    setForm(blankForm(draft, forCategory));
     setAdding(false);
     setAddError(null);
   }
@@ -191,7 +216,7 @@ export function KnowledgeUpload({
       if (ticket.current !== mine) return;
       setAnalysis(res.analysis);
       setExtracted({ markdown: res.extractedMarkdown ?? null, citation: res.extractedCitation ?? null });
-      setForm(formFromAnalysis(res.analysis, res.extractedCitation ?? null, pasteTitle, draft));
+      setForm(formFromAnalysis(res.analysis, res.extractedCitation ?? null, pasteTitle, draft, forCategory));
       setPhase('review');
     } catch (err) {
       if (ticket.current !== mine) return;
@@ -203,7 +228,7 @@ export function KnowledgeUpload({
   function fillMyself() {
     setAnalysis(null);
     setForm({
-      ...blankForm(draft),
+      ...blankForm(draft, forCategory),
       title: source === 'text' ? pasteTitle.trim() : (file?.name.replace(/\.pdf$/i, '') ?? ''),
     });
     setPhase('review');
@@ -303,7 +328,8 @@ export function KnowledgeUpload({
           </h2>
           <div style={{ marginTop: 6, fontSize: 13.5, lineHeight: 1.55, color: COLOR.inkSoft }}>
             Add a study, protocol or handout. The assistant reads it and suggests how to file it — you
-            check, then it’s added to the library and attached to this scenario.
+            check, then it’s added to the library and attached to {attachedTo}
+            {forCategory ? ', so every scenario in it reads it' : ''}.
           </div>
         </div>
 
@@ -314,7 +340,7 @@ export function KnowledgeUpload({
                 compact
                 selected={source === 'pdf'}
                 onSelect={() => setSource('pdf')}
-                glyph={<span aria-hidden>📄</span>}
+                glyph={<FileText aria-hidden size={22} strokeWidth={1.9} color={COLOR.brand} />}
                 title="A PDF file"
                 description="A study or handout, up to 4 MB."
               />
@@ -322,7 +348,7 @@ export function KnowledgeUpload({
                 compact
                 selected={source === 'text'}
                 onSelect={() => setSource('text')}
-                glyph={<span aria-hidden>✎</span>}
+                glyph={<PenLine aria-hidden size={22} strokeWidth={1.9} color={COLOR.brand} />}
                 title="Paste text"
                 description="Notes, a protocol, an article."
               />
@@ -442,12 +468,13 @@ export function KnowledgeUpload({
             setForm={setForm}
             ids={{ title: titleId, citation: citationId }}
             scope={scope}
+            categoryName={forCategory?.name ?? null}
           />
         )}
 
         {phase === 'review' && (
           <>
-            {mode !== 'documents' && (
+            {!forCategory && mode !== 'documents' && (
               <InlineAlert tone="info">
                 Attaching switches this scenario to <strong>Specific documents</strong>: the AI will read
                 only the documents you tick
@@ -456,7 +483,7 @@ export function KnowledgeUpload({
             )}
             {atCap && (
               <InlineAlert tone="warn">
-                {KNOWLEDGE_CAP} documents are already attached — the most a scenario can hold. Untick
+                {KNOWLEDGE_CAP} documents are already attached — the most a {holder} can hold. Untick
                 one first.
               </InlineAlert>
             )}
@@ -502,13 +529,13 @@ export function KnowledgeUpload({
   );
 }
 
-function blankForm(draft: StudioDraft): Form {
+function blankForm(draft: StudioDraft, forCategory: CategoryUploadTarget | null): Form {
   return {
     title: '',
-    focus: null,
+    focus: forCategory?.focus ?? null,
     category: 'clinical',
     citation: '',
-    species: uploadSpeciesDefault(draft),
+    species: forCategory ? [...forCategory.species] : uploadSpeciesDefault(draft),
   };
 }
 
@@ -517,15 +544,17 @@ function formFromAnalysis(
   extractedCitation: string | null,
   typedTitle: string,
   draft: StudioDraft,
+  forCategory: CategoryUploadTarget | null,
 ): Form {
   return {
     // A title the admin typed is theirs.
     title: typedTitle.trim() || (a.title ?? '').trim(),
-    focus: isFocusAreaKey(a.focus) ? a.focus : null,
+    // A category's own topic wins: the document is filed where its scenarios look.
+    focus: forCategory?.focus ?? (isFocusAreaKey(a.focus) ? a.focus : null),
     category: a.category === 'custom' ? 'custom' : 'clinical',
     citation: (a.citation ?? extractedCitation ?? '').trim(),
-    // The scenario decides the animal; the assistant's view is shown beside it.
-    species: uploadSpeciesDefault(draft),
+    // The scenario (or category) decides the animal; the assistant's view is shown beside it.
+    species: forCategory ? [...forCategory.species] : uploadSpeciesDefault(draft),
   };
 }
 
@@ -535,12 +564,15 @@ function ReviewForm({
   setForm,
   ids,
   scope,
+  categoryName,
 }: {
   analysis: KnowledgeAnalysis | null;
   form: Form;
   setForm: (f: Form) => void;
   ids: { title: string; citation: string };
-  scope: ReturnType<typeof draftRetrievalSpecies>;
+  scope: RetrievalSpecies | undefined;
+  /** Uploading for a category (its animals were pre-filled), or null. */
+  categoryName: string | null;
 }) {
   const set = (p: Partial<Form>) => setForm({ ...form, ...p });
   const confidence = analysis ? confidenceTone(analysis.confidence) : null;
@@ -671,9 +703,11 @@ function ReviewForm({
           ))}
         </div>
         <div style={{ fontSize: 12, color: COLOR.inkMute, lineHeight: 1.5 }}>
-          {scope
-            ? `Set to match this scenario. A document is only read for the animals ticked here.`
-            : 'Every animal, because this scenario doesn’t set a species.'}
+          {categoryName
+            ? `Set to match the objections in “${categoryName}”. A document is only read for the animals ticked here.`
+            : scope
+              ? `Set to match this scenario. A document is only read for the animals ticked here.`
+              : 'Every animal, because this scenario doesn’t set a species.'}
           {analysis?.reasons.species ? (
             <>
               {' '}

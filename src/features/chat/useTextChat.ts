@@ -12,8 +12,13 @@ import {
   type ScoreReport,
   type SessionRecord,
 } from '../../services/types';
-import { useScenarioOverride, useSimulationConfig } from '../../app/providers/FlagProvider';
-import { seedScenarioId } from '../../data/scenarioOverrides';
+import { useFlags, useScenarioOverride, useSimulationConfig } from '../../app/providers/FlagProvider';
+import {
+  objectionCategoriesFromSnapshot,
+  seedScenarioId,
+  teamObjectionsFromSnapshot,
+} from '../../data/scenarioOverrides';
+import { categoryKnowledgeFor, mergeCategories } from '../../shared/scenarios/objectionCategories';
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
 import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
 import { readStorage, writeStorage } from '../../lib/storage';
@@ -245,6 +250,22 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // (`resolveRag`) — the AI functions load the config themselves server-side
   // and are authoritative for prompts + scoring, so it is never sent along.
   const simulationConfig = useSimulationConfig();
+  // The knowledge the scenario's CATEGORY gives it (documents / topic an admin
+  // attached to the subject area), from the flags snapshot — so the citations
+  // recorded below match what the server retrieved for the prompt, which
+  // applies the same category knowledge from its own database read. Null when
+  // the category has none (then the whole library, as before categories).
+  const { snapshot: flagSnapshot } = useFlags();
+  const pushbackId = scenario?.pushback?.id ?? null;
+  const categoryKnowledge = useMemo(
+    () =>
+      categoryKnowledgeFor(
+        pushbackId,
+        teamObjectionsFromSnapshot(flagSnapshot?.objections),
+        mergeCategories(objectionCategoriesFromSnapshot(flagSnapshot?.objectionCategories)),
+      ),
+    [pushbackId, flagSnapshot?.objections, flagSnapshot?.objectionCategories],
+  );
   // App locale — decides the language the AI customer speaks and the language
   // the scorecard's coaching prose comes back in. LanguageProvider sits above
   // ChatProvider, and useLanguage() falls back to English outside a provider.
@@ -352,7 +373,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
             // `tool` is the knowledge scope, not scenario targeting: the
             // browser only ever retrieves as the roleplay customer, so a
             // document filed for the Fecal Scan can never reach this prompt.
-            filters: { ...scenarioRetrievalFilters(scenario), tool: 'roleplay' },
+            filters: { ...scenarioRetrievalFilters(scenario, { categoryKnowledge }), tool: 'roleplay' },
           })
         : [];
       if (gen !== genRef.current) return; // reset while retrieving — this run is dead
@@ -372,7 +393,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       setTransientError(translate(locale, 'chat.error.openFailed'));
       setStatus('error');
     }
-  }, [scenario, status, promptOverrides, simulationConfig, locale]);
+  }, [scenario, status, promptOverrides, simulationConfig, locale, categoryKnowledge]);
 
   const send = useCallback(
     async (text: string) => {

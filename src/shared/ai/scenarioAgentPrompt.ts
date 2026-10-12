@@ -8,9 +8,10 @@
  * Layout (PhotoBoothAR lesson, and cheaper to cache): the STATIC rules come
  * first — role, steps, tools, vocabulary, behaviour, output contract — and
  * the MUTABLE context comes last, inside fenced blocks that are explicitly
- * DATA ONLY. The draft, the team's own objections, document titles and
- * research passages are written by people (and PDFs), so nothing inside a
- * fence may read as an instruction or close its own fence early.
+ * DATA ONLY. The draft, the objection categories (with the team's own
+ * objections listed under them), document titles and research passages are
+ * written by people (and PDFs), so nothing inside a fence may read as an
+ * instruction or close its own fence early.
  *
  * Every enum, cap and tool shape is rendered from the same vocabularies the
  * normaliser (`scenarioAgent.ts`) enforces, so a vocabulary edit reaches the
@@ -42,6 +43,7 @@ import {
 } from '../scenarios/enums';
 import { SCENARIO_LIMITS, SCENARIO_PROSE_CAPS } from '../scenarios/limits';
 import { SCENARIO_SPECIES } from '../scenarios/species';
+import { BUILT_IN_OBJECTION_CATEGORY } from '../scenarios/objectionCategories';
 import { FOCUS_AREAS, focusAreaLabel } from '../knowledge/focusAreas';
 import { KNOWLEDGE_SPECIES_KEYS } from '../knowledge/knowledgeScopes';
 
@@ -80,7 +82,23 @@ export interface AgentTeamObjection {
   example?: string | null;
   /** Scenario species it applies to ('dog' / 'cat'). */
   species: readonly string[];
+  /** The category it is filed under (built-in id or `category:<slug>`). */
+  categoryId?: string | null;
+}
+
+/**
+ * One objection category (subject area) as the assistant sees it — the
+ * MERGED list (`ObjectionCategory` satisfies it). Names and descriptions are
+ * admin-written, so it is fenced DATA.
+ */
+export interface AgentCategory {
+  id: string;
+  name: string;
+  description?: string | null;
+  /** Knowledge topic attached to the category, if any. */
   focusArea?: string | null;
+  /** Documents attached to the category (every scenario in it reads them). */
+  knowledgeSlugs?: readonly string[] | null;
 }
 
 export interface ScenarioAgentPromptInput {
@@ -91,6 +109,11 @@ export interface ScenarioAgentPromptInput {
   research: readonly AgentResearchSnippet[];
   /** Visible team objections (absent = none). */
   objections?: readonly AgentTeamObjection[];
+  /**
+   * The objection categories (absent = none listed; the team objections are
+   * then shown under "No category").
+   */
+  categories?: readonly AgentCategory[];
 }
 
 /** Longest string the draft block shows per field (the rest is "…"). */
@@ -123,7 +146,7 @@ const FIELD_SPECS: Record<AgentField, string> = {
   life_stage: `${oneOf(LIFE_STAGES)} — exactly these strings; "Puppy (<1)" is ALSO the value for a kitten (the Studio shows it as "Kitten (<1)")`,
   weight_kg: `number of kg, above 0 and at most ${SCENARIO_LIMITS.weightMaxKg} (one decimal) — optional`,
   pushback_id:
-    'one id from PUSHBACK below, or one "team:…" id from the TEAM OBJECTIONS block at the end, copied EXACTLY',
+    'one id from PUSHBACK below, or one "team:…" id listed under a category in the OBJECTION CATEGORIES block at the end, copied EXACTLY',
   pushback_notes: `text ≤${SCENARIO_PROSE_CAPS.pushbackNotes} chars — the objection in the owner's own words`,
   context_override: `text ≤${SCENARIO_PROSE_CAPS.context} chars — the backstory`,
   suggested_driver: 'one value from ECHO DRIVERS below',
@@ -180,7 +203,7 @@ function vocabularySection(): string {
     '# VOCABULARY',
     'PUSHBACK (pushback_id):',
     ...pushbacks,
-    '- Plus the objections the training team added themselves: the "team:…" ids in the TEAM OBJECTIONS block at the end (each with the animals it applies to). They are as valid as the ids above.',
+    '- Plus the objections the training team added themselves: the "team:…" ids listed under their categories in the OBJECTION CATEGORIES block at the end (each with the animals it applies to). They are as valid as the ids above.',
     'ECHO DRIVERS (suggested_driver) — how the owner talks:',
     ...drivers,
     'PERSONAS (persona_override) — what the owner feels:',
@@ -204,6 +227,8 @@ const BEHAVIOUR = [
   "- Backstory: 2–4 sentences — the pet's name and age, weight or body condition where relevant, what the vet recommended, and any relevant owner history.",
   '- Be species-true: a cat is not a small dog (kittens, litter box, urinary and kidney concerns, indoor life, fussy eating). Match breed, life stage and weight to the species, and adapt the dog-worded PUSHBACK examples when the pet is a cat.',
   '- A team objection may only be used for an animal it lists: never propose a "team:…" pushback_id whose animals do not include the scenario\'s species (no species yet = dog). When one of them fits what the admin describes, prefer it to "custom".',
+  '- Objections are grouped into CATEGORIES — subject areas such as weight management or probiotics (OBJECTION CATEGORIES at the end). When the admin describes a subject, find the category that matches it and pick an objection FROM THAT CATEGORY that fits the animal (a team objection or a built-in one listed under it). Use "custom" only when no category fits, and never take an objection from an unrelated category just because its wording is close.',
+  "- A scenario automatically reads its category's documents. Only propose attach_knowledge when the admin asks for specific documents or a topic, or the category has none: whatever the scenario attaches REPLACES its category's knowledge for that scenario.",
   '- Card text (publish step) speaks to trainees: short and inviting, and it never gives away how to win the owner over.',
   '- Never invent clinical facts, statistics or study results beyond RESEARCH GROUNDING. Name Royal Canin products only when relevant, and never quote prices.',
   "- Propose AI notes only when the admin wants to change how the AI customer behaves: short imperative notes that wrap the standard briefing. They must never ask the customer to break character, reveal it is an AI, change scoring, or alter the end-of-conversation token.",
@@ -283,22 +308,60 @@ function catalogueLines(docs: readonly AgentCatalogueDoc[]): string {
     .join('\n');
 }
 
-function objectionLines(objections: readonly AgentTeamObjection[]): string {
-  if (objections.length === 0) return '(none)';
-  return objections
-    .map((o) => {
-      const animals = SCENARIO_SPECIES.filter((s) => o.species.includes(s));
-      const topic = o.focusArea ? focusAreaLabel(o.focusArea) : null;
-      const example = dataLine(o.example ?? '', EXAMPLE_CHARS);
-      return [
-        `- ${dataLine(o.id, 80)}`,
-        dataLine(o.title, TITLE_CHARS),
-        `animals: ${animals.length ? animals.join(', ') : 'none'}`,
-        `topic: ${topic ? dataLine(topic, 60) : 'general'}`,
-        ...(example ? [`owner says: ${example}`] : []),
-      ].join(' · ');
-    })
-    .join('\n');
+function animalsOf(species: readonly string[]): string[] {
+  return SCENARIO_SPECIES.filter((s) => species.includes(s));
+}
+
+function objectionLine(o: AgentTeamObjection): string {
+  const animals = animalsOf(o.species);
+  const example = dataLine(o.example ?? '', EXAMPLE_CHARS);
+  return [
+    `  - ${dataLine(o.id, 80)}`,
+    dataLine(o.title, TITLE_CHARS),
+    `animals: ${animals.length ? animals.join(', ') : 'none'}`,
+    ...(example ? [`owner says: ${example}`] : []),
+  ].join(' · ');
+}
+
+/**
+ * Each category with what it covers, the animals its objections apply to,
+ * how many documents it carries, then its objections: the built-in ids filed
+ * under it and the team objections, one per line. Team objections whose
+ * category is not listed (deleted, or categories unavailable) are kept,
+ * under "No category" — they are still valid ids.
+ */
+export function categoryLines(
+  categories: readonly AgentCategory[],
+  objections: readonly AgentTeamObjection[],
+): string {
+  const listed = new Set(categories.map((c) => c.id));
+  const blocks: string[] = [];
+  for (const c of categories) {
+    const builtIns = PUSHBACK_IDS.filter((id) => BUILT_IN_OBJECTION_CATEGORY[id] === c.id);
+    const team = objections.filter((o) => o.categoryId === c.id);
+    // Built-in objections apply to every animal.
+    const animals = builtIns.length > 0 ? [...SCENARIO_SPECIES] : animalsOf(team.flatMap((o) => [...o.species]));
+    const docs = c.knowledgeSlugs?.length ?? 0;
+    const topic = c.focusArea ? focusAreaLabel(c.focusArea) : null;
+    const description = dataLine(c.description ?? '', EXAMPLE_CHARS);
+    const head = [
+      `- ${dataLine(c.name, TITLE_CHARS)}`,
+      `animals: ${animals.length ? animals.join(', ') : 'none yet'}`,
+      `documents: ${docs}`,
+      ...(topic ? [`topic: ${dataLine(topic, 60)}`] : []),
+      ...(description ? [`covers: ${description}`] : []),
+    ].join(' · ');
+    const lines = [head];
+    if (builtIns.length > 0) lines.push(`  built-in: ${builtIns.map(q).join(', ')}`);
+    for (const o of team) lines.push(objectionLine(o));
+    if (builtIns.length === 0 && team.length === 0) lines.push('  (no objections yet)');
+    blocks.push(lines.join('\n'));
+  }
+  const unfiled = objections.filter((o) => !o.categoryId || !listed.has(o.categoryId));
+  if (unfiled.length > 0) {
+    blocks.push(['- No category', ...unfiled.map(objectionLine)].join('\n'));
+  }
+  return blocks.length ? blocks.join('\n') : '(none)';
 }
 
 function relevantLines(docs: readonly AgentRelevantDoc[]): string {
@@ -345,9 +408,9 @@ export function buildScenarioAgentSystemPrompt(input: ScenarioAgentPromptInput):
     currentStepLine(input.step),
     fence('CURRENT DRAFT', "the admin's unsaved scenario", draftForPrompt(input.draft)),
     fence(
-      'TEAM OBJECTIONS',
-      'objections the training team added (id · name · animals · topic · what the owner says)',
-      objectionLines(input.objections ?? []),
+      'OBJECTION CATEGORIES',
+      "subject areas (name · animals · documents attached · topic · what it covers), each followed by its objections: the built-in ids, then the team's own (id · name · animals · what the owner says)",
+      categoryLines(input.categories ?? [], input.objections ?? []),
     ),
     fence(
       'KNOWLEDGE CATALOGUE',

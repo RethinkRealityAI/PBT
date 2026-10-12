@@ -5,7 +5,13 @@ import { CreateScreen } from '../CreateScreen';
 import type { Scenario } from '../../data/scenarios';
 import type { FlagSnapshot, ScenarioOverride } from '../../services/flagsClient';
 import type { TeamObjection } from '../../shared/scenarios/objections';
+import {
+  BUILT_IN_CATEGORIES,
+  type ObjectionCategory,
+} from '../../shared/scenarios/objectionCategories';
 import { POPULAR_BREEDS } from '../../shared/scenarios/species';
+import { LanguageProvider } from '../../app/providers/LanguageProvider';
+import { loadCatalog } from '../../i18n/translate';
 
 const { go, back, setScenario, persistUserScenario, logEvent } = vi.hoisted(() => ({
   go: vi.fn(),
@@ -49,23 +55,44 @@ vi.mock('../../app/providers/FlagProvider', async () => {
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
-const OBJECTION: Omit<TeamObjection, 'id' | 'title' | 'species'> = {
+const OBJECTION: Omit<TeamObjection, 'id' | 'title' | 'species' | 'categoryId'> = {
   example: '"A line."',
   titleFr: null,
   exampleFr: null,
-  focusArea: null,
   coaching: {},
   visible: true,
   sortOrder: null,
   updatedAt: null,
 };
+const CATEGORY: Omit<ObjectionCategory, 'id' | 'name'> = {
+  nameFr: null,
+  description: '',
+  focusArea: null,
+  knowledgeSlugs: [],
+  sortOrder: null,
+  builtIn: false,
+  updatedAt: null,
+};
+/** Team category for dogs (has a French name), with knowledge attached. */
+const GI: ObjectionCategory = {
+  ...CATEGORY,
+  id: 'category:gi',
+  name: 'GI',
+  nameFr: 'Gastro-intestinal',
+  description: 'Stomach and gut health.',
+  focusArea: 'gi',
+  knowledgeSlugs: ['study:gi'],
+  sortOrder: 40,
+};
+/** Team category for cats (no French name). */
+const URINARY: ObjectionCategory = { ...CATEGORY, id: 'category:urinary', name: 'Urinary', sortOrder: 50 };
 const PROBIOTICS: TeamObjection = {
   ...OBJECTION,
   id: 'team:probiotics',
   title: "Probiotics: 'he doesn't need them'",
   example: '"He eats fine — why a probiotic?"',
   species: ['dog'],
-  focusArea: 'gi',
+  categoryId: 'category:gi',
   sortOrder: 1,
 };
 const WET_FOOD: TeamObjection = {
@@ -74,7 +101,7 @@ const WET_FOOD: TeamObjection = {
   title: 'Wet food is a waste',
   example: '"She does fine on kibble."',
   species: ['cat'],
-  focusArea: 'urinary',
+  categoryId: 'category:urinary',
   sortOrder: 2,
 };
 const RETIRED: TeamObjection = {
@@ -82,6 +109,7 @@ const RETIRED: TeamObjection = {
   id: 'team:retired',
   title: 'Retired topic',
   species: ['dog', 'cat'],
+  categoryId: 'everyday-nutrition',
   visible: false,
 };
 
@@ -127,11 +155,34 @@ const ADMIN_DOG_PROBIOTICS: ScenarioOverride = {
   pushback_id: 'team:probiotics',
   suggested_driver: 'Energizer',
 };
+const ADMIN_DOG_COST: ScenarioOverride = {
+  ...ROW,
+  scenario_id: 'admin:dog-cost',
+  breed: 'Poodle',
+  life_stage: 'Senior (7+)',
+  pushback_id: 'cost',
+  suggested_driver: 'Analyzer',
+  card_title_override: 'Budget-minded owner',
+};
+const ADMIN_DOG_OTHER: ScenarioOverride = {
+  ...ROW,
+  scenario_id: 'admin:dog-other',
+  breed: 'Boxer',
+  life_stage: 'Adult (3-7)',
+  pushback_id: 'custom',
+  pushback_notes: 'Insists on a home-cooked diet.',
+  suggested_driver: 'Activator',
+  card_title_override: 'Home cooking',
+};
 /** The admin hid the cost seed (seed:1). */
 const HIDDEN_SEED: ScenarioOverride = { ...ROW, scenario_id: 'seed:1', visible: false };
 
-function snapshot(overrides: ScenarioOverride[], objections: TeamObjection[] = [PROBIOTICS, WET_FOOD, RETIRED]): FlagSnapshot {
-  return { flags: {}, scenarioOverrides: overrides, objections, fetchedAt: 0 };
+function snapshot(
+  overrides: ScenarioOverride[],
+  objections: TeamObjection[] = [PROBIOTICS, WET_FOOD, RETIRED],
+  objectionCategories: ObjectionCategory[] = [GI, URINARY],
+): FlagSnapshot {
+  return { flags: {}, scenarioOverrides: overrides, objections, objectionCategories, fetchedAt: 0 };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -142,6 +193,13 @@ const screenTab = (name: 'Build' | 'Library') =>
   within(screen.getByRole('tablist', { name: 'Scenario tabs' })).getByRole('tab', { name });
 const breedInput = () => screen.getByRole('textbox', { name: 'Breed' }) as HTMLInputElement;
 const chip = (name: string) => screen.queryByRole('button', { name });
+const categoryGroup = () => screen.getByRole('group', { name: 'Choose a category' });
+const categoryChips = () =>
+  within(categoryGroup())
+    .getAllByRole('button')
+    .map((b) => b.textContent);
+const categoryChip = (name: string) => within(categoryGroup()).getByRole('button', { name });
+const trigger = () => screen.getByRole('button', { name: 'Select pushback type' });
 
 async function openObjectionDropdown(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Select pushback type' }));
@@ -193,46 +251,128 @@ describe('CreateScreen — which animal (Build tab)', () => {
     expect(breedInput().value).toBe('Shiba Inu');
   });
 
-  it('offers a team objection only for the animals it applies to (never a retired one)', async () => {
+  it('draws a pet icon (no emoji) on each animal tab', () => {
+    render(<CreateScreen />);
+    for (const name of ['Dog', 'Cat'] as const) {
+      const tab = animalTab(name);
+      expect(tab.querySelector('svg')).not.toBeNull();
+      expect(tab).toHaveTextContent(new RegExp(`^${name}$`));
+    }
+  });
+
+  it('offers only the categories holding a visible objection for the animal', async () => {
+    const user = userEvent.setup();
+    render(<CreateScreen />);
+    // GI holds a dog-only objection, Urinary a cat-only one.
+    expect(categoryChips()).toEqual([
+      'Everyday nutrition',
+      'Weight management',
+      'Prescription diets',
+      'GI',
+    ]);
+    // Opens on the first category, with its description.
+    expect(categoryChip('Everyday nutrition')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(BUILT_IN_CATEGORIES[0].description)).toBeInTheDocument();
+
+    await user.click(animalTab('Cat'));
+    expect(categoryChips()).toEqual([
+      'Everyday nutrition',
+      'Weight management',
+      'Prescription diets',
+      'Urinary',
+    ]);
+  });
+
+  it('category chips scope the objection dropdown (never offering a retired objection)', async () => {
     const user = userEvent.setup();
     render(<CreateScreen />);
     await openObjectionDropdown(user);
-    expect(offered(PROBIOTICS.title)).toBe(true);
-    expect(offered('Cost / price pushback')).toBe(true);
-    expect(offered(WET_FOOD.title)).toBe(false);
-    expect(offered(RETIRED.title)).toBe(false);
-
-    await user.click(animalTab('Cat'));
-    await openObjectionDropdown(user);
-    expect(await screen.findByRole('button', { name: new RegExp(WET_FOOD.title) })).toBeInTheDocument();
+    for (const title of [
+      'Cost / price pushback',
+      'Friend / breeder said…',
+      'Grain-free / trend belief',
+      'Switching brands hesitation',
+    ]) {
+      expect(offered(title), title).toBe(true);
+    }
+    expect(offered('Weight / obesity denial')).toBe(false);
     expect(offered(PROBIOTICS.title)).toBe(false);
     expect(offered(RETIRED.title)).toBe(false);
+
+    // Picking a category picks its first objection and scopes the dropdown.
+    await user.click(categoryChip('GI'));
+    expect(categoryChip('GI')).toHaveAttribute('aria-pressed', 'true');
+    expect(trigger()).toHaveTextContent(PROBIOTICS.title);
+    expect(screen.getByText(GI.description)).toBeInTheDocument();
+    await openObjectionDropdown(user);
+    expect(offered(PROBIOTICS.title)).toBe(true);
+    expect(offered('Cost / price pushback')).toBe(false);
+
+    await user.click(categoryChip('Weight management'));
+    expect(trigger()).toHaveTextContent('Weight / obesity denial');
   });
 
-  it('resets an objection that does not apply to the new animal', async () => {
+  it('category chips are a keyboard-usable group of toggle buttons', async () => {
     const user = userEvent.setup();
     render(<CreateScreen />);
-    await openObjectionDropdown(user);
-    await user.click(screen.getByRole('button', { name: new RegExp(PROBIOTICS.title.slice(0, 10)) }));
-    const trigger = screen.getByRole('button', { name: 'Select pushback type' });
-    expect(trigger).toHaveTextContent(PROBIOTICS.title);
-    await user.click(animalTab('Cat'));
-    expect(trigger).toHaveTextContent('Cost / price pushback');
+    const gi = categoryChip('GI');
+    gi.focus();
+    await user.keyboard('{Enter}');
+    expect(gi).toHaveAttribute('aria-pressed', 'true');
+    const rx = categoryChip('Prescription diets');
+    rx.focus();
+    await user.keyboard(' ');
+    expect(rx).toHaveAttribute('aria-pressed', 'true');
+    expect(gi).toHaveAttribute('aria-pressed', 'false');
+    expect(trigger()).toHaveTextContent('Skepticism on Rx diet');
   });
 
-  it('builds a cat scenario carrying species, the team objection and its knowledge topic', async () => {
+  it("a cat-only objection's category appears only under Cat", async () => {
+    const user = userEvent.setup();
+    render(<CreateScreen />);
+    expect(within(categoryGroup()).queryByRole('button', { name: 'Urinary' })).toBeNull();
+    await user.click(animalTab('Cat'));
+    await user.click(categoryChip('Urinary'));
+    expect(trigger()).toHaveTextContent(WET_FOOD.title);
+    await openObjectionDropdown(user);
+    expect(offered(WET_FOOD.title)).toBe(true);
+    expect(offered(PROBIOTICS.title)).toBe(false);
+  });
+
+  it('resets a category and objection that do not apply to the new animal', async () => {
+    const user = userEvent.setup();
+    render(<CreateScreen />);
+    await user.click(categoryChip('GI'));
+    expect(trigger()).toHaveTextContent(PROBIOTICS.title);
+    await user.click(animalTab('Cat'));
+    // GI has nothing for cats → the first category, and its first objection.
+    expect(categoryChip('Everyday nutrition')).toHaveAttribute('aria-pressed', 'true');
+    expect(trigger()).toHaveTextContent('Cost / price pushback');
+  });
+
+  it('keeps the category and objection when they apply to the new animal too', async () => {
+    const user = userEvent.setup();
+    render(<CreateScreen />);
+    await user.click(categoryChip('Weight management'));
+    await user.click(animalTab('Cat'));
+    expect(categoryChip('Weight management')).toHaveAttribute('aria-pressed', 'true');
+    expect(trigger()).toHaveTextContent('Weight / obesity denial');
+  });
+
+  it('builds a cat scenario carrying species and the team objection — never its knowledge', async () => {
     const user = userEvent.setup();
     render(<CreateScreen />);
     await user.click(animalTab('Cat'));
-    await openObjectionDropdown(user);
-    await user.click(screen.getByRole('button', { name: new RegExp(WET_FOOD.title) }));
+    await user.click(categoryChip('Urinary'));
     await user.click(screen.getAllByRole('button', { name: 'Start scenario' })[0]);
 
     expect(setScenario).toHaveBeenCalledTimes(1);
     const built = setScenario.mock.calls[0][0] as Scenario;
     expect(built.species).toBe('cat');
     expect(built.breed).toBe(POPULAR_BREEDS.cat[0]);
-    expect(built.focusArea).toBe('urinary');
+    // The category's knowledge is applied server-side, not copied here.
+    expect(built).not.toHaveProperty('focusArea');
+    expect(built).not.toHaveProperty('knowledgeSlugs');
     expect(built.pushback).toEqual({
       id: 'team:wet-food',
       title: WET_FOOD.title,
@@ -240,6 +380,18 @@ describe('CreateScreen — which animal (Build tab)', () => {
     });
     expect(persistUserScenario).toHaveBeenCalledWith(built);
     expect(go).toHaveBeenCalledWith('chat');
+  });
+
+  it('"Other pushback" stays a separate choice outside every category', async () => {
+    const user = userEvent.setup();
+    render(<CreateScreen />);
+    await user.click(categoryChip('GI'));
+    await user.click(screen.getByRole('button', { name: 'Other pushback' }));
+    await user.type(screen.getByPlaceholderText(/They insisted/), 'Home-cooked only.');
+    await user.click(screen.getAllByRole('button', { name: 'Start scenario' })[0]);
+    const built = setScenario.mock.calls[0][0] as Scenario;
+    expect(built.pushback.id).toBe('custom');
+    expect(built.pushbackNotes).toBe('Home-cooked only.');
   });
 
   it('a dog scenario on a built-in objection carries NO species / focusArea keys (byte-identical prompts)', async () => {
@@ -278,18 +430,23 @@ describe('CreateScreen — Library tab', () => {
     expect(screen.getByText('Maine Coon · Kitten (<1) · Skeptical')).toBeInTheDocument();
   });
 
-  it('names the objection on a card whose title the admin customised', async () => {
+  it("names the category on every card, and the objection when the admin customised the title", async () => {
     const user = userEvent.setup();
     render(<CreateScreen />);
     await user.click(animalTab('Cat'));
     await user.click(screenTab('Library'));
-    // The custom title says nothing about the pushback; the eyebrow does.
-    expect(screen.getByText(WET_FOOD.title)).toBeInTheDocument();
-    // A card titled by its objection doesn't repeat it (the filter chip of
-    // the same name sits outside the card).
+    // The custom title says nothing about the pushback; the eyebrow names the
+    // category AND the objection on ONE line.
+    const catCard = screen.getByRole('button', { name: 'Start: Kitten on dry food' }).parentElement!;
+    expect(within(catCard).getByText(WET_FOOD.title)).toBeInTheDocument();
+    expect(within(catCard).getByText('Urinary').parentElement).toBe(
+      within(catCard).getByText(WET_FOOD.title).parentElement,
+    );
+    // A card titled by its objection doesn't repeat it: category eyebrow only.
     await user.click(animalTab('Dog'));
     const card = screen.getByRole('button', { name: 'Start: Weight / obesity denial' }).parentElement!;
     expect(within(card).getAllByText('Weight / obesity denial')).toHaveLength(1);
+    expect(within(card).getByText('Weight management')).toBeInTheDocument();
   });
 
   it('starts a library scenario with its override handle', async () => {
@@ -305,29 +462,74 @@ describe('CreateScreen — Library tab', () => {
     expect(go).toHaveBeenCalledWith('chat');
   });
 
-  it('filters by objection with chips', async () => {
+  it('filters by category chips, then by objection chips within the chosen category', async () => {
     const user = userEvent.setup();
+    flagSnapshot = snapshot([HIDDEN_SEED, ADMIN_CAT, ADMIN_DOG_PROBIOTICS, ADMIN_DOG_COST, ADMIN_DOG_OTHER]);
     render(<CreateScreen />);
     await user.click(screenTab('Library'));
-    const filters = screen.getByRole('group', { name: 'Filter by objection' });
-    const chips = within(filters).getAllByRole('button').map((b) => b.textContent);
-    expect(chips).toEqual([
-      'All',
-      'Switching brands hesitation',
-      'Weight / obesity denial',
-      PROBIOTICS.title,
+    const categories = screen.getByRole('group', { name: 'Filter by category' });
+    const categoryNames = within(categories).getAllByRole('button').map((b) => b.textContent);
+    // Only categories present among the animal's scenarios, in category
+    // order; "Other pushback" (outside every category) last.
+    expect(categoryNames).toEqual([
+      'All categories',
+      'Everyday nutrition',
+      'Weight management',
+      'GI',
+      'Other pushback',
     ]);
-    expect(within(filters).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(categories).getByRole('button', { name: 'All categories' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // Under "All categories" every dog card shows and no objection row yet.
+    expect(startButtons()).toHaveLength(5);
+    expect(screen.queryByRole('group', { name: 'Filter by objection' })).toBeNull();
 
-    await user.click(within(filters).getByRole('button', { name: PROBIOTICS.title }));
-    expect(startButtons()).toEqual([PROBIOTICS.title]);
-    expect(within(filters).getByRole('button', { name: PROBIOTICS.title })).toHaveAttribute(
+    // A category with two objections gets objection chips.
+    await user.click(within(categories).getByRole('button', { name: 'Everyday nutrition' }));
+    expect(startButtons()).toEqual(['Switching brands hesitation', 'Budget-minded owner']);
+    const objections = screen.getByRole('group', { name: 'Filter by objection' });
+    expect(within(objections).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'All',
+      'Cost / price pushback',
+      'Switching brands hesitation',
+    ]);
+    await user.click(within(objections).getByRole('button', { name: 'Cost / price pushback' }));
+    expect(startButtons()).toEqual(['Budget-minded owner']);
+    expect(within(objections).getByRole('button', { name: 'Cost / price pushback' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
 
-    await user.click(within(filters).getByRole('button', { name: 'All' }));
-    expect(startButtons()).toHaveLength(3);
+    // A category with one objection: no objection row; switching category
+    // clears the objection filter.
+    await user.click(within(categories).getByRole('button', { name: 'GI' }));
+    expect(startButtons()).toEqual([PROBIOTICS.title]);
+    expect(screen.queryByRole('group', { name: 'Filter by objection' })).toBeNull();
+    await user.click(within(categories).getByRole('button', { name: 'Other pushback' }));
+    expect(startButtons()).toEqual(['Home cooking']);
+    await user.click(within(categories).getByRole('button', { name: 'Everyday nutrition' }));
+    expect(startButtons()).toHaveLength(2);
+
+    await user.click(within(categories).getByRole('button', { name: 'All categories' }));
+    expect(startButtons()).toHaveLength(5);
+  });
+
+  it('with a single category there is no category row; objection chips filter as before', async () => {
+    const user = userEvent.setup();
+    // Dog library: brand-switch + cost — both Everyday nutrition.
+    flagSnapshot = snapshot([
+      HIDDEN_SEED,
+      { ...ROW, scenario_id: 'seed:0', visible: false },
+      ADMIN_DOG_COST,
+    ]);
+    render(<CreateScreen />);
+    await user.click(screenTab('Library'));
+    expect(screen.queryByRole('group', { name: 'Filter by category' })).toBeNull();
+    const objections = screen.getByRole('group', { name: 'Filter by objection' });
+    await user.click(within(objections).getByRole('button', { name: 'Switching brands hesitation' }));
+    expect(startButtons()).toEqual(['Switching brands hesitation']);
   });
 
   it('shows an empty state with a way to build one when the animal has no library scenarios', async () => {
@@ -352,6 +554,57 @@ describe('CreateScreen — Library tab', () => {
       'Weight / obesity denial',
       'Cost / price pushback',
       'Switching brands hesitation',
+    ]);
+  });
+});
+
+// ── French ────────────────────────────────────────────────────────────────
+
+describe('CreateScreen — French', () => {
+  async function renderFr() {
+    // The French catalog is a lazy chunk: load it first so the assertions test
+    // the wording, not how fast a dynamic import resolves under load.
+    await loadCatalog('fr');
+    render(
+      <LanguageProvider initialLocale="fr">
+        <CreateScreen />
+      </LanguageProvider>,
+    );
+  }
+
+  it('localises built-in categories through the overlay and team ones through nameFr (English fallback)', async () => {
+    const user = userEvent.setup();
+    await renderFr();
+    const group = screen.getByRole('group', { name: 'Choisir une catégorie' });
+    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Nutrition au quotidien',
+      'Gestion du poids',
+      'Diètes vétérinaires',
+      'Gastro-intestinal',
+    ]);
+    await user.click(
+      within(screen.getByRole('tablist', { name: 'Animal pour l’entraînement' })).getByRole('tab', {
+        name: 'Chat',
+      }),
+    );
+    // URINARY has no French name: English stands in.
+    expect(within(group).getByRole('button', { name: 'Urinary' })).toBeInTheDocument();
+  });
+
+  it('labels the Library category row in French', async () => {
+    const user = userEvent.setup();
+    await renderFr();
+    await user.click(
+      within(screen.getByRole('tablist', { name: 'Onglets de scénario' })).getByRole('tab', {
+        name: 'Bibliothèque',
+      }),
+    );
+    const categories = screen.getByRole('group', { name: 'Filtrer par catégorie' });
+    expect(within(categories).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Toutes les catégories',
+      'Nutrition au quotidien',
+      'Gestion du poids',
+      'Gastro-intestinal',
     ]);
   });
 });

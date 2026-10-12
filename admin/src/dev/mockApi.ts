@@ -34,7 +34,7 @@ const ahead = (ms: number) => new Date(now + ms).toISOString();
 
 const ME = '00000000-0000-4000-8000-000000000001';
 
-function seedSession(): void {
+function seedSession(temporaryPassword = false): void {
   const session = {
     access_token: 'mock-access-token',
     refresh_token: 'mock-refresh-token',
@@ -47,7 +47,9 @@ function seedSession(): void {
       role: 'authenticated',
       email: 'dapo@rethinkreality.ai',
       app_metadata: {},
-      user_metadata: { display_name: 'Dapo Ajisafe' },
+      // `?mock=temppassword`: signed in on a temporary password, so the
+      // "Choose your own password" screen shows before the portal.
+      user_metadata: { display_name: 'Dapo Ajisafe', ...(temporaryPassword ? { must_change_password: true } : {}) },
       created_at: ago(400 * DAY),
     },
   };
@@ -735,7 +737,9 @@ const POST_HANDLERS: Record<
 export function installAdminMocks(): void {
   // `?mock=signedout` skips the seeded session so the sign-in and recovery
   // screens can be reviewed too.
-  if (!/(^|[?&])mock=signedout(&|$)/.test(location.search)) seedSession();
+  if (!/(^|[?&])mock=signedout(&|$)/.test(location.search)) {
+    seedSession(/(^|[?&])mock=temppassword(&|$)/.test(location.search));
+  }
   const real = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

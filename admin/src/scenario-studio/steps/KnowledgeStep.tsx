@@ -1,20 +1,28 @@
 /**
  * Step 4 — "What should the AI know?"
  *
- * Three ways to point the AI customer at research — the whole library, one
- * topic, or specific documents — with honest status for each, an inline
- * upload that files AND attaches a new document, and a preview that runs
- * the real retrieval for the draft on screen.
+ * By default a scenario reads its CATEGORY's knowledge (the documents and
+ * topic attached to e.g. Probiotics) — or, when the category has none, the
+ * whole library. Two overrides for this scenario only: specific documents,
+ * or one topic. Each comes with honest status, an inline upload that files
+ * AND attaches a new document (to this scenario, or to the category), and a
+ * preview that runs the real retrieval for the draft on screen.
  *
- * The mode is derived from the draft (documents → topic → library), with one
- * piece of local state: after picking "One topic" or "Specific documents"
- * the admin needs to see the chooser BEFORE anything is chosen, and an
- * untouched choice leaves the draft in "whole library".
+ * The mode is derived from the draft (documents → topic → inherited), with
+ * one piece of local state: after picking "One topic" or "Specific
+ * documents" the admin needs to see the chooser BEFORE anything is chosen,
+ * and an untouched choice leaves the draft inheriting.
+ *
+ * "Whole library" can't be stored as an override while the category HAS
+ * knowledge: a scenario with no choice of its own inherits (the server's
+ * `effectiveKnowledge`), so that tile only appears when inheriting already
+ * means the whole library.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { FolderOpen, Library, Pin, Target, type LucideIcon } from 'lucide-react';
 import type { StepProps } from '../types';
-import { Chip, Explainer, OptionTile, StudioSection } from '../ui';
+import { Chip, Explainer, IconBadge, OptionTile, StudioSection } from '../ui';
 import { COLOR } from '../../lib/tokens';
 import { Button, InlineAlert } from '../../primitives/form';
 import { useCan } from '../../primitives/access';
@@ -27,41 +35,82 @@ import {
   attachSlugPatch,
   draftRetrievalSpecies,
   focusCounts,
+  inheritedKnowledge,
   knowledgeModeOf,
   readableDocCount,
   speciesPlural,
   switchKnowledgeMode,
   type KnowledgeMode,
 } from './knowledgeModel';
+import { useObjectionsContext } from '../objections/ObjectionsContext';
+import { CategoryEditor } from '../objections/CategoryEditor';
+import { knowledgeOf, knowledgeSummaryText } from '../objections/categoriesModel';
 import { DocumentPicker } from './DocumentPicker';
 import { KnowledgePreview } from './KnowledgePreview';
 import { KnowledgeUpload } from './KnowledgeUpload';
 import { Caption, FitGrid, Group, StepBody, linkButton } from './stepParts';
 
-const MODES: Array<{ key: KnowledgeMode; title: string; description: string; glyph: string }> = [
-  {
-    key: 'library',
-    title: 'Whole library',
-    description: 'The AI searches everything it’s allowed to read and picks what fits. Right for most scenarios.',
-    glyph: '📚',
-  },
-  {
-    key: 'focus',
-    title: 'One topic',
-    description: 'Only documents filed under one clinical topic — a urinary scenario stops pulling weight-loss studies.',
-    glyph: '🎯',
-  },
-  {
-    key: 'documents',
-    title: 'Specific documents',
-    description: 'Only the documents you tick. The most control — and the most upkeep.',
-    glyph: '📌',
-  },
-];
+interface ModeTile {
+  key: KnowledgeMode;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  recommended?: boolean;
+}
+
+/**
+ * The three tiles. The first ("library" in draft terms = no choice of its
+ * own) reads as the category's knowledge when the category has some.
+ */
+function modeTiles(categoryName: string | null, categoryHasKnowledge: boolean, summary: string | null): ModeTile[] {
+  const inherit: ModeTile =
+    categoryName && categoryHasKnowledge
+      ? {
+          key: 'library',
+          title: `Use ${knowledgeOf(categoryName)}`,
+          description: `What every scenario in ${categoryName} reads${summary ? `: ${summary}` : ''}. Kept up to date in one place.`,
+          icon: FolderOpen,
+          recommended: true,
+        }
+      : {
+          key: 'library',
+          title: 'Whole library',
+          description: categoryName
+            ? `${categoryName} has no knowledge attached yet, so the AI searches everything it’s allowed to read.`
+            : 'The AI searches everything it’s allowed to read and picks what fits. Right for most scenarios.',
+          icon: Library,
+          recommended: true,
+        };
+  return [
+    inherit,
+    {
+      key: 'documents',
+      title: 'Pick documents for this scenario only',
+      description: categoryHasKnowledge
+        ? `Only the documents you tick — instead of ${categoryName ? knowledgeOf(categoryName) : 'the category’s knowledge'}.`
+        : 'Only the documents you tick. The most control — and the most upkeep.',
+      icon: Pin,
+    },
+    {
+      key: 'focus',
+      title: 'One topic for this scenario only',
+      description: 'Only documents filed under one clinical topic — a urinary scenario stops pulling weight-loss studies.',
+      icon: Target,
+    },
+  ];
+}
 
 export function KnowledgeStep({ draft, patch, canWrite, knowledge, goTo }: StepProps) {
   const can = useCan();
   const toast = useToast();
+  const objectionsApi = useObjectionsContext();
+  const inherited = inheritedKnowledge(draft, objectionsApi.objections, objectionsApi.categories);
+  const category = inherited.category;
+  const categoryHasKnowledge = inherited.knowledge !== null;
+  const categorySummary = inherited.knowledge ? knowledgeSummaryText(inherited.knowledge) : null;
+  const tiles = modeTiles(category?.name ?? null, categoryHasKnowledge, categorySummary);
+  const canEditCategory = canWrite && objectionsApi.available && category !== null;
+  const [categoryEditorOpen, setCategoryEditorOpen] = useState(false);
   const derived = knowledgeModeOf(draft);
   const [chosen, setChosen] = useState<KnowledgeMode>(derived);
   const [notice, setNotice] = useState<{ text: string; undo: Parameters<typeof patch>[0] } | null>(null);
@@ -158,17 +207,17 @@ export function KnowledgeStep({ draft, patch, canWrite, knowledge, goTo }: StepP
       <StudioSection title="Where should the AI look?">
         <Group label="Where should the AI look?">
           <FitGrid min={200}>
-            {MODES.map((m) => (
+            {tiles.map((m) => (
               <OptionTile
                 key={m.key}
                 selected={mode === m.key}
                 onSelect={() => choose(m.key)}
                 disabled={!canWrite}
-                glyph={<span aria-hidden>{m.glyph}</span>}
+                glyph={<IconBadge icon={m.icon} size={34} />}
                 title={m.title}
                 description={m.description}
                 footer={
-                  m.key === 'library' ? (
+                  m.recommended ? (
                     <span
                       style={{
                         justifySelf: 'start',
@@ -219,10 +268,40 @@ export function KnowledgeStep({ draft, patch, canWrite, knowledge, goTo }: StepP
           )
         )}
 
-        {mode === 'library' && docsReady && (
+        {mode === 'library' && category && inherited.knowledge && (
+          <CategoryKnowledgePanel
+            name={category.name}
+            focus={inherited.knowledge.focusArea}
+            slugs={inherited.knowledge.knowledgeSlugs}
+            docs={docsReady ? knowledge.docs : null}
+            onEdit={canEditCategory ? () => setCategoryEditorOpen(true) : undefined}
+          />
+        )}
+
+        {mode === 'library' && !categoryHasKnowledge && docsReady && (
           <Caption>
             Right now that’s {readable} searchable document{readable === 1 ? '' : 's'}
             {animal}.
+          </Caption>
+        )}
+
+        {mode === 'library' && category && !categoryHasKnowledge && (
+          <InlineAlert tone="info" title={`${category.name} has no knowledge attached yet`}>
+            Attach documents to the category and every scenario in it — this one included — reads them.
+            {canEditCategory && (
+              <div style={{ marginTop: 8 }}>
+                <Button size="sm" tone="secondary" onClick={() => setCategoryEditorOpen(true)}>
+                  Add documents to {category.name}
+                </Button>
+              </div>
+            )}
+          </InlineAlert>
+        )}
+
+        {mode !== 'library' && category && categoryHasKnowledge && (
+          <Caption>
+            This replaces {knowledgeOf(category.name)} for this scenario only. Pick “Use{' '}
+            {knowledgeOf(category.name)}” to go back.
           </Caption>
         )}
 
@@ -294,16 +373,24 @@ export function KnowledgeStep({ draft, patch, canWrite, knowledge, goTo }: StepP
             >
               <span style={{ flex: '1 1 260px', fontSize: 13, lineHeight: 1.55, color: COLOR.inkSoft }}>
                 A PDF or pasted text. The assistant reads it and suggests how to file it; it’s then added to
-                the library and attached to this scenario.
+                the library and attached to this scenario
+                {category ? ` — or attach it to ${category.name} instead, so every scenario in it reads it` : ''}.
               </span>
-              <Button
-                tone="secondary"
-                onClick={() => setUploadOpen(true)}
-                disabled={selected.length >= KNOWLEDGE_CAP}
-                title={selected.length >= KNOWLEDGE_CAP ? `${KNOWLEDGE_CAP} documents are already attached` : undefined}
-              >
-                ⤴ Upload a document
-              </Button>
+              <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button
+                  tone="secondary"
+                  onClick={() => setUploadOpen(true)}
+                  disabled={selected.length >= KNOWLEDGE_CAP}
+                  title={selected.length >= KNOWLEDGE_CAP ? `${KNOWLEDGE_CAP} documents are already attached` : undefined}
+                >
+                  ⤴ Upload for this scenario
+                </Button>
+                {canEditCategory && (
+                  <Button tone="ghost" onClick={() => setCategoryEditorOpen(true)}>
+                    Add documents to {category!.name}
+                  </Button>
+                )}
+              </span>
             </div>
           ) : (
             <Explainer>
@@ -318,7 +405,7 @@ export function KnowledgeStep({ draft, patch, canWrite, knowledge, goTo }: StepP
         title="Preview what the AI will read"
         hint="Runs the same search a real conversation runs, for this draft, and shows the passages that come back."
       >
-        <KnowledgePreview draft={draft} goTo={goTo} />
+        <KnowledgePreview draft={draft} goTo={goTo} categoryName={category?.name ?? null} />
       </StudioSection>
 
       {/* Portalled: the Studio shell may animate its step container, and a
@@ -335,7 +422,81 @@ export function KnowledgeStep({ draft, patch, canWrite, knowledge, goTo }: StepP
           />,
           document.body,
         )}
+      {canEditCategory &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <CategoryEditor
+            open={categoryEditorOpen}
+            onClose={() => setCategoryEditorOpen(false)}
+            category={category}
+            canWrite={canWrite}
+            knowledge={knowledge}
+          />,
+          document.body,
+        )}
     </StepBody>
+  );
+}
+
+/** "Uses <Category>'s knowledge": what the category gives, document by document. */
+function CategoryKnowledgePanel({
+  name,
+  focus,
+  slugs,
+  docs,
+  onEdit,
+}: {
+  name: string;
+  focus: string | null;
+  slugs: string[];
+  /** The library (null while unknown) — to name each document. */
+  docs: readonly { slug: string; title: string; chunk_count: number }[] | null;
+  onEdit?: () => void;
+}) {
+  const bySlug = new Map((docs ?? []).map((d) => [d.slug, d] as const));
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gap: 10,
+        padding: '14px 16px',
+        borderRadius: 16,
+        border: `1px solid ${COLOR.border}`,
+        background: 'rgba(255,255,255,0.7)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <IconBadge icon={FolderOpen} size={26} />
+        <span style={{ flex: '1 1 200px', fontSize: 13.5, fontWeight: 750, color: COLOR.ink }}>
+          Uses {knowledgeOf(name)}
+        </span>
+        {onEdit && (
+          <button type="button" style={linkButton} onClick={onEdit}>
+            Edit {name}
+          </button>
+        )}
+      </div>
+      {slugs.length > 0 && (
+        <ul aria-label={`Documents attached to ${name}`} style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 3 }}>
+          {slugs.map((slug) => {
+            const doc = bySlug.get(slug);
+            return (
+              <li key={slug} style={{ fontSize: 13, color: COLOR.inkSoft, overflowWrap: 'anywhere' }}>
+                {doc ? doc.title : docs ? <em>Missing from the library ({slug})</em> : slug}
+                {doc && doc.chunk_count === 0 ? ' — not searchable yet' : ''}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {focus && (
+        <div style={{ fontSize: 12.5, color: COLOR.inkSoft }}>
+          Topic: <strong style={{ color: COLOR.ink }}>{focusAreaLabel(focus)}</strong>
+          {slugs.length > 0 ? ' — while documents are attached, the AI reads only those' : ''}
+        </div>
+      )}
+      <Caption>Change it once on the category and every scenario in {name} follows.</Caption>
+    </div>
   );
 }
 

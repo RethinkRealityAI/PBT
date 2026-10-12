@@ -1,20 +1,24 @@
 /**
  * Step 2 — "What is the owner pushing back on?"
  *
- * The kind of objection — the built-in ones and the team's own for this
- * animal, each with the line an owner would say, plus "Something else" — the
- * objection in the owner's own words (required for "Something else"), and
- * the backstory the AI customer builds the conversation on.
+ * Category first: chips for the subjects that hold an objection for this
+ * scenario's animal (Everyday nutrition, Obesity & weight loss, Probiotics…),
+ * then the objections of the chosen category — the built-in ones and the
+ * team's own, each with the line an owner would say — plus "Something else"
+ * (the objection in the owner's own words, required for it), and the
+ * backstory the AI customer builds the conversation on.
  *
- * A team objection is added right here ("+ New objection", the same editor
- * as the Objections tab) and picked as soon as it's saved. Picking one that
- * belongs to a knowledge topic also points the scenario at that topic — but
- * only while no knowledge has been chosen yet, and with an Undo.
+ * A team objection is added right here ("+ New objection in <category>", the
+ * same editor as the Categories tab) and picked as soon as it's saved; a new
+ * category can be added too. Knowledge is no longer set from here: a
+ * scenario reads its CATEGORY's knowledge (shown under the chips) unless it
+ * picks its own on the Knowledge step.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { StepProps } from '../types';
 import {
   AssistButton,
+  Chip,
   FieldBlock,
   OptionTile,
   StudioSection,
@@ -25,21 +29,23 @@ import { COLOR } from '../../lib/tokens';
 import { Button, InlineAlert } from '../../primitives/form';
 import { PUSHBACK_EXAMPLES } from '../../../../src/shared/scenarios/enums';
 import { adaptPetWords, speciesOf, type ScenarioSpecies } from '../../../../src/shared/scenarios/species';
-import { topicLabel } from '../../../../src/shared/scenarios/objections';
+import { objectionCategoryId } from '../../../../src/shared/scenarios/objectionCategories';
 import { hasText } from '../studioModel';
 import {
   animalsInSentence,
   animalsLabel,
   checkObjection,
   objectionLabel,
-  pickObjectionPatch,
-  pushbackOptionsFor,
+  pushbackChoicesFor,
   type ObjectionCheck,
   type ObjectionRef,
   type PushbackOption,
 } from '../objections/objectionsModel';
+import { hasCategoryKnowledge, knowledgeSummaryText } from '../objections/categoriesModel';
 import { useObjectionsContext } from '../objections/ObjectionsContext';
 import { ObjectionEditor } from '../objections/ObjectionEditor';
+import { CategoryEditor } from '../objections/CategoryEditor';
+import { BodyPortal } from '../objections/editorParts';
 import { BuiltInHint, Caption, FitGrid, Group, StepBody, linkButton } from './stepParts';
 
 /** What each tile is called. `custom` reads as a choice, not a setting. */
@@ -70,18 +76,18 @@ const BACKSTORY_PLACEHOLDER: Record<ScenarioSpecies, string> = {
   cat: 'e.g. Milo is a 9-year-old neutered Domestic Shorthair with a history of urinary crystals. The vet recommended a urinary diet; the owner free-feeds and has two other cats.',
 };
 
-export function PushbackStep({ draft, patch, canWrite, base, askAssistant }: StepProps) {
+export function PushbackStep({ draft, patch, canWrite, base, askAssistant, knowledge }: StepProps) {
   const notesId = useFieldId();
   const backstoryId = useFieldId();
   const objectionsApi = useObjectionsContext();
   const team = objectionsApi.objections;
+  const categories = objectionsApi.categories;
   const species = speciesOf(draft.species);
   const pushbackId = draft.pushback_id ?? null;
   const isCustom = pushbackId === 'custom';
   const notes = draft.pushback_notes ?? '';
   const backstory = draft.context_override ?? '';
   const legacyTitle = (draft.title_override ?? '').trim();
-  const options = pushbackOptionsFor(species, team);
   const check = checkObjection({
     pushbackId,
     species,
@@ -94,21 +100,37 @@ export function PushbackStep({ draft, patch, canWrite, base, askAssistant }: Ste
     check && (check.state === 'retired' || check.state === 'wrong-species')
       ? team.find((o) => o.id === check.id) ?? null
       : null;
-  const showTeamGroup = options.team.length > 0 || offPicker !== null;
-  /** "Knowledge topic set to … to match this objection" — with an Undo. */
-  const [focusNote, setFocusNote] = useState<string | null>(null);
+
+  // The category chips. The draft's own category is always one of them (and
+  // pre-selected); a chip the admin clicks wins until the objection changes
+  // from elsewhere (the assistant, a revert), which re-selects its category.
+  const draftCategoryId = objectionCategoryId(pushbackId, team);
+  const [picked, setPicked] = useState<string | null>(null);
+  /** A category created from this step — offered even before it holds an objection. */
+  const [created, setCreated] = useState<string | null>(null);
+  useEffect(() => {
+    setPicked(null);
+  }, [pushbackId]);
+  const choices = pushbackChoicesFor(species, team, categories, [draftCategoryId, created, picked]);
+  const activeId =
+    (picked && choices.some((c) => c.category.id === picked) ? picked : null) ??
+    (draftCategoryId && choices.some((c) => c.category.id === draftCategoryId) ? draftCategoryId : null) ??
+    choices[0]?.category.id ??
+    null;
+  const active = choices.find((c) => c.category.id === activeId) ?? null;
+  const offPickerHere = offPicker && offPicker.categoryId === activeId ? offPicker : null;
+  const teamTiles = active ? active.team.length + (offPickerHere ? 1 : 0) : 0;
+
   const [editorOpen, setEditorOpen] = useState(false);
+  const [categoryEditor, setCategoryEditor] = useState<'new' | 'edit' | null>(null);
   const canAddObjection = canWrite && objectionsApi.available;
   const teamExample = team.find((o) => o.id === pushbackId)?.example ?? null;
 
-  function choose(option: Pick<PushbackOption, 'id' | 'focusArea'>) {
-    const picked = pickObjectionPatch(draft, option);
-    patch(picked.patch);
-    setFocusNote(picked.focusSet);
+  function choose(option: Pick<PushbackOption, 'id'>) {
+    patch({ pushback_id: option.id });
   }
 
   function teamTile(o: PushbackOption, flag?: string) {
-    const topic = topicLabel(o.focusArea);
     return (
       <OptionTile
         key={o.id}
@@ -118,11 +140,12 @@ export function PushbackStep({ draft, patch, canWrite, base, askAssistant }: Ste
         title={o.title}
         description={o.example ? <span style={{ fontStyle: 'italic' }}>{o.example}</span> : undefined}
         footer={
-          <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
-            {flag && <TileTag tone="warn">{flag}</TileTag>}
-            {topic && <TileTag>{topic}</TileTag>}
-            {o.species.length === 1 && <TileTag>{animalsLabel(o.species)}</TileTag>}
-          </span>
+          flag || o.species.length === 1 ? (
+            <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+              {flag && <TileTag tone="warn">{flag}</TileTag>}
+              {o.species.length === 1 && <TileTag>{animalsLabel(o.species)}</TileTag>}
+            </span>
+          ) : undefined
         }
       />
     );
@@ -158,101 +181,126 @@ export function PushbackStep({ draft, patch, canWrite, base, askAssistant }: Ste
 
       <StudioSection
         title="The kind of pushback"
-        hint="Pick the objection the trainee has to work through."
+        hint="Pick the subject, then the objection the trainee has to work through."
       >
+        <div role="group" aria-label="Category" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {choices.map((c) => (
+            <Chip
+              key={c.category.id}
+              selected={c.category.id === activeId}
+              onClick={() => setPicked(c.category.id)}
+              title={c.category.description || undefined}
+            >
+              {c.category.name}
+              <span style={{ marginLeft: 6, opacity: 0.7, fontFamily: 'var(--pbt-mono)', fontSize: 11 }}>
+                {c.builtIn.length + c.team.length}
+              </span>
+            </Chip>
+          ))}
+        </div>
+
+        {active && (
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            <Caption>
+              {hasCategoryKnowledge(active.category)
+                ? `Scenarios in ${active.category.name} read its knowledge: ${knowledgeSummaryText(active.category)}.`
+                : `${active.category.name} has no knowledge attached, so its scenarios read the whole library.`}
+            </Caption>
+            {canAddObjection && (
+              <button type="button" style={linkButton} onClick={() => setCategoryEditor('edit')}>
+                {hasCategoryKnowledge(active.category) ? `Edit ${active.category.name}` : `Add knowledge to ${active.category.name}`}
+              </button>
+            )}
+          </div>
+        )}
+
         <Group label="The kind of pushback">
-          {showTeamGroup && <GroupHeading>Built in</GroupHeading>}
-          <FitGrid min={210}>
-            {options.builtIn.map((o) => (
-              <OptionTile
-                key={o.id}
-                selected={pushbackId === o.id}
-                onSelect={() => choose(o)}
-                disabled={!canWrite}
-                title={pushbackTitle(o.id)}
-                description={<span style={{ fontStyle: 'italic' }}>{pushbackExample(o.id, species)}</span>}
-              />
-            ))}
-          </FitGrid>
-          {showTeamGroup && (
+          {active && active.builtIn.length > 0 && teamTiles > 0 && <GroupHeading>Built in</GroupHeading>}
+          {active && active.builtIn.length > 0 && (
+            <FitGrid min={210}>
+              {active.builtIn.map((o) => (
+                <OptionTile
+                  key={o.id}
+                  selected={pushbackId === o.id}
+                  onSelect={() => choose(o)}
+                  disabled={!canWrite}
+                  title={pushbackTitle(o.id)}
+                  description={<span style={{ fontStyle: 'italic' }}>{pushbackExample(o.id, species)}</span>}
+                />
+              ))}
+            </FitGrid>
+          )}
+          {active && teamTiles > 0 && (
             <>
-              <GroupHeading>Your team’s objections</GroupHeading>
+              {active.builtIn.length > 0 && <GroupHeading>Your team’s objections</GroupHeading>}
               <FitGrid min={210}>
-                {options.team.map((o) => teamTile(o))}
-                {offPicker &&
+                {active.team.map((o) => teamTile(o))}
+                {offPickerHere &&
                   teamTile(
                     {
-                      id: offPicker.id,
-                      title: offPicker.title,
-                      example: offPicker.example,
+                      id: offPickerHere.id,
+                      title: offPickerHere.title,
+                      example: offPickerHere.example,
                       builtIn: false,
-                      species: [...offPicker.species],
-                      focusArea: offPicker.focusArea,
+                      species: [...offPickerHere.species],
+                      categoryId: offPickerHere.categoryId,
                     },
-                    offPicker.visible ? `For ${animalsInSentence(offPicker.species)} only` : 'Retired',
+                    offPickerHere.visible ? `For ${animalsInSentence(offPickerHere.species)} only` : 'Retired',
                   )}
               </FitGrid>
             </>
+          )}
+          {active && active.builtIn.length === 0 && teamTiles === 0 && (
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 14,
+                border: '1px dashed rgba(60,20,15,0.16)',
+                background: 'rgba(255,255,255,0.45)',
+                fontSize: 13,
+                color: COLOR.inkMute,
+              }}
+            >
+              No objections in {active.category.name} for {species === 'cat' ? 'cats' : 'dogs'} yet.
+              {canAddObjection ? ' Add the first one below.' : ''}
+            </div>
           )}
           <div style={{ marginTop: 10, display: 'grid' }}>
             <OptionTile
               compact
               selected={pushbackId === 'custom'}
-              onSelect={() => choose({ id: 'custom', focusArea: null })}
+              onSelect={() => choose({ id: 'custom' })}
               disabled={!canWrite}
               glyph={<span aria-hidden>✎</span>}
               title={pushbackTitle('custom')}
-              description={pushbackExample('custom', species)}
+              description={`${pushbackExample('custom', species)} Not in any category.`}
             />
           </div>
         </Group>
 
         <ObjectionNote check={check} species={species} />
 
-        {focusNote && pushbackId && (
-          <div
-            role="status"
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: 10,
-              flexWrap: 'wrap',
-              fontSize: 12.5,
-              color: COLOR.inkSoft,
-            }}
-          >
-            <span>Knowledge topic set to {topicLabel(focusNote) ?? focusNote} to match this objection.</span>
-            {canWrite && (
-              <button
-                type="button"
-                style={linkButton}
-                onClick={() => {
-                  patch({ focus_area: null });
-                  setFocusNote(null);
-                }}
-              >
-                Undo
-              </button>
-            )}
-          </div>
-        )}
-
-        {(canAddObjection || options.hiddenForSpecies > 0) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {canAddObjection && (
+        {(canAddObjection || (active?.hiddenForSpecies ?? 0) > 0) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {canAddObjection && active && (
               <Button size="sm" tone="secondary" onClick={() => setEditorOpen(true)}>
-                + New objection
+                + New objection in {active.category.name}
               </Button>
             )}
-            <Caption>
-              {canAddObjection ? 'Not here? Add it for your whole team — a new subject like probiotics, say. ' : ''}
-              {options.hiddenForSpecies > 0 &&
-                `${options.hiddenForSpecies} of your team’s objections ${
-                  options.hiddenForSpecies === 1 ? 'is' : 'are'
+            {canAddObjection && (
+              <Button size="sm" tone="ghost" onClick={() => setCategoryEditor('new')}>
+                + New category
+              </Button>
+            )}
+            {active && active.hiddenForSpecies > 0 && (
+              <Caption>
+                {`${active.hiddenForSpecies} of the objections in ${active.category.name} ${
+                  active.hiddenForSpecies === 1 ? 'is' : 'are'
                 } only for ${species === 'cat' ? 'dogs' : 'cats'}, so ${
-                  options.hiddenForSpecies === 1 ? 'it isn’t' : 'they aren’t'
+                  active.hiddenForSpecies === 1 ? 'it isn’t' : 'they aren’t'
                 } shown here.`}
-            </Caption>
+              </Caption>
+            )}
           </div>
         )}
 
@@ -266,13 +314,31 @@ export function PushbackStep({ draft, patch, canWrite, base, askAssistant }: Ste
           format={(v) => pushbackTitle(String(v), team)}
         />
         {canAddObjection && (
-          <ObjectionEditor
-            open={editorOpen}
-            onClose={() => setEditorOpen(false)}
-            defaultSpecies={[species]}
-            canWrite={canWrite}
-            onSaved={(saved) => choose(saved)}
-          />
+          <BodyPortal>
+            <ObjectionEditor
+              open={editorOpen}
+              onClose={() => setEditorOpen(false)}
+              defaultSpecies={[species]}
+              defaultCategoryId={activeId}
+              knowledge={knowledge}
+              canWrite={canWrite}
+              onSaved={(saved) => {
+                choose(saved);
+                setPicked(saved.categoryId);
+              }}
+            />
+            <CategoryEditor
+              open={categoryEditor !== null}
+              onClose={() => setCategoryEditor(null)}
+              category={categoryEditor === 'edit' ? active?.category ?? null : null}
+              canWrite={canWrite}
+              knowledge={knowledge}
+              onSaved={(saved) => {
+                setCreated(saved.id);
+                setPicked(saved.id);
+              }}
+            />
+          </BodyPortal>
         )}
       </StudioSection>
 
@@ -407,7 +473,7 @@ function ObjectionNote({ check, species }: { check: ObjectionCheck | null; speci
       return (
         <InlineAlert tone="error" title="This scenario’s objection was deleted">
           “{check.title}” no longer exists, so this scenario can’t be played or saved. Pick another
-          objection above — or restore it from “Recently deleted” on the Objections tab.
+          objection above — or restore it from “Recently deleted” on the Categories tab.
         </InlineAlert>
       );
     case 'unknown':
@@ -420,14 +486,14 @@ function ObjectionNote({ check, species }: { check: ObjectionCheck | null; speci
       return (
         <InlineAlert tone="warn" title={`“${check.title}” isn’t set up for ${animal}`}>
           It’s for {animalsInSentence(check.species)} only, but this scenario is about {animal}. Pick
-          another objection, or add {species === 'cat' ? 'cats' : 'dogs'} to it on the Objections tab.
+          another objection, or add {species === 'cat' ? 'cats' : 'dogs'} to it on the Categories tab.
         </InlineAlert>
       );
     case 'retired':
       return (
         <InlineAlert tone="warn" title={`“${check.title}” is retired`}>
           This scenario still plays, but the objection isn’t offered for new scenarios any more. Pick
-          another, or reactivate it on the Objections tab.
+          another, or reactivate it on the Categories tab.
           {!check.fits && ` It’s also set up for ${animalsInSentence(check.species)} only.`}
         </InlineAlert>
       );

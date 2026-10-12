@@ -6,6 +6,7 @@
  */
 import type { Scenario } from '../../data/scenarios';
 import { retrievalSpeciesFor, speciesOf } from '../scenarios/species';
+import { effectiveKnowledge, type KnowledgeSelection } from '../scenarios/objectionCategories';
 
 /**
  * Scenario-derived retrieval targeting. `docSlugs` (explicit knowledge
@@ -64,7 +65,11 @@ export function scenarioRetrievalQuery(
 /**
  * Derive retrieval targeting from the scenario the user is about to play.
  * Explicitly attached knowledge documents win over the broader focus area;
- * an unlinked scenario retrieves un-targeted, exactly as before.
+ * a scenario that chose neither reads its CATEGORY's knowledge when the
+ * caller passes it (`opts.categoryKnowledge` — from
+ * `categoryKnowledgeFor(pushbackId, team, categories)`, loaded server-side or
+ * from the flags snapshot, never from a request body); with no category
+ * knowledge it retrieves un-targeted, exactly as before categories existed.
  *
  * Every scenario carries its species as the HARD knowledge scope
  * (`retrievalSpeciesFor`: absent = dog, a dog under one year → `puppy`), so a
@@ -77,9 +82,11 @@ export function scenarioRetrievalFilters(
   scenario: Pick<Scenario, 'focusArea' | 'knowledgeSlugs' | 'species'> & {
     age?: Scenario['age'];
   },
+  opts: { categoryKnowledge?: KnowledgeSelection | null } = {},
 ): RetrievalFilters {
   const scope = { species: retrievalSpeciesFor(scenario.species, scenario.age) };
-  if (scenario.knowledgeSlugs?.length) return { docSlugs: scenario.knowledgeSlugs, ...scope };
-  if (scenario.focusArea) return { focus: scenario.focusArea, ...scope };
+  const k = effectiveKnowledge(scenario, opts.categoryKnowledge ?? null);
+  if (k.knowledgeSlugs.length) return { docSlugs: k.knowledgeSlugs, ...scope };
+  if (k.focusArea) return { focus: k.focusArea, ...scope };
   return scope;
 }

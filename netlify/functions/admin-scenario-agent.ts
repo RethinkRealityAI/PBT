@@ -18,11 +18,16 @@
  *     checks — a slug the model invents, or one the client claims exists, is
  *     dropped before it reaches a card.
  *   • So are the team's own objections (`scenario_objections`, VISIBLE ones
- *     only — a retired objection is never offered). They are listed in the
- *     prompt as fenced data and are the only `team:` ids the normaliser lets
- *     through; a proposal that puts one on an animal it does not apply to is
- *     pruned (`pruneSpeciesMismatches`). Fail-open: no table, an error or a
- *     timeout means built-in objections only.
+ *     only — a retired objection is never offered) and the objection
+ *     CATEGORIES they are filed under (`scenario_objection_categories`,
+ *     merged with the built-in ones). The prompt lists each category — what
+ *     it covers, the animals its objections apply to, how many documents it
+ *     carries — with its objections under it, as fenced data, so the model
+ *     picks an objection from the category matching the subject the admin
+ *     describes. The listed team objections are the only `team:` ids the
+ *     normaliser lets through; a proposal that puts one on an animal it does
+ *     not apply to is pruned (`pruneSpeciesMismatches`). Fail-open: no table,
+ *     an error or a timeout means built-in objections / categories only.
  *   • The model's output is untrusted: `normalizeAgentActions` is the gate
  *     (unknown tools, illegal enum values, over-long prose, made-up slugs and
  *     extra questions are dropped), and the client runs it again on confirm.
@@ -78,6 +83,10 @@ import {
   type AgentRelevantDoc,
   type AgentResearchSnippet,
 } from '../../src/shared/ai/scenarioAgentPrompt';
+import {
+  mergeCategories,
+  type ObjectionCategory,
+} from '../../src/shared/scenarios/objectionCategories';
 import { readKnowledgeScope } from '../../src/shared/knowledge/knowledgeScopes';
 import { focusAreaLabel, isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import { PUSHBACK_LABELS } from '../../src/shared/scenarios/enums';
@@ -88,7 +97,7 @@ import {
 } from '../../src/shared/scenarios/objections';
 import { retrievalSpeciesFor } from '../../src/shared/scenarios/species';
 import type { RetrievedChunk } from '../../src/services/ragShared';
-import { readTeamObjections } from './_shared/objectionsStore';
+import { readCategories, readTeamObjections } from './_shared/objectionsStore';
 
 const MAX_BODY_BYTES = 96 * 1024;
 const RATE = { limit: 30, windowMs: 60_000 };
@@ -222,10 +231,11 @@ export async function cachedRoleplayCatalogue(sb: SupabaseClient): Promise<Agent
   return value;
 }
 
-/** Test hook — the catalogue and objection caches are module state. */
+/** Test hook — the catalogue, objection and category caches are module state. */
 export function __clearAgentCatalogueCache(): void {
   catalogueCache = null;
   objectionsCache = null;
+  categoriesCache = null;
 }
 
 // ── Team objections (server-trusted) ─────────────────────────────────────
@@ -250,6 +260,25 @@ export async function cachedTeamObjections(sb: SupabaseClient): Promise<TeamObje
 
 /** Test hook — alias kept for readability where only objections matter. */
 export const __clearAgentObjectionsCache = __clearAgentCatalogueCache;
+
+/**
+ * The MERGED category list (built-ins, overlaid by an admin's stored edit of
+ * them, then the team's own), held for the same minute. A missing table is
+ * the built-ins alone (cached); any other read error throws, so the caller's
+ * fail-open fallback (built-ins) applies and the next turn tries again.
+ */
+let categoriesCache: { value: ObjectionCategory[]; expiresAt: number } | null = null;
+
+export async function cachedCategories(sb: SupabaseClient): Promise<ObjectionCategory[]> {
+  if (categoriesCache && categoriesCache.expiresAt > Date.now()) return categoriesCache.value;
+  const read = await readCategories(sb);
+  if (read.error && !read.missing) {
+    throw new Error(read.error.message ?? 'scenario_objection_categories read failed');
+  }
+  const value = mergeCategories(read.categories);
+  categoriesCache = { value, expiresAt: Date.now() + CATALOGUE_CACHE_TTL_MS };
+  return value;
+}
 
 /**
  * Drop a team objection proposed for an animal it does not apply to — the
@@ -493,12 +522,12 @@ export default async (req: Request): Promise<Response> => {
   }
 
   // The team's objections first (cached, fail-open): the draft, the search
-  // query and the gate all need them.
-  const objections = await withTimeout(
-    cachedTeamObjections(ctx.sb),
-    CATALOGUE_TIMEOUT_MS,
-    [] as TeamObjection[],
-  );
+  // query and the gate all need them. Their categories ride along (the
+  // prompt groups the objections under them).
+  const [objections, categories] = await Promise.all([
+    withTimeout(cachedTeamObjections(ctx.sb), CATALOGUE_TIMEOUT_MS, [] as TeamObjection[]),
+    withTimeout(cachedCategories(ctx.sb), CATALOGUE_TIMEOUT_MS, mergeCategories([])),
+  ]);
   const draft = pickAgentDraft(body.draft, { objections });
 
   // ── Grounding (all fail-open, run together) ─────────────────────────
@@ -540,6 +569,7 @@ export default async (req: Request): Promise<Response> => {
     relevant: relevantFromChunks(relevantChunks, catalogue),
     research: researchFromChunks(researchChunks),
     objections,
+    categories,
   });
   const contents = turns.map((t) => ({
     role: t.role === 'assistant' ? 'model' : 'user',

@@ -427,6 +427,7 @@ export function ScenarioStudioScreen({
         onAddToLibrary={(entry) => addToLibrary(entry)}
         libraryCopies={libraryCopies}
         objections={objections.objections}
+        categories={objections.categories}
         resumable={resumable}
         onResume={resume}
         onDiscardLocal={(id) => {

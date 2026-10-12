@@ -8,10 +8,11 @@
 //   • TEAM objections: authored by admins in the Scenario Studio and stored in
 //     `scenario_objections` (migration 20261012000000_scenario_objections.sql).
 //     Their ids are `team:<slug>` so they can never collide with a built-in.
-//     Each one says which animals it applies to, which knowledge topic it
-//     belongs to, and (optionally) the coaching the AI customer and the trainee
-//     hints draw on. A new subject area such as probiotics is added this way,
-//     with no deploy.
+//     Each one belongs to a CATEGORY (./objectionCategories.ts — the subject
+//     area, e.g. Probiotics, which also owns the knowledge), says which
+//     animals it applies to, and (optionally) carries the coaching the AI
+//     customer and the trainee hints draw on. A new subject area is a new
+//     category plus its objections, with no deploy.
 //
 // Imported by the consumer app, the admin app AND netlify/functions — keep it
 // dependency-free (shared → shared imports only).
@@ -21,8 +22,9 @@
 // through `rowToTeamObjection` (tolerant: a malformed row is dropped, never
 // rendered half-valid).
 
-import { FOCUS_AREAS, isFocusAreaKey } from '../knowledge/focusAreas';
+import { FOCUS_AREAS } from '../knowledge/focusAreas';
 import { PUSHBACK_EXAMPLES, PUSHBACK_IDS, PUSHBACK_LABELS } from './enums';
+import { BUILT_IN_OBJECTION_CATEGORY, isCategoryIdShape } from './objectionCategories';
 import { SCENARIO_SPECIES, speciesOf, type ScenarioSpecies } from './species';
 
 export const TEAM_OBJECTION_PREFIX = 'team:';
@@ -91,8 +93,11 @@ export interface TeamObjection {
   exampleFr: string | null;
   /** Animals this objection applies to. Never empty. */
   species: ScenarioSpecies[];
-  /** Knowledge topic key (src/shared/knowledge/focusAreas.ts), or null. */
-  focusArea: string | null;
+  /**
+   * The category it belongs to (built-in id or `category:<slug>`). The
+   * category owns the knowledge its scenarios read.
+   */
+  categoryId: string;
   coaching: ObjectionCoaching;
   /** False = retired: kept so existing scenarios still play, hidden from pickers. */
   visible: boolean;
@@ -108,7 +113,7 @@ export interface ScenarioObjectionRow {
   title_fr: string | null;
   example_fr: string | null;
   species: string[] | null;
-  focus_area: string | null;
+  category_id: string;
   coaching: unknown;
   visible: boolean;
   sort_order: number | null;
@@ -127,7 +132,8 @@ export interface CatalogObjection {
   titleFr: string | null;
   exampleFr: string | null;
   species: ScenarioSpecies[];
-  focusArea: string | null;
+  /** Null only for `custom` ("Other pushback"), which every picker shows apart. */
+  categoryId: string | null;
   builtIn: boolean;
   visible: boolean;
 }
@@ -149,7 +155,12 @@ export interface AdminObjection extends TeamObjection {
 export type ObjectionWriteRequest =
   | { op: 'upsert'; objection: unknown; baseUpdatedAt?: string | null }
   | { op: 'delete'; id: string }
-  | { op: 'restore'; id: string };
+  | { op: 'restore'; id: string }
+  // Categories (./objectionCategories.ts). A built-in category can be edited
+  // (name, French name, description, knowledge) but never deleted.
+  | { op: 'upsert-category'; category: unknown; baseUpdatedAt?: string | null }
+  | { op: 'delete-category'; id: string }
+  | { op: 'restore-category'; id: string };
 
 // ─────────────────────────────────────────────────────────────────────────
 // Ids
@@ -245,7 +256,8 @@ export function rowToTeamObjection(raw: unknown): TeamObjection | null {
   if (!title) return null;
   const species = cleanSpecies(r.species);
   if (species.length === 0) return null;
-  const focus = r.focus_area ?? r.focusArea;
+  const categoryId = r.category_id ?? r.categoryId;
+  if (!isCategoryIdShape(categoryId)) return null;
   return {
     id: r.id,
     title,
@@ -253,7 +265,7 @@ export function rowToTeamObjection(raw: unknown): TeamObjection | null {
     titleFr: cleanOptional(r.title_fr ?? r.titleFr, OBJECTION_LIMITS.titleMax),
     exampleFr: cleanOptional(r.example_fr ?? r.exampleFr, OBJECTION_LIMITS.exampleMax),
     species,
-    focusArea: isFocusAreaKey(focus) ? focus : null,
+    categoryId,
     coaching: cleanCoaching(r.coaching),
     visible: r.visible !== false,
     sortOrder: cleanSortOrder(r.sort_order ?? r.sortOrder),
@@ -308,9 +320,8 @@ export function validateObjectionInput(raw: unknown): ObjectionValidation {
   if (!Array.isArray(r.species) || species.length === 0 || species.length !== r.species.length) {
     return { ok: false, error: 'Choose which animals this objection applies to (dog, cat or both).' };
   }
-  const focus = r.focusArea ?? null;
-  if (focus !== null && !isFocusAreaKey(focus)) {
-    return { ok: false, error: `Unknown knowledge topic "${String(focus)}".` };
+  if (!isCategoryIdShape(r.categoryId)) {
+    return { ok: false, error: 'Choose the category this objection belongs to, e.g. Probiotics.' };
   }
   if (r.coaching != null && (typeof r.coaching !== 'object' || Array.isArray(r.coaching))) {
     return { ok: false, error: 'coaching must be an object of lists' };
@@ -330,8 +341,8 @@ export function validateObjectionInput(raw: unknown): ObjectionValidation {
       titleFr: cleanOptional(r.titleFr, OBJECTION_LIMITS.titleMax),
       exampleFr: cleanOptional(r.exampleFr, OBJECTION_LIMITS.exampleMax),
       species,
-      // Checked above: null or a known focus key.
-      focusArea: focus as string | null,
+      // Shape checked above; that it EXISTS is the server's check.
+      categoryId: r.categoryId,
       coaching: cleanCoaching(r.coaching),
       visible: r.visible !== false,
       sortOrder: cleanSortOrder(r.sortOrder),
@@ -344,7 +355,7 @@ export function teamObjectionToRow(
   o: Omit<TeamObjection, 'updatedAt'>,
 ): Pick<
   ScenarioObjectionRow,
-  'id' | 'title' | 'example' | 'title_fr' | 'example_fr' | 'species' | 'focus_area' | 'coaching' | 'visible' | 'sort_order'
+  'id' | 'title' | 'example' | 'title_fr' | 'example_fr' | 'species' | 'category_id' | 'coaching' | 'visible' | 'sort_order'
 > {
   return {
     id: o.id,
@@ -353,7 +364,7 @@ export function teamObjectionToRow(
     title_fr: o.titleFr,
     example_fr: o.exampleFr,
     species: [...o.species],
-    focus_area: o.focusArea,
+    category_id: o.categoryId,
     coaching: o.coaching,
     visible: o.visible,
     sort_order: o.sortOrder,
@@ -373,7 +384,7 @@ export function builtInObjections(): CatalogObjection[] {
     titleFr: null,
     exampleFr: null,
     species: [...SCENARIO_SPECIES],
-    focusArea: null,
+    categoryId: BUILT_IN_OBJECTION_CATEGORY[id] ?? null,
     builtIn: true,
     visible: true,
   }));
@@ -387,7 +398,7 @@ export function teamToCatalog(o: TeamObjection): CatalogObjection {
     titleFr: o.titleFr,
     exampleFr: o.exampleFr,
     species: [...o.species],
-    focusArea: o.focusArea,
+    categoryId: o.categoryId,
     builtIn: false,
     visible: o.visible,
   };

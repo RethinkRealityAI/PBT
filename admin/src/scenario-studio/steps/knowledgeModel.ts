@@ -21,6 +21,13 @@ import {
 import { retrievalSpeciesFor } from '../../../../src/shared/scenarios/species';
 import { SCENARIO_LIMITS } from '../../../../src/shared/scenarios/limits';
 import type { KnowledgeMode } from '../../../../src/shared/ai/scenarioAgent';
+import {
+  categoryKnowledgeFor,
+  effectiveKnowledge,
+  objectionCategoryId,
+  type KnowledgeSelection,
+  type ObjectionCategory,
+} from '../../../../src/shared/scenarios/objectionCategories';
 import { hasText, type StudioDraft, type StudioStepKey } from '../studioModel';
 
 export type { KnowledgeMode } from '../../../../src/shared/ai/scenarioAgent';
@@ -343,4 +350,88 @@ export function uploadSpeciesDefault(draft: StudioDraft): string[] {
 export function toggleSpeciesKey(selected: readonly string[], key: string): string[] {
   const next = selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key];
   return KNOWLEDGE_SPECIES.map((s) => s.key).filter((k) => next.includes(k));
+}
+
+// ── Category knowledge (inherited) ───────────────────────────
+
+export interface InheritedKnowledge {
+  /** The category the draft's objection belongs to (null: "Something else" or none). */
+  category: ObjectionCategory | null;
+  /** What that category gives its scenarios — null when it has nothing attached. */
+  knowledge: KnowledgeSelection | null;
+  /** What the scenario actually reads right now (its own choice wins). */
+  source: KnowledgeSource;
+}
+
+export type KnowledgeSource = 'scenario' | 'category' | 'library';
+
+/**
+ * Where this draft's knowledge comes from: its own choice (documents or a
+ * topic), otherwise its category's, otherwise the whole library — the same
+ * `effectiveKnowledge` rule the server runs.
+ */
+export function inheritedKnowledge(
+  draft: StudioDraft,
+  team: ReadonlyArray<{ id: string; categoryId: string }>,
+  categories: readonly ObjectionCategory[],
+): InheritedKnowledge {
+  const categoryId = objectionCategoryId(draft.pushback_id, team);
+  const category = categoryId ? categories.find((c) => c.id === categoryId) ?? null : null;
+  const knowledge = categoryKnowledgeFor(draft.pushback_id, team, categories);
+  const { source } = effectiveKnowledge(
+    { focusArea: draft.focus_area ?? null, knowledgeSlugs: draft.knowledge_slugs ?? null },
+    knowledge,
+  );
+  return { category, knowledge, source };
+}
+
+/**
+ * The inspector's answer about where the knowledge came from:
+ * `knowledgeSource` plus `knowledgeCategory` (the draft's category, sent
+ * whether or not its knowledge is used). Read tolerantly — null when the
+ * server didn't say (an older server).
+ */
+export function readKnowledgeSource(res: unknown): {
+  source: KnowledgeSource;
+  categoryId: string | null;
+  categoryName: string | null;
+  /** The category has documents or a topic attached (it would be read without an override). */
+  categoryHasKnowledge: boolean;
+} | null {
+  if (!res || typeof res !== 'object') return null;
+  const r = res as Record<string, unknown>;
+  const raw = r.knowledgeSource;
+  if (raw !== 'scenario' && raw !== 'category' && raw !== 'library') return null;
+  const cat =
+    r.knowledgeCategory && typeof r.knowledgeCategory === 'object'
+      ? (r.knowledgeCategory as Record<string, unknown>)
+      : null;
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const slugs = Array.isArray(cat?.knowledgeSlugs) ? cat!.knowledgeSlugs.length : 0;
+  return {
+    source: raw,
+    categoryId: str(cat?.id),
+    categoryName: str(cat?.name),
+    categoryHasKnowledge: slugs > 0 || Boolean(str(cat?.focusArea)),
+  };
+}
+
+/** "Reading the knowledge attached to its category, Probiotics." — one line for the preview. */
+export function knowledgeSourceSentence(
+  source: KnowledgeSource,
+  categoryName: string | null,
+  categoryHasKnowledge = false,
+): string {
+  switch (source) {
+    case 'scenario':
+      return categoryName && categoryHasKnowledge
+        ? `Reading this scenario’s own choice of knowledge — it replaces what ${categoryName} gives its scenarios.`
+        : 'Reading this scenario’s own choice of knowledge.';
+    case 'category':
+      return categoryName
+        ? `Reading the knowledge attached to its category, ${categoryName}.`
+        : 'Reading the knowledge attached to its category.';
+    case 'library':
+      return 'Reading the whole library — nothing narrower is set for this scenario or its category.';
+  }
 }

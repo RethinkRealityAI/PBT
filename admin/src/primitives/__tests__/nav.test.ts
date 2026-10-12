@@ -58,7 +58,7 @@ describe('NAV_SECTIONS', () => {
     expect(studio.requires).toBe('scenarios.read');
     expect(studio.tabs?.map((t) => [t.key, t.label, t.requires])).toEqual([
       ['studio', 'Studio', 'scenarios.read'],
-      ['objections', 'Objections', 'scenarios.read'],
+      ['categories', 'Categories', 'scenarios.read'],
       ['trainee', 'Trainee-built', 'scenarios.read'],
     ]);
     expect(findNavItem('knowledge')).toMatchObject({ label: 'Knowledge', requires: 'knowledge.read' });
@@ -90,7 +90,7 @@ describe('visibleItems by role', () => {
     expect(items.map((i) => i.key)).toEqual(['scenarios']);
     expect(visibleTabs(items[0], ['scenarios.read']).map((t) => t.key)).toEqual([
       'studio',
-      'objections',
+      'categories',
       'trainee',
     ]);
   });
@@ -122,6 +122,10 @@ describe('legacyRoute', () => {
     [{ screen: 'library', tab: null }, { screen: 'scenarios', tab: 'studio' }],
   ])('maps %o to %o', (from, to) => {
     expect(legacyRoute(from)).toEqual(to);
+  });
+
+  it('sends the old Objections tab to Categories (where objections live now)', () => {
+    expect(legacyRoute({ screen: 'scenarios', tab: 'objections' })).toEqual({ screen: 'scenarios', tab: 'categories' });
   });
 
   it('sends a Library tab that never existed to the Studio', () => {

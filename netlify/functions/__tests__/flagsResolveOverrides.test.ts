@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  catalogueReadDegraded,
+  categoriesReadDegraded,
+  loadPublicCategories,
   loadPublicObjections,
   publicOverrideRows,
   publicSimulationConfig,
+  resetCategoriesProbe,
   resetObjectionsProbe,
   resetSpeciesProbe,
   selectOverrideRows,
 } from '../flags-resolve';
-import type { TeamObjectionsRead } from '../_shared/objectionsStore';
+import type { CategoriesRead, TeamObjectionsRead } from '../_shared/objectionsStore';
 import type { TeamObjection } from '../../../src/shared/scenarios/objections';
+import type { ObjectionCategory } from '../../../src/shared/scenarios/objectionCategories';
 
 /**
  * flags-resolve is PUBLIC (`cache-control: public`). The trainee app renders
@@ -166,7 +171,7 @@ describe('flags-resolve loadPublicObjections', () => {
     titleFr: null,
     exampleFr: null,
     species: ['dog', 'cat'],
-    focusArea: 'gi',
+    categoryId: 'category:probiotics',
     coaching: {},
     visible: true,
     sortOrder: null,
@@ -216,5 +221,81 @@ describe('flags-resolve loadPublicObjections', () => {
 
   it('a transient error before any good read is simply none', async () => {
     expect(await loadPublicObjections(async () => blip, 3_000_000)).toEqual([]);
+  });
+});
+
+/**
+ * Stored objection categories ride the snapshot too (the trainee app merges
+ * them with the built-ins to know each category's knowledge). Same rules as
+ * the objections, with their own state.
+ */
+describe('flags-resolve loadPublicCategories', () => {
+  const probiotics: ObjectionCategory = {
+    id: 'category:probiotics',
+    name: 'Probiotics',
+    nameFr: null,
+    description: '',
+    focusArea: 'gi',
+    knowledgeSlugs: ['study:probiotics-1'],
+    sortOrder: null,
+    builtIn: false,
+    updatedAt: null,
+  };
+  const ok = (categories: ObjectionCategory[]): CategoriesRead => ({ categories, missing: false, error: null });
+  const missing: CategoriesRead = {
+    categories: [],
+    missing: true,
+    error: { code: 'PGRST205', message: "Could not find the table 'public.scenario_objection_categories'" },
+  };
+  const blip: CategoriesRead = {
+    categories: [],
+    missing: false,
+    error: { code: '57014', message: 'canceling statement due to statement timeout' },
+  };
+
+  beforeEach(() => {
+    resetCategoriesProbe();
+    resetObjectionsProbe();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('serves what the store read', async () => {
+    expect(await loadPublicCategories(async () => ok([probiotics]), 1_000)).toEqual([probiotics]);
+    expect(categoriesReadDegraded()).toBe(false);
+  });
+
+  it('remembers a missing table for ten minutes, then re-probes', async () => {
+    const read = vi.fn(async () => missing);
+    expect(await loadPublicCategories(read, 1_000_000)).toEqual([]);
+    expect(await loadPublicCategories(read, 1_000_000 + 9 * 60_000)).toEqual([]);
+    expect(read).toHaveBeenCalledTimes(1);
+    read.mockResolvedValueOnce(ok([probiotics]));
+    expect(await loadPublicCategories(read, 1_000_000 + 11 * 60_000)).toEqual([probiotics]);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(categoriesReadDegraded()).toBe(false);
+  });
+
+  it('a transient error serves the last good list, is not remembered, and does not degrade a warm instance', async () => {
+    const read = vi.fn(async () => ok([probiotics]));
+    await loadPublicCategories(read, 2_000_000);
+    read.mockResolvedValueOnce(blip);
+    expect(await loadPublicCategories(read, 2_000_100)).toEqual([probiotics]);
+    expect(categoriesReadDegraded()).toBe(false);
+    expect(await loadPublicCategories(read, 2_000_200)).toEqual([probiotics]);
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it('a transient error before any good read is none AND degrades the snapshot (either half does)', async () => {
+    expect(await loadPublicCategories(async () => blip, 3_000_000)).toEqual([]);
+    expect(categoriesReadDegraded()).toBe(true);
+    expect(catalogueReadDegraded()).toBe(true);
+    await loadPublicCategories(async () => ok([]), 3_000_100);
+    expect(catalogueReadDegraded()).toBe(false);
+    // The objections half degrades it on its own too.
+    await loadPublicObjections(
+      async () => ({ objections: [], missing: false, error: { code: '57014', message: 'timeout' } }),
+      3_000_200,
+    );
+    expect(catalogueReadDegraded()).toBe(true);
   });
 });

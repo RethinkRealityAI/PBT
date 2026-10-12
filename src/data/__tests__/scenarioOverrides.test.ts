@@ -3,6 +3,7 @@ import {
   adminOverrideToScenario,
   applyScenarioOverride,
   isAdminScenarioId,
+  objectionCategoriesFromSnapshot,
   overridePushbackUnresolvable,
   seedScenarioId,
   teamObjectionsFromSnapshot,
@@ -335,7 +336,7 @@ describe('scenarioOverrides — team objections', () => {
     titleFr: 'Probiotiques : « mon chien n’en a pas besoin »',
     exampleFr: '« Il mange bien — pourquoi un probiotique ? »',
     species: ['dog', 'cat'],
-    focusArea: 'gi',
+    categoryId: 'category:gi',
     coaching: {},
     visible: true,
     sortOrder: null,
@@ -422,6 +423,22 @@ describe('scenarioOverrides — team objections', () => {
     ]);
     expect(list.map((o) => o.id)).toEqual(['team:probiotics', 'team:old-topic']);
     expect(list[1].visible).toBe(false);
+  });
+
+  it('objectionCategoriesFromSnapshot keeps usable categories and drops junk', () => {
+    expect(objectionCategoriesFromSnapshot(undefined)).toEqual([]);
+    expect(objectionCategoriesFromSnapshot('nope')).toEqual([]);
+    const list = objectionCategoriesFromSnapshot([
+      { id: 'category:gi', name: 'GI', nameFr: 'Gastro-intestinal', description: '', knowledgeSlugs: ['doc-1'] },
+      // An admin's edit of a built-in category is a stored row too.
+      { id: 'weight', name: 'Weight & body condition', description: '' },
+      { id: 'team:probiotics', name: 'An objection id, not a category' },
+      { id: 'category:nameless', name: '  ' },
+      null,
+    ]);
+    expect(list.map((c) => c.id)).toEqual(['category:gi', 'weight']);
+    expect(list[0]).toMatchObject({ nameFr: 'Gastro-intestinal', knowledgeSlugs: ['doc-1'], builtIn: false });
+    expect(list[1].builtIn).toBe(true);
   });
 
   it('flags an override whose pushback this client cannot resolve', () => {

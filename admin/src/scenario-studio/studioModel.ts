@@ -30,6 +30,11 @@ import { readKnowledgeScope } from '../../../src/shared/knowledge/knowledgeScope
 import { isScenarioSpecies } from '../../../src/shared/scenarios/species';
 import { isTeamObjectionId, type TeamObjection } from '../../../src/shared/scenarios/objections';
 import {
+  categoryKnowledgeFor,
+  objectionCategoryId,
+  type ObjectionCategory,
+} from '../../../src/shared/scenarios/objectionCategories';
+import {
   animalsInSentence,
   checkObjection,
   missingCoreFields,
@@ -196,6 +201,11 @@ export interface StudioContext {
    * animal… See `checkObjection`.
    */
   objection?: ObjectionCheck | null;
+  /**
+   * The category whose knowledge this scenario reads when it picks none of
+   * its own (null: no category, or the category has no knowledge attached).
+   */
+  categoryKnowledge?: { id: string; name: string } | null;
 }
 
 export function hasText(v: unknown): boolean {
@@ -241,8 +251,9 @@ export function stepStatus(
         ctx.notRoleplayTitles.length +
         (ctx.wrongSpeciesTitles?.length ?? 0);
       if (issues > 0) return { status: 'attention', detail: 'Some attached documents can’t be used' };
-      return hasText(draft.focus_area) || (draft.knowledge_slugs?.length ?? 0) > 0
-        ? { status: 'done' }
+      if (hasText(draft.focus_area) || (draft.knowledge_slugs?.length ?? 0) > 0) return { status: 'done' };
+      return ctx.categoryKnowledge
+        ? { status: 'optional', detail: `Using the ${ctx.categoryKnowledge.name} knowledge` }
         : { status: 'optional', detail: 'Using the whole knowledge library' };
     }
     case 'brief':
@@ -374,7 +385,7 @@ function objectionReadiness(draft: StudioDraft, check: ObjectionCheck | null): R
         level: 'required',
         detail:
           check.state === 'deleted'
-            ? `“${check.title}” was deleted. Pick another objection, or restore it on the Objections tab.`
+            ? `“${check.title}” was deleted. Pick another objection, or restore it on the Categories tab.`
             : 'The objection this scenario was built on can’t be found any more. Pick another one.',
         step: 'pushback',
       },
@@ -390,7 +401,7 @@ function objectionReadiness(draft: StudioDraft, check: ObjectionCheck | null): R
       level: 'recommended',
       detail: fits
         ? undefined
-        : `“${check.title}” is set up for ${animalsInSentence(check.species)} only. Pick another objection, or add ${animal === 'cat' ? 'cats' : 'dogs'} to it on the Objections tab.`,
+        : `“${check.title}” is set up for ${animalsInSentence(check.species)} only. Pick another objection, or add ${animal === 'cat' ? 'cats' : 'dogs'} to it on the Categories tab.`,
       step: 'pushback',
     },
   ];
@@ -400,7 +411,7 @@ function objectionReadiness(draft: StudioDraft, check: ObjectionCheck | null): R
       label: 'The objection is active',
       ok: false,
       level: 'recommended',
-      detail: `“${check.title}” is retired: this scenario still plays, but nobody can pick it for a new one. Reactivate it on the Objections tab if that wasn’t intended.`,
+      detail: `“${check.title}” is retired: this scenario still plays, but nobody can pick it for a new one. Reactivate it on the Categories tab if that wasn’t intended.`,
       step: 'pushback',
     });
   }
@@ -904,9 +915,17 @@ export function buildStudioContext(args: {
     deleted?: readonly ObjectionRef[];
     loaded: boolean;
   };
+  /** Every category (built-ins included), so an inherited knowledge choice can be named. */
+  categories?: readonly ObjectionCategory[];
 }): StudioContext {
   const { draft, source, tested, docs } = args;
   const speciesUnsupported = args.speciesSupported === false;
+  const team = args.objections?.team ?? [];
+  const categories = args.categories ?? [];
+  const categoryId = objectionCategoryId(draft.pushback_id, team);
+  const category = categoryId ? categories.find((c) => c.id === categoryId) ?? null : null;
+  const categoryKnowledge =
+    category && categoryKnowledgeFor(draft.pushback_id, team, categories) ? { id: category.id, name: category.name } : null;
   const objection = checkObjection({
     pushbackId: draft.pushback_id,
     species: draft.species,
@@ -925,6 +944,7 @@ export function buildStudioContext(args: {
       wrongSpeciesTitles: [],
       speciesUnsupported,
       objection,
+      ...(categoryKnowledge ? { categoryKnowledge } : {}),
     };
   }
   const scope = retrievalSpeciesFor(draft.species, draft.life_stage);
@@ -947,6 +967,7 @@ export function buildStudioContext(args: {
       : [],
     speciesUnsupported,
     objection,
+    ...(categoryKnowledge ? { categoryKnowledge } : {}),
   };
 }
 
@@ -984,7 +1005,7 @@ export function saveBlockers(
     out.push({
       message:
         objection?.state === 'deleted'
-          ? `This scenario’s objection, “${objection.title}”, was deleted. Pick another one (or restore it on the Objections tab) before saving.`
+          ? `This scenario’s objection, “${objection.title}”, was deleted. Pick another one (or restore it on the Categories tab) before saving.`
           : 'This scenario’s objection can’t be found any more. Pick another one before saving.',
       step: 'pushback',
     });
@@ -1234,6 +1255,33 @@ export const ANIMAL_FILTERS: Array<{ key: AnimalFilter; label: string }> = [
 /** The objection filter's "everything" value (never a pushback id). */
 export const ALL_OBJECTIONS = '*';
 
+/** The category filter's "everything" value (never a category id). */
+export const ALL_CATEGORIES = '*';
+
+/** The category filter's "Something else / not set yet" value (never a category id). */
+export const NO_CATEGORY = '-';
+
+/** What a gallery lookup needs from a team objection: its name and category. */
+export type GalleryObjectionRef = ObjectionRef & { categoryId?: string };
+
+/** The category a scenario sits in (NO_CATEGORY for "Something else" or none). */
+export function entryCategoryId(entry: StudioEntry, team: readonly GalleryObjectionRef[] = []): string {
+  return (
+    objectionCategoryId(
+      entry.draft.pushback_id,
+      team.filter((o): o is ObjectionRef & { categoryId: string } => typeof o.categoryId === 'string'),
+    ) ?? NO_CATEGORY
+  );
+}
+
+export function matchesCategoryFilter(
+  entry: StudioEntry,
+  category: string,
+  team: readonly GalleryObjectionRef[] = [],
+): boolean {
+  return category === ALL_CATEGORIES || entryCategoryId(entry, team) === category;
+}
+
 export function matchesAnimalFilter(entry: StudioEntry, animal: AnimalFilter): boolean {
   return animal === 'all' || speciesOf(entry.draft.species) === animal;
 }
@@ -1245,6 +1293,8 @@ export function matchesObjectionFilter(entry: StudioEntry, objection: string): b
 export interface GallerySelection {
   status: GalleryFilter;
   animal: AnimalFilter;
+  /** A category id, NO_CATEGORY, or ALL_CATEGORIES (the default). */
+  category?: string;
   objection: string;
 }
 
@@ -1255,9 +1305,18 @@ export interface GalleryFacets {
   status: Record<GalleryFilter, number>;
   animal: Record<AnimalFilter, number>;
   /**
-   * Every objection at least one listed scenario uses (search, status and
-   * animal applied), named the way a person reads it, A→Z. The selected one
-   * stays listed even when nothing matches it any more.
+   * Every category at least one listed scenario sits in (search, status and
+   * animal applied), in category order, with "Something else / not set" last.
+   * The selected one stays listed even when nothing matches it any more.
+   */
+  categories: Array<{ id: string; label: string; count: number }>;
+  /** How many scenarios the category filter's "All" would show. */
+  categoryTotal: number;
+  /**
+   * Every objection at least one listed scenario uses (search, status, animal
+   * AND category applied — the options are scoped to the chosen category),
+   * named the way a person reads it, A→Z. The selected one stays listed even
+   * when nothing matches it any more.
    */
   objections: Array<{ id: string; label: string; count: number }>;
   /** How many scenarios the objection filter's "All" would show. */
@@ -1274,22 +1333,48 @@ export function galleryFacets(
   entries: readonly StudioEntry[],
   sel: GallerySelection,
   query: string,
-  team: readonly ObjectionRef[] = [],
+  team: readonly GalleryObjectionRef[] = [],
+  /** Every category (built-ins included), for names and order. */
+  categoryList: readonly Pick<ObjectionCategory, 'id' | 'name'>[] = [],
 ): GalleryFacets {
-  const searched = sortForGallery(entries.filter((e) => matchesGalleryQuery(e, query, team)));
+  const selCategory = sel.category ?? ALL_CATEGORIES;
+  const searched = sortForGallery(entries.filter((e) => matchesGalleryQuery(e, query, team, categoryList)));
   const byStatus = (e: StudioEntry) => matchesGalleryFilter(e, sel.status);
   const byAnimal = (e: StudioEntry) => matchesAnimalFilter(e, sel.animal);
+  const byCategory = (e: StudioEntry) => matchesCategoryFilter(e, selCategory, team);
   const byObjection = (e: StudioEntry) => matchesObjectionFilter(e, sel.objection);
 
   const status = {} as Record<GalleryFilter, number>;
   for (const f of GALLERY_FILTERS) {
-    status[f.key] = searched.filter((e) => matchesGalleryFilter(e, f.key) && byAnimal(e) && byObjection(e)).length;
+    status[f.key] = searched.filter(
+      (e) => matchesGalleryFilter(e, f.key) && byAnimal(e) && byCategory(e) && byObjection(e),
+    ).length;
   }
   const animal = {} as Record<AnimalFilter, number>;
   for (const f of ANIMAL_FILTERS) {
-    animal[f.key] = searched.filter((e) => matchesAnimalFilter(e, f.key) && byStatus(e) && byObjection(e)).length;
+    animal[f.key] = searched.filter(
+      (e) => matchesAnimalFilter(e, f.key) && byStatus(e) && byCategory(e) && byObjection(e),
+    ).length;
   }
-  const pool = searched.filter((e) => byStatus(e) && byAnimal(e));
+  const base = searched.filter((e) => byStatus(e) && byAnimal(e));
+
+  const catCounts = new Map<string, number>();
+  for (const e of base) {
+    const id = entryCategoryId(e, team);
+    catCounts.set(id, (catCounts.get(id) ?? 0) + 1);
+  }
+  if (selCategory !== ALL_CATEGORIES && !catCounts.has(selCategory)) catCounts.set(selCategory, 0);
+  const order = new Map(categoryList.map((c, i) => [c.id, i] as const));
+  const rank = (id: string) => (id === NO_CATEGORY ? Number.MAX_SAFE_INTEGER : (order.get(id) ?? categoryList.length));
+  const categories = [...catCounts.entries()]
+    .map(([id, count]) => ({
+      id,
+      label: id === NO_CATEGORY ? 'Something else / not set yet' : categoryName(id, categoryList),
+      count,
+    }))
+    .sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label));
+
+  const pool = base.filter(byCategory);
   const counts = new Map<string, number>();
   for (const e of pool) {
     const id = e.draft.pushback_id;
@@ -1304,9 +1389,29 @@ export function galleryFacets(
     shown: pool.filter(byObjection),
     status,
     animal,
+    categories,
+    categoryTotal: base.length,
     objections,
     objectionTotal: pool.length,
   };
+}
+
+/** A category id as a person reads it — never a raw `category:` id. */
+function categoryName(id: string, list: readonly Pick<ObjectionCategory, 'id' | 'name'>[]): string {
+  const hit = list.find((c) => c.id === id);
+  if (hit) return hit.name;
+  const words = id.replace(/^category:/, '').replace(/-+/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Category';
+}
+
+/** The name of the category a scenario sits in, or null ("Something else" / none). */
+export function entryCategoryName(
+  entry: StudioEntry,
+  team: readonly GalleryObjectionRef[] = [],
+  categoryList: readonly Pick<ObjectionCategory, 'id' | 'name'>[] = [],
+): string | null {
+  const id = entryCategoryId(entry, team);
+  return id === NO_CATEGORY ? null : categoryName(id, categoryList);
 }
 
 /** "Something else" reads better than "Other pushback" in a filter. */
@@ -1339,7 +1444,8 @@ export function entryStatusText(
 export function matchesGalleryQuery(
   entry: StudioEntry,
   query: string,
-  team: readonly ObjectionRef[] = [],
+  team: readonly GalleryObjectionRef[] = [],
+  categoryList: readonly Pick<ObjectionCategory, 'id' | 'name'>[] = [],
 ): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -1349,6 +1455,7 @@ export function matchesGalleryQuery(
     entry.id,
     scenarioSummary(d),
     d.pushback_id ? objectionLabel(d.pushback_id, team) : '',
+    entryCategoryName(entry, team, categoryList) ?? '',
     speciesOf(d.species),
     SOURCE_LABELS[entry.source],
     entry.status,

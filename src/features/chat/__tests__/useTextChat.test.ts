@@ -16,6 +16,7 @@ const {
   retrieveContext,
   logEvent,
   supabase,
+  flags,
 } = vi.hoisted(() => ({
   generateRoleplayMessage: vi.fn(),
   evaluateConversation: vi.fn(),
@@ -24,6 +25,8 @@ const {
   logEvent: vi.fn(),
   /** Swapped per test: null = signed out / Supabase off (the default). */
   supabase: { client: null as unknown },
+  /** The flags snapshot the hook reads (team objections + stored categories). */
+  flags: { snapshot: null as unknown },
 }));
 
 vi.mock('../../../services/geminiService', () => ({
@@ -33,6 +36,7 @@ vi.mock('../../../services/geminiService', () => ({
   MODEL_LIVE: 'gemini-2.0-flash-live-001',
 }));
 vi.mock('../../../app/providers/FlagProvider', () => ({
+  useFlags: () => ({ snapshot: flags.snapshot }),
   useScenarioOverride: () => null,
   useSimulationConfig: () => null,
 }));
@@ -49,7 +53,10 @@ vi.mock('../../../services/ragClient', async (importOriginal) => ({
 vi.mock('../../../lib/analytics', () => ({ logEvent }));
 
 import { useTextChat } from '../useTextChat';
-import { LIBRARY_SCENARIOS } from '../../../data/scenarios';
+import { LIBRARY_SCENARIOS, type Scenario } from '../../../data/scenarios';
+import type { FlagSnapshot } from '../../../services/flagsClient';
+import type { TeamObjection } from '../../../shared/scenarios/objections';
+import type { ObjectionCategory } from '../../../shared/scenarios/objectionCategories';
 import { readStorage, type StorageKeyDef } from '../../../lib/storage';
 import type { SessionRecord } from '../../../services/types';
 
@@ -105,6 +112,7 @@ function fakeSignedInSupabase() {
 
 beforeEach(() => {
   supabase.client = null;
+  flags.snapshot = null;
   generateRoleplayMessage.mockReset();
   evaluateConversation.mockReset();
   persistRagDocument.mockReset();
@@ -307,6 +315,91 @@ describe('useTextChat — knowledge scope', () => {
     expect(retrieveContext).toHaveBeenCalledTimes(1);
     const opts = retrieveContext.mock.calls[0][1];
     expect(opts.filters).toMatchObject({ tool: 'roleplay' });
+  });
+
+  // The provenance retrieval must ask for what the SERVER grounded the prompt
+  // on: a scenario that chose no knowledge of its own reads its category's.
+  const PROBIOTICS: TeamObjection = {
+    id: 'team:probiotics',
+    title: 'Probiotics',
+    example: '"He eats fine."',
+    titleFr: null,
+    exampleFr: null,
+    species: ['dog'],
+    categoryId: 'category:gi',
+    coaching: {},
+    visible: true,
+    sortOrder: null,
+    updatedAt: null,
+  };
+  const GI: ObjectionCategory = {
+    id: 'category:gi',
+    name: 'GI',
+    nameFr: null,
+    description: '',
+    focusArea: 'gi',
+    knowledgeSlugs: ['study:gi-1', 'study:gi-2'],
+    sortOrder: null,
+    builtIn: false,
+    updatedAt: null,
+  };
+  const snapshotWith = (categories: ObjectionCategory[]): FlagSnapshot => ({
+    flags: {},
+    scenarioOverrides: [],
+    objections: [PROBIOTICS],
+    objectionCategories: categories,
+    fetchedAt: 0,
+  });
+  const openWith = async (scenario: Scenario) => {
+    const { result } = renderHook(() => useTextChat(scenario));
+    await act(async () => {
+      await result.current.open();
+    });
+    return retrieveContext.mock.calls[0][1].filters;
+  };
+  const probioticsScenario: Scenario = {
+    ...SCENARIO_A,
+    pushback: { id: 'team:probiotics', title: 'Probiotics', example: '"He eats fine."' },
+  };
+
+  it("reads a team objection's category documents from the flags snapshot", async () => {
+    flags.snapshot = snapshotWith([GI]);
+    expect(await openWith(probioticsScenario)).toEqual({
+      docSlugs: ['study:gi-1', 'study:gi-2'],
+      species: 'dog',
+      tool: 'roleplay',
+    });
+  });
+
+  it("reads a built-in category's knowledge once an admin attached some", async () => {
+    // SCENARIO_A is a weight-denial scenario → the built-in "weight" category.
+    expect(SCENARIO_A.pushback.id).toBe('weight-denial');
+    const weightEdit: ObjectionCategory = {
+      ...GI,
+      id: 'weight',
+      name: 'Weight management',
+      knowledgeSlugs: [],
+      focusArea: 'weight',
+      builtIn: true,
+    };
+    flags.snapshot = snapshotWith([weightEdit]);
+    expect(await openWith(SCENARIO_A)).toEqual({ focus: 'weight', species: 'dog', tool: 'roleplay' });
+  });
+
+  it("keeps the scenario's own knowledge over its category's", async () => {
+    flags.snapshot = snapshotWith([GI]);
+    expect(await openWith({ ...probioticsScenario, knowledgeSlugs: ['own-doc'] })).toEqual({
+      docSlugs: ['own-doc'],
+      species: 'dog',
+      tool: 'roleplay',
+    });
+  });
+
+  it('retrieves un-targeted when the category has no knowledge (or no snapshot)', async () => {
+    expect(await openWith(probioticsScenario)).toEqual({ species: 'dog', tool: 'roleplay' });
+    retrieveContext.mockClear();
+    flags.snapshot = snapshotWith([{ ...GI, knowledgeSlugs: [], focusArea: null }]);
+    expect(await openWith(probioticsScenario)).toEqual({ species: 'dog', tool: 'roleplay' });
   });
 });
 

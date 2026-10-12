@@ -103,21 +103,27 @@ export async function fetchScenarioCapabilities(): Promise<{ species?: boolean }
 // ── Objections (admin-objections) ────────────────────────────────────────
 
 /**
- * `admin-objections` GET. Always asks for the soft-deleted ones too
- * (`?deleted=1` — their `deletedAt` is set): the Objections tab lists them
- * under "Recently deleted", and the Studio needs to tell a DELETED objection
- * apart from an id it has never heard of. Rows are returned raw; the store
- * (./objections/useObjections) reads each one tolerantly.
+ * `admin-objections` GET — the team's objections AND the categories they live
+ * in (built-ins merged in by the server). Always asks for the soft-deleted
+ * ones too (`?deleted=1` — their `deletedAt` is set): the Categories tab
+ * lists them under "Recently deleted", and the Studio needs to tell a DELETED
+ * objection apart from an id it has never heard of. Rows are returned raw;
+ * the store (./objections/useObjections) reads each one tolerantly.
  */
-export function fetchObjections(): Promise<{ objections?: unknown; _notice?: unknown }> {
-  return apiFetch<{ objections?: unknown; _notice?: unknown }>('admin-objections', { deleted: 1 });
+export function fetchObjections(): Promise<{ objections?: unknown; categories?: unknown; _notice?: unknown }> {
+  return apiFetch<{ objections?: unknown; categories?: unknown; _notice?: unknown }>('admin-objections', {
+    deleted: 1,
+  });
 }
 
 /**
- * `admin-objections` POST — `upsert` / `delete` / `restore`. Throws an
- * `ApiError` on non-2xx: 400 (`error` is a sentence for the admin), 409
- * `{ code: 'stale', current }` or `{ code: 'in_use', scenarios }`, 503 while
- * the migration hasn't been applied.
+ * `admin-objections` POST — `upsert` / `delete` / `restore` for objections,
+ * `upsert-category` / `delete-category` / `restore-category` for categories.
+ * Throws an `ApiError` on non-2xx: 400 (`error` is a sentence for the admin),
+ * 409 `{ code: 'stale', current }`, `{ code: 'in_use', scenarios }` (an
+ * objection) or `{ code: 'in_use', objections }` (a category), `{ code:
+ * 'limit' }`, 503 while the migration hasn't been applied. A category save
+ * answers `{ category, _dropped? }` — document ids it left out.
  */
 export function postObjectionOp(body: ObjectionWriteRequest): Promise<Record<string, unknown>> {
   return postJson<Record<string, unknown>>('admin-objections', body);

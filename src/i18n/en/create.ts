@@ -28,6 +28,8 @@ export const create = {
   'create.library.startAria': 'Start: {title}',
   'create.library.filterAria': 'Filter by objection',
   'create.library.filterAll': 'All',
+  'create.library.categoryAria': 'Filter by category',
+  'create.library.categoryAll': 'All categories',
   'create.library.emptyDog': 'No dog scenarios in the library yet.',
   'create.library.emptyCat': 'No cat scenarios in the library yet.',
   'create.library.emptyCta': 'Build one',
@@ -35,6 +37,7 @@ export const create = {
   // ── Section headers ───────────────────────────────────────
   'create.section.breed': 'Breed',
   'create.section.lifeStage': 'Life stage',
+  'create.section.category': 'Category',
   'create.section.pushback': 'The pushback',
   'create.section.persona': 'Owner persona',
   'create.section.driver': 'ECHO driver',
@@ -50,6 +53,9 @@ export const create = {
   'create.weight.unit': 'kg',
   'create.weight.labelDog': "Dog's weight (optional)",
   'create.weight.labelCat': "Cat's weight (optional)",
+
+  // ── Category picker (the subject area; filters the pushback dropdown) ──
+  'create.category.aria': 'Choose a category',
 
   // ── Pushback picker ───────────────────────────────────────
   'create.pushback.selectAria': 'Select pushback type',

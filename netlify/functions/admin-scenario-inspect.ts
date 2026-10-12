@@ -16,9 +16,13 @@
  *
  * Retrieval mirrors `retrieveForScenario(sb, scenario, config, 'roleplay')`
  * in `_shared/ai.ts` — same query (`scenarioRetrievalQuery`), same `rag.k`,
- * same filters (`scenarioRetrievalFilters` + the `roleplay` tool) — but calls
+ * same filters (`scenarioRetrievalFilters` + the `roleplay` tool, with the
+ * CATEGORY's knowledge for a draft that chose none of its own) — but calls
  * `retrieveChunksDetailed` so the applied filter and the soft-focus fallback
- * can be shown. The species scope follows the Scenario Studio design (§5):
+ * can be shown. The category follows from the draft's pushback id and is
+ * read FRESH (team objections + stored categories, uncached), never from the
+ * request; the answer says whose knowledge was used (`knowledgeSource`,
+ * `knowledgeCategory`). The species scope follows the Scenario Studio design (§5):
  * a scenario that declares a species retrieves inside it (dog + Puppy life
  * stage → `puppy`), exactly `retrievalSpeciesFor`; a legacy scenario with no
  * species stays un-scoped. `inspectRetrievalFilters` is the one place that
@@ -41,7 +45,7 @@ import {
   rateLimit,
   withTeamObjections,
 } from './_shared/ai';
-import { readTeamObjections } from './_shared/objectionsStore';
+import { readCategories, readTeamObjections } from './_shared/objectionsStore';
 import { retrieveChunksDetailed, type RetrievalFilters } from './_shared/retrieval';
 import { buildCustomerSystemPrompt } from '../../src/data/knowledge/promptBuilders';
 import {
@@ -66,6 +70,14 @@ import {
 } from '../../src/shared/scenarios/draftToScenario';
 import { SCENARIO_LIMITS } from '../../src/shared/scenarios/limits';
 import type { TeamObjection } from '../../src/shared/scenarios/objections';
+import {
+  categoryKnowledgeFor,
+  effectiveKnowledge,
+  mergeCategories,
+  objectionCategoryId,
+  type KnowledgeSelection,
+  type ObjectionCategory,
+} from '../../src/shared/scenarios/objectionCategories';
 import { retrievalSpeciesFor } from '../../src/shared/scenarios/species';
 import type { RetrievedChunk } from '../../src/services/ragShared';
 
@@ -112,20 +124,38 @@ export function noteOrNull(raw: unknown): string | null {
     : text.slice(0, SCENARIO_LIMITS.promptMax).trimEnd();
 }
 
-/** Where the draft tells the customer to look: attached docs > topic > all. */
-export function knowledgeModeOf(draft: ScenarioAgentDraft): KnowledgeMode {
-  if (Array.isArray(draft.knowledge_slugs) && draft.knowledge_slugs.length > 0) return 'documents';
-  if (draft.focus_area) return 'focus';
+/** The draft's knowledge in `effectiveKnowledge`'s terms. */
+function draftKnowledge(draft: ScenarioAgentDraft): { focusArea: string | null; knowledgeSlugs: string[] } {
+  return {
+    focusArea: draft.focus_area ?? null,
+    knowledgeSlugs: Array.isArray(draft.knowledge_slugs) ? draft.knowledge_slugs : [],
+  };
+}
+
+/**
+ * Where the customer will look: attached docs > topic > all — the draft's
+ * own choice, else its category's (`categoryKnowledge`), else the library.
+ */
+export function knowledgeModeOf(
+  draft: ScenarioAgentDraft,
+  categoryKnowledge: KnowledgeSelection | null = null,
+): KnowledgeMode {
+  const k = effectiveKnowledge(draftKnowledge(draft), categoryKnowledge);
+  if (k.knowledgeSlugs.length > 0) return 'documents';
+  if (k.focusArea) return 'focus';
   return 'library';
 }
 
 /**
  * The roleplay retrieval filters for a scenario (see the header): the
- * scenario's own targeting, the HARD `roleplay` tool scope, and — when the
- * scenario declares a species — the HARD species scope.
+ * scenario's own targeting (else its category's), the HARD `roleplay` tool
+ * scope, and — when the scenario declares a species — the HARD species scope.
  */
-export function inspectRetrievalFilters(scenario: Scenario): RetrievalFilters {
-  const base: RetrievalFilters = { ...(scenarioRetrievalFilters(scenario) ?? {}) };
+export function inspectRetrievalFilters(
+  scenario: Scenario,
+  categoryKnowledge: KnowledgeSelection | null = null,
+): RetrievalFilters {
+  const base: RetrievalFilters = { ...(scenarioRetrievalFilters(scenario, { categoryKnowledge }) ?? {}) };
   const species = base.species ?? retrievalSpeciesFor(scenario.species, scenario.age);
   return { ...base, ...(species ? { species } : {}), tool: 'roleplay' };
 }
@@ -154,6 +184,31 @@ export async function inspectTeamObjections(sb: SupabaseClient): Promise<TeamObj
     console.warn('[admin-scenario-inspect] scenario_objections read failed', read.error.message);
   }
   return read.objections;
+}
+
+/**
+ * Non-deleted stored categories, uncached (an admin who just attached
+ * documents to a category and opens the preview must see them used);
+ * [] on any failure (logged) — then only the built-ins, with no knowledge.
+ */
+export async function inspectCategories(sb: SupabaseClient): Promise<ObjectionCategory[]> {
+  const read = await readCategories(sb);
+  if (read.error && !read.missing) {
+    console.warn('[admin-scenario-inspect] scenario_objection_categories read failed', read.error.message);
+  }
+  return read.categories;
+}
+
+/** The category a pushback belongs to, shaped for the response (null when none). */
+export function knowledgeCategoryOf(
+  pushbackId: string | null | undefined,
+  team: readonly TeamObjection[],
+  categories: readonly ObjectionCategory[],
+): ScenarioInspectResponse['knowledgeCategory'] {
+  const id = objectionCategoryId(pushbackId, team);
+  const c = id ? categories.find((x) => x.id === id) : undefined;
+  if (!c) return null;
+  return { id: c.id, name: c.name, focusArea: c.focusArea, knowledgeSlugs: [...c.knowledgeSlugs] };
 }
 
 function adminNotesOf(
@@ -188,7 +243,6 @@ export default async (req: Request): Promise<Response> => {
     prompt: rawInclude.prompt !== false,
     knowledge: rawInclude.knowledge !== false,
   };
-  const mode = knowledgeModeOf(draft);
 
   // `scenarios.read` gets you into the endpoint, but the two halves reveal
   // more than scenarios: the prompt carries the admin-tuned personas and the
@@ -219,14 +273,23 @@ export default async (req: Request): Promise<Response> => {
     // included — a scenario built on one still plays. Fail-open: without
     // them only built-in pushbacks resolve. The config is the stored one with
     // the same list merged in, exactly as `loadSimulationConfig` merges it.
-    const [stored, team] = await Promise.all([
+    // The categories are read fresh for the same reason, and are the ONLY
+    // source of category knowledge here: the draft says which objection it
+    // is on, the database says which category that is and what it reads.
+    const [stored, team, storedCategories] = await Promise.all([
       loadStoredSimulationConfig(ctx.sb),
       inspectTeamObjections(ctx.sb),
+      inspectCategories(ctx.sb),
     ]);
     const config = withTeamObjections(stored, team);
     const rag = resolveRag(config);
     const notes = adminNotesOf(draft, config);
     const adminNotes = canBriefing ? notes : { ...notes, globalPrefix: null, globalSuffix: null };
+    const categories = mergeCategories(storedCategories);
+    const categoryKnowledge = categoryKnowledgeFor(draft.pushback_id, team, categories);
+    const mode = knowledgeModeOf(draft, categoryKnowledge);
+    const knowledgeSource = effectiveKnowledge(draftKnowledge(draft), categoryKnowledge).source;
+    const knowledgeCategory = knowledgeCategoryOf(draft.pushback_id, team, categories);
 
     const missing = missingScenarioFields(draft, team);
     const scenario = missing.length === 0 ? draftToScenario(draft, team) : null;
@@ -235,6 +298,8 @@ export default async (req: Request): Promise<Response> => {
         missing: missing.length ? missing : ['Scenario'],
         prompt: null,
         adminNotes,
+        knowledgeSource,
+        knowledgeCategory,
         knowledge: {
           enabled: rag.enabled,
           k: rag.k,
@@ -255,7 +320,7 @@ export default async (req: Request): Promise<Response> => {
     if (rag.enabled && (include.prompt || include.knowledge)) {
       const detailed = await retrieveChunksDetailed(scenarioRetrievalQuery(scenario), {
         k: rag.k,
-        filters: inspectRetrievalFilters(scenario),
+        filters: inspectRetrievalFilters(scenario, categoryKnowledge),
         sb: ctx.sb,
       });
       retrieved = detailed.results;
@@ -278,6 +343,8 @@ export default async (req: Request): Promise<Response> => {
       missing: [],
       prompt,
       adminNotes,
+      knowledgeSource,
+      knowledgeCategory,
       knowledge: {
         enabled: rag.enabled,
         k: rag.k,

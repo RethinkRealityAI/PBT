@@ -27,6 +27,7 @@ import {
   rowToTeamObjection,
   type TeamObjection,
 } from '../shared/scenarios/objections';
+import { rowToCategory, type ObjectionCategory } from '../shared/scenarios/objectionCategories';
 
 export function seedScenarioId(index: number): string {
   return `seed:${index}`;
@@ -52,6 +53,22 @@ export function teamObjectionsFromSnapshot(raw: unknown): TeamObjection[] {
   for (const entry of raw) {
     const objection = rowToTeamObjection(entry);
     if (objection) out.push(objection);
+  }
+  return out;
+}
+
+/**
+ * Tolerant read of `snapshot.objectionCategories` — the STORED categories
+ * (team categories + admin edits of the built-ins). Unusable entries are
+ * dropped; an absent list is none. Always merge the result with the code's
+ * built-ins (`mergeCategories`) before use.
+ */
+export function objectionCategoriesFromSnapshot(raw: unknown): ObjectionCategory[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ObjectionCategory[] = [];
+  for (const entry of raw) {
+    const category = rowToCategory(entry);
+    if (category) out.push(category);
   }
   return out;
 }
