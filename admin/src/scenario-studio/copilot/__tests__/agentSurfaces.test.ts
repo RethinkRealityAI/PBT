@@ -433,3 +433,46 @@ describe('field presentation vocabulary', () => {
     }
   });
 });
+
+describe('team objections on cards', () => {
+  const PRO = { id: 'team:probiotics-not-needed', title: 'Probiotics: not needed', species: ['dog', 'cat'] as Array<'dog' | 'cat'> };
+  const BORED = { id: 'team:cat-bored', title: 'Cat gets bored', species: ['cat'] as Array<'dog' | 'cat'> };
+  const TEAM_NORM = { ...NORM, objections: [PRO, BORED] };
+
+  it('a pushback choice lists the built-ins, then the team’s objections for the animal', () => {
+    const dog = fieldOptions('pushback_id', 'dog', [PRO, BORED]);
+    expect(dog.slice(-1)).toEqual([{ label: 'Probiotics: not needed', value: PRO.id }]);
+    expect(dog.map((o) => o.value)).not.toContain(BORED.id);
+    expect(fieldOptions('pushback_id', 'cat', [PRO, BORED]).slice(-2).map((o) => o.value)).toEqual([PRO.id, BORED.id]);
+    // The card's own proposal stays listed even for the other animal.
+    expect(fieldOptions('pushback_id', 'dog', [PRO, BORED], BORED.id).map((o) => o.value)).toContain(BORED.id);
+    // Every option is a value the gate accepts with the same objections.
+    for (const o of fieldOptions('pushback_id', 'cat', [PRO, BORED])) {
+      expect(normalizeFieldValue('pushback_id', o.value, { objections: [PRO, BORED] })).toBe(o.value);
+    }
+  });
+
+  it('names a team pushback on the card — never its raw id — and round-trips the proposal', () => {
+    const [action] = normalizeAgentActions(
+      [{ tool: 'update_fields', fields: { pushback_id: PRO.id } }],
+      TEAM_NORM,
+    );
+    expect(action).toBeDefined();
+    const s = applySurfaceMessages(
+      {},
+      buildActionSurface(action, 'c9', {
+        draft: { ...DRAFT, pushback_id: BORED.id },
+        docs: DOCS,
+        objections: [PRO, BORED],
+      }),
+    ).c9;
+    const change = s.components.f_pushback_id;
+    expect(change.before).toBe('Cat gets bored');
+    expect((change.options as Array<{ label: string; value: string }>).find((o) => o.value === PRO.id)?.label).toBe(
+      'Probiotics: not needed',
+    );
+    expect(normalizeAgentActions([getPath(s.dataModel, '/proposal')], TEAM_NORM)).toEqual([action]);
+    // Without the objection in the context, the same proposal is dropped on confirm.
+    expect(normalizeAgentActions([getPath(s.dataModel, '/proposal')], NORM)).toEqual([]);
+  });
+});

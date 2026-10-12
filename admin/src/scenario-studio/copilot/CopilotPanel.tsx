@@ -75,6 +75,7 @@ const COUNTER_FROM = Math.floor(AGENT_LIMITS.maxTurnChars * 0.8);
 const COMPOSER_MAX_HEIGHT = 120;
 
 const FALLBACK_REPLY = 'I’m not sure how to help with that — could you say it another way?';
+const NO_TEAM_OBJECTIONS: NonNullable<CopilotPanelProps['objections']> = [];
 const INVALID_RESULT = 'That didn’t look valid, so nothing changed.';
 const DATA_TOOLS: ReadonlySet<ScenarioAgentAction['tool']> = new Set([
   'update_fields',
@@ -178,6 +179,20 @@ export function CopilotPanel(props: CopilotPanelProps) {
   );
   const knownSlugsRef = useLatest(knownSlugs);
 
+  /**
+   * The team's active objections — the only `team:` ids a proposal may set
+   * as the pushback. Re-read on every normalise, so an objection retired
+   * while a card sat on screen is dropped when it is confirmed.
+   */
+  const objectionsRef = useLatest(props.objections ?? NO_TEAM_OBJECTIONS);
+  const normalizeCtx = useCallback(
+    () => ({
+      knownSlugs: knownSlugsRef.current,
+      objections: objectionsRef.current.map((o) => ({ id: o.id, title: o.title })),
+    }),
+    [knownSlugsRef, objectionsRef],
+  );
+
   const [busy, setBusy] = useState(false);
   const sendingRef = useRef(false);
   const [input, setInput] = useState('');
@@ -242,7 +257,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
       if (!mountedRef.current || scenarioRef.current !== forScenario) return;
       // The server normalised these already; the client does it again
       // against the library THIS browser can see before any card is built.
-      const actions = normalizeAgentActions(res?.actions, { knownSlugs: knownSlugsRef.current });
+      const actions = normalizeAgentActions(res?.actions, normalizeCtx());
       const reply = typeof res?.reply === 'string' ? res.reply.trim() : '';
       const suggestions = normalizeSuggestions(res?.suggestions);
       // The server offered documents this browser's library can't vouch for
@@ -269,7 +284,11 @@ export function CopilotPanel(props: CopilotPanelProps) {
         if (reply || actions.length === 0) next = appendAssistant(next, reply || FALLBACK_REPLY);
         for (const action of actions) {
           next = appendSurface(next, (sid) =>
-            buildActionSurface(action, sid, { draft: draftRef.current, docs: docsRef.current }),
+            buildActionSurface(action, sid, {
+              draft: draftRef.current,
+              docs: docsRef.current,
+              objections: objectionsRef.current,
+            }),
           );
         }
         if (droppedDocsNote) next = appendAssistant(next, droppedDocsNote);
@@ -286,7 +305,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
       sendingRef.current = false;
       setBusy(false);
     }
-  }, [update, stepRef, scenarioRef, knownSlugsRef, docsRef]);
+  }, [update, stepRef, scenarioRef, normalizeCtx, docsRef, objectionsRef]);
 
   const nearBottomRef = useRef(true);
 
@@ -359,7 +378,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
         }
         proposal = { ...proposal, slugs };
       }
-      const [action] = normalizeAgentActions([proposal], { knownSlugs: knownSlugsRef.current });
+      const [action] = normalizeAgentActions([proposal], normalizeCtx());
       if (!action || !DATA_TOOLS.has(action.tool)) {
         result(sid, INVALID_RESULT, false);
         return;
@@ -404,7 +423,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
         true,
       );
     },
-    [result, patchDraft, knownSlugsRef],
+    [result, patchDraft, normalizeCtx],
   );
 
   const handleAction = useCallback(
@@ -429,7 +448,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
                 : '';
           if (typeof c.field === 'string' && (ASK_FIELDS as readonly string[]).includes(c.field)) {
             const field = c.field as AskField;
-            const value = normalizeFieldValue(field, c.value);
+            const value = normalizeFieldValue(field, c.value, { objections: normalizeCtx().objections });
             if (value !== undefined) {
               const r = applyFieldValue(draftRef.current, field, value);
               patchDraft(r.draft, r.changed);
@@ -468,7 +487,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
           return; // unknown event — cards only emit the ones above
       }
     },
-    [confirmAction, result, patchDraft, send, canWriteRef, onGoToStepRef],
+    [confirmAction, result, patchDraft, send, canWriteRef, onGoToStepRef, normalizeCtx],
   );
 
   const handleDataChange = useCallback(

@@ -7,7 +7,11 @@
  * that declares a species gets the HARD species scope.
  */
 import { describe, expect, it } from 'vitest';
-import { scenarioRetrievalFilters, scenarioRetrievalQuery } from '../retrievalQuery';
+import {
+  CUSTOM_NOTES_QUERY_CHARS,
+  scenarioRetrievalFilters,
+  scenarioRetrievalQuery,
+} from '../retrievalQuery';
 import { SEED_SCENARIOS, type Scenario } from '../../../data/scenarios';
 import { buildScopeFilter, sanitizeFilters } from '../../../../netlify/functions/_shared/retrieval';
 import { isKnowledgeSpeciesKey } from '../../knowledge/knowledgeScopes';
@@ -38,6 +42,46 @@ describe('scenarioRetrievalQuery', () => {
   it('ignores an unknown species value (treated as a dog)', () => {
     const odd = { ...dog, species: 'hamster' } as unknown as Scenario;
     expect(scenarioRetrievalQuery(odd)).toBe(scenarioRetrievalQuery(dog));
+  });
+});
+
+describe('scenarioRetrievalQuery — "Other pushback" asks about what the owner said', () => {
+  const custom: Scenario = {
+    ...dog,
+    pushback: { id: 'custom', title: 'Other pushback', example: '' },
+  };
+
+  it('uses the notes, not the generic title, so a probiotics objection finds probiotics documents', () => {
+    const q = scenarioRetrievalQuery({
+      ...custom,
+      pushbackNotes: '  Thinks   probiotics\nare a fad and his dog\'s gut is fine.  ',
+    });
+    expect(q).toBe(
+      `Thinks probiotics are a fad and his dog's gut is fine. ${dog.suggestedDriver} owner ${dog.breed} ${dog.age}`,
+    );
+    expect(q).not.toContain('Other pushback');
+  });
+
+  it('caps the notes it uses', () => {
+    const q = scenarioRetrievalQuery({ ...custom, pushbackNotes: 'word '.repeat(200) });
+    const topic = q.slice(0, q.indexOf(` ${dog.suggestedDriver} owner`));
+    expect(topic.length).toBeLessThanOrEqual(CUSTOM_NOTES_QUERY_CHARS);
+    expect(CUSTOM_NOTES_QUERY_CHARS).toBe(160);
+  });
+
+  it('names the animal for a cat, as for any other pushback', () => {
+    expect(
+      scenarioRetrievalQuery({ ...custom, species: 'cat', breed: 'Persian', pushbackNotes: 'Raw food only' }),
+    ).toBe(`Raw food only ${dog.suggestedDriver} owner cat Persian ${dog.age}`);
+  });
+
+  it('keeps the title without notes, and every other pushback keeps its title even with notes', () => {
+    expect(scenarioRetrievalQuery({ ...custom, pushbackNotes: '   ' })).toBe(
+      `Other pushback ${dog.suggestedDriver} owner ${dog.breed} ${dog.age}`,
+    );
+    expect(scenarioRetrievalQuery({ ...dog, pushbackNotes: 'Owner is on a fixed income.' })).toBe(
+      scenarioRetrievalQuery(dog),
+    );
   });
 });
 

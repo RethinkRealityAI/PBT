@@ -75,6 +75,8 @@ import { EMPTY_TRANSCRIPT, type CopilotTranscript } from './copilot/types';
 import type { KnowledgeState, StepProps } from './types';
 import { StatusDot, StepHeading, SPECIES_GLYPH } from './ui';
 import { StepRail, type RailStep } from './StepRail';
+import { useObjectionsContext } from './objections/ObjectionsContext';
+import { missingCoreFields } from './objections/objectionsModel';
 import {
   AssistantColumn,
   AssistantDrawer,
@@ -128,6 +130,11 @@ export interface StudioEditorProps {
   hasOverride: boolean;
   /** Title of the scenario this unsaved copy was made from. */
   copiedFrom?: string | null;
+  /**
+   * What the unsaved copy was made from: `trainee` = "Add to library" on a
+   * trainee's own scenario (its banner says so), `scenario` = Duplicate.
+   */
+  copySource?: 'trainee' | 'scenario';
   /** The name the scenario goes by elsewhere (built-in / trainee title). */
   fallbackTitle?: string | null;
   /** Draft → the sparse row a save writes (fields equal to the base → null). */
@@ -162,6 +169,8 @@ export interface StudioEditorProps {
   onSaved: () => void;
   /** Open an unsaved copy of this draft. */
   onDuplicate: (draft: StudioDraft, title: string) => void;
+  /** For a trainee's own scenario (shown read-only): open its "Add to library" copy. */
+  onAddToLibrary?: () => void;
 }
 
 // ── Small hooks ──────────────────────────────────────────────
@@ -229,6 +238,7 @@ export function StudioEditor(props: StudioEditorProps) {
     isNew,
     hasOverride,
     copiedFrom = null,
+    copySource = 'scenario',
     fallbackTitle = null,
     sparsify,
     isOnlyVisible,
@@ -241,6 +251,7 @@ export function StudioEditor(props: StudioEditorProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const can = useCan();
+  const objectionsApi = useObjectionsContext();
   // Where a deleted scenario comes back from — only meaningful to someone
   // who can open the Audit log (a Scenario Author cannot).
   const recoverable = can('audit.read')
@@ -367,11 +378,28 @@ export function StudioEditor(props: StudioEditorProps) {
         // A save already told us the column is missing — believe it even if
         // the capabilities probe hasn't answered.
         speciesSupported: speciesPending ? false : props.speciesSupported,
+        objections: {
+          team: objectionsApi.objections,
+          deleted: objectionsApi.deleted,
+          loaded: objectionsApi.loaded,
+        },
       }),
-    [draft, source, tested, knowledgeDocs, speciesPending, props.speciesSupported],
+    [
+      draft,
+      source,
+      tested,
+      knowledgeDocs,
+      speciesPending,
+      props.speciesSupported,
+      objectionsApi.objections,
+      objectionsApi.deleted,
+      objectionsApi.loaded,
+    ],
   );
   const dirty = draftsDiffer(draft, baseline);
-  const title = studioTitle(draft, fallbackTitle);
+  const title = studioTitle(draft, fallbackTitle, objectionsApi.objections);
+  /** What a copy made from a trainee's scenario still needs before it can be saved. */
+  const copyNeeds = copySource === 'trainee' && !savedOnce ? missingCoreFields(draft) : [];
   /** Trainees can see the SAVED version. User-built scenarios are never "live" for everyone. */
   const live = source !== 'user' && savedOnce && baseline.visible === true;
   const rowExists = hasOverride || rowSaved;
@@ -476,8 +504,8 @@ export function StudioEditor(props: StudioEditorProps) {
   // Once the admin has been shown what blocks a save, keep the list live so
   // fixing a field visibly clears its line.
   useEffect(() => {
-    setBlockers((b) => (b.length === 0 ? b : saveBlockers(draft, source)));
-  }, [draft, source]);
+    setBlockers((b) => (b.length === 0 ? b : saveBlockers(draft, source, ctx.objection)));
+  }, [draft, source, ctx.objection]);
 
   // ── Step navigation ──
   // On a step change (not on mount): bring the step's top into view and move
@@ -529,12 +557,19 @@ export function StudioEditor(props: StudioEditorProps) {
   }, [assistantVisible, transcript.items.length]);
   const hasNews = !assistantVisible && transcript.items.length > seenItems;
 
+  /** Team objections the assistant may propose (active ones), by id + title. */
+  const assistantObjections = useMemo(
+    () => objectionsApi.objections.filter((o) => o.visible),
+    [objectionsApi.objections],
+  );
+
   const panel: AssistantPanelProps = {
     scenarioId,
     draft,
     step,
     canWrite: editable,
     knowledge,
+    objections: assistantObjections,
     onPatch: onAssistantPatch,
     onGoToStep: goTo,
     transcript,
@@ -550,6 +585,10 @@ export function StudioEditor(props: StudioEditorProps) {
 
   async function persist(mode: 'save' | 'publish' | 'unpublish'): Promise<boolean> {
     if (!editable || busy) return false;
+    // A trainee's own scenario is never written over: the app keeps showing
+    // the trainee their version, so a `user:` override reaches nobody.
+    // "Add to library" makes the copy that can be saved and published.
+    if (source === 'user') return false;
     const next: StudioDraft =
       mode === 'publish'
         ? { ...draft, visible: true }
@@ -559,7 +598,7 @@ export function StudioEditor(props: StudioEditorProps) {
 
     // Everything the server would refuse, said before the request goes out —
     // and in the field's own words rather than a column name.
-    const blocking = saveBlockers(next, source);
+    const blocking = saveBlockers(next, source, ctx.objection);
     setBlockers(blocking);
     if (blocking.length > 0) {
       setError(null);
@@ -621,11 +660,6 @@ export function StudioEditor(props: StudioEditorProps) {
         });
       } else if (mode === 'unpublish') {
         toast({ message: `Unpublished — trainees can’t see “${name}” any more.`, tone: 'success' });
-      } else if (source === 'user') {
-        toast({
-          message: 'Saved. The trainee who built it still sees their own version.',
-          tone: 'success',
-        });
       } else if (next.visible) {
         toast({ message: `Saved — trainees see the new “${name}” now.`, tone: 'success' });
       } else {
@@ -636,6 +670,16 @@ export function StudioEditor(props: StudioEditorProps) {
         });
       }
 
+      if (notice === 'copied_from_column_missing') {
+        // Display-only: the scenario saved; only the link back to where it
+        // was copied from couldn't be stored yet.
+        toast({
+          message:
+            'Saved — but the link to the scenario it was copied from couldn’t be stored yet (a database update is pending), so the original won’t show “In the library”.',
+          tone: 'info',
+          duration: 10000,
+        });
+      }
       if (notice === 'species_column_missing') {
         setSpeciesPending(true);
         // Published before we knew the species couldn't be stored (the
@@ -910,9 +954,11 @@ export function StudioEditor(props: StudioEditorProps) {
     source === 'user' ? (
       <StatusDot tone="neutral">Trainee’s own</StatusDot>
     ) : live ? (
-      <StatusDot tone="success">Live</StatusDot>
+      <StatusDot tone="success">Live in the app</StatusDot>
     ) : (
-      <StatusDot tone="neutral">{source === 'library' ? 'Hidden from trainees' : 'Draft (hidden)'}</StatusDot>
+      <StatusDot tone="neutral">
+        {source === 'library' ? 'Hidden from trainees' : 'Draft — hidden from trainees'}
+      </StatusDot>
     );
 
   const menuItems: MenuItem[] = [];
@@ -922,7 +968,10 @@ export function StudioEditor(props: StudioEditorProps) {
       hint: 'Open a copy to edit separately',
       onSelect: () => onDuplicate(draft, title),
     });
-    if (source !== 'admin' && rowExists) {
+    // Library scenarios only. A trainee's scenario may carry a stray override
+    // from the old in-place editing; it is never offered here — the Studio
+    // doesn't open those for editing any more.
+    if (source === 'library' && rowExists) {
       menuItems.push({
         label: 'Revert to built-in…',
         hint: 'Throw away the saved changes',
@@ -982,7 +1031,7 @@ export function StudioEditor(props: StudioEditorProps) {
             onPublish={() => void publish()}
             onSaveDraft={() => void persist('save')}
             onUnpublish={() => void persist('unpublish')}
-            onDuplicate={() => onDuplicate(draft, title)}
+            onDuplicate={() => (source === 'user' && props.onAddToLibrary ? props.onAddToLibrary() : onDuplicate(draft, title))}
           />
         );
     }
@@ -1073,9 +1122,11 @@ export function StudioEditor(props: StudioEditorProps) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
                   {menuItems.length > 0 && <MoreMenu items={menuItems} disabled={busy !== null || !editable} />}
                   {source === 'user' ? (
-                    <Button tone="primary" busy={busy === 'save'} disabled={busy !== null || !editable} onClick={() => void persist('save')}>
-                      Save changes
-                    </Button>
+                    props.onAddToLibrary ? (
+                      <Button tone="primary" onClick={props.onAddToLibrary}>
+                        Add to library
+                      </Button>
+                    ) : null
                   ) : live ? (
                     <Button tone="primary" busy={busy === 'publish'} disabled={busy !== null || !editable} onClick={() => void publish()}>
                       Update live scenario
@@ -1195,18 +1246,38 @@ export function StudioEditor(props: StudioEditorProps) {
                   </div>
                 </InlineAlert>
               )}
-              {copiedFrom && !savedOnce && (
+              {copiedFrom && !savedOnce && copySource === 'trainee' && (
+                <InlineAlert tone="info" title="Copied from a trainee’s scenario">
+                  <div>
+                    “{copiedFrom}”. It stays hidden from trainees until you publish it — the trainee who
+                    built it keeps their own version either way.
+                  </div>
+                  {copyNeeds.length > 0 && (
+                    <div style={{ marginTop: 6, fontWeight: 700 }}>
+                      {copyNeeds.includes('ECHO driver') && copyNeeds.length === 1
+                        ? 'The trainee didn’t choose the owner’s ECHO driver — pick one on The owner step before saving.'
+                        : `Before it can be saved it still needs: ${copyNeeds
+                            .map((m) => (m === 'ECHO driver' ? 'the owner’s ECHO driver' : m.toLowerCase()))
+                            .join(', ')}.`}{' '}
+                      {copyNeeds.includes('ECHO driver') && step !== 'customer' && (
+                        <LinkButton onClick={() => setStep('customer')}>Go to the owner →</LinkButton>
+                      )}
+                    </div>
+                  )}
+                </InlineAlert>
+              )}
+              {copiedFrom && !savedOnce && copySource !== 'trainee' && (
                 <InlineAlert tone="info" title="This is an unsaved copy">
                   Copied from “{copiedFrom}”. Nothing reaches trainees until you save and publish it —
                   a copy always starts as a hidden draft.
                 </InlineAlert>
               )}
               {source === 'user' && (
-                <InlineAlert tone="warn" title="Edits here don’t reach the trainee who built this">
-                  The app doesn’t apply Studio changes to a trainee’s own scenario. To offer your
-                  version to everyone, duplicate it and publish the copy.{' '}
-                  {canWrite && (
-                    <LinkButton onClick={() => onDuplicate(draft, title)}>Duplicate it →</LinkButton>
+                <InlineAlert tone="info" title="This is a trainee’s own scenario">
+                  Only the trainee who built it sees it, and the Studio doesn’t change it. To offer it
+                  to everyone, add it to the library — a copy your team can check, test and publish.{' '}
+                  {canWrite && props.onAddToLibrary && (
+                    <LinkButton onClick={props.onAddToLibrary}>Add to library →</LinkButton>
                   )}
                 </InlineAlert>
               )}

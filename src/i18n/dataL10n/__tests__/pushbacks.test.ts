@@ -5,7 +5,11 @@ import {
   DIFFICULTY_DESCRIPTIONS,
   DIFFICULTY_LABELS,
   PUSHBACK_CATEGORIES,
+  SEED_SCENARIOS,
+  type Scenario,
 } from '../../../data/scenarios';
+import type { TeamObjection } from '../../../shared/scenarios/objections';
+import { localizedScenario } from '../scenarios';
 import { PUSHBACK_KNOWLEDGE } from '../../../data/knowledge/pushbackTaxonomy';
 import {
   DIFFICULTY_LEVELS,
@@ -16,6 +20,7 @@ import {
   localizedPushbackExample,
   localizedPushbackHints,
   localizedPushbackLabel,
+  localizedSessionSummary,
   type PushbackDataOverlay,
 } from '../pushbacks';
 
@@ -166,5 +171,87 @@ describe('localizedPushbackHints', () => {
     const before = JSON.stringify(PUSHBACK_KNOWLEDGE);
     for (const id of PUSHBACK_IDS) localizedPushbackHints(id, 'fr');
     expect(JSON.stringify(PUSHBACK_KNOWLEDGE)).toBe(before);
+  });
+});
+
+describe('team objections (Scenario Studio) — display localisation', () => {
+  const PROBIOTICS: TeamObjection = {
+    id: 'team:probiotics',
+    title: "Probiotics: 'my dog doesn't need them'",
+    example: '"He eats fine."',
+    titleFr: 'Probiotiques : « mon chien n’en a pas besoin »',
+    exampleFr: '« Il mange bien. »',
+    species: ['dog'],
+    focusArea: 'gi',
+    coaching: {},
+    visible: true,
+    sortOrder: null,
+    updatedAt: null,
+  };
+  const NO_FRENCH: TeamObjection = {
+    ...PROBIOTICS,
+    id: 'team:english-only',
+    title: 'English only',
+    example: '"Only English."',
+    titleFr: null,
+    exampleFr: null,
+  };
+  // What a scenario carries for it (resolveObjection's shape).
+  const carried = {
+    id: PROBIOTICS.id,
+    title: PROBIOTICS.title,
+    example: PROBIOTICS.example,
+    titleFr: PROBIOTICS.titleFr!,
+    exampleFr: PROBIOTICS.exampleFr!,
+  };
+
+  it("localizedPushbackCategory uses the team's French in fr and is untouched in en", () => {
+    expect(localizedPushbackCategory(carried, 'en')).toBe(carried);
+    const fr = localizedPushbackCategory(carried, 'fr');
+    expect(fr.id).toBe('team:probiotics');
+    expect(fr.title).toBe(PROBIOTICS.titleFr);
+    expect(fr.example).toBe(PROBIOTICS.exampleFr);
+  });
+
+  it('falls back to English (same object) when the team wrote no French', () => {
+    const englishOnly = { id: NO_FRENCH.id, title: NO_FRENCH.title, example: NO_FRENCH.example };
+    expect(localizedPushbackCategory(englishOnly, 'fr')).toBe(englishOnly);
+    const titleOnly = { ...carried, exampleFr: undefined };
+    const fr = localizedPushbackCategory(titleOnly, 'fr');
+    expect(fr.title).toBe(PROBIOTICS.titleFr);
+    expect(fr.example).toBe(PROBIOTICS.example);
+  });
+
+  it('localizedScenario carries the French title to Chat / Home / the Library card', () => {
+    const scenario: Scenario = { ...SEED_SCENARIOS[0], pushback: carried, _overrideId: 'admin:p' };
+    expect(localizedScenario(scenario, 'fr').pushback.title).toBe(PROBIOTICS.titleFr);
+    expect(localizedScenario(scenario, 'en')).toBe(scenario);
+  });
+
+  it('localizedPushbackLabel resolves team ids through the snapshot list', () => {
+    expect(localizedPushbackLabel('team:probiotics', 'fr', [PROBIOTICS])).toBe(PROBIOTICS.titleFr);
+    expect(localizedPushbackLabel('team:probiotics', 'en', [PROBIOTICS])).toBe(PROBIOTICS.title);
+    expect(localizedPushbackLabel('team:english-only', 'fr', [NO_FRENCH])).toBe('English only');
+    expect(localizedPushbackLabel('team:gone', 'fr', [PROBIOTICS])).toBe('team:gone');
+    // Built-ins are unchanged by the extra argument.
+    expect(localizedPushbackLabel('cost', 'fr', [PROBIOTICS])).toBe(overlay.categories.cost.title);
+  });
+
+  it('localizedSessionSummary swaps the leading title only', () => {
+    const summary = `${PROBIOTICS.title} · Beagle`;
+    expect(localizedSessionSummary(summary, 'team:probiotics', 'fr', [PROBIOTICS])).toBe(
+      `${PROBIOTICS.titleFr} · Beagle`,
+    );
+    expect(localizedSessionSummary(summary, 'team:probiotics', 'en', [PROBIOTICS])).toBe(summary);
+    // Objection no longer in the snapshot, or renamed since → stored text.
+    expect(localizedSessionSummary(summary, 'team:probiotics', 'fr', [])).toBe(summary);
+    expect(
+      localizedSessionSummary('Old name · Beagle', 'team:probiotics', 'fr', [PROBIOTICS]),
+    ).toBe('Old name · Beagle');
+    // Built-ins keep their overlay behaviour.
+    const cost = PUSHBACK_CATEGORIES[0];
+    expect(localizedSessionSummary(`${cost.title} · Lab`, 'cost', 'fr')).toBe(
+      `${overlay.categories.cost.title} · Lab`,
+    );
   });
 });

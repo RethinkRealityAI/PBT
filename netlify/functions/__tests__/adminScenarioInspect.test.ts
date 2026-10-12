@@ -500,3 +500,60 @@ describe('helpers', () => {
     ).toEqual({ slug: null, title: null, citation: null, snippet: 'a b', similarity: null });
   });
 });
+
+// ── Team objections ──────────────────────────────────────────────────────
+
+describe('admin-scenario-inspect — team objections', () => {
+  const TEAM_ROW = {
+    id: 'team:probiotics',
+    title: 'Probiotics doubts',
+    example: '"His gut is fine."',
+    species: ['dog'],
+    focus_area: 'gi',
+    coaching: { rootConcerns: ['Thinks probiotics are a fad'] },
+    visible: false, // retired: existing scenarios must still preview
+  };
+  const teamDraft = { ...DRAFT, pushback_id: 'team:probiotics' };
+
+  it('resolves a team pushback and shows its coaching in the exact prompt', async () => {
+    const headers = adminHeaders();
+    sb.setHandler('scenario_objections', () => ({ data: [TEAM_ROW], error: null }));
+    const body = await (await request({ draft: teamDraft }, headers)).json();
+    expect(body.missing).toEqual([]);
+    expect(body.prompt).toContain('Probiotics doubts');
+    expect(body.prompt).toContain('# UNDER THE SURFACE');
+    expect(body.prompt).toContain('- Thinks probiotics are a fad');
+    // Same retrieval query the live roleplay would ask.
+    const [query] = mocks.retrieveChunksDetailed.mock.calls[0];
+    expect(query.startsWith('Probiotics doubts ')).toBe(true);
+  });
+
+  it('reads the objections fresh on every call — a just-added objection resolves at once', async () => {
+    const headers = adminHeaders();
+    const handler = vi.fn(() => ({ data: [] as unknown[], error: null }));
+    sb.setHandler('scenario_objections', handler);
+    let body = await (await request({ draft: teamDraft }, headers)).json();
+    expect(body.missing).toEqual(['Pushback']);
+    handler.mockImplementation(() => ({ data: [TEAM_ROW], error: null }));
+    body = await (await request({ draft: teamDraft }, headers)).json();
+    expect(body.missing).toEqual([]);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('an unknown team id, or a database without the table, is "Pushback" missing — never a 500', async () => {
+    const headers = adminHeaders();
+    sb.setHandler('scenario_objections', () => ({
+      data: null,
+      error: { code: 'PGRST205', message: "Could not find the table 'public.scenario_objections' in the schema cache" },
+    }));
+    let res = await request({ draft: teamDraft }, headers);
+    expect(res.status).toBe(200);
+    expect((await res.json()).missing).toEqual(['Pushback']);
+
+    sb.setHandler('scenario_objections', () => ({ data: null, error: { code: '57014', message: 'timeout' } }));
+    res = await request({ draft: teamDraft }, headers);
+    expect(res.status).toBe(200);
+    expect((await res.json()).missing).toEqual(['Pushback']);
+    expect(mocks.retrieveChunksDetailed).not.toHaveBeenCalled();
+  });
+});

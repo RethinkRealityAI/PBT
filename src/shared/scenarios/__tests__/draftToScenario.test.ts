@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { draftToScenario, missingScenarioFields } from '../draftToScenario';
 import { adminOverrideToScenario } from '../../../data/scenarioOverrides';
 import type { ScenarioOverride } from '../../../services/flagsClient';
+import type { TeamObjection } from '../objections';
 
 const EMPTY: ScenarioOverride = {
   scenario_id: 'admin:00000000-0000-4000-8000-000000000000',
@@ -155,5 +156,84 @@ describe('draftToScenario ↔ adminOverrideToScenario parity', () => {
     const junk = { ...COMPLETE, species: 'hamster' };
     expect(draftToScenario(junk)).not.toHaveProperty('species');
     expect(adminOverrideToScenario(junk)).not.toHaveProperty('species');
+  });
+});
+
+/**
+ * Team objections (`team:<slug>`): both sides resolve the pushback through
+ * the shared `resolveObjection`, so the inspector / Test drive and the
+ * trainee play the same objection — retired ones included, and an unknown or
+ * deleted one drops the scenario on BOTH sides rather than inventing one.
+ */
+describe('draftToScenario ↔ adminOverrideToScenario parity — team objections', () => {
+  const TEAM: TeamObjection[] = [
+    {
+      id: 'team:probiotics',
+      title: "Probiotics: 'my dog doesn't need them'",
+      example: '"His gut is fine."',
+      titleFr: 'Probiotiques',
+      exampleFr: '« Son ventre va très bien. »',
+      species: ['dog', 'cat'],
+      focusArea: 'gi',
+      coaching: { rootConcerns: ['Thinks it is a fad'] },
+      visible: true,
+      sortOrder: null,
+      updatedAt: null,
+    },
+    {
+      id: 'team:retired-topic',
+      title: 'Retired topic',
+      example: '',
+      titleFr: null,
+      exampleFr: null,
+      species: ['cat'],
+      focusArea: null,
+      coaching: {},
+      visible: false,
+      sortOrder: null,
+      updatedAt: null,
+    },
+  ];
+
+  const rows: Array<[string, ScenarioOverride]> = [
+    ['team objection', { ...COMPLETE, pushback_id: 'team:probiotics' }],
+    ['retired team objection, cat', { ...COMPLETE, species: 'cat', pushback_id: 'team:retired-topic' }],
+  ];
+
+  it.each(rows)('%s', (label, row) => {
+    const shared = draftToScenario(row, TEAM);
+    expect(shared, label).not.toBeNull();
+    expect(shared, label).toEqual(adminOverrideToScenario(row, TEAM));
+    expect(missingScenarioFields(row, TEAM), label).toEqual([]);
+  });
+
+  it('carries the team text (French included) as the scenario pushback', () => {
+    expect(draftToScenario({ ...MINIMAL, pushback_id: 'team:probiotics' }, TEAM)?.pushback).toEqual({
+      id: 'team:probiotics',
+      title: "Probiotics: 'my dog doesn't need them'",
+      example: '"His gut is fine."',
+      titleFr: 'Probiotiques',
+      exampleFr: '« Son ventre va très bien. »',
+    });
+  });
+
+  it('an unknown team id — or no list — is "Pushback" missing on both sides', () => {
+    for (const [label, row, team] of [
+      ['unknown team id', { ...COMPLETE, pushback_id: 'team:ghost' }, TEAM],
+      ['no list', { ...COMPLETE, pushback_id: 'team:probiotics' }, []],
+    ] as Array<[string, ScenarioOverride, TeamObjection[]]>) {
+      expect(draftToScenario(row, team), label).toBeNull();
+      expect(adminOverrideToScenario(row, team), label).toBeNull();
+      expect(missingScenarioFields(row, team), label).toEqual(['Pushback']);
+    }
+  });
+
+  it('built-ins resolve exactly as before, list or no list', () => {
+    expect(draftToScenario(COMPLETE, TEAM)).toEqual(draftToScenario(COMPLETE));
+    expect(draftToScenario(COMPLETE, TEAM)?.pushback).toEqual({
+      id: 'cost',
+      title: 'Cost / price pushback',
+      example: '"It\'s too expensive for what it is."',
+    });
   });
 });

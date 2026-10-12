@@ -25,6 +25,24 @@ export interface RetrievalFilters {
   species?: string;
 }
 
+/** How much of a custom pushback's notes stands in for its title. */
+export const CUSTOM_NOTES_QUERY_CHARS = 160;
+
+/**
+ * What the objection is ABOUT, for the embedding: its title — except for a
+ * `custom` ("Other pushback") scenario with notes, where the generic title
+ * says nothing and the notes ARE the objection. A probiotics objection
+ * written as "Other" must still find the probiotics documents. Whitespace is
+ * collapsed so the query is one line.
+ */
+function pushbackTopic(scenario: Pick<Scenario, 'pushback' | 'pushbackNotes'>): string {
+  if (scenario.pushback.id === 'custom') {
+    const notes = (scenario.pushbackNotes ?? '').replace(/\s+/g, ' ').trim();
+    if (notes) return notes.slice(0, CUSTOM_NOTES_QUERY_CHARS).trimEnd();
+  }
+  return scenario.pushback.title;
+}
+
 /**
  * The retrieval query for a scenario — the exact string text mode and voice
  * mode have always sent to `rag-retrieve`.
@@ -32,13 +50,15 @@ export interface RetrievalFilters {
  * A cat scenario says so ("… cat Maine Coon …"): the embedding should look
  * for passages about cats, and a breed name alone doesn't always carry the
  * species. Dog / species-less scenarios keep the historical string
- * byte-for-byte (cache keys and retrieval ranking stay as they were).
+ * byte-for-byte (cache keys and retrieval ranking stay as they were) — every
+ * pushback but a `custom` one with notes (see `pushbackTopic`).
  */
 export function scenarioRetrievalQuery(
-  scenario: Pick<Scenario, 'pushback' | 'suggestedDriver' | 'breed' | 'age' | 'species'>,
+  scenario: Pick<Scenario, 'pushback' | 'suggestedDriver' | 'breed' | 'age' | 'species'> &
+    Partial<Pick<Scenario, 'pushbackNotes'>>,
 ): string {
   const animal = speciesOf(scenario.species) === 'cat' ? 'cat ' : '';
-  return `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${animal}${scenario.breed} ${scenario.age}`;
+  return `${pushbackTopic(scenario)} ${scenario.suggestedDriver} owner ${animal}${scenario.breed} ${scenario.age}`;
 }
 
 /**

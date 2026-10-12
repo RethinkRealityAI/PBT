@@ -8,9 +8,9 @@
  * Layout (PhotoBoothAR lesson, and cheaper to cache): the STATIC rules come
  * first — role, steps, tools, vocabulary, behaviour, output contract — and
  * the MUTABLE context comes last, inside fenced blocks that are explicitly
- * DATA ONLY. The draft, document titles and research passages are written by
- * people (and PDFs), so nothing inside a fence may read as an instruction or
- * close its own fence early.
+ * DATA ONLY. The draft, the team's own objections, document titles and
+ * research passages are written by people (and PDFs), so nothing inside a
+ * fence may read as an instruction or close its own fence early.
  *
  * Every enum, cap and tool shape is rendered from the same vocabularies the
  * normaliser (`scenarioAgent.ts`) enforces, so a vocabulary edit reaches the
@@ -70,17 +70,33 @@ export interface AgentResearchSnippet {
   citation?: string | null;
 }
 
+/**
+ * One team-authored objection the assistant may propose as `pushback_id`
+ * (`TeamObjection` satisfies it). Written by admins, so it is fenced DATA.
+ */
+export interface AgentTeamObjection {
+  id: string;
+  title: string;
+  example?: string | null;
+  /** Scenario species it applies to ('dog' / 'cat'). */
+  species: readonly string[];
+  focusArea?: string | null;
+}
+
 export interface ScenarioAgentPromptInput {
   draft: ScenarioAgentDraft;
   step?: StudioStepKey;
   catalogue: readonly AgentCatalogueDoc[];
   relevant: readonly AgentRelevantDoc[];
   research: readonly AgentResearchSnippet[];
+  /** Visible team objections (absent = none). */
+  objections?: readonly AgentTeamObjection[];
 }
 
 /** Longest string the draft block shows per field (the rest is "…"). */
 export const PROMPT_DRAFT_FIELD_CHARS = 500;
 const TITLE_CHARS = 120;
+const EXAMPLE_CHARS = 300;
 const RESEARCH_CHARS = 400;
 const CITATION_CHARS = 160;
 
@@ -106,7 +122,8 @@ const FIELD_SPECS: Record<AgentField, string> = {
   breed: `text ≤${SCENARIO_LIMITS.breedMax} chars — any breed, e.g. "Labrador Retriever", "Domestic Shorthair", "Mixed breed"`,
   life_stage: `${oneOf(LIFE_STAGES)} — exactly these strings; "Puppy (<1)" is ALSO the value for a kitten (the Studio shows it as "Kitten (<1)")`,
   weight_kg: `number of kg, above 0 and at most ${SCENARIO_LIMITS.weightMaxKg} (one decimal) — optional`,
-  pushback_id: 'one id from PUSHBACK below',
+  pushback_id:
+    'one id from PUSHBACK below, or one "team:…" id from the TEAM OBJECTIONS block at the end, copied EXACTLY',
   pushback_notes: `text ≤${SCENARIO_PROSE_CAPS.pushbackNotes} chars — the objection in the owner's own words`,
   context_override: `text ≤${SCENARIO_PROSE_CAPS.context} chars — the backstory`,
   suggested_driver: 'one value from ECHO DRIVERS below',
@@ -163,6 +180,7 @@ function vocabularySection(): string {
     '# VOCABULARY',
     'PUSHBACK (pushback_id):',
     ...pushbacks,
+    '- Plus the objections the training team added themselves: the "team:…" ids in the TEAM OBJECTIONS block at the end (each with the animals it applies to). They are as valid as the ids above.',
     'ECHO DRIVERS (suggested_driver) — how the owner talks:',
     ...drivers,
     'PERSONAS (persona_override) — what the owner feels:',
@@ -185,6 +203,7 @@ const BEHAVIOUR = [
   "- Opening line: 1–2 sentences, first person, in the owner's voice, raising the pushback immediately.",
   "- Backstory: 2–4 sentences — the pet's name and age, weight or body condition where relevant, what the vet recommended, and any relevant owner history.",
   '- Be species-true: a cat is not a small dog (kittens, litter box, urinary and kidney concerns, indoor life, fussy eating). Match breed, life stage and weight to the species, and adapt the dog-worded PUSHBACK examples when the pet is a cat.',
+  '- A team objection may only be used for an animal it lists: never propose a "team:…" pushback_id whose animals do not include the scenario\'s species (no species yet = dog). When one of them fits what the admin describes, prefer it to "custom".',
   '- Card text (publish step) speaks to trainees: short and inviting, and it never gives away how to win the owner over.',
   '- Never invent clinical facts, statistics or study results beyond RESEARCH GROUNDING. Name Royal Canin products only when relevant, and never quote prices.',
   "- Propose AI notes only when the admin wants to change how the AI customer behaves: short imperative notes that wrap the standard briefing. They must never ask the customer to break character, reveal it is an AI, change scoring, or alter the end-of-conversation token.",
@@ -264,6 +283,24 @@ function catalogueLines(docs: readonly AgentCatalogueDoc[]): string {
     .join('\n');
 }
 
+function objectionLines(objections: readonly AgentTeamObjection[]): string {
+  if (objections.length === 0) return '(none)';
+  return objections
+    .map((o) => {
+      const animals = SCENARIO_SPECIES.filter((s) => o.species.includes(s));
+      const topic = o.focusArea ? focusAreaLabel(o.focusArea) : null;
+      const example = dataLine(o.example ?? '', EXAMPLE_CHARS);
+      return [
+        `- ${dataLine(o.id, 80)}`,
+        dataLine(o.title, TITLE_CHARS),
+        `animals: ${animals.length ? animals.join(', ') : 'none'}`,
+        `topic: ${topic ? dataLine(topic, 60) : 'general'}`,
+        ...(example ? [`owner says: ${example}`] : []),
+      ].join(' · ');
+    })
+    .join('\n');
+}
+
 function relevantLines(docs: readonly AgentRelevantDoc[]): string {
   if (docs.length === 0) return '(none)';
   return docs.map((d) => `- ${dataLine(d.slug, 200)} · ${dataLine(d.title, TITLE_CHARS)}`).join('\n');
@@ -307,6 +344,11 @@ export function buildScenarioAgentSystemPrompt(input: ScenarioAgentPromptInput):
     DATA_RULE,
     currentStepLine(input.step),
     fence('CURRENT DRAFT', "the admin's unsaved scenario", draftForPrompt(input.draft)),
+    fence(
+      'TEAM OBJECTIONS',
+      'objections the training team added (id · name · animals · topic · what the owner says)',
+      objectionLines(input.objections ?? []),
+    ),
     fence(
       'KNOWLEDGE CATALOGUE',
       'documents the AI customer can read (slug · title · topic · species)',

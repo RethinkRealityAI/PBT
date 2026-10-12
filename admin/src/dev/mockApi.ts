@@ -20,7 +20,7 @@ import {
   PERMISSION_CATEGORIES,
   SYSTEM_ROLES,
 } from '../../../src/shared/access/permissions';
-import { STUDIO_POST_HANDLERS, STUDIO_ROUTES } from './mockStudio';
+import { MockHttpError, STUDIO_POST_HANDLERS, STUDIO_ROUTES } from './mockStudio';
 import {
   ALL_KNOWLEDGE_SPECIES,
   DEFAULT_KNOWLEDGE_TOOLS,
@@ -757,7 +757,10 @@ export function installAdminMocks(): void {
         } catch {
           parsed = {};
         }
-        return json(await handler(parsed));
+        const answer = await handler(parsed);
+        // A handler can refuse like the real function does (409 in_use, 400 …).
+        if (answer instanceof MockHttpError) return json(answer.body, answer.status);
+        return json(answer);
       }
       const posted = POST_ROUTES[name];
       return json(posted === undefined ? { ok: true, status: 'sent' } : posted);

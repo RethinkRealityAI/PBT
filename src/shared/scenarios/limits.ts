@@ -45,7 +45,8 @@ export const SCENARIO_WIRE_MAX = {
   breed: SCENARIO_LIMITS.breedMax,
   age: 40,
   persona: 60,
-  pushbackId: 60,
+  /** `team:` + a slug of up to 60 (src/shared/scenarios/objections.ts). */
+  pushbackId: 65,
   pushbackTitle: 120,
   pushbackExample: 600,
   context: SCENARIO_LIMITS.contextMax,

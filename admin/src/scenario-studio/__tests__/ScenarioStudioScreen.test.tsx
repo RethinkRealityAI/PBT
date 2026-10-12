@@ -32,6 +32,31 @@ vi.mock('../../data/queries', () => ({
   duplicateScenario,
 }));
 
+// The team's objections: a loaded list, no fetching.
+const objectionsState = vi.hoisted(() => ({
+  objections: [] as unknown[],
+  deleted: [] as unknown[],
+}));
+vi.mock('../objections/useObjections', () => ({
+  useObjections: () => ({
+    status: 'ready',
+    objections: objectionsState.objections,
+    deleted: objectionsState.deleted,
+    error: null,
+    missingTable: false,
+    loadedAt: 1,
+    loaded: true,
+    loading: false,
+    available: true,
+    refetch: () => {},
+    save: async () => {
+      throw new Error('not in this test');
+    },
+    remove: async () => ({ ok: true }),
+    restore: async () => {},
+  }),
+}));
+
 // The assistant panel: shows what the shell handed it.
 vi.mock('../copilot/CopilotPanel', () => ({
   CopilotPanel: (props: { pendingPrompt: { text: string } | null; variant: string }) => (
@@ -112,7 +137,50 @@ function overrideRow(over: Record<string, unknown>) {
 
 const heading = (name: string | RegExp) => screen.findByRole('heading', { level: 2, name });
 
+const PROBIOTICS = {
+  id: 'team:probiotics-not-needed',
+  title: 'Probiotics: my pet doesn’t need them',
+  example: '“Why would he need probiotics?”',
+  titleFr: null,
+  exampleFr: null,
+  species: ['dog', 'cat'],
+  focusArea: 'gi',
+  coaching: {},
+  visible: true,
+  sortOrder: null,
+  updatedAt: '2026-10-10T10:00:00Z',
+  createdAt: '2026-10-10T10:00:00Z',
+  deletedAt: null,
+  usage: { scenarios: 0, live: 0, trainee: 0 },
+};
+
+function traineeRow(over: Record<string, unknown> = {}) {
+  return {
+    id: 'u1',
+    creator_id: 'c1',
+    title: 'My tricky client',
+    breed: 'Beagle',
+    life_stage: 'Senior (7+)',
+    difficulty: 3,
+    pushback_id: 'cost',
+    pushback_notes: null,
+    weight_kg: null,
+    persona: 'Busy',
+    suggested_driver: 'Energizer',
+    context: null,
+    opening_line: null,
+    scenario_summary: null,
+    is_public: false,
+    plays: 0,
+    avg_score: null,
+    created_at: '2026-09-01T10:00:00Z',
+    ...over,
+  };
+}
+
 beforeEach(() => {
+  objectionsState.objections = [];
+  objectionsState.deleted = [];
   state.overrides = { data: [], loading: false, error: null, refetch: vi.fn() };
   state.userScenarios = { data: [], loading: false, error: null, refetch: vi.fn() };
   state.docs = { data: [], loading: false, error: null, refetch: vi.fn() };
@@ -126,7 +194,7 @@ beforeEach(() => {
 describe('ScenarioStudioScreen read errors', () => {
   it('lists the library scenarios when both reads succeed', () => {
     renderScreen();
-    expect(screen.getByText('Weight / obesity denial')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Weight / obesity denial' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Build it with the assistant/ })).toBeInTheDocument();
   });
 
@@ -359,36 +427,108 @@ describe('StudioEditor', () => {
     expect(localStorage.getItem(LOCAL_DRAFTS_KEY)).toBeNull();
   });
 
-  it('warns that edits to a trainee-built scenario don’t reach the trainee', async () => {
-    state.userScenarios = {
-      ...state.userScenarios,
+  it('never edits a trainee’s own scenario — "Add to library" opens a hidden admin copy', async () => {
+    state.userScenarios = { ...state.userScenarios, data: [traineeRow({ species: 'cat', breed: 'Persian' })] };
+    renderScreen();
+    const card = screen.getByRole('article', { name: 'My tricky client' });
+    // The trainee's card has no Edit — only Add to library.
+    expect(within(card).queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument();
+    expect(within(card).getByText('Trainee’s own — not in the library')).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: 'Add “My tricky client” to the library' }));
+
+    await heading('Who is the patient?');
+    expect(screen.getByText('Copied from a trainee’s scenario')).toBeInTheDocument();
+    expect(screen.getByText(/It stays hidden from trainees until you publish it/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(upsertScenarioOverride).toHaveBeenCalledTimes(1));
+    const payload = upsertScenarioOverride.mock.calls[0][0] as Record<string, unknown>;
+    expect(String(payload.scenario_id)).toMatch(/^admin:/);
+    expect(payload.copied_from).toBe('user:u1');
+    expect(payload.card_title_override).toBe('My tricky client');
+    expect(payload.species).toBe('cat');
+    expect(payload.breed).toBe('Persian');
+    expect(payload.visible).toBe(false);
+    expect(payload.baseUpdatedAt).toBeNull();
+  });
+
+  it('routes an older trainee scenario with no ECHO driver to the owner step, and says why', async () => {
+    state.userScenarios = { ...state.userScenarios, data: [traineeRow({ suggested_driver: null })] };
+    renderScreen();
+    fireEvent.click(screen.getByRole('button', { name: 'Add “My tricky client” to the library' }));
+    expect(await heading('Who is the owner?')).toBeInTheDocument();
+    expect(
+      screen.getByText(/The trainee didn’t choose the owner’s ECHO driver — pick one on The owner step before saving/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(await screen.findByText(/still needs its ECHO driver/)).toBeInTheDocument();
+    expect(upsertScenarioOverride).not.toHaveBeenCalled();
+  });
+
+  it('says "In the library" once a copy exists, and opens it', async () => {
+    state.userScenarios = { ...state.userScenarios, data: [traineeRow()] };
+    state.overrides = {
+      ...state.overrides,
       data: [
-        {
-          id: 'u1',
-          creator_id: 'c1',
-          title: 'My tricky client',
+        overrideRow({
+          scenario_id: 'admin:copy',
+          visible: true,
           breed: 'Beagle',
           life_stage: 'Senior (7+)',
-          difficulty: 3,
           pushback_id: 'cost',
-          pushback_notes: null,
-          weight_kg: null,
-          persona: 'Busy',
           suggested_driver: 'Energizer',
-          context: null,
-          opening_line: null,
-          scenario_summary: null,
-          is_public: false,
-          plays: 0,
-          avg_score: null,
-          created_at: '2026-09-01T10:00:00Z',
-        },
+          card_title_override: 'Tricky client (team)',
+          copied_from: 'user:u1',
+        }),
       ],
     };
     renderScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit “My tricky client”' }));
+    const card = screen.getByRole('article', { name: 'My tricky client' });
+    expect(within(card).getByText('In the library — live')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Add another copy of “My tricky client” to the library' })).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: 'Open the library version of “My tricky client”' }));
     await heading('Who is the patient?');
-    expect(screen.getByText('Edits here don’t reach the trainee who built this')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Tricky client (team)' })).toBeInTheDocument();
+    expect(screen.queryByText('Copied from a trainee’s scenario')).not.toBeInTheDocument();
+  });
+
+  it('shows a trainee scenario read-only to a role without scenarios.write — with nothing to save', async () => {
+    state.userScenarios = { ...state.userScenarios, data: [traineeRow()] };
+    renderScreen(['scenarios.read']);
+    fireEvent.click(screen.getByRole('button', { name: 'View “My tricky client”' }));
+    await heading('Who is the patient?');
+    expect(screen.getByText('This is a trainee’s own scenario')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Save/ })).not.toBeInTheDocument();
+  });
+
+  it('names team objections on the cards and filters by animal and objection', () => {
+    objectionsState.objections = [PROBIOTICS];
+    state.overrides = {
+      ...state.overrides,
+      data: [
+        overrideRow({
+          scenario_id: 'admin:pro',
+          species: 'cat',
+          breed: 'Persian',
+          life_stage: 'Adult (3-7)',
+          pushback_id: PROBIOTICS.id,
+          suggested_driver: 'Analyzer',
+        }),
+      ],
+    };
+    renderScreen();
+    // Untitled → named by its objection, never by the raw team: id.
+    const card = screen.getByRole('article', { name: PROBIOTICS.title });
+    expect(within(card).getByText(/Cat ·/)).toBeInTheDocument();
+    expect(screen.queryByText(/team:probiotics/)).not.toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Animal' })).getByRole('button', { name: /^Cats/ }));
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Animal' })).getByRole('button', { name: /^All animals/ }));
+    const picker = screen.getByLabelText('Objection');
+    expect(within(picker).getByRole('option', { name: `${PROBIOTICS.title} (1)` })).toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: PROBIOTICS.id } });
+    expect(screen.getAllByRole('article').map((a) => a.getAttribute('aria-label'))).toEqual([PROBIOTICS.title]);
   });
 });

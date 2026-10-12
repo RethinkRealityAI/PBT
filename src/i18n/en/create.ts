@@ -17,8 +17,20 @@ export const create = {
   'create.tab.build': 'Build',
   'create.tab.library': 'Library',
 
+  // ── Which animal? (shared by both tabs + Home's Today's pick) ──
+  'create.animal.title': 'Which animal?',
+  'create.animal.aria': 'Animal to train on',
+  'create.animal.dog': 'Dog',
+  'create.animal.cat': 'Cat',
+
   // ── Library tab ───────────────────────────────────────────
   'create.library.start': 'Start',
+  'create.library.startAria': 'Start: {title}',
+  'create.library.filterAria': 'Filter by objection',
+  'create.library.filterAll': 'All',
+  'create.library.emptyDog': 'No dog scenarios in the library yet.',
+  'create.library.emptyCat': 'No cat scenarios in the library yet.',
+  'create.library.emptyCta': 'Build one',
 
   // ── Section headers ───────────────────────────────────────
   'create.section.breed': 'Breed',
@@ -30,12 +42,14 @@ export const create = {
   'create.section.details': 'Additional details',
 
   // ── Breed + weight ────────────────────────────────────────
-  'create.breed.placeholder': 'Search breed',
+  'create.breed.placeholderDog': 'Search dog breeds',
+  'create.breed.placeholderCat': 'Search cat breeds',
   'create.breed.error': 'Choose a breed or type one in.',
   'create.savedPets.eyebrow': 'Saved pets',
   /** SI unit symbol — identical in every locale (allowlisted in the parity test). */
   'create.weight.unit': 'kg',
-  'create.weight.label': "Dog's weight (optional)",
+  'create.weight.labelDog': "Dog's weight (optional)",
+  'create.weight.labelCat': "Cat's weight (optional)",
 
   // ── Pushback picker ───────────────────────────────────────
   'create.pushback.selectAria': 'Select pushback type',

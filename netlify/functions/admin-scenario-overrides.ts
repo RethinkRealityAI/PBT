@@ -30,13 +30,38 @@
  * admin's own edits on top of the row that won, instead of two admins
  * silently overwriting each other whole-row (library saves write NULL for
  * every field equal to the seed, so the loser's edits used to vanish).
+ *
+ * Team objections (migration 20261012000000_scenario_objections.sql):
+ * `pushback_id` may be a built-in id OR a `team:<slug>` id. A team id must
+ * name an existing, non-deleted row of `scenario_objections` at save time
+ * (retired ones are fine — they still play); otherwise the save is a 400.
+ * While the table does not exist, every team id is unknown: an id nothing
+ * can resolve is never stored.
+ *
+ * Provenance — `copied_from` (same migration): the scenario an `admin:`
+ * scenario was created from ("Add to library" on a trainee's scenario, or
+ * Duplicate). Accepted only for `admin:` ids and only when the row is being
+ * CREATED — an update never carries it, so provenance cannot be rewritten.
+ * Duplicate sets it to the source id. If the column is missing the write is
+ * retried without it; a create that asked for it then answers with
+ * `_notice: 'copied_from_column_missing'` (the species notice wins when both
+ * were dropped — it changes what trainees play; provenance is display-only),
+ * while a duplicate saves silently (nobody asked for provenance there).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 import { isMissingSpeciesColumn } from './_shared/speciesColumn';
+import {
+  checkTeamObjection,
+  isMissingCopiedFromColumn,
+} from './_shared/objectionsStore';
+
+// Re-exported: callers and tests reach it through this module too.
+export { checkTeamObjection };
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import { isLifeStage, isPersona, isPushbackId } from '../../src/shared/scenarios/enums';
 import { SCENARIO_LIMITS } from '../../src/shared/scenarios/limits';
+import { isTeamObjectionId } from '../../src/shared/scenarios/objections';
 import { isScenarioSpecies } from '../../src/shared/scenarios/species';
 
 /** Request bodies are small rows; anything bigger is not a scenario. */
@@ -78,7 +103,16 @@ export interface OverrideUpsert {
   // Knowledge & focus — restrict what RAG retrieval may draw on.
   focus_area?: string | null;
   knowledge_slugs?: string[] | null;
+  /**
+   * Provenance of a NEW `admin:` scenario (`seed:` / `user:` / `admin:` id).
+   * Deliberately not in WRITABLE_COLUMNS: the handler adds it on create only.
+   */
+  copied_from?: string | null;
 }
+
+/** `scenario_overrides.copied_from` — the DB CHECK, mirrored. */
+const COPIED_FROM_MAX = 80;
+const COPIED_FROM_RE = /^(seed|user|admin):/;
 
 /**
  * Columns a client may write. Everything else on the row (created_by,
@@ -191,8 +225,21 @@ export function validateOverride(
   // Scenario-defining enums. These are interpolated into the customer prompt
   // (and pushback_id keys into the taxonomy), so an unrecognised value doesn't
   // fail loudly — it quietly produces a degraded roleplay. Reject at the door.
-  if (o.pushback_id != null && !isPushbackId(o.pushback_id))
+  // A `team:` id passes the SHAPE check here; the handler then proves the
+  // objection exists (`checkTeamObjection`) before anything is written.
+  if (o.pushback_id != null && !isPushbackId(o.pushback_id) && !isTeamObjectionId(o.pushback_id))
     return 'pushback_id must be a known pushback category';
+  if (o.copied_from != null) {
+    if (
+      typeof o.copied_from !== 'string' ||
+      o.copied_from.length > COPIED_FROM_MAX ||
+      !COPIED_FROM_RE.test(o.copied_from)
+    ) {
+      return 'copied_from must be the id of the scenario this one was copied from (seed:, user: or admin:)';
+    }
+    if (!o.scenario_id.startsWith('admin:'))
+      return 'copied_from is only for scenarios added to the library (admin: ids)';
+  }
   // "Something else" only works when the owner knows what they object to —
   // the notes ARE the pushback. The Studio blocks this client-side; the
   // server must too, or an API caller publishes an owner with nothing to say.
@@ -244,10 +291,17 @@ export function validateOverride(
 /** Response key + value when a save had to drop `species` (see the header). */
 export const SPECIES_NOTICE_KEY = '_notice';
 export const SPECIES_COLUMN_MISSING = 'species_column_missing';
+/** Same key, when a save had to drop `copied_from` (see the header). */
+export const COPIED_FROM_COLUMN_MISSING = 'copied_from_column_missing';
+
+/** 400 for a `team:` pushback id that names no live objection. */
+export const UNKNOWN_OBJECTION_MESSAGE =
+  'That objection no longer exists. Pick another one on the Pushback step.';
 
 type DbError = { code?: string; message?: string } | null;
 
 export { isMissingSpeciesColumn };
+
 
 /**
  * Write one override row. For a row that already exists this is an UPDATE
@@ -255,18 +309,27 @@ export { isMissingSpeciesColumn };
  * handler's read and its write cannot be overwritten (`conflict: true` — no
  * row matched); a brand-new id is an upsert.
  *
- * If the `species` column is missing (a project that has not run
- * 20260925000000_scenario_species.sql), the SAME write is retried without
- * it. Only retried when the payload actually carried a `species` key.
- * `speciesDropped` (→ the notice) is true when the admin asked for a species
- * (dog or cat) that could not be stored; a `species: null` dropped the same
- * way loses nothing (null already means dog), so it saves silently.
+ * Optional columns a project may not have yet are dropped and the SAME write
+ * retried, at most once per column, and only when the payload actually
+ * carried that key:
+ *   • `species` (20260925000000_scenario_species.sql). `speciesDropped`
+ *     (→ the notice) is true when the admin asked for a species (dog or cat)
+ *     that could not be stored; a `species: null` dropped the same way loses
+ *     nothing (null already means dog), so it saves silently.
+ *   • `copied_from` (20261012000000_scenario_objections.sql). Display-only
+ *     provenance; `copiedFromDropped` likewise only for a non-null value.
  */
 export async function upsertOverrideRow(
   sb: SupabaseClient,
   payload: Record<string, unknown>,
   options: { existing?: boolean } = {},
-): Promise<{ data: unknown; error: DbError; speciesDropped: boolean; conflict: boolean }> {
+): Promise<{
+  data: unknown;
+  error: DbError;
+  speciesDropped: boolean;
+  copiedFromDropped: boolean;
+  conflict: boolean;
+}> {
   const write = (row: Record<string, unknown>) => {
     if (options.existing) {
       // The same payload as the upsert path (the primary key set to itself is
@@ -281,36 +344,71 @@ export async function upsertOverrideRow(
     }
     return sb.from('scenario_overrides').upsert(row).select('*').maybeSingle();
   };
-  const first = await write(payload);
-  if (!first.error || !('species' in payload) || !isMissingSpeciesColumn(first.error)) {
+  let row = payload;
+  let speciesRequested = false;
+  let copiedFromRequested = false;
+  // Each `continue` removes a key that was present, so this ends after at
+  // most three writes.
+  for (;;) {
+    const res = await write(row);
+    if (res.error && 'species' in row && isMissingSpeciesColumn(res.error)) {
+      console.warn(
+        '[admin-scenario-overrides] species column missing — apply 20260925000000_scenario_species.sql; saving without it',
+      );
+      const { species: requested, ...rest } = row;
+      speciesRequested = requested != null;
+      row = rest;
+      continue;
+    }
+    if (res.error && 'copied_from' in row && isMissingCopiedFromColumn(res.error)) {
+      console.warn(
+        '[admin-scenario-overrides] copied_from column missing — apply 20261012000000_scenario_objections.sql; saving without it',
+      );
+      const { copied_from: requested, ...rest } = row;
+      copiedFromRequested = requested != null;
+      row = rest;
+      continue;
+    }
+    const saved = !res.error && Boolean(res.data);
     return {
-      data: first.data,
-      error: first.error,
-      speciesDropped: false,
-      conflict: Boolean(options.existing && !first.error && !first.data),
+      data: res.data,
+      error: res.error,
+      speciesDropped: speciesRequested && saved,
+      copiedFromDropped: copiedFromRequested && saved,
+      conflict: Boolean(options.existing && !res.error && !res.data),
     };
   }
-  console.warn(
-    '[admin-scenario-overrides] species column missing — apply 20260925000000_scenario_species.sql; saving without it',
-  );
-  const { species: requestedSpecies, ...withoutSpecies } = payload;
-  const retry = await write(withoutSpecies);
-  return {
-    data: retry.data,
-    error: retry.error,
-    speciesDropped: !retry.error && Boolean(retry.data) && requestedSpecies != null,
-    conflict: Boolean(options.existing && !retry.error && !retry.data),
-  };
 }
 
 const DELETED_MESSAGE =
   'This scenario was deleted. Ask an admin to restore it from Audit → Revert, or use Duplicate to save your version as a new scenario.';
 
-/** The saved row, plus the notice when `species` could not be stored. */
-function savedResponse(data: unknown, speciesDropped: boolean): Response {
-  if (!speciesDropped) return jsonResponse(data);
+/** The saved row, plus a notice when an optional column could not be stored. */
+function savedResponse(
+  data: unknown,
+  dropped: { speciesDropped: boolean; copiedFromDropped: boolean },
+): Response {
+  const notice = dropped.speciesDropped
+    ? SPECIES_COLUMN_MISSING
+    : dropped.copiedFromDropped
+      ? COPIED_FROM_COLUMN_MISSING
+      : null;
+  if (!notice) return jsonResponse(data);
   const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
-  return jsonResponse({ ...row, [SPECIES_NOTICE_KEY]: SPECIES_COLUMN_MISSING });
+  return jsonResponse({ ...row, [SPECIES_NOTICE_KEY]: notice });
+}
+
+/** 400 / 500 Response when `pushback_id` is a team id that can't be stored, else null. */
+async function rejectUnknownObjection(
+  sb: SupabaseClient,
+  pushbackId: unknown,
+  prefix = '',
+): Promise<Response | null> {
+  if (!isTeamObjectionId(pushbackId)) return null;
+  const check = await checkTeamObjection(sb, pushbackId);
+  if (check === 'ok') return null;
+  if (check === 'unknown') return errorResponse(400, `${prefix}${UNKNOWN_OBJECTION_MESSAGE}`);
+  return errorResponse(500, check.error);
 }
 
 export default async (req: Request): Promise<Response> => {
@@ -433,6 +531,9 @@ export default async (req: Request): Promise<Response> => {
       updated_by: ctx.user.id,
       deleted_at: null,
       card_title_override: srcCardTitle ? `${srcCardTitle} (copy)` : 'Copy of scenario',
+      // The copy's provenance is the row it was copied from — never the
+      // source's own `copied_from`.
+      copied_from: body.scenario_id,
     };
     // The copy is hidden, so the "admin scenarios need every field" rule
     // doesn't apply — but its column VALUES must still be legal, or a bad row
@@ -441,20 +542,26 @@ export default async (req: Request): Promise<Response> => {
       requireAdminFields: false,
     });
     if (invalidCopy) return errorResponse(400, `Cannot duplicate: ${invalidCopy}`);
-    const { data, error, speciesDropped } = await upsertOverrideRow(ctx.sb, payload);
-    if (error) return errorResponse(500, error.message ?? 'Database error');
+    const unknownCopy = await rejectUnknownObjection(ctx.sb, rest.pushback_id, 'Cannot duplicate: ');
+    if (unknownCopy) return unknownCopy;
+    const saved = await upsertOverrideRow(ctx.sb, payload);
+    if (saved.error) return errorResponse(500, saved.error.message ?? 'Database error');
     await writeAuditLog(ctx, {
       entity_type: 'scenario_override',
       entity_id: newId,
       action: 'create',
-      after: data,
+      after: saved.data,
       note: `Duplicated from ${body.scenario_id}`,
     });
-    return savedResponse(data, speciesDropped);
+    // The admin asked for a copy, not for provenance: a dropped
+    // `copied_from` here is not worth a notice (the audit note keeps it).
+    return savedResponse(saved.data, { ...saved, copiedFromDropped: false });
   }
 
   const invalid = validateOverride(body);
   if (invalid) return errorResponse(400, invalid);
+  const unknownObjection = await rejectUnknownObjection(ctx.sb, body.pushback_id);
+  if (unknownObjection) return unknownObjection;
 
   const before = (
     await ctx.sb
@@ -488,24 +595,29 @@ export default async (req: Request): Promise<Response> => {
   }
   const isNewAdmin =
     body.scenario_id.startsWith('admin:') && (!before || before.created_by == null);
-  const { data, error, speciesDropped, conflict } = await upsertOverrideRow(
+  // Provenance is written once, when the row is created (validateOverride
+  // already limited it to admin: ids). On an update it is ignored, so a later
+  // save can never rewrite where a scenario came from.
+  const copiedFrom = !before && typeof body.copied_from === 'string' ? body.copied_from : null;
+  const saved = await upsertOverrideRow(
     ctx.sb,
     {
       ...pickWritable(body),
       updated_by: ctx.user.id,
       ...(isNewAdmin ? { created_by: ctx.user.id } : {}),
+      ...(copiedFrom ? { copied_from: copiedFrom } : {}),
     },
     { existing: Boolean(before) },
   );
-  if (error) return errorResponse(500, error.message ?? 'Database error');
+  if (saved.error) return errorResponse(500, saved.error.message ?? 'Database error');
   // The row was soft-deleted between our read and our write.
-  if (conflict) return errorResponse(409, DELETED_MESSAGE);
+  if (saved.conflict) return errorResponse(409, DELETED_MESSAGE);
   await writeAuditLog(ctx, {
     entity_type: 'scenario_override',
     entity_id: body.scenario_id,
     action: before ? 'update' : 'create',
     before,
-    after: data,
+    after: saved.data,
   });
-  return savedResponse(data, speciesDropped);
+  return savedResponse(saved.data, saved);
 };

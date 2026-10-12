@@ -97,6 +97,25 @@ export const PUSHBACK_LABELS: Record<string, string> = {
   custom: 'Other pushback',
 };
 
+/**
+ * A pushback id as a person reads it — built-in or team-authored. Team
+ * objections (`team:<slug>`, authored on the Studio's Objections tab) are
+ * named by their own title when `team` holds them; otherwise by their slug in
+ * words, so a raw `team:` id never reaches the screen.
+ */
+export function pushbackLabel(
+  id: string | null | undefined,
+  team: ReadonlyArray<{ id: string; title: string }> = [],
+  fallback = 'Unknown',
+): string {
+  if (id == null || id === '') return fallback;
+  if (PUSHBACK_LABELS[id]) return PUSHBACK_LABELS[id];
+  const hit = team.find((t) => t.id === id);
+  if (hit) return hit.title;
+  if (id.startsWith('team:')) return humanize(id.slice('team:'.length)) || 'Team objection';
+  return humanize(id);
+}
+
 /** Knowledge focus areas — mirrors FOCUS_AREAS[].label. */
 export const FOCUS_AREA_LABELS: Record<string, string> = {
   weight: 'Weight management',

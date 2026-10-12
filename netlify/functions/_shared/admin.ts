@@ -260,6 +260,7 @@ export async function writeAuditLog(
       | 'flag'
       | 'flag_rule'
       | 'scenario_override'
+      | 'scenario_objection'
       | 'simulation_config'
       | 'user'
       | 'role'

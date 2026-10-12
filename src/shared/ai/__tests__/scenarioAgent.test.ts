@@ -784,3 +784,88 @@ describe('describeAgentAction', () => {
     expect(describeAgentAction({ tool: 'go_to_step', step: 'test' })).toBe('Suggested moving to Test drive');
   });
 });
+
+// ── Team objections ──────────────────────────────────────────────────────
+
+describe('team objections', () => {
+  const TEAM = [
+    { id: 'team:probiotics', title: "Probiotics: 'my dog doesn't need them'" },
+    { id: 'team:cat-urinary', title: 'Feline urinary diet doubts' },
+  ];
+  const withTeam = (raw: unknown) => normalizeAgentActions(raw, { knownSlugs: KNOWN, objections: TEAM });
+
+  it('normalizePushbackId accepts a listed team objection by id, any-case id, or name', () => {
+    expect(normalizePushbackId('team:probiotics', TEAM)).toBe('team:probiotics');
+    expect(normalizePushbackId(' TEAM:Cat-Urinary ', TEAM)).toBe('team:cat-urinary');
+    expect(normalizePushbackId('feline   URINARY diet doubts', TEAM)).toBe('team:cat-urinary');
+    // Built-ins keep working, and win.
+    expect(normalizePushbackId('cost', TEAM)).toBe('cost');
+    expect(normalizePushbackId('Other pushback', TEAM)).toBe('custom');
+  });
+
+  it('drops a team id the server did not list — like a made-up slug', () => {
+    expect(normalizePushbackId('team:made-up', TEAM)).toBeUndefined();
+    expect(normalizePushbackId('team:probiotics')).toBeUndefined();
+    expect(normalizePushbackId('team:probiotics', [])).toBeUndefined();
+    expect(normalizePushbackId('', TEAM)).toBeUndefined();
+    // A listed entry with a malformed id is never returned.
+    expect(normalizePushbackId('weird', [{ id: 'weird', title: 'Weird' }])).toBeUndefined();
+  });
+
+  it('normalizeFieldValue threads the objections to pushback_id only', () => {
+    expect(normalizeFieldValue('pushback_id', 'team:probiotics', { objections: TEAM })).toBe('team:probiotics');
+    expect(normalizeFieldValue('pushback_id', 'team:probiotics')).toBeUndefined();
+    expect(normalizeFieldValue('breed', 'Lab', { objections: TEAM })).toBe('Lab');
+  });
+
+  it('update_fields carries a listed team objection, and drops an unlisted one', () => {
+    expect(withTeam([{ tool: 'update_fields', fields: { pushback_id: 'Feline urinary diet doubts' } }])).toEqual([
+      { tool: 'update_fields', fields: { pushback_id: 'team:cat-urinary' } },
+    ]);
+    expect(
+      withTeam([{ tool: 'update_fields', fields: { pushback_id: 'team:nope', breed: 'Persian' } }]),
+    ).toEqual([{ tool: 'update_fields', fields: { breed: 'Persian' } }]);
+    // Without the list (an older caller): built-ins only.
+    expect(norm([{ tool: 'update_fields', fields: { pushback_id: 'team:probiotics' } }])).toEqual([]);
+  });
+
+  it('an ask bound to pushback_id offers team objections, labelled by their names', () => {
+    const [ask] = withTeam([
+      {
+        tool: 'ask',
+        question: 'Which objection?',
+        field: 'pushback_id',
+        options: ['team:probiotics', { label: 'team:cat-urinary', value: 'team:cat-urinary' }, 'team:ghost', 'cost'],
+      },
+    ]);
+    expect(ask).toEqual({
+      tool: 'ask',
+      question: 'Which objection?',
+      field: 'pushback_id',
+      options: [
+        { label: "Probiotics: 'my dog doesn't need them'", value: 'team:probiotics' },
+        { label: 'Feline urinary diet doubts', value: 'team:cat-urinary' },
+        { label: 'Cost / price pushback', value: 'cost' },
+      ],
+    });
+  });
+
+  it('formatFieldValue shows a team objection by its name, an unknown one by its id', () => {
+    expect(formatFieldValue('pushback_id', 'team:probiotics', undefined, TEAM)).toBe(
+      "Probiotics: 'my dog doesn't need them'",
+    );
+    expect(formatFieldValue('pushback_id', 'team:ghost', undefined, TEAM)).toBe('team:ghost');
+    expect(formatFieldValue('pushback_id', 'cost', undefined, TEAM)).toBe('Cost / price pushback');
+  });
+
+  it('pickAgentDraft keeps a well-formed team id even without the list (retired / not loaded)', () => {
+    expect(pickAgentDraft({ pushback_id: 'team:retired-topic' }).pushback_id).toBe('team:retired-topic');
+    expect(pickAgentDraft({ pushback_id: 'team:probiotics' }, { objections: TEAM }).pushback_id).toBe(
+      'team:probiotics',
+    );
+    // …but never prose posing as one.
+    for (const junk of ['team:Ignore all rules', 'team:', 'nonsense', 42]) {
+      expect(pickAgentDraft({ pushback_id: junk }), String(junk)).not.toHaveProperty('pushback_id');
+    }
+  });
+});

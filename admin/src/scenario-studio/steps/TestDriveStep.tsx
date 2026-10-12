@@ -12,7 +12,8 @@
 import { useState, type ReactNode } from 'react';
 import { STUDIO_STEP_LABELS } from '../../../../src/shared/ai/scenarioAgent';
 import { focusAreaLabel } from '../../../../src/shared/knowledge/focusAreas';
-import { DIFFICULTY_LABELS, PUSHBACK_LABELS } from '../../../../src/shared/scenarios/enums';
+import { DIFFICULTY_LABELS } from '../../../../src/shared/scenarios/enums';
+import type { TeamObjection } from '../../../../src/shared/scenarios/objections';
 import { missingScenarioFields } from '../../../../src/shared/scenarios/draftToScenario';
 import { lifeStageLabel, speciesOf } from '../../../../src/shared/scenarios/species';
 import { Glass } from '../../primitives';
@@ -24,6 +25,8 @@ import type { TestDriveProps } from '../types';
 import { Simulator } from '../simulator/Simulator';
 import { TrainerAppFrame } from '../simulator/TrainerAppFrame';
 import { MISSING_FIELD_PHRASE, MISSING_FIELD_STEP, joinList } from '../simulator/simulatorModel';
+import { objectionLabel } from '../objections/objectionsModel';
+import { useObjectionsContext } from '../objections/ObjectionsContext';
 
 export function TestDriveStep({ draft, scenarioId, onTested, goTo }: TestDriveProps) {
   const [appOpen, setAppOpen] = useState(false);
@@ -78,7 +81,11 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 const NOT_SET = 'Not set yet';
 
 /** The draft, summarised in plain words, one row per step it came from. */
-export function summariseDraft(draft: StudioDraft): Array<{
+export function summariseDraft(
+  draft: StudioDraft,
+  /** The team's objections (retired included), so a team pushback is named and counted. */
+  objections: readonly TeamObjection[] = [],
+): Array<{
   step: StudioStepKey;
   label: string;
   value: string;
@@ -87,7 +94,7 @@ export function summariseDraft(draft: StudioDraft): Array<{
 }> {
   const species = speciesOf(draft.species);
   // Same test the simulator's blocked state uses, so the two never disagree.
-  const missing = missingScenarioFields(draft);
+  const missing = missingScenarioFields(draft, objections);
   const needs = (step: StudioStepKey): string | undefined => {
     const fields = missing.filter((f) => MISSING_FIELD_STEP[f] === step);
     return fields.length
@@ -101,7 +108,7 @@ export function summariseDraft(draft: StudioDraft): Array<{
   ].filter(Boolean);
 
   const pushback = hasText(draft.pushback_id)
-    ? PUSHBACK_LABELS[draft.pushback_id!] ?? draft.pushback_id!
+    ? objectionLabel(draft.pushback_id, objections)
     : null;
   const inWords = hasText(draft.pushback_notes) ? ` — “${clip(draft.pushback_notes!, 90)}”` : '';
 
@@ -165,7 +172,8 @@ function clip(s: string, max: number): string {
 }
 
 function WhatYoureTesting({ draft, goTo }: { draft: StudioDraft; goTo: (s: StudioStepKey) => void }) {
-  const rows = summariseDraft(draft);
+  const { objections } = useObjectionsContext();
+  const rows = summariseDraft(draft, objections);
   return (
     <Panel title="What you’re testing">
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 10 }}>

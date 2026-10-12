@@ -17,6 +17,12 @@
  *     have at least one indexed chunk. It is the `knownSlugs` the normaliser
  *     checks — a slug the model invents, or one the client claims exists, is
  *     dropped before it reaches a card.
+ *   • So are the team's own objections (`scenario_objections`, VISIBLE ones
+ *     only — a retired objection is never offered). They are listed in the
+ *     prompt as fenced data and are the only `team:` ids the normaliser lets
+ *     through; a proposal that puts one on an animal it does not apply to is
+ *     pruned (`pruneSpeciesMismatches`). Fail-open: no table, an error or a
+ *     timeout means built-in objections only.
  *   • The model's output is untrusted: `normalizeAgentActions` is the gate
  *     (unknown tools, illegal enum values, over-long prose, made-up slugs and
  *     extra questions are dropped), and the client runs it again on confirm.
@@ -75,8 +81,14 @@ import {
 import { readKnowledgeScope } from '../../src/shared/knowledge/knowledgeScopes';
 import { focusAreaLabel, isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
 import { PUSHBACK_LABELS } from '../../src/shared/scenarios/enums';
+import {
+  isTeamObjectionId,
+  objectionAppliesTo,
+  type TeamObjection,
+} from '../../src/shared/scenarios/objections';
 import { retrievalSpeciesFor } from '../../src/shared/scenarios/species';
 import type { RetrievedChunk } from '../../src/services/ragShared';
+import { readTeamObjections } from './_shared/objectionsStore';
 
 const MAX_BODY_BYTES = 96 * 1024;
 const RATE = { limit: 30, windowMs: 60_000 };
@@ -210,9 +222,72 @@ export async function cachedRoleplayCatalogue(sb: SupabaseClient): Promise<Agent
   return value;
 }
 
-/** Test hook — the catalogue cache is module state. */
+/** Test hook — the catalogue and objection caches are module state. */
 export function __clearAgentCatalogueCache(): void {
   catalogueCache = null;
+  objectionsCache = null;
+}
+
+// ── Team objections (server-trusted) ─────────────────────────────────────
+
+/**
+ * The team objections the assistant may propose: visible (not retired),
+ * not deleted. Held per instance for the same minute as the catalogue — an
+ * admin adds objections a few times a week. A missing table is "none"
+ * (cached); any other read error throws, so the caller's fail-open fallback
+ * applies and the next turn tries again.
+ */
+let objectionsCache: { value: TeamObjection[]; expiresAt: number } | null = null;
+
+export async function cachedTeamObjections(sb: SupabaseClient): Promise<TeamObjection[]> {
+  if (objectionsCache && objectionsCache.expiresAt > Date.now()) return objectionsCache.value;
+  const read = await readTeamObjections(sb);
+  if (read.error && !read.missing) throw new Error(read.error.message ?? 'scenario_objections read failed');
+  const value = read.objections.filter((o) => o.visible);
+  objectionsCache = { value, expiresAt: Date.now() + CATALOGUE_CACHE_TTL_MS };
+  return value;
+}
+
+/** Test hook — alias kept for readability where only objections matter. */
+export const __clearAgentObjectionsCache = __clearAgentCatalogueCache;
+
+/**
+ * Drop a team objection proposed for an animal it does not apply to — the
+ * prompt says so, this makes it true. `update_fields` is judged against the
+ * species the same card sets (else the draft's; none = dog); an `ask` bound
+ * to `pushback_id` loses the options that don't fit and, below two options,
+ * the question. Built-in objections apply to every animal.
+ */
+export function pruneSpeciesMismatches(
+  actions: readonly ScenarioAgentAction[],
+  draft: ScenarioAgentDraft,
+  objections: readonly TeamObjection[],
+): ScenarioAgentAction[] {
+  const byId = new Map(objections.map((o) => [o.id, o]));
+  const fits = (id: unknown, species: unknown): boolean => {
+    if (!isTeamObjectionId(id)) return true;
+    const o = byId.get(id);
+    return !o || objectionAppliesTo(o, species);
+  };
+  const out: ScenarioAgentAction[] = [];
+  for (const action of actions) {
+    if (action.tool === 'update_fields' && action.fields.pushback_id !== undefined) {
+      const species = action.fields.species ?? draft.species;
+      if (!fits(action.fields.pushback_id, species)) {
+        const { pushback_id: _drop, ...fields } = action.fields;
+        if (Object.keys(fields).length > 0) out.push({ ...action, fields });
+        continue;
+      }
+    }
+    if (action.tool === 'ask' && action.field === 'pushback_id') {
+      const options = action.options.filter((o) => fits(o.value, draft.species));
+      if (options.length < AGENT_LIMITS.minOptions) continue;
+      out.push({ ...action, options });
+      continue;
+    }
+    out.push(action);
+  }
+  return out;
 }
 
 // ── Retrieval ────────────────────────────────────────────────────────────
@@ -221,8 +296,13 @@ export function __clearAgentCatalogueCache(): void {
  * What to search the knowledge base for: the admin's latest words (minus
  * `[tool_result]` bookkeeping lines) plus a one-line summary of the draft,
  * so "make it about kidneys" still finds renal documents for a cat draft.
+ * A team objection contributes its name ("Probiotics: …"), like a built-in.
  */
-export function agentRetrievalQuery(turns: readonly AgentTurn[], draft: ScenarioAgentDraft): string {
+export function agentRetrievalQuery(
+  turns: readonly AgentTurn[],
+  draft: ScenarioAgentDraft,
+  objections: ReadonlyArray<{ id: string; title: string }> = [],
+): string {
   const lastAdmin = [...turns].reverse().find((t) => t.role === 'user')?.content ?? '';
   const said = lastAdmin
     .split('\n')
@@ -235,7 +315,11 @@ export function agentRetrievalQuery(turns: readonly AgentTurn[], draft: Scenario
     draft.species,
     draft.breed,
     draft.life_stage,
-    draft.pushback_id ? PUSHBACK_LABELS[draft.pushback_id] : null,
+    draft.pushback_id
+      ? (PUSHBACK_LABELS[draft.pushback_id] ??
+        objections.find((o) => o.id === draft.pushback_id)?.title ??
+        null)
+      : null,
     draft.focus_area ? focusAreaLabel(draft.focus_area) : null,
     draft.pushback_notes ? draft.pushback_notes.slice(0, 160) : null,
   ]
@@ -339,15 +423,26 @@ export function pruneNoOpActions(
  */
 export function parseAgentAnswer(
   text: unknown,
-  ctx: { knownSlugs: ReadonlySet<string>; draft: ScenarioAgentDraft; step?: StudioStepKey },
+  ctx: {
+    knownSlugs: ReadonlySet<string>;
+    draft: ScenarioAgentDraft;
+    step?: StudioStepKey;
+    /** Visible team objections — the only `team:` ids a card may carry. */
+    objections?: readonly TeamObjection[];
+  },
 ): ScenarioAgentResponse | null {
   const obj = safeParse(text);
   if (!isPlainObject(obj)) return null;
   const reply = plainReply(obj.reply);
   if (!reply) return null;
   const rawActions = readJsonList(obj.actionsJson ?? obj.actions);
+  const objections = ctx.objections ?? [];
   const actions = pruneNoOpActions(
-    normalizeAgentActions(rawActions, { knownSlugs: ctx.knownSlugs }),
+    pruneSpeciesMismatches(
+      normalizeAgentActions(rawActions, { knownSlugs: ctx.knownSlugs, objections }),
+      ctx.draft,
+      objections,
+    ),
     ctx.draft,
     ctx.step,
   );
@@ -387,7 +482,6 @@ export default async (req: Request): Promise<Response> => {
       "messages must be a non-empty conversation that ends on the admin's turn",
     );
   }
-  const draft = pickAgentDraft(body.draft);
   const step = isStudioStepKey(body.step) ? body.step : undefined;
 
   let ai: GoogleGenAI;
@@ -398,8 +492,17 @@ export default async (req: Request): Promise<Response> => {
     return aiError(500, 'server', 'AI is not configured');
   }
 
+  // The team's objections first (cached, fail-open): the draft, the search
+  // query and the gate all need them.
+  const objections = await withTimeout(
+    cachedTeamObjections(ctx.sb),
+    CATALOGUE_TIMEOUT_MS,
+    [] as TeamObjection[],
+  );
+  const draft = pickAgentDraft(body.draft, { objections });
+
   // ── Grounding (all fail-open, run together) ─────────────────────────
-  const query = agentRetrievalQuery(turns, draft);
+  const query = agentRetrievalQuery(turns, draft, objections);
   const species = retrievalSpeciesFor(draft.species, draft.life_stage);
   const speciesFilter = species ? { species } : {};
   const [fullCatalogue, relevantChunks, researchChunks] = await Promise.all([
@@ -436,6 +539,7 @@ export default async (req: Request): Promise<Response> => {
     catalogue,
     relevant: relevantFromChunks(relevantChunks, catalogue),
     research: researchFromChunks(researchChunks),
+    objections,
   });
   const contents = turns.map((t) => ({
     role: t.role === 'assistant' ? 'model' : 'user',
@@ -460,7 +564,7 @@ export default async (req: Request): Promise<Response> => {
           thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         },
       });
-      answer = parseAgentAnswer(response.text, { knownSlugs, draft, step });
+      answer = parseAgentAnswer(response.text, { knownSlugs, draft, step, objections });
       if (!answer) console.warn('[admin-scenario-agent] unusable answer', { attempt });
     } catch (err) {
       console.error('[admin-scenario-agent] generate failed', { attempt, error: errorMessage(err) });

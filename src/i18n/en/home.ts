@@ -39,6 +39,9 @@ export const home = {
 
   // ── Today's pick hero card ────────────────────────────────
   'home.pick.subtitle': '{breed}, {age}. Driver: {driver}.',
+  /** A cat scenario names the animal up front so it is never mistaken for a dog. */
+  'home.pick.subtitleCat': 'Cat · {breed}, {age}. Driver: {driver}.',
+  'home.pick.speciesAria': "Animal for today's pick",
   'home.pick.start': 'Start scenario',
   'home.pick.prevAria': 'Previous scenario',
   'home.pick.nextAria': 'Next scenario',

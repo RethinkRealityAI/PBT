@@ -25,6 +25,8 @@ import { isSessionRated } from '../features/feedback/useSessionFeedback';
 import { useLanguage } from '../app/providers/LanguageProvider';
 import { useT, type TFunction } from '../i18n/useT';
 import { formatDateTime, formatTime } from '../i18n/format';
+import { localizedSessionSummary } from '../i18n/dataL10n/pushbacks';
+import { useTeamObjections } from '../features/scenarios/useObjectionCatalog';
 
 type Tab = 'scorecard' | 'transcript';
 
@@ -32,6 +34,7 @@ export function HistoryDetailScreen() {
   const { go, back } = useNavigation();
   const { t, locale } = useLanguage();
   const [tab, setTab] = useState<Tab>('scorecard');
+  const teamObjections = useTeamObjections();
 
   // Resolve the session record from the id stashed by HistoryScreen.
   // Re-read on every render rather than memoizing on a non-existent prop —
@@ -97,7 +100,7 @@ export function HistoryDetailScreen() {
               color: 'var(--pbt-text)',
             }}
           >
-            {session.scenarioSummary}
+            {localizedSessionSummary(session.scenarioSummary, session.pushbackId, locale, teamObjections)}
           </h1>
         </div>
 

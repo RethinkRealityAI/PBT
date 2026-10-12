@@ -16,6 +16,7 @@
  */
 
 import type { DriverKey } from '../lib/tokens';
+import { isScenarioSpecies } from '../../../src/shared/scenarios/species';
 import type { ScenarioOverrideRow, UserScenario } from './types';
 
 export interface SeedScenarioManifest {
@@ -196,6 +197,9 @@ export function buildBaseLayer(
     draft.weight_kg = userScenario.weight_kg;
     draft.context_override = userScenario.context;
     draft.opening_line_override = userScenario.opening_line;
+    // Which animal the trainee built it for (absent / null = dog, every row
+    // written before trainees could choose).
+    if (isScenarioSpecies(userScenario.species)) draft.species = userScenario.species;
   }
 
   return draft;

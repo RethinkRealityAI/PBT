@@ -11,6 +11,7 @@
  * key the consumer app reads.
  */
 import type { SimulationConfig } from '../data/knowledge/simulationConfig';
+import type { TeamObjection } from '../shared/scenarios/objections';
 
 export type FlagKey =
   | 'screen.analyzer.enabled'
@@ -106,6 +107,12 @@ export interface FlagSnapshot {
   scenarioOverrides: ScenarioOverride[];
   /** Global admin simulation config (scoring, drivers, pushbacks, prompt wraps). */
   simulationConfig?: SimulationConfig | null;
+  /**
+   * Team-authored objections (`scenario_objections`, non-deleted, retired ones
+   * included with `visible: false` so scenarios built on them still resolve).
+   * Absent on an older server or before the migration — treat as none.
+   */
+  objections?: TeamObjection[];
   fetchedAt: number;
 }
 

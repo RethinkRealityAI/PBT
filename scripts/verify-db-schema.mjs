@@ -150,12 +150,24 @@ function expectedSchemaFromMigrations() {
  * failure. Remove the entry once its migration is applied everywhere — from
  * then on the column is checked like any other.
  */
+const OBJECTIONS_MIGRATION = '20261012000000_scenario_objections.sql';
 const DEFERRED_COLUMNS = new Map([
-  // (empty) — `scenario_overrides.species` sat here from 2026-09-25 until the
-  // migration was applied to production on 2026-09-27; it is now a required
-  // column like any other. Add an entry only for a migration that is written
-  // but deliberately not yet run.
+  // `scenario_overrides.species` sat here from 2026-09-25 until its migration
+  // was applied to production on 2026-09-27. Add an entry only for a
+  // migration that is written but deliberately not yet run.
+  // Written 2026-10-12, not yet applied: the trainee save retries without
+  // `species`, and the Studio save retries without `copied_from`.
+  ['user_scenarios.species', OBJECTIONS_MIGRATION],
+  ['scenario_overrides.copied_from', OBJECTIONS_MIGRATION],
 ]);
+
+/**
+ * Whole RELATIONS a deferred migration creates. Missing = WARNING, not a
+ * failure, for the same reason as DEFERRED_COLUMNS: every reader degrades to
+ * "none" (flags-resolve serves built-in objections only; admin-objections
+ * answers a plain "run the migration" 503). Remove once applied.
+ */
+const DEFERRED_RELATIONS = new Map([['scenario_objections', OBJECTIONS_MIGRATION]]);
 
 const base = URL_ENV.replace(/\/$/, '');
 const headers = { apikey: KEY_ENV, Authorization: `Bearer ${KEY_ENV}` };
@@ -212,13 +224,14 @@ console.log(
 );
 
 const missing = [];
+const deferredMissing = []; // relations — warn only (DEFERRED_RELATIONS)
 const columnGaps = []; // "relation.column"
 const deferredGaps = []; // "relation.column" — warn only (DEFERRED_COLUMNS)
 const errored = [];
 for (const name of relations) {
   try {
     if (!(await relationExists(name))) {
-      missing.push(name);
+      (DEFERRED_RELATIONS.has(name) ? deferredMissing : missing).push(name);
       continue;
     }
     // Column-level check for tables the migrations define (views: existence only).
@@ -266,6 +279,14 @@ if (deferredGaps.length) {
       'degrades safely without them; apply when ready):',
   );
   for (const c of deferredGaps) console.warn(`  • ${c}  ← ${DEFERRED_COLUMNS.get(c)}`);
+}
+
+if (deferredMissing.length) {
+  console.warn(
+    '\nverify-db-schema: WARNING — deferred relations not created yet (every ' +
+      'reader degrades safely; apply when ready):',
+  );
+  for (const r of deferredMissing) console.warn(`  • ${r}  ← ${DEFERRED_RELATIONS.get(r)}`);
 }
 
 if (missing.length || columnGaps.length || errored.length) process.exit(1);

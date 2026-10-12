@@ -7,6 +7,12 @@
  * rows, `admin:` rows, `user:` scenarios), and switches between the home
  * (./StudioHome) and the guided editor (./StudioEditor).
  *
+ * Trainee-built scenarios are never edited in place — a Studio edit to one
+ * reached nobody (the app keeps showing the trainee their own version) and
+ * left a stray `user:` override behind. Opening one goes to "Add to
+ * library": an unsaved, hidden `admin:` copy that remembers where it came
+ * from (`copied_from`), so the trainee's card can say "In the library".
+ *
  * Read safety, carried over from the old builder: if either scenario read
  * fails, nothing is shown but the error. The library manifest alone would
  * still list three scenarios, every one looking untouched — and saving from
@@ -28,8 +34,11 @@ import { buildInitialDraft, diffAgainstBase } from '../data/scenarioManifest';
 import {
   buildDuplicateDraft,
   buildStudioEntries,
+  buildTraineeLibraryDraft,
   emptyAdminDraft,
   entryBase,
+  firstStepNeeding,
+  libraryCopiesByTrainee,
   localEntryHasChanges,
   newAdminScenarioId,
   scenarioSummary,
@@ -38,6 +47,8 @@ import {
   type StudioEntry,
   type StudioStepKey,
 } from './studioModel';
+import { useObjections } from './objections/useObjections';
+import { ObjectionsProvider } from './objections/ObjectionsContext';
 import { clearLocalDraft, listLocalDrafts, readLocalDraft, setLocalDraftsOwner } from './localDrafts';
 import type { KnowledgeState } from './types';
 import { StudioHome, type ComposerSpecies, type ResumableDraft } from './StudioHome';
@@ -52,6 +63,8 @@ interface OpenState {
   /** The scenario IS on the server even though the list hasn't caught up yet. */
   onServer?: boolean;
   copiedFrom?: string | null;
+  /** What the copy was made from: a trainee's own scenario, or another scenario. */
+  copySource?: 'trainee' | 'scenario';
   step?: StudioStepKey;
   openAssistant?: boolean;
   prompt?: string | null;
@@ -87,6 +100,7 @@ export function ScenarioStudioScreen({
   const overrides = useScenarioOverrides(refreshKey);
   const userScenarios = useUserScenarios(500);
   const knowledgeQuery = useKnowledgeDocuments();
+  const objections = useObjections();
   const can = useCan();
   const canWrite = can('scenarios.write');
   const canReadKnowledge = can('knowledge.read');
@@ -117,9 +131,10 @@ export function ScenarioStudioScreen({
   const loading = !everLoaded && !bothLoaded;
 
   const entries = useMemo(
-    () => buildStudioEntries(overrides.data, userScenarios.data),
-    [overrides.data, userScenarios.data],
+    () => buildStudioEntries(overrides.data, userScenarios.data, objections.objections),
+    [overrides.data, userScenarios.data, objections.objections],
   );
+  const libraryCopies = useMemo(() => libraryCopiesByTrainee(entries), [entries]);
 
   const knowledge = useMemo<KnowledgeState>(
     () =>
@@ -149,6 +164,9 @@ export function ScenarioStudioScreen({
     const known = new Set(entries.map((e) => e.id));
     const out: ResumableDraft[] = [];
     for (const local of listLocalDrafts()) {
+      // Edits kept against a trainee's scenario (from before the Studio
+      // stopped editing those in place) still show — Resume turns them into
+      // an "Add to library" copy rather than reopening the trainee's own.
       const neverSaved = !known.has(local.id);
       // An unknown non-admin id is a scenario that no longer exists.
       if (neverSaved && !local.id.startsWith('admin:')) continue;
@@ -195,10 +213,48 @@ export function ScenarioStudioScreen({
   /** An unsaved admin copy of what's on screen — never live until published. */
   function openCopy(draft: StudioDraft, title: string) {
     const copy = buildDuplicateDraft(draft, newAdminScenarioId(), title);
-    openEditor({ id: copy.scenario_id as string, seed: copy, copiedFrom: title, step: 'pet' });
+    openEditor({ id: copy.scenario_id as string, seed: copy, copiedFrom: title, copySource: 'scenario', step: 'pet' });
+  }
+
+  /**
+   * "Add to library": the trainee's scenario as an unsaved, hidden `admin:`
+   * copy — opened on the first step that still needs an answer (older
+   * trainee scenarios have no ECHO driver, for instance). `over` replaces the
+   * draft's fields (edits kept in this browser against the trainee's own).
+   */
+  function addToLibrary(entry: StudioEntry, over?: StudioDraft) {
+    if (entry.source !== 'user') return;
+    const id = newAdminScenarioId();
+    const base = buildTraineeLibraryDraft(entry, id);
+    // Only what the admin actually filled in: a cleared box in old edits
+    // must not blank the trainee's title or species.
+    const kept = Object.fromEntries(
+      Object.entries(over ?? {}).filter(([, v]) => v !== null && v !== undefined && !(typeof v === 'string' && v.trim() === '')),
+    ) as StudioDraft;
+    const seed: StudioDraft = { ...base, ...kept, scenario_id: id, visible: false, sort_order: null, copied_from: entry.id };
+    openEditor({
+      id,
+      seed,
+      copiedFrom: entry.userScenario?.title?.trim() || entry.title,
+      copySource: 'trainee',
+      step: firstStepNeeding(seed),
+    });
+  }
+
+  /** Open a scenario — a trainee's own goes to "Add to library" instead. */
+  function openEntry(entry: StudioEntry) {
+    if (entry.source === 'user' && canWrite) {
+      addToLibrary(entry);
+      return;
+    }
+    openEditor({ id: entry.id });
   }
 
   async function duplicateEntry(entry: StudioEntry) {
+    if (entry.source === 'user') {
+      addToLibrary(entry);
+      return;
+    }
     // `admin:` rows ARE the scenario, so the server copy is complete. Anything
     // else is copied from its hydrated draft: the server would copy an
     // override row, which for a built-in may be empty or absent.
@@ -231,7 +287,16 @@ export function ScenarioStudioScreen({
   }
 
   function resume(id: string) {
-    const known = entries.some((e) => e.id === id);
+    const entry = entries.find((e) => e.id === id) ?? null;
+    if (entry?.source === 'user') {
+      // Old edits to a trainee's own scenario: carry them into a library copy
+      // (the copy keeps itself in this browser from here), then forget them.
+      const local = readLocalDraft(id);
+      addToLibrary(entry, local?.draft);
+      clearLocalDraft(id);
+      return;
+    }
+    const known = entry !== null;
     if (known) {
       openEditor({ id, resume: true });
       return;
@@ -245,7 +310,21 @@ export function ScenarioStudioScreen({
     // whatever `visible` the draft remembers from when it WAS live is no
     // longer true, and publish state always comes from the server. Open it
     // as the hidden draft it now is — Publish is still one click away.
-    openEditor({ id, seed: { ...local.draft, visible: false }, resume: true, step: local.step });
+    // An unsaved copy keeps saying what it was copied from.
+    const from = local.draft.copied_from;
+    const original = typeof from === 'string' ? entries.find((e) => e.id === from) : undefined;
+    openEditor({
+      id,
+      seed: { ...local.draft, visible: false },
+      resume: true,
+      step: local.step,
+      ...(original
+        ? {
+            copiedFrom: original.userScenario?.title?.trim() || original.title,
+            copySource: original.source === 'user' ? ('trainee' as const) : ('scenario' as const),
+          }
+        : {}),
+    });
   }
 
   // A failed read must never reach the home or the editor (see header).
@@ -275,7 +354,9 @@ export function ScenarioStudioScreen({
   if (open) {
     const entry = entries.find((e) => e.id === open.id) ?? null;
     const initialDraft = entry?.draft ?? open.seed;
-    if (initialDraft) {
+    // A trainee's own scenario is only ever LOOKED at (read-only roles) —
+    // writers are sent to "Add to library" before they get here.
+    if (initialDraft && !(entry?.source === 'user' && canWrite)) {
       const source = entry?.source ?? 'admin';
       const sparsify = (d: StudioDraft): StudioDraft =>
         entry && entry.source !== 'admin'
@@ -287,6 +368,7 @@ export function ScenarioStudioScreen({
             )
           : { ...d };
       return (
+        <ObjectionsProvider value={objections}>
         <StudioEditor
           key={`${open.id}#${open.nonce}`}
           scenarioId={open.id}
@@ -296,6 +378,7 @@ export function ScenarioStudioScreen({
           isNew={!entry && !open.onServer}
           hasOverride={Boolean(entry?.override) || Boolean(open.onServer)}
           copiedFrom={open.copiedFrom ?? null}
+          copySource={open.copySource}
           fallbackTitle={
             entry?.source === 'library'
               ? entry.manifest?.title ?? null
@@ -323,27 +406,34 @@ export function ScenarioStudioScreen({
           onClose={closeEditor}
           onSaved={refresh}
           onDuplicate={openCopy}
+          onAddToLibrary={entry?.source === 'user' ? () => addToLibrary(entry) : undefined}
         />
+        </ObjectionsProvider>
       );
     }
   }
 
   return (
-    <StudioHome
-      entries={entries}
-      loading={loading}
-      canWrite={canWrite}
-      query={query}
-      onQuery={onQuery}
-      onCreate={onCreate}
-      onOpen={(entry) => openEditor({ id: entry.id })}
-      onDuplicate={(entry) => void duplicateEntry(entry)}
-      resumable={resumable}
-      onResume={resume}
-      onDiscardLocal={(id) => {
-        clearLocalDraft(id);
-        setLocalNonce((n) => n + 1);
-      }}
-    />
+    <ObjectionsProvider value={objections}>
+      <StudioHome
+        entries={entries}
+        loading={loading}
+        canWrite={canWrite}
+        query={query}
+        onQuery={onQuery}
+        onCreate={onCreate}
+        onOpen={openEntry}
+        onDuplicate={(entry) => void duplicateEntry(entry)}
+        onAddToLibrary={(entry) => addToLibrary(entry)}
+        libraryCopies={libraryCopies}
+        objections={objections.objections}
+        resumable={resumable}
+        onResume={resume}
+        onDiscardLocal={(id) => {
+          clearLocalDraft(id);
+          setLocalNonce((n) => n + 1);
+        }}
+      />
+    </ObjectionsProvider>
   );
 }

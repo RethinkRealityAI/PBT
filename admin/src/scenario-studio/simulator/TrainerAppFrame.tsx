@@ -10,12 +10,14 @@
  * `TestIframe`:
  *   iframe → admin  `pbt:preview-runner-ready` | `pbt:preview-ready`  (ready)
  *   admin → iframe  `pbt:preview-flags`        { scenarioOverrides: [row] }
- *   admin → iframe  `pbt:preview-run-scenario` { scenarioId, draft: row, mode }
+ *   admin → iframe  `pbt:preview-run-scenario` { scenarioId, draft: row, mode,
+ *                                               objections }
  *   iframe → admin  `pbt:preview-status`       { ok, reason? }   (once per run)
  * Every message is origin-checked both ways (`window.location.origin`).
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ScenarioOverrideRow } from '../../data/types';
+import { useObjectionsContext } from '../objections/ObjectionsContext';
 import { Modal, ModalCloseButton, StatusPill } from '../../primitives';
 import { Button, InlineAlert } from '../../primitives/form';
 import { COLOR } from '../../lib/tokens';
@@ -90,6 +92,10 @@ function FrameBody({
   scenarioId: string;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // The team's objections as the Studio has them NOW: the preview's own flags
+  // snapshot is up to minutes old, so an objection created (or renamed) a
+  // moment ago would otherwise fail to resolve there.
+  const { objections } = useObjectionsContext();
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState<PreviewStatus>({ kind: 'idle' });
   /** Bumped to remount the iframe — a hard restart of the preview session. */
@@ -132,7 +138,7 @@ function FrameBody({
     // what is on screen rather than what was last saved.
     frame.postMessage({ type: 'pbt:preview-flags', scenarioOverrides: [row] }, window.location.origin);
     frame.postMessage(
-      { type: 'pbt:preview-run-scenario', scenarioId, draft: row, mode },
+      { type: 'pbt:preview-run-scenario', scenarioId, draft: row, mode, objections },
       window.location.origin,
     );
   }

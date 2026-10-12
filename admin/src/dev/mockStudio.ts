@@ -5,7 +5,11 @@
  * function name); `STUDIO_POST_HANDLERS` answers POSTs from the request body.
  * Covered: admin-scenario-agent (assistant turns with A2UI-able proposals),
  * admin-scenario-inspect (prompt + passages), ai-roleplay / ai-evaluate (the
- * Test drive), and a few saved scenario rows so the gallery isn't empty.
+ * Test drive), admin-objections (the team's objections — probiotics, a
+ * cat-only one from the client's spreadsheet, one recently deleted; writes
+ * are kept in memory for the session), a few trainee-built scenarios (a cat
+ * one with no ECHO driver, a dog one already added to the library) and a few
+ * saved scenario rows so the gallery isn't empty.
  *
  * The assistant here is a small keyword script, not a model — enough to
  * review every card type (ask, update_fields, offer_options, set_ai_notes,
@@ -32,9 +36,14 @@ import {
 } from '../../../src/shared/scenarios/draftToScenario';
 import { PUSHBACK_EXAMPLES, PUSHBACK_LABELS } from '../../../src/shared/scenarios/enums';
 import { lifeStageLabel } from '../../../src/shared/scenarios/species';
+import {
+  objectionIdFromTitle,
+  validateObjectionInput,
+  type AdminObjection,
+} from '../../../src/shared/scenarios/objections';
 import type { Scenario } from '../../../src/data/scenarios';
 import type { AiEmotion, ChatMessage, ScoreReport } from '../../../src/services/types';
-import type { ScenarioOverrideRow } from '../data/types';
+import type { ScenarioOverrideRow, UserScenario } from '../data/types';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -51,6 +60,129 @@ const MOCK_DOCS: Record<string, string> = {
   'driver:Activator': 'ECHO driver — Activator',
 };
 const KNOWN_SLUGS: ReadonlySet<string> = new Set(Object.keys(MOCK_DOCS));
+
+// ── Team objections (admin-objections) ───────────────────────────────────
+
+const PROBIOTICS_NOT_NEEDED = 'team:probiotics-my-pet-doesnt-need-them';
+const PROBIOTICS_YOGURT = 'team:probiotics-yogurt-is-enough';
+const CAT_BORED = 'team:cat-gets-bored-with-the-same-food';
+
+function objection(over: Partial<AdminObjection> & Pick<AdminObjection, 'id' | 'title' | 'example'>): AdminObjection {
+  return {
+    titleFr: null,
+    exampleFr: null,
+    species: ['dog', 'cat'],
+    focusArea: null,
+    coaching: {},
+    visible: true,
+    sortOrder: null,
+    updatedAt: ago(3 * DAY),
+    createdAt: ago(6 * DAY),
+    deletedAt: null,
+    usage: { scenarios: 0, live: 0, trainee: 0 },
+    ...over,
+  };
+}
+
+/** Kept in memory for the session, so Save / Retire / Delete / Restore can be reviewed. */
+let OBJECTIONS: AdminObjection[] = [
+  objection({
+    id: PROBIOTICS_NOT_NEEDED,
+    title: 'Probiotics: ‘my pet doesn’t need them’',
+    example: '“He eats a good food already — why would he need probiotics?”',
+    titleFr: 'Probiotiques : « mon animal n’en a pas besoin »',
+    exampleFr: '« Il mange déjà une bonne nourriture — pourquoi aurait-il besoin de probiotiques? »',
+    focusArea: 'gi',
+    coaching: {
+      rootConcerns: [
+        'Thinks probiotics are an upsell on top of a food that already works.',
+        'Worried about giving a daily supplement for life.',
+      ],
+      acknowledgePatterns: ['“It makes sense to question adding something when things seem fine.”'],
+      clarifyQuestions: ['What does a normal week of stools and appetite look like for him?'],
+      takeActionPatterns: ['Suggest a 4-week trial alongside the next course of antibiotics, with a check-in call.'],
+      watchOuts: ['Leading with the product name before asking about the pet.'],
+    },
+    updatedAt: ago(2 * DAY),
+    usage: { scenarios: 1, live: 0, trainee: 2 },
+  }),
+  objection({
+    id: PROBIOTICS_YOGURT,
+    title: 'Probiotics: ‘yogurt is enough’',
+    example: '“I give her a spoon of yogurt every morning — isn’t that the same thing?”',
+    focusArea: 'gi',
+  }),
+  objection({
+    id: CAT_BORED,
+    title: 'Cat gets bored with the same food',
+    example: '“She turns her nose up after a week — cats need variety, don’t they?”',
+    species: ['cat'],
+    sortOrder: 1,
+  }),
+  objection({
+    id: 'team:raw-goat-milk-cures-everything',
+    title: 'Raw goat milk cures everything',
+    example: '“My neighbour swears by raw goat milk for gut health.”',
+    species: ['dog'],
+    deletedAt: ago(26 * HOUR),
+  }),
+];
+
+function liveObjections(): AdminObjection[] {
+  return OBJECTIONS.filter((o) => !o.deletedAt);
+}
+
+function objectionsMock(body: Record<string, unknown>): unknown {
+  const id = typeof body.id === 'string' ? body.id : '';
+  switch (body.op) {
+    case 'upsert': {
+      const raw = (body.objection ?? {}) as Record<string, unknown>;
+      const existing = typeof raw.id === 'string' ? OBJECTIONS.find((o) => o.id === raw.id) : undefined;
+      const newId =
+        existing?.id ??
+        objectionIdFromTitle(
+          typeof raw.title === 'string' ? raw.title : '',
+          OBJECTIONS.map((o) => o.id),
+        );
+      const valid = validateObjectionInput({ ...raw, id: newId });
+      if (!valid.ok) return new MockHttpError(400, { error: valid.error });
+      const saved: AdminObjection = {
+        ...valid.value,
+        updatedAt: new Date().toISOString(),
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+        deletedAt: null,
+        usage: existing?.usage ?? { scenarios: 0, live: 0, trainee: 0 },
+      };
+      OBJECTIONS = existing ? OBJECTIONS.map((o) => (o.id === saved.id ? saved : o)) : [...OBJECTIONS, saved];
+      return { objection: saved };
+    }
+    case 'delete': {
+      const using = SCENARIO_ROWS.filter((r) => r.pushback_id === id);
+      if (using.length > 0) {
+        return new MockHttpError(409, {
+          error: 'A scenario uses this objection.',
+          code: 'in_use',
+          scenarios: using.map((r) => ({ scenario_id: r.scenario_id, title: r.card_title_override ?? r.scenario_id })),
+        });
+      }
+      OBJECTIONS = OBJECTIONS.map((o) => (o.id === id ? { ...o, deletedAt: new Date().toISOString() } : o));
+      return { ok: true, objection: OBJECTIONS.find((o) => o.id === id) ?? null };
+    }
+    case 'restore':
+      OBJECTIONS = OBJECTIONS.map((o) => (o.id === id ? { ...o, deletedAt: null } : o));
+      return { objection: OBJECTIONS.find((o) => o.id === id) ?? null };
+    default:
+      return new MockHttpError(400, { error: "op must be 'upsert', 'delete' or 'restore'" });
+  }
+}
+
+/** A handler's way of answering with a non-2xx status (see mockApi's POST branch). */
+export class MockHttpError {
+  constructor(
+    readonly status: number,
+    readonly body: Record<string, unknown>,
+  ) {}
+}
 
 // ── admin-scenario-agent ─────────────────────────────────────────────────
 
@@ -89,7 +221,10 @@ function respond(
 ): ScenarioAgentResponse {
   return {
     reply,
-    actions: normalizeAgentActions(actions, { knownSlugs: KNOWN_SLUGS }),
+    actions: normalizeAgentActions(actions, {
+      knownSlugs: KNOWN_SLUGS,
+      objections: liveObjections().filter((o) => o.visible),
+    }),
     suggestions,
   };
 }
@@ -258,7 +393,7 @@ function makeHarder(draft: ScenarioAgentDraft): ScenarioAgentResponse {
 }
 
 function nextMissing(draft: ScenarioAgentDraft): ScenarioAgentResponse | null {
-  const missing = missingScenarioFields(draft);
+  const missing = missingScenarioFields(draft, liveObjections());
   if (missing.includes('Pushback')) {
     return respond('What is the owner pushing back on?', [
       {
@@ -269,7 +404,8 @@ function nextMissing(draft: ScenarioAgentDraft): ScenarioAgentResponse | null {
           { label: PUSHBACK_LABELS.cost, value: 'cost' },
           { label: PUSHBACK_LABELS['weight-denial'], value: 'weight-denial' },
           { label: PUSHBACK_LABELS['rx-diet'], value: 'rx-diet' },
-          { label: PUSHBACK_LABELS['brand-switch'], value: 'brand-switch' },
+          // A team objection, offered by its own name like any built-in.
+          { label: 'Probiotics: ‘my pet doesn’t need them’', value: PROBIOTICS_NOT_NEEDED },
         ],
       },
     ], ['You pick', 'Something about price', 'Grain-free beliefs']);
@@ -410,8 +546,8 @@ async function inspectMock(body: Record<string, unknown>): Promise<ScenarioInspe
     : draft.focus_area
       ? 'focus'
       : 'library';
-  const missing = missingScenarioFields(draft);
-  const scenario = missing.length ? null : draftToScenario(draft);
+  const missing = missingScenarioFields(draft, liveObjections());
+  const scenario = missing.length ? null : draftToScenario(draft, liveObjections());
   if (!scenario) {
     return {
       missing,
@@ -611,12 +747,99 @@ const SCENARIO_ROWS: ScenarioOverrideRow[] = [
     visible: true,
     card_title_override: 'The price of a good bag of food',
   }),
+  // Built on a team objection (the Probiotics one).
+  overrideRow('admin:5e1f0a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b', 30 * HOUR, {
+    visible: false,
+    species: 'dog',
+    breed: 'Golden Retriever',
+    life_stage: 'Adult (3-7)',
+    pushback_id: PROBIOTICS_NOT_NEEDED,
+    suggested_driver: 'Harmonizer',
+    persona_override: 'Devoted',
+    difficulty_override: 2,
+    focus_area: 'gi',
+    card_title_override: 'Probiotics after antibiotics',
+  }),
+  // A trainee's scenario already added to the library (see TRAINEE_SCENARIOS).
+  overrideRow('admin:9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d', 3 * DAY, {
+    visible: true,
+    species: 'dog',
+    breed: 'Beagle',
+    life_stage: 'Senior (7+)',
+    pushback_id: 'cost',
+    suggested_driver: 'Energizer',
+    persona_override: 'Busy',
+    difficulty_override: 3,
+    card_title_override: 'My tricky client',
+    copied_from: 'user:2b3c4d5e-6f70-4a81-9b2c-3d4e5f607182',
+  }),
+];
+
+// ── Trainee-built scenarios (admin-scenarios) ────────────────────────────
+
+function trainee(over: Partial<UserScenario> & Pick<UserScenario, 'id' | 'title'>): UserScenario {
+  return {
+    creator_id: '00000000-0000-4000-8000-0000000000aa',
+    breed: null,
+    life_stage: null,
+    difficulty: 2,
+    pushback_id: null,
+    pushback_notes: null,
+    weight_kg: null,
+    persona: null,
+    suggested_driver: null,
+    context: null,
+    opening_line: null,
+    scenario_summary: null,
+    is_public: false,
+    plays: 0,
+    avg_score: null,
+    created_at: ago(4 * DAY),
+    species: null,
+    ...over,
+  };
+}
+
+const TRAINEE_SCENARIOS: UserScenario[] = [
+  // An older trainee scenario: no ECHO driver — "Add to library" opens on The owner.
+  trainee({
+    id: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
+    title: 'Picky Siamese and the new food',
+    species: 'cat',
+    breed: 'Siamese',
+    life_stage: 'Adult (3-7)',
+    pushback_id: CAT_BORED,
+    pushback_notes: 'She refuses the urinary food after a few days and the owner rotates brands.',
+    persona: 'Anxious',
+    plays: 4,
+    avg_score: 68,
+    created_at: ago(5 * DAY),
+  }),
+  // Already in the library (an admin: row names it in copied_from).
+  trainee({
+    id: '2b3c4d5e-6f70-4a81-9b2c-3d4e5f607182',
+    title: 'My tricky client',
+    breed: 'Beagle',
+    life_stage: 'Senior (7+)',
+    difficulty: 3,
+    pushback_id: 'cost',
+    persona: 'Busy',
+    suggested_driver: 'Energizer',
+    plays: 11,
+    avg_score: 74,
+    created_at: ago(12 * DAY),
+  }),
 ];
 
 // ── Exports ──────────────────────────────────────────────────────────────
 
 export const STUDIO_ROUTES: Record<string, unknown> = {
   'admin-scenario-overrides': SCENARIO_ROWS,
+  'admin-scenarios': TRAINEE_SCENARIOS,
+  // A getter, so the list reflects this session's writes.
+  get 'admin-objections'() {
+    return { objections: OBJECTIONS };
+  },
 };
 
 export const STUDIO_POST_HANDLERS: Record<
@@ -625,6 +848,7 @@ export const STUDIO_POST_HANDLERS: Record<
 > = {
   'admin-scenario-agent': agentMock,
   'admin-scenario-inspect': inspectMock,
+  'admin-objections': objectionsMock,
   'ai-roleplay': roleplayMock,
   'ai-evaluate': evaluateMock,
 };

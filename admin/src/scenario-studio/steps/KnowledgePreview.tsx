@@ -8,6 +8,7 @@ import { StatusPill } from '../../primitives';
 import { Button, InlineAlert } from '../../primitives/form';
 import type { InspectPassage } from '../../../../src/shared/ai/contract';
 import { missingScenarioFields } from '../../../../src/shared/scenarios/draftToScenario';
+import { useObjectionsContext } from '../objections/ObjectionsContext';
 import type { StudioDraft, StudioStepKey } from '../studioModel';
 import { Spinner } from '../ui';
 import { knowledgeModeOf, relevanceLabel, scopeSentence } from './knowledgeModel';
@@ -24,7 +25,8 @@ export function KnowledgePreview({
   goTo: (step: StudioStepKey) => void;
 }) {
   const inspect = useInspect(draft, 'knowledge');
-  const localMissing = missingScenarioFields(draft);
+  const { objections } = useObjectionsContext();
+  const localMissing = missingScenarioFields(draft, objections);
   const data = inspect.data;
   const loading = inspect.status === 'loading';
   const attached = draft.knowledge_slugs?.length ?? 0;

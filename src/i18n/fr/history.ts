@@ -16,7 +16,7 @@ export const history: Record<keyof typeof en, string> = {
   'history.sessionCount': '{count} séances',
   'history.sessionCountOne': '1 séance',
   'history.avgScore': 'score moyen de {pct}',
-  'history.filter.all': 'Tout',
+  'history.filter.all': 'Toutes',
   'history.empty.none':
     "Aucune séance pour l'instant. Lancez un scénario et il apparaîtra ici, étiqueté par type d'objection.",
   'history.empty.filtered':

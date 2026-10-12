@@ -27,6 +27,12 @@ import {
 } from '../../data/knowledge/pushbackTaxonomy';
 import { getDataOverlay } from '../dataRegistry';
 import { DEFAULT_LOCALE, type Locale } from '../locales';
+import {
+  isBuiltInObjectionId,
+  isTeamObjectionId,
+  objectionText,
+  type TeamObjection,
+} from '../../shared/scenarios/objections';
 
 /**
  * Canonical pushback ids. These are DB values (`scenario_overrides.pushback_id`,
@@ -84,8 +90,21 @@ function canonicalCategory(id: string): PushbackCategory | undefined {
   return PUSHBACK_CATEGORIES.find((c) => c.id === id);
 }
 
-/** The pushback's display title — canonical English unless the locale overlays it. */
-export function localizedPushbackLabel(id: string, locale: Locale): string {
+/**
+ * The pushback's display title — canonical English unless the locale overlays
+ * it. A TEAM objection (`team:<slug>`, authored in the Scenario Studio) has no
+ * overlay: pass the snapshot's `team` list and its own French title is used
+ * (English when the team wrote none). An id nobody knows reads as itself.
+ */
+export function localizedPushbackLabel(
+  id: string,
+  locale: Locale,
+  team: readonly TeamObjection[] = [],
+): string {
+  if (isTeamObjectionId(id)) {
+    const objection = team.find((o) => o.id === id);
+    return objection ? objectionText(objection, locale).title : id;
+  }
   const canonical = canonicalCategory(id);
   const l10n = overlayFor(locale)?.categories[id as PushbackId];
   return l10n?.title ?? canonical?.title ?? id;
@@ -107,6 +126,22 @@ export function localizedPushbackCategory(
   category: PushbackCategory,
   locale: Locale,
 ): PushbackCategory {
+  if (!isBuiltInObjectionId(category.id)) {
+    // A team objection carries its own French (`titleFr` / `exampleFr`,
+    // stamped by `resolveObjection`); English stands in when there is none.
+    if (locale === DEFAULT_LOCALE) return category;
+    const text = objectionText(
+      {
+        title: category.title,
+        example: category.example,
+        titleFr: category.titleFr ?? null,
+        exampleFr: category.exampleFr ?? null,
+      },
+      locale,
+    );
+    if (text.title === category.title && text.example === category.example) return category;
+    return { ...category, title: text.title, example: text.example };
+  }
   const l10n = overlayFor(locale)?.categories[category.id as PushbackId];
   if (!l10n) return category;
   return { ...category, title: l10n.title, example: l10n.example };
@@ -152,4 +187,28 @@ export function localizedPushbackHints(
     clarifyQuestions: l10n.clarifyQuestions,
     takeActionPatterns: l10n.takeActionPatterns,
   };
+}
+
+/**
+ * A session's stored `scenarioSummary` is canonical English on purpose — it
+ * doubles as the RAG cache key — so localize it for DISPLAY only: swap the
+ * leading pushback title for the locale's label and leave the breed and the
+ * trainee's own notes verbatim. Works for built-ins (overlay) and team
+ * objections (their own French, from `team`); anything else — an objection
+ * renamed since, or one the snapshot no longer carries — stays as stored.
+ */
+export function localizedSessionSummary(
+  summary: string,
+  pushbackId: string,
+  locale: Locale,
+  team: readonly TeamObjection[] = [],
+): string {
+  let englishTitle: string | undefined;
+  if (isTeamObjectionId(pushbackId)) {
+    englishTitle = team.find((o) => o.id === pushbackId)?.title;
+  } else {
+    englishTitle = canonicalCategory(pushbackId)?.title;
+  }
+  if (!englishTitle || !summary.startsWith(englishTitle)) return summary;
+  return localizedPushbackLabel(pushbackId, locale, team) + summary.slice(englishTitle.length);
 }

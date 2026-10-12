@@ -9,15 +9,15 @@
 // two against each other so they cannot drift.
 //
 // Only TYPES are imported from src/data — they are erased at build time.
+//
+// The pushback resolves through `resolveObjection` — the ONE resolver the
+// consumer uses too — so a team objection (`team:<slug>`, retired ones
+// included) works in the inspector and the Test drive exactly as it will for
+// trainees. Pass the team's objections; without them only built-ins resolve.
 import type { Difficulty, LifeStage, OwnerPersona, Scenario } from '../../data/scenarios';
 import type { DriverKey } from '../../design-system/tokens';
-import {
-  PUSHBACK_EXAMPLES,
-  PUSHBACK_LABELS,
-  isLifeStage,
-  isPersona,
-  isPushbackId,
-} from './enums';
+import { isLifeStage, isPersona } from './enums';
+import { resolveObjection, type TeamObjection } from './objections';
 import { isScenarioSpecies, type ScenarioSpecies } from './species';
 
 const DRIVERS: readonly string[] = ['Activator', 'Energizer', 'Analyzer', 'Harmonizer'];
@@ -40,12 +40,19 @@ export interface ScenarioDraftLike {
   knowledge_slugs?: unknown;
 }
 
-/** Human labels of the fields a draft still needs before it can run. */
-export function missingScenarioFields(draft: ScenarioDraftLike): string[] {
+/**
+ * Human labels of the fields a draft still needs before it can run. A team
+ * objection counts as set only when `objections` contains it (an unknown or
+ * deleted one is "Pushback" missing — it cannot be played).
+ */
+export function missingScenarioFields(
+  draft: ScenarioDraftLike,
+  objections: readonly TeamObjection[] = [],
+): string[] {
   const out: string[] = [];
   if (!draft.breed?.trim()) out.push('Breed');
   if (!isLifeStage(draft.life_stage)) out.push('Life stage');
-  if (!isPushbackId(draft.pushback_id)) out.push('Pushback');
+  if (!resolveObjection(draft.pushback_id, objections)) out.push('Pushback');
   if (!draft.suggested_driver || !DRIVERS.includes(draft.suggested_driver)) {
     out.push('ECHO driver');
   }
@@ -70,9 +77,13 @@ function asKnowledgeSlugs(v: unknown): string[] | undefined {
  * `species` is set only when the draft declares a valid one — an absent
  * species keeps the legacy (dog) prompt byte-identical.
  */
-export function draftToScenario(draft: ScenarioDraftLike): Scenario | null {
-  if (missingScenarioFields(draft).length > 0) return null;
-  const pushbackId = draft.pushback_id as string;
+export function draftToScenario(
+  draft: ScenarioDraftLike,
+  objections: readonly TeamObjection[] = [],
+): Scenario | null {
+  if (missingScenarioFields(draft, objections).length > 0) return null;
+  const pushback = resolveObjection(draft.pushback_id, objections);
+  if (!pushback) return null;
   const difficulty = draft.difficulty_override;
   const scenario: Scenario = {
     breed: (draft.breed as string).trim(),
@@ -82,11 +93,7 @@ export function draftToScenario(draft: ScenarioDraftLike): Scenario | null {
       ? difficulty
       : 2) as Difficulty,
     context: draft.context_override?.trim() || undefined,
-    pushback: {
-      id: pushbackId,
-      title: PUSHBACK_LABELS[pushbackId],
-      example: PUSHBACK_EXAMPLES[pushbackId],
-    },
+    pushback,
     pushbackNotes: draft.pushback_notes?.trim() || undefined,
     suggestedDriver: draft.suggested_driver as DriverKey,
     openingLine: draft.opening_line_override?.trim() || undefined,

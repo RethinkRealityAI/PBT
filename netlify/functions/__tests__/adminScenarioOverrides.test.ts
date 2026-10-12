@@ -23,7 +23,9 @@ const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 
 import handler, {
+  COPIED_FROM_COLUMN_MISSING,
   SPECIES_COLUMN_MISSING,
+  UNKNOWN_OBJECTION_MESSAGE,
   isMissingSpeciesColumn,
   pickWritable,
   validateOverride,
@@ -434,5 +436,196 @@ describe('GET op=capabilities', () => {
   it('any other failure is a 500, not a false "unsupported"', async () => {
     sb.setHandler('scenario_overrides', () => ({ data: null, error: { code: '57014', message: 'timeout' } }));
     expect((await capabilities()).status).toBe(500);
+  });
+});
+
+// ── Team objections ───────────────────────────────────────────────────────
+
+/** scenario_objections fake: the ids that exist, and which are deleted. */
+function objectionsTable(rows: Array<{ id: string; deleted_at?: string | null }>, error?: SbResult['error']) {
+  sb.setHandler('scenario_objections', (call: SbCall) => {
+    if (error) return { data: null, error };
+    const id = call.ops.find((o) => o.op === 'eq')?.args[1];
+    const row = rows.find((r) => r.id === id);
+    return { data: row ? { deleted_at: null, ...row } : null, error: null };
+  });
+}
+
+describe('validateOverride — pushback ids', () => {
+  const base: OverrideUpsert = { scenario_id: 'seed:0' };
+
+  it('accepts the built-ins and the SHAPE of a team id (existence is checked by the handler)', () => {
+    expect(validateOverride({ ...base, pushback_id: 'cost' })).toBeNull();
+    expect(validateOverride({ ...base, pushback_id: 'team:probiotics' })).toBeNull();
+  });
+
+  it('still rejects anything else', () => {
+    for (const id of ['made-up', 'team:', 'team:Bad Id', 'TEAM:probiotics', 'admin:x']) {
+      expect(validateOverride({ ...base, pushback_id: id }), id).toBe(
+        'pushback_id must be a known pushback category',
+      );
+    }
+  });
+});
+
+describe('POST upsert — team objections', () => {
+  it('saves a scenario on a live team objection (retired is fine)', async () => {
+    overridesTable(null);
+    objectionsTable([{ id: 'team:probiotics' }]);
+    const res = await save({ ...ROW, pushback_id: 'team:probiotics' });
+    expect(res.status).toBe(200);
+    expect(upserts()[0].pushback_id).toBe('team:probiotics');
+    const check = sb.callsFor('scenario_objections')[0];
+    expect(check.ops.find((o) => o.op === 'eq')?.args).toEqual(['id', 'team:probiotics']);
+  });
+
+  it('refuses an unknown or deleted team objection with a plain 400, writing nothing', async () => {
+    overridesTable(null);
+    objectionsTable([{ id: 'team:gone', deleted_at: '2026-10-12T10:00:00Z' }]);
+    for (const id of ['team:gone', 'team:never-existed']) {
+      const res = await save({ ...ROW, pushback_id: id });
+      expect(res.status, id).toBe(400);
+      expect(await res.json()).toEqual({ error: UNKNOWN_OBJECTION_MESSAGE });
+    }
+    expect(UNKNOWN_OBJECTION_MESSAGE).toBe('That objection no longer exists. Pick another one on the Pushback step.');
+    expect(upserts()).toHaveLength(0);
+  });
+
+  it('before the migration every team id is unknown — an id nothing can resolve is never stored', async () => {
+    overridesTable(null);
+    objectionsTable([], {
+      code: 'PGRST205',
+      message: "Could not find the table 'public.scenario_objections' in the schema cache",
+    });
+    const res = await save({ ...ROW, pushback_id: 'team:probiotics' });
+    expect(res.status).toBe(400);
+    expect(upserts()).toHaveLength(0);
+  });
+
+  it('any other error checking the objection is a 500', async () => {
+    overridesTable(null);
+    objectionsTable([], { code: '57014', message: 'timeout' });
+    expect((await save({ ...ROW, pushback_id: 'team:probiotics' })).status).toBe(500);
+    expect(upserts()).toHaveLength(0);
+  });
+
+  it('a built-in pushback never touches the objections table', async () => {
+    overridesTable(null);
+    await save(ROW);
+    expect(sb.callsFor('scenario_objections')).toHaveLength(0);
+  });
+
+  it('a duplicate of a scenario whose objection was deleted is refused too', async () => {
+    overridesTable({ ...ROW, pushback_id: 'team:gone' });
+    objectionsTable([{ id: 'team:gone', deleted_at: '2026-10-12T10:00:00Z' }]);
+    const res = await save({ scenario_id: 'admin:cat-1' }, 'duplicate');
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as Bag).error).toBe(`Cannot duplicate: ${UNKNOWN_OBJECTION_MESSAGE}`);
+    expect(upserts()).toHaveLength(0);
+  });
+});
+
+// ── copied_from (provenance) ─────────────────────────────────────────────
+
+/** A database that predates 20261012000000_scenario_objections.sql. */
+function withoutCopiedFromColumn(payload: Bag): SbResult {
+  if ('copied_from' in payload) {
+    return {
+      data: null,
+      error: {
+        code: 'PGRST204',
+        message: "Could not find the 'copied_from' column of 'scenario_overrides' in the schema cache",
+      },
+    };
+  }
+  return { data: payload, error: null };
+}
+
+describe('validateOverride — copied_from', () => {
+  it('accepts a seed:/user:/admin: source on an admin: scenario', () => {
+    for (const src of ['seed:3', 'user:0b1a3c9e-5d2f-4a6b-8c7d-9e0f1a2b3c4d', 'admin:abc']) {
+      expect(validateOverride({ ...ROW, copied_from: src } as OverrideUpsert), src).toBeNull();
+    }
+    expect(validateOverride({ ...ROW, copied_from: null } as OverrideUpsert)).toBeNull();
+  });
+
+  it('rejects a malformed or over-long source, and any source on a library row', () => {
+    for (const src of ['user', 'javascript:alert(1)', `user:${'x'.repeat(80)}`, 42]) {
+      expect(validateOverride({ ...ROW, copied_from: src } as unknown as OverrideUpsert), String(src)).toMatch(
+        /copied_from must be/,
+      );
+    }
+    expect(validateOverride({ scenario_id: 'seed:0', copied_from: 'user:abc' })).toBe(
+      'copied_from is only for scenarios added to the library (admin: ids)',
+    );
+  });
+
+  it('is not a writable column (it is added on create only)', () => {
+    expect(pickWritable({ ...ROW, copied_from: 'user:abc' } as OverrideUpsert)).not.toHaveProperty('copied_from');
+  });
+});
+
+describe('POST upsert — copied_from', () => {
+  const SRC = 'user:0b1a3c9e-5d2f-4a6b-8c7d-9e0f1a2b3c4d';
+
+  it('is written when the admin: row is created', async () => {
+    overridesTable(null);
+    const res = await save({ ...ROW, copied_from: SRC });
+    expect(res.status).toBe(200);
+    expect(upserts()[0].copied_from).toBe(SRC);
+    expect(await res.json()).not.toHaveProperty('_notice');
+  });
+
+  it('is ignored on an update — provenance cannot be rewritten', async () => {
+    overridesTable({ ...ROW, created_by: 'admin-0', copied_from: 'seed:1' });
+    const res = await save({ ...ROW, copied_from: SRC });
+    expect(res.status).toBe(200);
+    expect(upserts()[0]).not.toHaveProperty('copied_from');
+  });
+
+  it('a library row carrying it is a 400', async () => {
+    overridesTable(null);
+    const res = await save({ scenario_id: 'seed:0', copied_from: SRC });
+    expect(res.status).toBe(400);
+    expect(upserts()).toHaveLength(0);
+  });
+
+  it('retries without the column when it is missing, and says so', async () => {
+    overridesTable(null, withoutCopiedFromColumn);
+    const res = await save({ ...ROW, copied_from: SRC });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Bag)._notice).toBe(COPIED_FROM_COLUMN_MISSING);
+    const [first, retry] = upserts();
+    expect(first.copied_from).toBe(SRC);
+    const { copied_from: _c, ...rest } = first;
+    expect(retry).toEqual(rest);
+  });
+
+  it('both optional columns missing: both dropped, the species notice wins', async () => {
+    overridesTable(null, (payload) =>
+      'species' in payload ? withoutSpeciesColumn(payload) : withoutCopiedFromColumn(payload),
+    );
+    const res = await save({ ...ROW, species: 'cat', copied_from: SRC });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Bag)._notice).toBe(SPECIES_COLUMN_MISSING);
+    expect(upserts()).toHaveLength(3);
+    expect(upserts()[2]).not.toHaveProperty('species');
+    expect(upserts()[2]).not.toHaveProperty('copied_from');
+  });
+
+  it('op=duplicate records the source as the copy’s provenance', async () => {
+    overridesTable({ ...ROW, copied_from: 'seed:9', updated_at: 'x' });
+    const res = await save({ scenario_id: 'admin:cat-1' }, 'duplicate');
+    expect(res.status).toBe(200);
+    expect(upserts()[0].copied_from).toBe('admin:cat-1');
+  });
+
+  it('op=duplicate still works, silently, before the migration', async () => {
+    overridesTable({ ...ROW }, withoutCopiedFromColumn);
+    const res = await save({ scenario_id: 'admin:cat-1' }, 'duplicate');
+    expect(res.status).toBe(200);
+    // Nobody asked for provenance on a copy, so nothing to warn about.
+    expect(await res.json()).not.toHaveProperty('_notice');
+    expect(upserts()[1]).not.toHaveProperty('copied_from');
   });
 });

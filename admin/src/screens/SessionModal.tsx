@@ -35,7 +35,7 @@ import {
 } from '../primitives';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
-import { ENDED_REASON_LABELS, MODE_LABELS, labelOf } from '../lib/labels';
+import { ENDED_REASON_LABELS, MODE_LABELS, labelOf, pushbackLabel } from '../lib/labels';
 import type { AdminSession, AdminUser } from '../data/types';
 
 type TabKey = 'overview' | 'transcript' | 'scoring';
@@ -199,7 +199,7 @@ function SessionHeader({
               color: COLOR.ink,
             }}
           >
-            {session.scenario_summary ?? session.pushback_id ?? 'Session'}
+            {session.scenario_summary ?? (session.pushback_id ? pushbackLabel(session.pushback_id) : 'Session')}
           </h2>
           <div style={{ fontSize: 12, color: COLOR.inkSoft }}>
             {user?.display_name ?? 'Anonymous'}

@@ -9,6 +9,7 @@ import { COLOR } from '../../lib/tokens';
 import { StatusPill } from '../../primitives';
 import { Button, InlineAlert } from '../../primitives/form';
 import { missingScenarioFields } from '../../../../src/shared/scenarios/draftToScenario';
+import { useObjectionsContext } from '../objections/ObjectionsContext';
 import type { StudioDraft, StudioStepKey } from '../studioModel';
 import { Spinner } from '../ui';
 import { isHeadingLine, segmentPrompt, type PromptSegment } from './briefModel';
@@ -82,7 +83,8 @@ export function PromptViewer({
 }) {
   const inspect = useInspect(draft, 'prompt');
   const [open, setOpen] = useState(false);
-  const localMissing = missingScenarioFields(draft);
+  const { objections } = useObjectionsContext();
+  const localMissing = missingScenarioFields(draft, objections);
   const data = inspect.data;
   const loading = inspect.status === 'loading';
 

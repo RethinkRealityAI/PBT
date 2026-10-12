@@ -21,6 +21,8 @@ import {
   isUuid,
   loadPromptOverrides,
   loadSimulationConfig,
+  loadStoredSimulationConfig,
+  loadTeamObjections,
   ok,
   parseJsonBody,
   rateLimit,
@@ -29,7 +31,14 @@ import {
   retrieveForScenario,
   sanitizeScenario,
   sanitizeTurns,
+  withTeamObjections,
 } from '../_shared/ai';
+import {
+  buildCoachHintSystemPrompt,
+  buildCustomerSystemPrompt,
+} from '../../../src/data/knowledge/promptBuilders';
+import { resolvePushbackKnowledge } from '../../../src/data/knowledge/simulationConfig';
+import type { TeamObjection } from '../../../src/shared/scenarios/objections';
 import { SEED_SCENARIOS } from '../../../src/data/scenarios';
 import { AI_LIMITS } from '../../../src/shared/ai/contract';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -376,6 +385,167 @@ describe('loadSimulationConfig', () => {
   it('never throws on a query error', async () => {
     sb.setHandler('simulation_config', () => ({ data: null, error: { message: 'relation missing' } }));
     await expect(loadSimulationConfig(sb.client as unknown as SupabaseClient)).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * Team objections (`scenario_objections`) reach the AI as SERVER-loaded
+ * knowledge: their coaching is merged into the simulation config so the
+ * prompt builders resolve a `team:` pushback exactly like a built-in.
+ */
+const TEAM_ROW = {
+  id: 'team:probiotics',
+  title: 'Probiotics',
+  example: '"He does not need them."',
+  title_fr: null,
+  example_fr: null,
+  species: ['dog', 'cat'],
+  focus_area: 'gi',
+  coaching: {
+    rootConcerns: ['Believes probiotics are a supplement-aisle fad', 'Already spends a lot on food'],
+    watchOuts: ['Leading with the product name'],
+  },
+  visible: true,
+  sort_order: null,
+  updated_at: '2026-10-12T10:00:00+00:00',
+};
+
+function teamObjection(over: Partial<TeamObjection> = {}): TeamObjection {
+  return {
+    id: 'team:probiotics',
+    title: 'Probiotics',
+    example: '"He does not need them."',
+    titleFr: null,
+    exampleFr: null,
+    species: ['dog', 'cat'],
+    focusArea: 'gi',
+    coaching: { rootConcerns: ['Believes probiotics are a supplement-aisle fad'] },
+    visible: true,
+    sortOrder: null,
+    updatedAt: null,
+    ...over,
+  };
+}
+
+describe('withTeamObjections', () => {
+  it('adds each team objection as pushback knowledge, without touching the input', () => {
+    const config = { rag: { k: 3 }, pushbacks: { cost: { rootConcerns: ['Budget'] } } };
+    const frozen = JSON.stringify(config);
+    const merged = withTeamObjections(config, [teamObjection()]);
+    expect(merged).toEqual({
+      rag: { k: 3 },
+      pushbacks: {
+        cost: { rootConcerns: ['Budget'] },
+        'team:probiotics': {
+          id: 'team:probiotics',
+          title: 'Probiotics',
+          examples: ['"He does not need them."'],
+          rootConcerns: ['Believes probiotics are a supplement-aisle fad'],
+          acknowledgePatterns: [],
+          clarifyQuestions: [],
+          takeActionPatterns: [],
+          watchOuts: [],
+        },
+      },
+    });
+    expect(JSON.stringify(config)).toBe(frozen);
+  });
+
+  it('merges retired objections too — a scenario built on one still plays', () => {
+    const merged = withTeamObjections(undefined, [teamObjection({ visible: false })]);
+    expect(merged?.pushbacks?.['team:probiotics']?.rootConcerns).toEqual([
+      'Believes probiotics are a supplement-aisle fad',
+    ]);
+  });
+
+  it('an AI-tuning entry an admin wrote for the same id wins', () => {
+    const config = { pushbacks: { 'team:probiotics': { rootConcerns: ['Hand-tuned'] } } };
+    expect(withTeamObjections(config, [teamObjection()])).toBe(config);
+  });
+
+  it('adds nothing for an objection with no coaching, and returns the same config', () => {
+    const config = { rag: { k: 2 } };
+    expect(withTeamObjections(config, [teamObjection({ coaching: {} })])).toBe(config);
+    expect(withTeamObjections(undefined, [])).toBeUndefined();
+  });
+
+  it('adds nothing for hints without root concerns (the prompts would print an empty heading)', () => {
+    const config = { rag: { k: 2 } };
+    const hintsOnly = teamObjection({
+      coaching: { acknowledgePatterns: ['That makes sense to question.'], watchOuts: ['Pitching first'] },
+    });
+    expect(withTeamObjections(config, [hintsOnly])).toBe(config);
+  });
+
+  it('ignores anything that is not a team id (a built-in can never be redefined here)', () => {
+    expect(withTeamObjections(undefined, [teamObjection({ id: 'cost' })])).toBeUndefined();
+  });
+});
+
+describe('loadSimulationConfig — team objections', () => {
+  const client = () => sb.client as unknown as SupabaseClient;
+
+  it('merges non-deleted team objections from the database into the stored config', async () => {
+    sb.setHandler('simulation_config', () => ({ data: { config: { rag: { k: 5 } } }, error: null }));
+    sb.setHandler('scenario_objections', () => ({ data: [TEAM_ROW], error: null }));
+    const config = await loadSimulationConfig(client());
+    expect(config?.rag).toEqual({ k: 5 });
+    expect(config?.pushbacks?.['team:probiotics']?.rootConcerns).toEqual(TEAM_ROW.coaching.rootConcerns);
+    const call = sb.callsFor('scenario_objections')[0];
+    expect(call.ops.find((o) => o.op === 'is')?.args).toEqual(['deleted_at', null]);
+    // The stored half is untouched.
+    expect((await loadStoredSimulationConfig(client()))?.pushbacks).toBeUndefined();
+  });
+
+  it('caches the merge for 60 s (same object, one read of each table)', async () => {
+    const objections = vi.fn(() => ({ data: [TEAM_ROW], error: null }));
+    sb.setHandler('scenario_objections', objections);
+    const a = await loadSimulationConfig(client());
+    const b = await loadSimulationConfig(client());
+    expect(b).toBe(a);
+    expect(objections).toHaveBeenCalledTimes(1);
+  });
+
+  it('a missing table (migration pending) means no merge, never a failure', async () => {
+    sb.setHandler('simulation_config', () => ({ data: { config: { rag: { k: 2 } } }, error: null }));
+    sb.setHandler('scenario_objections', () => ({
+      data: null,
+      error: { code: 'PGRST205', message: "Could not find the table 'public.scenario_objections' in the schema cache" },
+    }));
+    expect(await loadSimulationConfig(client())).toEqual({ rag: { k: 2 } });
+    expect(await loadTeamObjections(client())).toEqual([]);
+  });
+
+  it('any other objections error fails open and is retried on the next call', async () => {
+    const objections = vi.fn(() => ({ data: null, error: { code: '57014', message: 'timeout' } }));
+    sb.setHandler('scenario_objections', objections);
+    await expect(loadSimulationConfig(client())).resolves.toBeUndefined();
+    objections.mockImplementation(() => ({ data: [TEAM_ROW], error: null }));
+    const config = await loadSimulationConfig(client());
+    expect(config?.pushbacks?.['team:probiotics']).toBeDefined();
+    expect(objections).toHaveBeenCalledTimes(2);
+  });
+
+  it("puts a team objection's root concerns in the customer and coach prompts", async () => {
+    sb.setHandler('scenario_objections', () => ({ data: [TEAM_ROW], error: null }));
+    const config = await loadSimulationConfig(client());
+    const scenario = {
+      ...SEED_SCENARIOS[0],
+      pushback: { id: 'team:probiotics', title: 'Probiotics', example: '"He does not need them."' },
+    };
+    expect(resolvePushbackKnowledge('team:probiotics', config)?.rootConcerns).toEqual(
+      TEAM_ROW.coaching.rootConcerns,
+    );
+    const customer = buildCustomerSystemPrompt({ scenario, config, locale: 'en', mode: 'text' });
+    expect(customer).toContain('# UNDER THE SURFACE');
+    expect(customer).toContain('- Believes probiotics are a supplement-aisle fad');
+    expect(customer).toContain('- Already spends a lot on food');
+    const coach = buildCoachHintSystemPrompt({ scenario, config, locale: 'en' });
+    expect(coach).toContain('- Believes probiotics are a supplement-aisle fad');
+
+    // Without the merge the same scenario has no hidden concerns at all.
+    const bare = buildCustomerSystemPrompt({ scenario, config: {}, locale: 'en', mode: 'text' });
+    expect(bare).not.toContain('# UNDER THE SURFACE');
   });
 });
 

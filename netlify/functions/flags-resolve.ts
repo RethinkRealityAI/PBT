@@ -3,7 +3,8 @@
  *
  * Consumer apps (anonymous + authed) POST a small audience descriptor and
  * receive a `{ flagKey: value }` map for every registered flag, plus any
- * scenario_overrides keyed by scenario_id.
+ * scenario_overrides keyed by scenario_id, and the team-authored objections
+ * (`objections`, see `loadPublicObjections`).
  *
  * Caching: in-function memoization keyed by (audience hash). TTL 60s. The
  * function itself reads with the service role; no JWT required from the
@@ -22,7 +23,9 @@
  */
 import { errorResponse, getServiceClient, jsonResponse } from './_shared/admin';
 import { isMissingSpeciesColumn } from './_shared/speciesColumn';
+import { readTeamObjections, type TeamObjectionsRead } from './_shared/objectionsStore';
 import { triggerKnowledgeSync, type NetlifyContextLike } from './_shared/knowledgeTrigger';
+import type { TeamObjection } from '../../src/shared/scenarios/objections';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -80,6 +83,8 @@ interface ResolvedSnapshot {
   flags: Record<string, unknown>;
   scenarioOverrides: OverrideRow[];
   simulationConfig: Record<string, unknown> | null;
+  /** Team-authored objections (non-deleted; retired ones with visible:false). */
+  objections: TeamObjection[];
   fetchedAt: number;
 }
 
@@ -151,14 +156,108 @@ export async function selectOverrideRows(select: OverrideSelect, now = Date.now(
   return base.data;
 }
 
+/**
+ * Team-authored objections (`scenario_objections`, migration
+ * 20261012000000_scenario_objections.sql — hand-run, so a deploy may land
+ * first). Like the species column: a genuinely MISSING table is remembered
+ * for ten minutes (no failed query on every snapshot load, and applying the
+ * migration takes effect without a redeploy); a transient error is not
+ * remembered and serves the last good list, so one blip cannot make every
+ * scenario built on a team objection vanish for a cache period.
+ */
+const OBJECTIONS_REPROBE_MS = 10 * 60_000;
+let objectionsTableMissingAt: number | null = null;
+let lastGoodObjections: TeamObjection[] = [];
+/** True once this instance has read the table successfully at least once. */
+let hadGoodObjectionsRead = false;
+/**
+ * True when the LAST read failed transiently on an instance that has never
+ * read the table successfully: the "last good list" it served is just the
+ * empty initial value, not the team's objections. A snapshot built on that
+ * must not be cached — every scenario on a team objection would vanish from
+ * every trainee app for the cache window (60 s here, up to 5 minutes in the
+ * browser), and a library scenario re-pointed at one would be hidden.
+ */
+let objectionsDegraded = false;
+
+/** See `objectionsDegraded`. */
+export function objectionsReadDegraded(): boolean {
+  return objectionsDegraded;
+}
+
+/**
+ * What a team objection may say in PUBLIC. The snapshot is anonymous and
+ * cached, so it carries only what the trainee app renders: the three hint
+ * lists. `rootConcerns` (what the AI owner hides until asked — the answer
+ * key, like the admin's AI notes) and `watchOuts` stay server-side; the AI
+ * functions read them from the database (`_shared/ai.ts`).
+ */
+export function publicObjection(o: TeamObjection): TeamObjection {
+  const { acknowledgePatterns, clarifyQuestions, takeActionPatterns } = o.coaching;
+  return {
+    ...o,
+    coaching: {
+      ...(acknowledgePatterns ? { acknowledgePatterns } : {}),
+      ...(clarifyQuestions ? { clarifyQuestions } : {}),
+      ...(takeActionPatterns ? { takeActionPatterns } : {}),
+    },
+  };
+}
+
+/** Test hook: forget a remembered missing table and the last good list. */
+export function resetObjectionsProbe(): void {
+  objectionsTableMissingAt = null;
+  lastGoodObjections = [];
+  hadGoodObjectionsRead = false;
+  objectionsDegraded = false;
+}
+
+/**
+ * The objections the snapshot publishes: every non-deleted one, retired
+ * included (the consumer needs them to RESOLVE a saved scenario; its pickers
+ * hide `visible: false`). Rows go through `rowToTeamObjection`, so only the
+ * public shape leaves — never `created_by` / `updated_by`. Never throws: the
+ * snapshot must not go down over an optional feature.
+ */
+export async function loadPublicObjections(
+  read: () => Promise<TeamObjectionsRead>,
+  now = Date.now(),
+): Promise<TeamObjection[]> {
+  if (objectionsTableMissingAt !== null && now - objectionsTableMissingAt < OBJECTIONS_REPROBE_MS) {
+    objectionsDegraded = false;
+    return [];
+  }
+  const res = await read();
+  if (!res.error) {
+    objectionsTableMissingAt = null;
+    hadGoodObjectionsRead = true;
+    objectionsDegraded = false;
+    lastGoodObjections = res.objections.map(publicObjection);
+    return lastGoodObjections;
+  }
+  if (res.missing) {
+    objectionsTableMissingAt = now;
+    objectionsDegraded = false;
+    lastGoodObjections = [];
+    console.warn(
+      '[flags-resolve] scenario_objections missing — apply 20261012000000_scenario_objections.sql; serving built-in objections only',
+    );
+    return [];
+  }
+  console.warn('[flags-resolve] scenario_objections fetch failed; serving the last good list', res.error);
+  objectionsDegraded = !hadGoodObjectionsRead;
+  return lastGoodObjections;
+}
+
 async function loadSnapshot(): Promise<{
   flags: FlagRow[];
   rules: RuleRow[];
   overrides: OverrideRow[];
   simulationConfig: Record<string, unknown> | null;
+  objections: TeamObjection[];
 }> {
   const sb = getServiceClient();
-  const [flagsRes, rulesRes, overrideRows, simCfgRes] = await Promise.all([
+  const [flagsRes, rulesRes, overrideRows, simCfgRes, objections] = await Promise.all([
     sb.from('flags').select('key, default_value, value_type'),
     sb
       .from('flag_rules')
@@ -171,6 +270,7 @@ async function loadSnapshot(): Promise<{
       sb.from('scenario_overrides').select(columns).is('deleted_at', null),
     ),
     sb.from('simulation_config').select('config').eq('id', 'global').maybeSingle(),
+    loadPublicObjections(() => readTeamObjections(sb)),
   ]);
   if (flagsRes.error) throw flagsRes.error;
   if (rulesRes.error) throw rulesRes.error;
@@ -183,6 +283,7 @@ async function loadSnapshot(): Promise<{
     simulationConfig: publicSimulationConfig(
       (simCfgRes.data?.config ?? null) as Record<string, unknown> | null,
     ),
+    objections,
   };
 }
 
@@ -196,6 +297,10 @@ async function loadSnapshot(): Promise<{
  *     never needs them (outside preview, where they arrive by postMessage).
  *   • A hidden row (`visible: false`) is the Studio's "not published" state.
  *     The app needs to know the scenario is hidden — nothing else about it.
+ *   • `copied_from` ("added to the library from a trainee's scenario") is
+ *     admin-only provenance: it names a trainee's `user:<uuid>`. The select
+ *     above never asks for it; it is stripped here too so a future
+ *     `select('*')` cannot leak it.
  */
 export function publicOverrideRows(rows: OverrideRow[]): OverrideRow[] {
   return rows.map((row) => {
@@ -206,7 +311,8 @@ export function publicOverrideRows(rows: OverrideRow[]): OverrideRow[] {
         sort_order: row.sort_order ?? null,
       } as OverrideRow;
     }
-    return { ...row, prompt_prefix: null, prompt_suffix: null };
+    const { copied_from: _provenance, ...rest } = row as OverrideRow & { copied_from?: unknown };
+    return { ...rest, prompt_prefix: null, prompt_suffix: null };
   });
 }
 
@@ -327,9 +433,11 @@ export default async (req: Request, context?: NetlifyContextLike): Promise<Respo
           flags: {},
           scenarioOverrides: raw.overrides,
           simulationConfig: raw.simulationConfig,
+          objections: raw.objections,
           fetchedAt: now,
         },
-        expiresAt: now + CACHE_TTL_MS,
+        // Built on a failed cold objections read: serve it, don't keep it.
+        expiresAt: objectionsReadDegraded() ? now : now + CACHE_TTL_MS,
       };
       // Stash the raw rows on the snapshot for resolve.
       (snapshotCache.value as ResolvedSnapshot & {
@@ -360,11 +468,12 @@ export default async (req: Request, context?: NetlifyContextLike): Promise<Respo
         flags: resolved,
         scenarioOverrides: snap.scenarioOverrides,
         simulationConfig: snap.simulationConfig,
+        objections: snap.objections,
         fetchedAt: snapshotCache.value.fetchedAt,
       },
       {
         headers: {
-          'cache-control': 'public, max-age=30',
+          'cache-control': objectionsReadDegraded() ? 'no-store' : 'public, max-age=30',
         },
       },
     );

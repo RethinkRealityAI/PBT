@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { pushbackLabel } from '../lib/labels';
 import {
   DriverChip,
   Eyebrow,
@@ -202,7 +203,7 @@ export function ScenarioDetailModal({
               value={scenario.weight_kg != null ? `${scenario.weight_kg} kg` : null}
             />
             <DetailCell label="Owner persona" value={scenario.persona} />
-            <DetailCell label="Pushback type" value={scenario.pushback_id} />
+            <DetailCell label="Pushback type" value={scenario.pushback_id ? pushbackLabel(scenario.pushback_id) : null} />
             <DetailCell label="Difficulty" value={difficultyLabel ?? null} />
           </div>
         )}

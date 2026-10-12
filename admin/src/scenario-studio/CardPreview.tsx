@@ -12,10 +12,11 @@
  * species glyph — the gallery card prints the details underneath.
  */
 import { COLOR, DRIVERS, type DriverKey } from '../lib/tokens';
-import { PUSHBACK_LABELS } from '../../../src/shared/scenarios/enums';
 import { lifeStageLabel, speciesOf } from '../../../src/shared/scenarios/species';
 import { SPECIES_GLYPH } from './ui';
 import type { StudioDraft } from './studioModel';
+import { objectionLabel, type ObjectionRef } from './objections/objectionsModel';
+import { useObjectionsContext } from './objections/ObjectionsContext';
 
 const DRIVER_SET = new Set<string>(['Activator', 'Energizer', 'Analyzer', 'Harmonizer']);
 
@@ -35,9 +36,14 @@ export interface CardText {
 
 /**
  * What the Home card will say for this draft. `fallbackTitle` covers a
- * scenario with no pushback yet (the built-in / trainee title).
+ * scenario with no pushback yet (the built-in / trainee title); `team` names
+ * a team objection by its own title, the way the app does.
  */
-export function cardText(draft: StudioDraft, fallbackTitle?: string | null): CardText {
+export function cardText(
+  draft: StudioDraft,
+  fallbackTitle?: string | null,
+  team: readonly ObjectionRef[] = [],
+): CardText {
   const driver = asDriver(draft.suggested_driver);
   const tint = asDriver(draft.card_driver_override) ?? driver ?? 'Activator';
   const breed = draft.breed?.trim() || '—';
@@ -45,7 +51,7 @@ export function cardText(draft: StudioDraft, fallbackTitle?: string | null): Car
   return {
     title:
       draft.card_title_override?.trim() ||
-      (draft.pushback_id ? PUSHBACK_LABELS[draft.pushback_id] : '') ||
+      (draft.pushback_id ? objectionLabel(draft.pushback_id, team) : '') ||
       fallbackTitle?.trim() ||
       'Untitled scenario',
     subtitle:
@@ -65,7 +71,8 @@ export function CardPreview({
   fallbackTitle?: string | null;
   compact?: boolean;
 }) {
-  const text = cardText(draft, fallbackTitle);
+  const { objections } = useObjectionsContext();
+  const text = cardText(draft, fallbackTitle, objections);
   const dc = DRIVERS[text.tint];
   const species = speciesOf(draft.species);
   const infoBody = draft.info_modal_body?.trim() ?? '';

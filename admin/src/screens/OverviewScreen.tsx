@@ -26,7 +26,7 @@ import {
 } from '../data/queries';
 import { COLOR, DRIVER_KEYS, DRIVERS, type DriverKey } from '../lib/tokens';
 import { fmtAgo, fmtMoney, fmtNumber } from '../lib/format';
-import { PUSHBACK_LABELS, labelOf } from '../lib/labels';
+import { pushbackLabel } from '../lib/labels';
 
 export function OverviewScreen({
   range,
@@ -419,7 +419,7 @@ export function OverviewScreen({
                     <div style={{ fontSize: 13, color: COLOR.inkSoft }}>
                       {s.scenario_summary ??
                         (s.pushback_id
-                          ? labelOf(PUSHBACK_LABELS, s.pushback_id)
+                          ? pushbackLabel(s.pushback_id)
                           : '—')}
                     </div>
                     <StatusPill tone="warn">

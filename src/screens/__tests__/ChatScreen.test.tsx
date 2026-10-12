@@ -3,8 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { ChatScreen } from '../ChatScreen';
-import { SEED_SCENARIOS } from '../../data/scenarios';
+import { SEED_SCENARIOS, type Scenario } from '../../data/scenarios';
 import { __resetPreviewRuns, startPreviewRun } from '../../lib/previewMode';
+import { adminOverrideToScenario } from '../../data/scenarioOverrides';
+import type { FlagSnapshot, ScenarioOverride } from '../../services/flagsClient';
 
 const go = vi.fn();
 const setScenario = vi.fn();
@@ -18,7 +20,9 @@ const chatApplyVoiceSessionComplete = vi.fn();
 const chatReset = vi.fn();
 const chatSend = vi.fn();
 
-let currentScenario = SEED_SCENARIOS[0];
+let currentScenario: Scenario = SEED_SCENARIOS[0];
+/** The flag snapshot `useResolvedLibraryScenarios` sees (null = none loaded). */
+let flagSnapshot: FlagSnapshot | null = null;
 let voiceStatus:
   | 'idle'
   | 'connecting'
@@ -64,6 +68,29 @@ vi.mock('../../design-system/Segmented', () => ({
   ),
 }));
 
+// Only `useFlags` (what the resolved library reads) is driven by the test;
+// everything else in the module is the real, provider-less fallback.
+vi.mock('../../app/providers/FlagProvider', async () => {
+  const actual = await vi.importActual<typeof import('../../app/providers/FlagProvider')>(
+    '../../app/providers/FlagProvider',
+  );
+  const { findOverride } = await vi.importActual<typeof import('../../services/flagsClient')>(
+    '../../services/flagsClient',
+  );
+  return {
+    ...actual,
+    useFlags: () => ({
+      snapshot: flagSnapshot,
+      preview: null,
+      ready: true,
+      refresh: async () => {},
+      getFlag: <T,>(_key: string, fallback: T) => fallback,
+      getOverride: (id: string) => findOverride(flagSnapshot, id),
+      getSimulationConfig: () => null,
+    }),
+  };
+});
+
 vi.mock('../../app/providers/NavigationProvider', () => ({
   useNavigation: () => ({ go }),
 }));
@@ -103,6 +130,7 @@ vi.mock('../../services/voiceSession', () => ({
 describe('ChatScreen voice-first flow', () => {
   beforeEach(() => {
     currentScenario = SEED_SCENARIOS[0];
+    flagSnapshot = null;
     voiceStatus = 'idle';
     voiceError = null;
     vi.clearAllMocks();
@@ -158,8 +186,77 @@ describe('ChatScreen voice-first flow', () => {
     await user.click(screen.getByRole('button', { name: /next scenario/i }));
 
     expect(voiceStop).toHaveBeenCalled();
-    expect(setScenario).toHaveBeenCalledWith(SEED_SCENARIOS[1]);
+    // The arrows walk the RESOLVED library now (what Home and the Library tab
+    // show), so the next scenario carries its stable override handle — the
+    // id its admin edits and per-scenario prompt wraps are looked up by.
+    expect(setScenario).toHaveBeenCalledWith({ ...SEED_SCENARIOS[1], _overrideId: 'seed:1' });
     expect(go).not.toHaveBeenCalledWith('create');
+  });
+});
+
+describe('ChatScreen scenario rotation (resolved library)', () => {
+  const ROW: ScenarioOverride = {
+    scenario_id: 'admin:x',
+    visible: true,
+    sort_order: null,
+    title_override: null,
+    context_override: null,
+    opening_line_override: null,
+    difficulty_override: null,
+    persona_override: null,
+    prompt_prefix: null,
+    prompt_suffix: null,
+    card_title_override: null,
+    card_subtitle_override: null,
+    info_modal_title: null,
+    info_modal_body: null,
+    start_button_label: null,
+    card_driver_override: null,
+    breed: 'Maine Coon',
+    life_stage: 'Adult (3-7)',
+    pushback_id: 'cost',
+    pushback_notes: null,
+    suggested_driver: 'Analyzer',
+    weight_kg: null,
+    species: 'cat',
+  };
+  const CAT_A: ScenarioOverride = { ...ROW, scenario_id: 'admin:cat-a', sort_order: 10 };
+  const CAT_B: ScenarioOverride = { ...ROW, scenario_id: 'admin:cat-b', breed: 'Persian', sort_order: 11 };
+
+  beforeEach(() => {
+    currentScenario = SEED_SCENARIOS[0];
+    flagSnapshot = null;
+    voiceStatus = 'idle';
+    voiceError = null;
+    vi.clearAllMocks();
+  });
+
+  it('skips a seed the admin has hidden', async () => {
+    const user = userEvent.setup();
+    flagSnapshot = {
+      flags: {},
+      scenarioOverrides: [{ ...ROW, scenario_id: 'seed:1', visible: false, species: null, breed: null }],
+      fetchedAt: 0,
+    };
+    render(<ChatScreen />);
+    await user.click(screen.getByRole('button', { name: /next scenario/i }));
+    // seed:1 is hidden → straight to seed:2 (the third library scenario).
+    expect(setScenario).toHaveBeenCalledWith({ ...SEED_SCENARIOS[5], _overrideId: 'seed:2' });
+  });
+
+  it('keeps a cat session among the cat scenarios', async () => {
+    const user = userEvent.setup();
+    flagSnapshot = { flags: {}, scenarioOverrides: [CAT_A, CAT_B], fetchedAt: 0 };
+    currentScenario = adminOverrideToScenario(CAT_A)!;
+    render(<ChatScreen />);
+    await user.click(screen.getByRole('button', { name: /next scenario/i }));
+    const next = setScenario.mock.calls[0][0] as Scenario;
+    expect(next._overrideId).toBe('admin:cat-b');
+    expect(next.species).toBe('cat');
+    setScenario.mockClear();
+    await user.click(screen.getByRole('button', { name: /previous scenario/i }));
+    // Two cats: previous wraps to the other cat too — never a dog seed.
+    expect((setScenario.mock.calls[0][0] as Scenario)._overrideId).toBe('admin:cat-b');
   });
 });
 

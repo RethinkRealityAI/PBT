@@ -9,8 +9,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  ALL_OBJECTIONS,
   FIELD_LABELS,
   GALLERY_FILTERS,
+  buildTraineeLibraryDraft,
+  entryStatusText,
+  firstStepNeeding,
+  galleryFacets,
+  libraryCopiesByTrainee,
   REQUIRED_ADMIN_FIELDS,
   STUDIO_STEPS,
   aiSignature,
@@ -57,8 +63,11 @@ import type { ScenarioOverrideRow, UserScenario } from '../../data/types';
  * `keyof ScenarioOverrideRow` is exhaustive at compile time: adding a column
  * to the type without deciding whether the Studio edits it fails `tsc`.
  */
-const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id'> = {
+const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id' | 'provenance'> = {
   scenario_id: 'id',
+  // Where an `admin:` copy came from — set once with its first save (Add to
+  // library / Duplicate), shown on the trainee's card, never edited in a step.
+  copied_from: 'provenance',
   visible: 'editable',
   sort_order: 'editable',
   title_override: 'editable',
@@ -101,6 +110,7 @@ const ctx = (over: Partial<StudioContext> = {}): StudioContext => ({
   notRoleplayTitles: [],
   wrongSpeciesTitles: [],
   speciesUnsupported: false,
+  objection: null,
   ...over,
 });
 
@@ -747,5 +757,207 @@ describe('species checks', () => {
     expect(blocked.find((i) => i.key === 'species-storage')!.ok).toBe(false);
     expect(canPublish(blocked)).toBe(false);
     expect(canPublish(readiness({ ...complete, species: 'dog' }, ctx({ speciesUnsupported: true })))).toBe(true);
+  });
+});
+
+// ── Objections, Add to library, the library's filters ────────
+
+const PRO = {
+  id: 'team:probiotics-not-needed',
+  title: 'Probiotics: not needed',
+  example: '“Why would he need them?”',
+  titleFr: null,
+  exampleFr: null,
+  species: ['dog', 'cat'] as Array<'dog' | 'cat'>,
+  focusArea: 'gi',
+  coaching: {},
+  visible: true,
+  sortOrder: null,
+  updatedAt: null,
+};
+const BORED = { ...PRO, id: 'team:cat-bored', title: 'Cat gets bored', species: ['cat'] as Array<'dog' | 'cat'>, focusArea: null };
+
+describe('team objections in the checklist', () => {
+  const withObjections = (draft: StudioDraft, deleted: Array<{ id: string; title: string }> = []) =>
+    buildStudioContext({
+      draft,
+      source: 'admin',
+      tested: true,
+      docs: null,
+      objections: { team: [PRO, BORED, { ...PRO, id: 'team:old', title: 'Old', visible: false }], deleted, loaded: true },
+    });
+
+  it('a healthy team objection is an answer, and fits the animal', () => {
+    const draft = { ...complete, pushback_id: PRO.id, species: 'cat' as const };
+    const items = readiness(draft, withObjections(draft));
+    expect(items.find((i) => i.key === 'core')!.ok).toBe(true);
+    expect(items.find((i) => i.key === 'objection-species')).toMatchObject({ ok: true, level: 'recommended' });
+    expect(items.find((i) => i.key === 'objection')).toBeUndefined();
+    expect(canPublish(items)).toBe(true);
+  });
+
+  it('blocks a scenario whose objection was deleted — said once, in words', () => {
+    const draft = { ...complete, pushback_id: 'team:gone' };
+    const c = withObjections(draft, [{ id: 'team:gone', title: 'Gone for good' }]);
+    const items = readiness(draft, c);
+    expect(items.find((i) => i.key === 'core')!.ok).toBe(true);
+    const item = items.find((i) => i.key === 'objection')!;
+    expect(item).toMatchObject({ ok: false, level: 'required', step: 'pushback' });
+    expect(item.detail).toMatch(/“Gone for good” was deleted/);
+    expect(canPublish(items)).toBe(false);
+    expect(stepStatus('pushback', draft, c)).toEqual({ status: 'attention', detail: 'Its objection was deleted' });
+    // …and a save is refused before the server would.
+    const [blocker] = saveBlockers(draft, 'admin', c.objection);
+    expect(blocker).toMatchObject({ step: 'pushback' });
+    expect(blocker.message).toMatch(/was deleted/);
+  });
+
+  it('warns (without blocking) when the objection is for the other animal', () => {
+    const draft = { ...complete, pushback_id: BORED.id, species: 'dog' as const };
+    const items = readiness(draft, withObjections(draft));
+    const item = items.find((i) => i.key === 'objection-species')!;
+    expect(item).toMatchObject({ ok: false, level: 'recommended', label: 'The objection is meant for dogs' });
+    expect(item.detail).toMatch(/set up for cats only/);
+    expect(canPublish(items)).toBe(true);
+  });
+
+  it('a retired objection still plays — it is mentioned, not blocking', () => {
+    const draft = { ...complete, pushback_id: 'team:old' };
+    const items = readiness(draft, withObjections(draft));
+    expect(items.find((i) => i.key === 'objection-retired')).toMatchObject({ ok: false, level: 'recommended' });
+    expect(canPublish(items)).toBe(true);
+  });
+
+  it('says nothing about a team objection while the list is unknown', () => {
+    const draft = { ...complete, pushback_id: 'team:whatever' };
+    const c = buildStudioContext({ draft, source: 'admin', tested: true, docs: null });
+    expect(c.objection).toMatchObject({ state: 'unchecked' });
+    const keys = readiness(draft, c).map((i) => i.key);
+    expect(keys.filter((k) => k.startsWith('objection'))).toEqual([]);
+    expect(saveBlockers(draft, 'admin', c.objection)).toEqual([]);
+  });
+
+  it('names an untitled scenario by its team objection', () => {
+    expect(studioTitle({ pushback_id: PRO.id }, null, [PRO])).toBe('Probiotics: not needed');
+    expect(studioTitle({ pushback_id: PRO.id })).toBe('Probiotics not needed');
+  });
+});
+
+describe('Add to library', () => {
+  const traineeEntry = (over: Partial<UserScenario> = {}) =>
+    buildStudioEntries([], [trainee({ species: 'cat', breed: 'Persian', ...over })]).find((e) => e.source === 'user')!;
+
+  it('copies the trainee’s scenario under their own title, hidden, remembering where it came from', () => {
+    const copy = buildTraineeLibraryDraft(traineeEntry(), 'admin:new');
+    expect(copy).toMatchObject({
+      scenario_id: 'admin:new',
+      card_title_override: 'My tricky client',
+      species: 'cat',
+      breed: 'Persian',
+      life_stage: 'Senior (7+)',
+      pushback_id: 'cost',
+      suggested_driver: 'Energizer',
+      persona_override: 'Busy',
+      difficulty_override: 3,
+      visible: false,
+      sort_order: null,
+      copied_from: 'user:u1',
+    });
+    expect(copy.card_title_override).not.toMatch(/copy/i);
+  });
+
+  it('reads a trainee row with no species as a dog', () => {
+    expect(buildTraineeLibraryDraft(traineeEntry({ species: null }), 'admin:x').species).toBe('dog');
+    expect(buildTraineeLibraryDraft(traineeEntry({ species: undefined }), 'admin:x').species).toBe('dog');
+  });
+
+  it('opens on the first step that still needs an answer (older rows have no ECHO driver)', () => {
+    const noDriver = buildTraineeLibraryDraft(traineeEntry({ suggested_driver: null }), 'admin:x');
+    expect(firstStepNeeding(noDriver)).toBe('customer');
+    expect(firstStepNeeding(buildTraineeLibraryDraft(traineeEntry(), 'admin:x'))).toBe('pet');
+    expect(firstStepNeeding({ ...noDriver, breed: null })).toBe('pet');
+  });
+
+  it('a duplicate remembers its source too', () => {
+    expect(buildDuplicateDraft({ scenario_id: 'seed:0', breed: 'Lab' }, 'admin:n').copied_from).toBe('seed:0');
+    expect(buildDuplicateDraft({ scenario_id: 'admin:abc' }, 'admin:n').copied_from).toBe('admin:abc');
+    expect(buildDuplicateDraft({}, 'admin:n').copied_from).toBeNull();
+  });
+
+  it('finds the library copies of each trainee scenario, newest first', () => {
+    const entries = buildStudioEntries(
+      [
+        row({ scenario_id: 'admin:old', copied_from: 'user:u1', updated_at: '2026-01-01T00:00:00Z' }),
+        row({ scenario_id: 'admin:new', copied_from: 'user:u1', visible: true, updated_at: '2026-09-01T00:00:00Z' }),
+        row({ scenario_id: 'admin:dup', copied_from: 'seed:0' }),
+      ],
+      [trainee(), trainee({ id: 'u2', title: 'Another' })],
+    );
+    const copies = libraryCopiesByTrainee(entries);
+    expect(copies.get('user:u1')!.map((e) => e.id)).toEqual(['admin:new', 'admin:old']);
+    expect(copies.has('user:u2')).toBe(false);
+    expect(copies.has('seed:0')).toBe(false);
+
+    const u1 = entries.find((e) => e.id === 'user:u1')!;
+    expect(entryStatusText(u1, copies.get('user:u1'))).toEqual({ tone: 'success', text: 'In the library — live' });
+    expect(entryStatusText(u1, [entries.find((e) => e.id === 'admin:old')!])).toEqual({
+      tone: 'info',
+      text: 'In the library — hidden draft',
+    });
+    expect(entryStatusText(u1)).toEqual({ tone: 'neutral', text: 'Trainee’s own — not in the library' });
+  });
+
+  it('words every status unambiguously', () => {
+    expect(entryStatusText({ status: 'live' }).text).toBe('Live in the app');
+    expect(entryStatusText({ status: 'hidden' }).text).toBe('Hidden from trainees');
+    expect(entryStatusText({ status: 'draft' }).text).toBe('Saved draft — hidden');
+  });
+});
+
+describe('galleryFacets', () => {
+  const entries = buildStudioEntries(
+    [
+      row({ scenario_id: 'admin:cat', species: 'cat', breed: 'Persian', pushback_id: PRO.id }),
+      row({ scenario_id: 'admin:dog', species: 'dog', breed: 'Lab', pushback_id: PRO.id, visible: true }),
+      row({ scenario_id: 'admin:bored', species: 'cat', pushback_id: BORED.id }),
+    ],
+    [trainee({ species: 'cat', pushback_id: 'custom' })],
+    [PRO, BORED],
+  );
+  const all = { status: 'all' as const, animal: 'all' as const, objection: ALL_OBJECTIONS };
+
+  it('filters by animal (no species = dog) with counts under the other filters', () => {
+    const cats = galleryFacets(entries, { ...all, animal: 'cat' }, '', [PRO, BORED]);
+    expect(cats.shown.map((e) => e.id).sort()).toEqual(['admin:bored', 'admin:cat', 'user:u1']);
+    // Seeds have no species — they are dogs.
+    expect(cats.animal).toEqual({ all: 7, dog: 4, cat: 3 });
+    expect(cats.status.drafts).toBe(2);
+    expect(cats.status.trainee).toBe(1);
+  });
+
+  it('lists every objection in use, named, with counts — and filters by it', () => {
+    const f = galleryFacets(entries, all, '', [PRO, BORED]);
+    expect(f.objections).toContainEqual({ id: PRO.id, label: 'Probiotics: not needed', count: 2 });
+    expect(f.objections).toContainEqual({ id: 'custom', label: 'Something else (described in the scenario)', count: 1 });
+    expect(f.objections.map((o) => o.label)).toEqual([...f.objections.map((o) => o.label)].sort((a, b) => a.localeCompare(b)));
+    expect(f.objectionTotal).toBe(7);
+
+    const pro = galleryFacets(entries, { ...all, objection: PRO.id }, '', [PRO, BORED]);
+    expect(pro.shown.map((e) => e.id).sort()).toEqual(['admin:cat', 'admin:dog']);
+    expect(pro.animal).toEqual({ all: 2, dog: 1, cat: 1 });
+
+    const both = galleryFacets(entries, { status: 'live', animal: 'dog', objection: PRO.id }, '', [PRO, BORED]);
+    expect(both.shown.map((e) => e.id)).toEqual(['admin:dog']);
+  });
+
+  it('keeps the chosen objection listed when nothing matches it any more', () => {
+    const f = galleryFacets(entries, { ...all, animal: 'dog', objection: BORED.id }, '', [PRO, BORED]);
+    expect(f.shown).toEqual([]);
+    expect(f.objections).toContainEqual({ id: BORED.id, label: 'Cat gets bored', count: 0 });
+  });
+
+  it('searches by the objection’s name', () => {
+    const f = galleryFacets(entries, all, 'probiotics', [PRO, BORED]);
+    expect(f.shown.map((e) => e.id).sort()).toEqual(['admin:cat', 'admin:dog']);
   });
 });

@@ -95,6 +95,12 @@ export interface UserScenario {
   avg_score: number | null;
   created_at: string;
   updated_at?: string | null;
+  /**
+   * 'dog' | 'cat' — which animal the trainee built it for (null/absent =
+   * dog). Column added by migration 20261012000000_scenario_objections.sql;
+   * rows from a project that has not run it have no such key.
+   */
+  species?: ScenarioSpecies | null;
 }
 
 export interface AnalyzerEvent {
@@ -216,6 +222,14 @@ export interface ScenarioOverrideRow {
   focus_area: string | null;
   /** knowledge_documents.slug values explicitly attached to this scenario. */
   knowledge_slugs: string[] | null;
+  /**
+   * For an `admin:` scenario made from another one ("Add to library" on a
+   * trainee's scenario, or Duplicate): the source id — `user:<uuid>`,
+   * `seed:<n>` or `admin:<uuid>`. Display only. The server stores it when the
+   * row is CREATED and ignores it on updates. Column added by migration
+   * 20261012000000_scenario_objections.sql; absent before it is applied.
+   */
+  copied_from?: string | null;
   deleted_at: string | null;
   created_by: string | null;
   updated_by: string | null;

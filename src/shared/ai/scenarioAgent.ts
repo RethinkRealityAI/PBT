@@ -24,6 +24,7 @@ import {
   PUSHBACK_LABELS,
 } from '../scenarios/enums';
 import { SCENARIO_LIMITS, SCENARIO_PROSE_CAPS } from '../scenarios/limits';
+import { isTeamObjectionId } from '../scenarios/objections';
 import {
   SPECIES_LABELS,
   isScenarioSpecies,
@@ -360,8 +361,27 @@ export function normalizeLifeStage(raw: unknown): string | undefined {
   return undefined;
 }
 
-/** Accepts an id or its human label ("Cost / price pushback" → `cost`). */
-export function normalizePushbackId(raw: unknown): string | undefined {
+/** The team objections a normaliser may accept (see `AgentNormalizeContext`). */
+export type AgentObjectionChoices = AgentNormalizeContext['objections'];
+
+/** What the field-level normalisers need from the context (all optional). */
+export type FieldNormalizeContext = Pick<AgentNormalizeContext, 'objections'>;
+
+function squash(s: string): string {
+  return s.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Accepts a built-in id or its human label ("Cost / price pushback" →
+ * `cost`), or — when `objections` lists them — a TEAM objection by its exact
+ * id, its id in any casing, or its name in any casing/spacing. A `team:` id
+ * that is not in the list is dropped, like a made-up document slug: the
+ * model may only pick objections the server vouched for.
+ */
+export function normalizePushbackId(
+  raw: unknown,
+  objections?: AgentObjectionChoices,
+): string | undefined {
   if (typeof raw !== 'string') return undefined;
   const v = raw.trim();
   if (PUSHBACK_IDS.includes(v)) return v;
@@ -369,7 +389,14 @@ export function normalizePushbackId(raw: unknown): string | undefined {
   if (ci) return ci;
   const lower = v.toLowerCase();
   const byLabel = PUSHBACK_IDS.find((id) => (PUSHBACK_LABELS[id] ?? '').toLowerCase() === lower);
-  return byLabel;
+  if (byLabel) return byLabel;
+  if (!objections || objections.length === 0 || !v) return undefined;
+  const wanted = squash(v);
+  const team =
+    objections.find((o) => o.id === v) ??
+    objections.find((o) => o.id.toLowerCase() === lower) ??
+    objections.find((o) => squash(o.title) === wanted);
+  return team && isTeamObjectionId(team.id) ? team.id : undefined;
 }
 
 export function normalizeDriver(raw: unknown): ScenarioDriver | undefined {
@@ -415,10 +442,13 @@ export function normalizeWeightKg(raw: unknown): number | undefined {
  * One field value, normalised — or `undefined` when the value is not
  * something that field can hold. The single source of truth for "is this a
  * legal value", used for model output, card edits, and option buttons.
+ * `ctx.objections` widens `pushback_id` to the listed team objections;
+ * without it only the built-ins are legal.
  */
 export function normalizeFieldValue(
   field: AgentField | OfferField,
   raw: unknown,
+  ctx: FieldNormalizeContext = {},
 ): string | number | undefined {
   switch (field) {
     case 'species':
@@ -426,7 +456,7 @@ export function normalizeFieldValue(
     case 'life_stage':
       return normalizeLifeStage(raw);
     case 'pushback_id':
-      return normalizePushbackId(raw);
+      return normalizePushbackId(raw, ctx.objections);
     case 'suggested_driver':
       return normalizeDriver(raw);
     case 'persona_override':
@@ -449,6 +479,14 @@ export interface AgentNormalizeContext {
    * silently retrieve nothing.
    */
   knownSlugs: ReadonlySet<string>;
+  /**
+   * Team-authored objections the assistant may pick as `pushback_id`
+   * (visible ones, from `scenario_objections`). Built-in ids are always
+   * allowed; a `team:` id not listed here is dropped like a made-up slug.
+   * Optional so callers that predate team objections keep compiling — absent
+   * means "built-ins only".
+   */
+  objections?: ReadonlyArray<{ id: string; title: string }>;
 }
 
 const TOOL_ALIASES: Record<string, ScenarioAgentTool> = {
@@ -470,14 +508,17 @@ function note(raw: unknown): string | undefined {
   return cleanText(raw, AGENT_LIMITS.maxNoteChars);
 }
 
-function normalizeUpdateFields(a: Record<string, unknown>): ScenarioAgentAction | null {
+function normalizeUpdateFields(
+  a: Record<string, unknown>,
+  ctx: FieldNormalizeContext,
+): ScenarioAgentAction | null {
   // Lenient on shape: `{ fields: {...} }` is the contract, but a model that
   // flattens the fields onto the action itself still means the same thing.
   const source = isRecord(a.fields) ? a.fields : a;
   const fields: Record<string, string | number> = {};
   for (const field of AGENT_FIELDS) {
     if (!(field in source)) continue;
-    const value = normalizeFieldValue(field, source[field]);
+    const value = normalizeFieldValue(field, source[field], ctx);
     if (value !== undefined) fields[field] = value;
   }
   if (Object.keys(fields).length === 0) return null;
@@ -537,7 +578,10 @@ function normalizeKnowledge(
   return { tool: 'attach_knowledge', mode: 'library', note: note(a.note ?? a.why) };
 }
 
-function normalizeAsk(a: Record<string, unknown>): ScenarioAgentAction | null {
+function normalizeAsk(
+  a: Record<string, unknown>,
+  ctx: FieldNormalizeContext,
+): ScenarioAgentAction | null {
   const question = cleanText(a.question, AGENT_LIMITS.maxQuestionChars);
   if (!question) return null;
   const field =
@@ -553,7 +597,7 @@ function normalizeAsk(a: Record<string, unknown>): ScenarioAgentAction | null {
     const rawValue = isRecord(item) ? (item.value ?? item.label) : item;
     let value: string | undefined;
     if (field) {
-      const v = normalizeFieldValue(field, rawValue);
+      const v = normalizeFieldValue(field, rawValue, ctx);
       value = v === undefined ? undefined : String(v);
     } else {
       value = cleanText(rawValue, AGENT_LIMITS.maxOptionLabelChars);
@@ -563,7 +607,12 @@ function normalizeAsk(a: Record<string, unknown>): ScenarioAgentAction | null {
     // gets the human label ("2 · Coachable") — the same one a value with no
     // label gets. A label that is a word of its own ("Hostile") stays.
     const derived = field
-      ? formatFieldValue(field, field === 'difficulty_override' ? Number(value) : value)
+      ? formatFieldValue(
+          field,
+          field === 'difficulty_override' ? Number(value) : value,
+          undefined,
+          ctx.objections,
+        )
       : value;
     const explicit = cleanText(rawLabel, AGENT_LIMITS.maxOptionLabelChars);
     const label = explicit !== undefined && !(field && explicit === value) ? explicit : derived;
@@ -574,7 +623,10 @@ function normalizeAsk(a: Record<string, unknown>): ScenarioAgentAction | null {
   return field ? { tool: 'ask', question, field, options } : { tool: 'ask', question, options };
 }
 
-function normalizeOffer(a: Record<string, unknown>): ScenarioAgentAction | null {
+function normalizeOffer(
+  a: Record<string, unknown>,
+  ctx: FieldNormalizeContext,
+): ScenarioAgentAction | null {
   if (typeof a.field !== 'string' || !(OFFER_FIELDS as readonly string[]).includes(a.field)) {
     return null;
   }
@@ -583,7 +635,7 @@ function normalizeOffer(a: Record<string, unknown>): ScenarioAgentAction | null 
   const options: string[] = [];
   for (const item of raw) {
     if (options.length >= AGENT_LIMITS.maxOfferOptions) break;
-    const v = normalizeFieldValue(field, isRecord(item) ? (item.value ?? item.label) : item);
+    const v = normalizeFieldValue(field, isRecord(item) ? (item.value ?? item.label) : item, ctx);
     if (typeof v === 'string' && !options.includes(v)) options.push(v);
   }
   // "Pick one" needs something to pick between — the prompt promises 2–4.
@@ -610,7 +662,7 @@ export function normalizeAgentActions(
     let action: ScenarioAgentAction | null = null;
     switch (tool) {
       case 'update_fields':
-        action = normalizeUpdateFields(item);
+        action = normalizeUpdateFields(item, ctx);
         break;
       case 'set_ai_notes':
         action = normalizeNotes(item);
@@ -620,11 +672,11 @@ export function normalizeAgentActions(
         break;
       case 'ask':
         if (asked) break;
-        action = normalizeAsk(item);
+        action = normalizeAsk(item, ctx);
         if (action) asked = true;
         break;
       case 'offer_options':
-        action = normalizeOffer(item);
+        action = normalizeOffer(item, ctx);
         break;
       case 'go_to_step':
         action = isStudioStepKey(item.step)
@@ -737,11 +789,16 @@ export function applyAgentAction<D extends ScenarioAgentDraft>(
 
 // ── Display helpers ──────────────────────────────────────────────────────
 
-/** A field value the way a person reads it (difficulty 3 → "3 · Hostile"). */
+/**
+ * A field value the way a person reads it (difficulty 3 → "3 · Hostile").
+ * `objections` names team objections (`team:probiotics` → its title); an id
+ * it doesn't know is shown as the id.
+ */
 export function formatFieldValue(
   field: string,
   value: unknown,
   species?: unknown,
+  objections?: AgentObjectionChoices,
 ): string {
   if (value === null || value === undefined || value === '') return '—';
   switch (field) {
@@ -749,8 +806,10 @@ export function formatFieldValue(
       return isScenarioSpecies(value) ? SPECIES_LABELS[value] : String(value);
     case 'life_stage':
       return lifeStageLabel(String(value), species);
-    case 'pushback_id':
-      return PUSHBACK_LABELS[String(value)] ?? String(value);
+    case 'pushback_id': {
+      const id = String(value);
+      return PUSHBACK_LABELS[id] ?? objections?.find((o) => o.id === id)?.title ?? id;
+    }
     case 'difficulty_override': {
       const n = Number(value);
       return DIFFICULTY_LABELS[n] ? `${n} · ${DIFFICULTY_LABELS[n]}` : String(value);
@@ -845,8 +904,16 @@ export function sanitizeAgentTurns(raw: unknown): AgentTurn[] | null {
  * Whitelist + clamp a client-sent draft. Values are coerced to their
  * normalised form or dropped — the draft is prompt context, so it must not
  * be a vector for arbitrary structure or unbounded text.
+ *
+ * `pushback_id`: built-ins and the listed team objections normalise as
+ * usual; any other well-formed `team:<slug>` id is KEPT as typed. The draft
+ * is the admin's own saved state — possibly built on an objection since
+ * retired, and the browser builds its request without the list — and the id
+ * is pattern-bounded (it cannot carry prose). Whoever acts on it resolves it
+ * against the database: the inspector reports an unknown one as missing,
+ * and a save of one is refused.
  */
-export function pickAgentDraft(raw: unknown): ScenarioAgentDraft {
+export function pickAgentDraft(raw: unknown, ctx: FieldNormalizeContext = {}): ScenarioAgentDraft {
   const out: ScenarioAgentDraft = {};
   if (!isRecord(raw)) return out;
   const put = <K extends keyof ScenarioAgentDraft>(k: K, v: ScenarioAgentDraft[K] | undefined) => {
@@ -856,8 +923,11 @@ export function pickAgentDraft(raw: unknown): ScenarioAgentDraft {
   put('species', normalizeSpecies(raw.species));
   for (const field of AGENT_FIELDS) {
     if (field === 'species') continue;
-    const v = normalizeFieldValue(field, raw[field]);
+    const v = normalizeFieldValue(field, raw[field], ctx);
     if (v !== undefined) (out as Record<string, unknown>)[field] = v;
+  }
+  if (out.pushback_id === undefined && isTeamObjectionId(raw.pushback_id)) {
+    out.pushback_id = raw.pushback_id;
   }
   for (const key of ['prompt_prefix', 'prompt_suffix'] as const) {
     put(key, cleanText(raw[key], SCENARIO_LIMITS.promptMax));

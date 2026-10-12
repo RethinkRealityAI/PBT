@@ -23,6 +23,7 @@ import { FeedbackScreen } from './screens/FeedbackScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { FlagsScreen } from './screens/FlagsScreen';
 import { ScenarioStudioScreen } from './scenario-studio/ScenarioStudioScreen';
+import { ObjectionsScreen } from './scenario-studio/objections/ObjectionsScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
 import { SimulationScreen } from './screens/SimulationScreen';
@@ -106,6 +107,34 @@ export function App() {
       sub.subscription.unsubscribe();
     };
   }, [route]);
+
+  /*
+   * Resolve the URL against what this role may actually open. Three things can
+   * go wrong and all three land on the same fallback rather than a 403 screen:
+   * no hash at all (first visit), a hash naming a destination that no longer
+   * exists (old bookmark), and a hash naming one this role lost access to
+   * (their permissions changed while they had the tab open).
+   *
+   * Computed (and its effect declared) BEFORE the early returns below: a hook
+   * that only runs once auth has resolved changes the hook count between
+   * renders, and React throws ("Rendered more hooks than during the previous
+   * render") — the whole portal went blank after sign-in.
+   */
+  const resolved = auth.status === 'admin' ? resolveDestination(auth.me.permissions, hashRoute) : null;
+
+  // Canonicalise the address bar: a hash the fallback above resolved to a
+  // DIFFERENT destination or tab (a forbidden screen, a tab this role can't
+  // open) would otherwise sit in the URL while another screen renders — and
+  // be what Back and a copied link return to.
+  const resolvedKey = resolved?.item.key ?? null;
+  const resolvedTab = resolved?.tab ?? '';
+  useEffect(() => {
+    if (!hashRoute || resolvedKey === null) return;
+    const wantTab = resolvedTab || null;
+    if (hashRoute.screen !== resolvedKey || (hashRoute.tab ?? null) !== wantTab) {
+      navigate({ screen: resolvedKey, tab: wantTab }, true);
+    }
+  }, [hashRoute, resolvedKey, resolvedTab, navigate]);
 
   if (route === 'invite') return <InviteAcceptPage />;
   if (route === 'reset') return <ResetPasswordPage />;
@@ -194,9 +223,8 @@ export function App() {
 
   const { me } = auth;
   const perms = me.permissions;
-  const allowed = visibleItems(perms);
 
-  if (allowed.length === 0) {
+  if (!resolved) {
     return (
       <FullCenterMessage>
         <Glass padding={24} radius={16}>
@@ -210,30 +238,7 @@ export function App() {
     );
   }
 
-  /*
-   * Resolve the URL against what this role may actually open. Three things can
-   * go wrong and all three land on the same fallback rather than a 403 screen:
-   * no hash at all (first visit), a hash naming a destination that no longer
-   * exists (old bookmark), and a hash naming one this role lost access to
-   * (their permissions changed while they had the tab open).
-   */
-  const item =
-    (hashRoute && allowed.find((i) => i.key === hashRoute.screen)) ?? allowed[0];
-  const tabs = visibleTabs(item, perms);
-  const tab =
-    tabs.find((t) => t.key === hashRoute?.tab)?.key ?? defaultTab(item, perms) ?? '';
-
-  // Canonicalise the address bar: a hash the fallback above resolved to a
-  // DIFFERENT destination or tab (a forbidden screen, a tab this role can't
-  // open) would otherwise sit in the URL while another screen renders — and
-  // be what Back and a copied link return to.
-  useEffect(() => {
-    if (!hashRoute) return;
-    const wantTab = tab || null;
-    if (hashRoute.screen !== item.key || (hashRoute.tab ?? null) !== wantTab) {
-      navigate({ screen: item.key, tab: wantTab }, true);
-    }
-  }, [hashRoute, item.key, tab, navigate]);
+  const { item, tabs, tab } = resolved;
 
   const go = (screen: AdminScreen, nextTab?: string) => {
     // Clear the shared search on destination change — a filter typed on one
@@ -351,8 +356,11 @@ export function App() {
           {item.key === 'scenarios' && tab === 'studio' && (
             <ScenarioStudioScreen query={query} onQuery={setQuery} meUserId={me.user_id} />
           )}
+          {item.key === 'scenarios' && tab === 'objections' && (
+            <ObjectionsScreen query={query} onQuery={setQuery} />
+          )}
           {item.key === 'scenarios' && tab === 'trainee' && (
-            <ScenariosScreen query={query} onQuery={setQuery} />
+            <ScenariosScreen query={query} onQuery={setQuery} onOpenStudio={() => go('scenarios', 'studio')} />
           )}
           {item.key === 'knowledge' && <KnowledgeScreen query={query} onQuery={setQuery} />}
           {item.key === 'tuning' && <SimulationScreen />}
@@ -381,6 +389,19 @@ export function App() {
     </ToastProvider>
     </AccessProvider>
   );
+}
+
+/** The destination + tab this role lands on for a hash (null = none it may open). */
+function resolveDestination(
+  perms: readonly string[],
+  hashRoute: { screen: string; tab?: string | null } | null,
+): { item: ReturnType<typeof visibleItems>[number]; tabs: ReturnType<typeof visibleTabs>; tab: string } | null {
+  const allowed = visibleItems(perms);
+  if (allowed.length === 0) return null;
+  const item = (hashRoute && allowed.find((i) => i.key === hashRoute.screen)) ?? allowed[0];
+  const tabs = visibleTabs(item, perms);
+  const tab = tabs.find((t) => t.key === hashRoute?.tab)?.key ?? defaultTab(item, perms) ?? '';
+  return { item, tabs, tab };
 }
 
 function BackgroundHalos() {

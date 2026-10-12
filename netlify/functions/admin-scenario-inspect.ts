@@ -4,8 +4,10 @@
  *
  * "What exactly will the AI customer be told, and what will it read?"
  * Read-only: builds the runtime `Scenario` from the (unsaved) draft with
- * `draftToScenario` (validated, prose kept as typed — see `inspectDraft`),
- * loads the live simulation config from the database,
+ * `draftToScenario` (validated, prose kept as typed — see `inspectDraft`;
+ * a `team:` pushback resolves against the team's objections, read fresh),
+ * loads the live simulation config from the database (team objection
+ * coaching merged in, as every AI function sees it),
  * runs the real roleplay retrieval and returns
  *   • the exact text-mode customer system prompt (`buildCustomerSystemPrompt`,
  *     the draft's own AI notes as the preview overrides — the same wrapping
@@ -26,17 +28,20 @@
  * Nothing is written, no telemetry is recorded. `scenarios.read` — anyone who
  * can view a scenario may see what it tells the AI.
  */
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { can, requireAdmin } from './_shared/admin';
 import {
   adaptAdminError,
   aiError,
   errorMessage,
   isPlainObject,
-  loadSimulationConfig,
+  loadStoredSimulationConfig,
   ok,
   parseJsonBody,
   rateLimit,
+  withTeamObjections,
 } from './_shared/ai';
+import { readTeamObjections } from './_shared/objectionsStore';
 import { retrieveChunksDetailed, type RetrievalFilters } from './_shared/retrieval';
 import { buildCustomerSystemPrompt } from '../../src/data/knowledge/promptBuilders';
 import {
@@ -60,6 +65,7 @@ import {
   missingScenarioFields,
 } from '../../src/shared/scenarios/draftToScenario';
 import { SCENARIO_LIMITS } from '../../src/shared/scenarios/limits';
+import type { TeamObjection } from '../../src/shared/scenarios/objections';
 import { retrievalSpeciesFor } from '../../src/shared/scenarios/species';
 import type { RetrievedChunk } from '../../src/services/ragShared';
 
@@ -141,6 +147,15 @@ export function toPassage(chunk: RetrievedChunk): InspectPassage {
   };
 }
 
+/** Non-deleted team objections, uncached; [] on any failure (logged). */
+export async function inspectTeamObjections(sb: SupabaseClient): Promise<TeamObjection[]> {
+  const read = await readTeamObjections(sb);
+  if (read.error && !read.missing) {
+    console.warn('[admin-scenario-inspect] scenario_objections read failed', read.error.message);
+  }
+  return read.objections;
+}
+
 function adminNotesOf(
   draft: ScenarioAgentDraft,
   config: SimulationConfig | undefined,
@@ -198,13 +213,23 @@ export default async (req: Request): Promise<Response> => {
   }
 
   try {
-    const config = await loadSimulationConfig(ctx.sb);
+    // Team objections are read FRESH here (the AI functions cache them for a
+    // minute): an admin who has just added an objection and opens the
+    // briefing must see it resolve, not "Pushback missing". Retired ones are
+    // included — a scenario built on one still plays. Fail-open: without
+    // them only built-in pushbacks resolve. The config is the stored one with
+    // the same list merged in, exactly as `loadSimulationConfig` merges it.
+    const [stored, team] = await Promise.all([
+      loadStoredSimulationConfig(ctx.sb),
+      inspectTeamObjections(ctx.sb),
+    ]);
+    const config = withTeamObjections(stored, team);
     const rag = resolveRag(config);
     const notes = adminNotesOf(draft, config);
     const adminNotes = canBriefing ? notes : { ...notes, globalPrefix: null, globalSuffix: null };
 
-    const missing = missingScenarioFields(draft);
-    const scenario = missing.length === 0 ? draftToScenario(draft) : null;
+    const missing = missingScenarioFields(draft, team);
+    const scenario = missing.length === 0 ? draftToScenario(draft, team) : null;
     if (!scenario) {
       const payload: ScenarioInspectResponse = {
         missing: missing.length ? missing : ['Scenario'],

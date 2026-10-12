@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { StudioDraft } from '../../studioModel';
 import { PHONE, PREVIEW_FAILURE_COPY, TrainerAppFrame, phoneScale } from '../TrainerAppFrame';
+import { NO_OBJECTIONS, ObjectionsProvider } from '../../objections/ObjectionsContext';
+import type { AdminObjection } from '../../../../../src/shared/scenarios/objections';
 
 const DRAFT: StudioDraft = {
   breed: 'Maine Coon',
@@ -22,9 +24,13 @@ function post(data: unknown, origin = window.location.origin) {
   });
 }
 
-function renderFrame() {
+function renderFrame(objections: AdminObjection[] = []) {
   const onClose = vi.fn();
-  render(<TrainerAppFrame open onClose={onClose} draft={DRAFT} scenarioId="admin:cat-1" />);
+  render(
+    <ObjectionsProvider value={{ ...NO_OBJECTIONS, objections }}>
+      <TrainerAppFrame open onClose={onClose} draft={DRAFT} scenarioId="admin:cat-1" />
+    </ObjectionsProvider>,
+  );
   const iframe = screen.getByTitle('Trainee app preview') as HTMLIFrameElement;
   const postMessage = vi.fn();
   // jsdom gives the frame a real window; watch what the admin sends it.
@@ -64,12 +70,36 @@ describe('TrainerAppFrame', () => {
     );
     expect(postMessage).toHaveBeenNthCalledWith(
       2,
-      { type: 'pbt:preview-run-scenario', scenarioId: 'admin:cat-1', draft: row, mode: 'voice' },
+      { type: 'pbt:preview-run-scenario', scenarioId: 'admin:cat-1', draft: row, mode: 'voice', objections: [] },
       window.location.origin,
     );
 
     post({ type: 'pbt:preview-status', ok: true });
     expect(screen.getByText('running · voice')).toBeInTheDocument();
+  });
+
+  it('sends the Studio’s current objections, so one created a moment ago resolves in the preview', () => {
+    const fresh: AdminObjection = {
+      id: 'team:cat-bored',
+      title: 'Cat gets bored with the same food',
+      example: '"She turns her nose up after a week."',
+      titleFr: null,
+      exampleFr: null,
+      species: ['cat'],
+      focusArea: null,
+      coaching: {},
+      visible: true,
+      sortOrder: null,
+      updatedAt: '2026-10-12T10:00:00Z',
+      createdAt: '2026-10-12T10:00:00Z',
+      deletedAt: null,
+      usage: { scenarios: 0, live: 0, trainee: 0 },
+    };
+    const { postMessage } = renderFrame([fresh]);
+    post({ type: 'pbt:preview-runner-ready' });
+    fireEvent.click(screen.getByRole('button', { name: 'Start text chat' }));
+    const run = postMessage.mock.calls.find((c) => (c[0] as { type: string }).type === 'pbt:preview-run-scenario');
+    expect((run?.[0] as { objections: AdminObjection[] }).objections).toEqual([fresh]);
   });
 
   it('accepts the legacy ready message and shows the failure copy', () => {

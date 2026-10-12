@@ -46,12 +46,24 @@ import {
   lifeStageLabel,
 } from '../../../../src/shared/scenarios/species';
 import { FOCUS_AREAS, focusAreaLabel } from '../../../../src/shared/knowledge/focusAreas';
+import {
+  objectionAppliesTo,
+  type TeamObjection,
+} from '../../../../src/shared/scenarios/objections';
+
+/** The team objections a card may offer (active ones), with their animals. */
+export type SurfaceObjection = Pick<TeamObjection, 'id' | 'title' | 'species'>;
 
 export interface SurfaceBuildContext {
   /** The on-screen draft — the "Now: …" side of every change. */
   draft: StudioDraft;
   /** The knowledge library, for document titles on attach cards. */
   docs: readonly KnowledgeDocument[];
+  /**
+   * The team's active objections — offered beside the built-ins on a
+   * pushback choice, and how a `team:` id is named on a card (never raw).
+   */
+  objections?: readonly SurfaceObjection[];
 }
 
 /** Event names the cards emit (the panel's `onAction` switch). */
@@ -115,15 +127,30 @@ export const FIELD_MAX: Partial<Record<AgentField | 'prompt_prefix' | 'prompt_su
   prompt_suffix: SCENARIO_LIMITS.promptMax,
 };
 
-/** The legal values of a choice field, labelled the way a person reads them. */
-export function fieldOptions(field: AgentField, species?: unknown): ChoiceOption[] {
+/**
+ * The legal values of a choice field, labelled the way a person reads them.
+ * A pushback choice lists the built-ins, then the team's objections for this
+ * animal (`objections`); `keep` is a value that must stay listed even if it
+ * wouldn't be (the card's own proposal), so the picker never shows a blank.
+ */
+export function fieldOptions(
+  field: AgentField,
+  species?: unknown,
+  objections: readonly SurfaceObjection[] = [],
+  keep?: unknown,
+): ChoiceOption[] {
   switch (field) {
     case 'species':
       return SCENARIO_SPECIES.map((s) => ({ label: SPECIES_LABELS[s], value: s }));
     case 'life_stage':
       return LIFE_STAGES.map((s) => ({ label: lifeStageLabel(s, species), value: s }));
-    case 'pushback_id':
-      return PUSHBACK_IDS.map((id) => ({ label: PUSHBACK_LABELS[id] ?? id, value: id }));
+    case 'pushback_id': {
+      const builtIn = PUSHBACK_IDS.map((id) => ({ label: PUSHBACK_LABELS[id] ?? id, value: id }));
+      const team = objections
+        .filter((o) => objectionAppliesTo(o, species) || o.id === keep)
+        .map((o) => ({ label: o.title, value: o.id }));
+      return [...builtIn, ...team];
+    }
     case 'suggested_driver':
       return SCENARIO_DRIVERS.map((d) => ({ label: d, value: d }));
     case 'persona_override':
@@ -238,10 +265,12 @@ export function buildActionSurface(
           id,
           component: 'FieldChange',
           label: AGENT_FIELD_LABELS[field],
-          before: formatFieldValue(field, draft[field], draft.species),
+          before: formatFieldValue(field, draft[field], draft.species, ctx.objections),
           value: { path: `/proposal/fields/${field}` },
           kind,
-          ...(kind === 'choice' ? { options: fieldOptions(field, species) } : {}),
+          ...(kind === 'choice'
+            ? { options: fieldOptions(field, species, ctx.objections ?? [], action.fields[field]) }
+            : {}),
           ...(FIELD_MAX[field] ? { maxLength: FIELD_MAX[field] } : {}),
         });
         if (field === 'suggested_driver') {

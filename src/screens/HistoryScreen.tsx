@@ -9,36 +9,29 @@ import { Page } from '../shell/Page';
 import { PUSHBACK_CATEGORIES } from '../data/scenarios';
 import { readStorage } from '../lib/storage';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
-import { isScoreUnavailable, type SessionRecord } from '../services/types';
+import { isScoreUnavailable } from '../services/types';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { setSelectedSessionId } from '../lib/selectedSession';
 import { useLanguage } from '../app/providers/LanguageProvider';
-import { localizedPushbackLabel } from '../i18n/dataL10n/pushbacks';
+import {
+  localizedPushbackLabel,
+  localizedSessionSummary,
+} from '../i18n/dataL10n/pushbacks';
 import { formatDateTime, formatPercent } from '../i18n/format';
-import type { Locale } from '../i18n/locales';
-
-/**
- * A session's stored `scenarioSummary` is canonical English on purpose — it
- * doubles as the RAG cache key — so localize it for display only: swap the
- * leading pushback title for the locale's label and leave the breed and the
- * trainee's own notes verbatim.
- */
-function localizedSummary(session: SessionRecord, locale: Locale): string {
-  const canonical = PUSHBACK_CATEGORIES.find((c) => c.id === session.pushbackId);
-  if (!canonical || !session.scenarioSummary.startsWith(canonical.title)) {
-    return session.scenarioSummary;
-  }
-  return (
-    localizedPushbackLabel(session.pushbackId, locale) +
-    session.scenarioSummary.slice(canonical.title.length)
-  );
-}
+import { useTeamObjections } from '../features/scenarios/useObjectionCatalog';
+import { sortTeamObjections } from '../shared/scenarios/objections';
 
 export function HistoryScreen() {
   const { go } = useNavigation();
   const { t, locale } = useLanguage();
   const [filter, setFilter] = useState<string>('all');
   const sessions = readStorage(SESSIONS_KEY);
+  // Team objections (Scenario Studio): their own French for display, and a
+  // filter chip for each one the trainee has actually practised.
+  const teamObjections = useTeamObjections();
+  const practisedTeamObjections = sortTeamObjections(
+    teamObjections.filter((o) => sessions.some((s) => s.pushbackId === o.id)),
+  );
 
   const openSession = (id: string) => {
     setSelectedSessionId(id);
@@ -112,6 +105,15 @@ export function HistoryScreen() {
               {localizedPushbackLabel(c.id, locale)}
             </Chip>
           ))}
+          {practisedTeamObjections.map((o) => (
+            <Chip
+              key={o.id}
+              active={filter === o.id}
+              onClick={() => setFilter(o.id)}
+            >
+              {localizedPushbackLabel(o.id, locale, teamObjections)}
+            </Chip>
+          ))}
         </div>
 
         {filtered.length === 0 ? (
@@ -155,7 +157,7 @@ export function HistoryScreen() {
                   <Icon.chat />
                   <div className="flex-1 min-w-0">
                     <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      {localizedSummary(s, locale)}
+                      {localizedSessionSummary(s.scenarioSummary, s.pushbackId, locale, teamObjections)}
                     </div>
                     <div
                       style={{

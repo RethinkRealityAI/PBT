@@ -1,0 +1,134 @@
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { HomeScreen } from '../HomeScreen';
+import type { Scenario } from '../../data/scenarios';
+import type { FlagSnapshot, ScenarioOverride } from '../../services/flagsClient';
+
+const { go, setScenario } = vi.hoisted(() => ({ go: vi.fn(), setScenario: vi.fn() }));
+
+let flagSnapshot: FlagSnapshot | null = null;
+
+vi.mock('../../app/providers/NavigationProvider', () => ({
+  useNavigation: () => ({ go, back: vi.fn(), replace: vi.fn(), current: 'home', history: [] }),
+}));
+vi.mock('../../app/providers/ScenarioProvider', () => ({
+  useScenario: () => ({ scenario: null, setScenario }),
+}));
+vi.mock('../../app/providers/SessionProvider', () => ({
+  useSession: () => ({ user: null, session: null, loading: false }),
+}));
+vi.mock('../../app/providers/ProfileProvider', () => ({
+  useProfile: () => ({
+    profile: {
+      primary: 'Analyzer',
+      secondary: 'Harmonizer',
+      tally: { Activator: 1, Energizer: 1, Analyzer: 10, Harmonizer: 3 },
+      answers: [],
+      takenAt: '2026-10-01T00:00:00.000Z',
+    },
+    locked: true,
+    setProfile: () => {},
+  }),
+}));
+vi.mock('../../features/auth/SaveProgressBanner', () => ({ SaveProgressBanner: () => null }));
+vi.mock('../../lib/analytics', () => ({ logEvent: vi.fn() }));
+vi.mock('../../app/providers/FlagProvider', async () => {
+  const actual = await vi.importActual<typeof import('../../app/providers/FlagProvider')>(
+    '../../app/providers/FlagProvider',
+  );
+  const { findOverride } = await vi.importActual<typeof import('../../services/flagsClient')>(
+    '../../services/flagsClient',
+  );
+  return {
+    ...actual,
+    useFlags: () => ({
+      snapshot: flagSnapshot,
+      preview: null,
+      ready: true,
+      refresh: async () => {},
+      getFlag: <T,>(_key: string, fallback: T) => fallback,
+      getOverride: (id: string) => findOverride(flagSnapshot, id),
+      getSimulationConfig: () => null,
+    }),
+  };
+});
+
+const ADMIN_CAT: ScenarioOverride = {
+  scenario_id: 'admin:cat-1',
+  visible: true,
+  sort_order: null,
+  title_override: null,
+  context_override: null,
+  opening_line_override: null,
+  difficulty_override: null,
+  persona_override: null,
+  prompt_prefix: null,
+  prompt_suffix: null,
+  card_title_override: null,
+  card_subtitle_override: null,
+  info_modal_title: null,
+  info_modal_body: null,
+  start_button_label: null,
+  card_driver_override: null,
+  breed: 'Maine Coon',
+  life_stage: 'Puppy (<1)',
+  pushback_id: 'cost',
+  pushback_notes: null,
+  suggested_driver: 'Harmonizer',
+  weight_kg: null,
+  species: 'cat',
+};
+
+const switchGroup = () => screen.queryByRole('tablist', { name: "Animal for today's pick" });
+const counter = () => screen.getByText(/^\d+\/\d+$/).textContent;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  flagSnapshot = null;
+  // Skip the first-visit welcome overlay + Start-here beacon.
+  localStorage.setItem('pbt:dashboard_welcomed', 'true');
+  localStorage.setItem('pbt:seen_start_here', 'true');
+});
+
+describe("HomeScreen — Today's pick animal switch", () => {
+  it('shows no switch while the library only holds dogs', () => {
+    render(<HomeScreen />);
+    expect(switchGroup()).toBeNull();
+    expect(counter()).toMatch(/\/3$/);
+  });
+
+  it('never empties the hero because of a stored cat preference when there are no cat scenarios', async () => {
+    localStorage.setItem('pbt:train_species', '"cat"');
+    const user = userEvent.setup();
+    render(<HomeScreen />);
+    expect(switchGroup()).toBeNull();
+    expect(counter()).toMatch(/\/3$/);
+    await user.click(screen.getByRole('button', { name: 'Start scenario' }));
+    expect((setScenario.mock.calls[0][0] as Scenario).species).toBeUndefined();
+  });
+
+  it('shows Dog | Cat when the library holds both, and limits the rotation to the chosen animal', async () => {
+    flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
+    const user = userEvent.setup();
+    render(<HomeScreen />);
+    const group = switchGroup();
+    expect(group).not.toBeNull();
+    expect(within(group!).getByRole('tab', { name: 'Dog' })).toHaveAttribute('aria-selected', 'true');
+    expect(counter()).toMatch(/\/3$/);
+
+    await user.click(within(group!).getByRole('tab', { name: 'Cat' }));
+    expect(counter()).toBe('1/1');
+    // The animal is obvious on a cat card.
+    expect(screen.getByText('Cat · Maine Coon, Kitten (<1). Driver: Harmonizer.')).toBeInTheDocument();
+    expect(localStorage.getItem('pbt:train_species')).toBe('"cat"');
+
+    await user.click(screen.getByRole('button', { name: 'Start scenario' }));
+    const started = setScenario.mock.calls[0][0] as Scenario;
+    expect(started.species).toBe('cat');
+    expect(started._overrideId).toBe('admin:cat-1');
+
+    await user.click(within(switchGroup()!).getByRole('tab', { name: 'Dog' }));
+    expect(counter()).toMatch(/\/3$/);
+  });
+});

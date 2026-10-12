@@ -28,6 +28,13 @@ export interface PushbackCategory {
   title: string;
   /** Italic example quote, verbatim from prototype */
   example: string;
+  /**
+   * French text for a TEAM objection (`team:<slug>`, authored in the Scenario
+   * Studio). Built-ins are localised by the overlay in
+   * src/i18n/fr/data/pushbacks.ts instead, so they never carry these.
+   */
+  titleFr?: string;
+  exampleFr?: string;
 }
 
 export const PUSHBACK_CATEGORIES: PushbackCategory[] = [

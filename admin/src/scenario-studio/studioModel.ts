@@ -25,9 +25,20 @@ import {
   speciesOf,
   type ScenarioSpecies,
 } from '../../../src/shared/scenarios/species';
-import { DIFFICULTY_LABELS, PUSHBACK_LABELS } from '../../../src/shared/scenarios/enums';
+import { DIFFICULTY_LABELS } from '../../../src/shared/scenarios/enums';
 import { readKnowledgeScope } from '../../../src/shared/knowledge/knowledgeScopes';
-import { missingScenarioFields } from '../../../src/shared/scenarios/draftToScenario';
+import { isScenarioSpecies } from '../../../src/shared/scenarios/species';
+import { isTeamObjectionId, type TeamObjection } from '../../../src/shared/scenarios/objections';
+import {
+  animalsInSentence,
+  checkObjection,
+  missingCoreFields,
+  objectionLabel,
+  objectionMisfits,
+  objectionMissing,
+  type ObjectionCheck,
+  type ObjectionRef,
+} from './objections/objectionsModel';
 
 export type { StudioStepKey } from '../../../src/shared/ai/scenarioAgent';
 
@@ -179,6 +190,12 @@ export interface StudioContext {
    * species migration): a cat scenario would reach trainees as a dog.
    */
   speciesUnsupported?: boolean;
+  /**
+   * Where the draft's objection stands, when it is a TEAM objection (null for
+   * a built-in, "Something else" or none): retired, deleted, for the other
+   * animal… See `checkObjection`.
+   */
+  objection?: ObjectionCheck | null;
 }
 
 export function hasText(v: unknown): boolean {
@@ -209,6 +226,8 @@ export function stepStatus(
       if (draft.pushback_id === 'custom' && !hasText(draft.pushback_notes)) {
         return { status: 'attention', detail: 'Describe the objection in the owner’s words' };
       }
+      if (objectionMissing(ctx.objection)) return { status: 'attention', detail: 'Its objection was deleted' };
+      if (objectionMisfits(ctx.objection)) return { status: 'attention', detail: 'The objection is for another animal' };
       return { status: 'done' };
     }
     case 'customer':
@@ -250,7 +269,9 @@ export interface ReadinessItem {
 
 /** The publish checklist, in the order the admin should read it. */
 export function readiness(draft: StudioDraft, ctx: StudioContext): ReadinessItem[] {
-  const missing = missingScenarioFields(draft);
+  // A team objection counts as an answer here; whether it still exists is
+  // the objection item's job below, so it is said once, in words.
+  const missing = missingCoreFields(draft);
   const knowledgeIssues = [
     ...ctx.missingSlugs.map((s) => `“${s}” no longer exists`),
     ...ctx.unindexedTitles.map((t) => `“${t}” isn’t searchable yet`),
@@ -291,6 +312,7 @@ export function readiness(draft: StudioDraft, ctx: StudioContext): ReadinessItem
           },
         ]
       : []),
+    ...objectionReadiness(draft, ctx.objection ?? null),
     // A cat scenario can't go live while the species column is missing: the
     // save would drop `species` and trainees would get a DOG roleplay with a
     // cat's backstory. Saving it as a hidden draft is fine.
@@ -332,6 +354,61 @@ export function readiness(draft: StudioDraft, ctx: StudioContext): ReadinessItem
       step: 'test',
     },
   ];
+}
+
+/**
+ * Checklist rows for a scenario built on a TEAM objection (none otherwise —
+ * a ticked row about something the admin never chose is noise):
+ *   • it must still exist (a deleted objection can't be played) — required;
+ *   • it should be meant for this scenario's animal — recommended;
+ *   • a retired one still plays, but nobody can pick it any more — said.
+ */
+function objectionReadiness(draft: StudioDraft, check: ObjectionCheck | null): ReadinessItem[] {
+  if (!check || check.state === 'unchecked') return [];
+  if (check.state === 'deleted' || check.state === 'unknown') {
+    return [
+      {
+        key: 'objection',
+        label: 'Its objection still exists',
+        ok: false,
+        level: 'required',
+        detail:
+          check.state === 'deleted'
+            ? `“${check.title}” was deleted. Pick another objection, or restore it on the Objections tab.`
+            : 'The objection this scenario was built on can’t be found any more. Pick another one.',
+        step: 'pushback',
+      },
+    ];
+  }
+  const animal = speciesOfDraft(draft);
+  const fits = check.state === 'ok' || (check.state === 'retired' && check.fits);
+  const items: ReadinessItem[] = [
+    {
+      key: 'objection-species',
+      label: `The objection is meant for ${animal === 'cat' ? 'cats' : 'dogs'}`,
+      ok: fits,
+      level: 'recommended',
+      detail: fits
+        ? undefined
+        : `“${check.title}” is set up for ${animalsInSentence(check.species)} only. Pick another objection, or add ${animal === 'cat' ? 'cats' : 'dogs'} to it on the Objections tab.`,
+      step: 'pushback',
+    },
+  ];
+  if (check.state === 'retired') {
+    items.push({
+      key: 'objection-retired',
+      label: 'The objection is active',
+      ok: false,
+      level: 'recommended',
+      detail: `“${check.title}” is retired: this scenario still plays, but nobody can pick it for a new one. Reactivate it on the Objections tab if that wasn’t intended.`,
+      step: 'pushback',
+    });
+  }
+  return items;
+}
+
+function speciesOfDraft(draft: StudioDraft): ScenarioSpecies {
+  return speciesOf(draft.species);
 }
 
 export function canPublish(items: readonly ReadinessItem[]): boolean {
@@ -498,7 +575,70 @@ export function buildDuplicateDraft(
     // A copy is never live until someone looks at it and says so.
     visible: false,
     sort_order: null,
+    // Where it came from — stored with the copy's FIRST save (display only).
+    copied_from: isCopySource(draft.scenario_id) ? draft.scenario_id : null,
   };
+}
+
+/** An id a copy may name as its source: `user:` / `seed:` / `admin:`. */
+export function isCopySource(id: unknown): id is string {
+  return typeof id === 'string' && /^(user|seed|admin):\S+$/.test(id);
+}
+
+/**
+ * "Add to library" on a trainee's scenario: an unsaved, HIDDEN `admin:` copy
+ * of everything the trainee built, under the trainee's own title (it is the
+ * same scenario, now offered to everyone — not a "(copy)"). The species comes
+ * from the trainee's row (none = dog, every row from before trainees could
+ * choose). `copied_from` rides along so the copy's first save records it, and
+ * the trainee's card then reads "In the library".
+ *
+ * Starts from the entry's effective draft, so a stray Studio edit saved over
+ * the trainee's scenario in the past (the old "Edit" flow) isn't lost.
+ */
+export function buildTraineeLibraryDraft(entry: StudioEntry, newId: string): StudioDraft {
+  const trainee = entry.userScenario;
+  const source = entry.draft;
+  const title =
+    (source.card_title_override ?? '').trim() || (trainee?.title ?? '').trim() || null;
+  return {
+    ...emptyAdminDraft(newId),
+    ...source,
+    scenario_id: newId,
+    species: isScenarioSpecies(trainee?.species) ? trainee.species : 'dog',
+    card_title_override: title ? title.slice(0, SCENARIO_LIMITS.cardTitleMax) : null,
+    visible: false,
+    sort_order: null,
+    copied_from: entry.id,
+  };
+}
+
+/**
+ * Library copies of each trainee scenario, by the trainee entry's id
+ * (`user:<uuid>`): the saved `admin:` scenarios whose `copied_from` names it.
+ */
+export function libraryCopiesByTrainee(entries: readonly StudioEntry[]): Map<string, StudioEntry[]> {
+  const out = new Map<string, StudioEntry[]>();
+  for (const e of entries) {
+    if (e.source !== 'admin') continue;
+    const from = e.override?.copied_from;
+    if (typeof from !== 'string' || !from.startsWith('user:') || e.override?.deleted_at) continue;
+    const list = out.get(from) ?? [];
+    list.push(e);
+    out.set(from, list);
+  }
+  // Newest first: "Open library version" opens the one edited last.
+  for (const list of out.values()) list.sort((a, b) => (b.editedAt ?? 0) - (a.editedAt ?? 0));
+  return out;
+}
+
+/** The step a promoted copy should open on: the first that still needs an answer. */
+export function firstStepNeeding(draft: StudioDraft): StudioStepKey {
+  const missing = missingCoreFields(draft);
+  if (missing.includes('Breed') || missing.includes('Life stage')) return 'pet';
+  if (missing.includes('Pushback')) return 'pushback';
+  if (missing.includes('ECHO driver')) return 'customer';
+  return 'pet';
 }
 
 export interface VisibilityEntry {
@@ -650,6 +790,7 @@ export function localEntryHasChanges(entry: { draft: StudioDraft; baseline: stri
 const NOT_REBASED: ReadonlySet<string> = new Set([
   'scenario_id',
   'visible',
+  'copied_from',
   'created_at',
   'created_by',
   'updated_at',
@@ -726,6 +867,7 @@ const NOT_AI_RELEVANT: ReadonlySet<string> = new Set<string>([
   ...STUDIO_STEPS.find((s) => s.key === 'publish')!.fields,
   ...SERVER_MANAGED_COLUMNS,
   'scenario_id',
+  'copied_from',
 ]);
 
 /**
@@ -752,9 +894,26 @@ export function buildStudioContext(args: {
   docs: readonly KnowledgeDocLite[] | null;
   /** From `admin-scenario-overrides?op=capabilities`; undefined = unknown. */
   speciesSupported?: boolean;
+  /**
+   * The team's objections (active + retired), the deleted ones, and whether
+   * the list loaded. Absent = unknown: a team objection is then neither
+   * called deleted nor blocked.
+   */
+  objections?: {
+    team: readonly TeamObjection[];
+    deleted?: readonly ObjectionRef[];
+    loaded: boolean;
+  };
 }): StudioContext {
   const { draft, source, tested, docs } = args;
   const speciesUnsupported = args.speciesSupported === false;
+  const objection = checkObjection({
+    pushbackId: draft.pushback_id,
+    species: draft.species,
+    team: args.objections?.team ?? [],
+    deleted: args.objections?.deleted ?? [],
+    loaded: args.objections?.loaded ?? false,
+  });
   const selected = draft.knowledge_slugs ?? [];
   if (!docs || selected.length === 0) {
     return {
@@ -765,6 +924,7 @@ export function buildStudioContext(args: {
       notRoleplayTitles: [],
       wrongSpeciesTitles: [],
       speciesUnsupported,
+      objection,
     };
   }
   const scope = retrievalSpeciesFor(draft.species, draft.life_stage);
@@ -786,6 +946,7 @@ export function buildStudioContext(args: {
           .map((d) => d.title)
       : [],
     speciesUnsupported,
+    objection,
   };
 }
 
@@ -810,10 +971,26 @@ export interface SaveBlocker {
  * written in the Studio can't be stored until it has the four answers the AI
  * needs — the server refuses it — so that is said here, in words, first.
  */
-export function saveBlockers(draft: StudioDraft, source: StudioSource): SaveBlocker[] {
+export function saveBlockers(
+  draft: StudioDraft,
+  source: StudioSource,
+  /** The draft's team-objection check (`StudioContext.objection`), if any. */
+  objection?: ObjectionCheck | null,
+): SaveBlocker[] {
   const out: SaveBlocker[] = [];
+  // The server only stores a team objection that exists — say so before it
+  // refuses, in words, with where to fix it.
+  if (objectionMissing(objection)) {
+    out.push({
+      message:
+        objection?.state === 'deleted'
+          ? `This scenario’s objection, “${objection.title}”, was deleted. Pick another one (or restore it on the Objections tab) before saving.`
+          : 'This scenario’s objection can’t be found any more. Pick another one before saving.',
+      step: 'pushback',
+    });
+  }
   if (source === 'admin') {
-    const missing = missingScenarioFields(draft);
+    const missing = missingCoreFields(draft);
     if (missing.length > 0) {
       const list = missing.map((m) => (m === 'ECHO driver' ? m : m.toLowerCase()));
       const joined =
@@ -838,13 +1015,16 @@ export function saveBlockers(draft: StudioDraft, source: StudioSource): SaveBloc
  * was given elsewhere (the built-in title, the trainee's own title), else the
  * pushback it is about.
  */
-export function studioTitle(draft: StudioDraft, fallback?: string | null): string {
+export function studioTitle(
+  draft: StudioDraft,
+  fallback?: string | null,
+  team: readonly ObjectionRef[] = [],
+): string {
   const card = draft.card_title_override?.trim();
   if (card) return card;
   const given = fallback?.trim();
   if (given) return given;
-  const pushback = draft.pushback_id ? PUSHBACK_LABELS[draft.pushback_id] : undefined;
-  return pushback ?? 'Untitled scenario';
+  return draft.pushback_id ? objectionLabel(draft.pushback_id, team) : 'Untitled scenario';
 }
 
 /** "Labrador Retriever · Adult (3-7) · Analyzer" — whatever is filled in. */
@@ -953,6 +1133,8 @@ function timeOf(iso: string | null | undefined): number | null {
 export function buildStudioEntries(
   overrides: readonly ScenarioOverrideRow[],
   userScenarios: readonly UserScenario[],
+  /** The team's objections, so an untitled scenario is named by its objection. */
+  team: readonly ObjectionRef[] = [],
 ): StudioEntry[] {
   const out: StudioEntry[] = [];
   const byId = new Map(overrides.map((o) => [o.scenario_id, o] as const));
@@ -963,7 +1145,7 @@ export function buildStudioEntries(
     out.push({
       id: m.id,
       source: 'library',
-      title: studioTitle(draft, m.title),
+      title: studioTitle(draft, m.title, team),
       override: o,
       userScenario: null,
       manifest: m,
@@ -979,7 +1161,7 @@ export function buildStudioEntries(
     out.push({
       id: o.scenario_id,
       source: 'admin',
-      title: studioTitle(draft),
+      title: studioTitle(draft, null, team),
       override: o,
       userScenario: null,
       manifest: null,
@@ -996,7 +1178,7 @@ export function buildStudioEntries(
     out.push({
       id,
       source: 'user',
-      title: studioTitle(draft, s.title),
+      title: studioTitle(draft, s.title, team),
       override: o,
       userScenario: s,
       manifest: null,
@@ -1039,8 +1221,126 @@ export function matchesGalleryFilter(entry: StudioEntry, filter: GalleryFilter):
   }
 }
 
+// ── Animal + objection filters ───────────────────────────────
+
+export type AnimalFilter = 'all' | ScenarioSpecies;
+
+export const ANIMAL_FILTERS: Array<{ key: AnimalFilter; label: string }> = [
+  { key: 'all', label: 'All animals' },
+  { key: 'dog', label: 'Dogs' },
+  { key: 'cat', label: 'Cats' },
+];
+
+/** The objection filter's "everything" value (never a pushback id). */
+export const ALL_OBJECTIONS = '*';
+
+export function matchesAnimalFilter(entry: StudioEntry, animal: AnimalFilter): boolean {
+  return animal === 'all' || speciesOf(entry.draft.species) === animal;
+}
+
+export function matchesObjectionFilter(entry: StudioEntry, objection: string): boolean {
+  return objection === ALL_OBJECTIONS || entry.draft.pushback_id === objection;
+}
+
+export interface GallerySelection {
+  status: GalleryFilter;
+  animal: AnimalFilter;
+  objection: string;
+}
+
+export interface GalleryFacets {
+  /** Entries matching the search and all three filters, in gallery order. */
+  shown: StudioEntry[];
+  /** Per option: how many would show with that option and the other filters as they are. */
+  status: Record<GalleryFilter, number>;
+  animal: Record<AnimalFilter, number>;
+  /**
+   * Every objection at least one listed scenario uses (search, status and
+   * animal applied), named the way a person reads it, A→Z. The selected one
+   * stays listed even when nothing matches it any more.
+   */
+  objections: Array<{ id: string; label: string; count: number }>;
+  /** How many scenarios the objection filter's "All" would show. */
+  objectionTotal: number;
+}
+
+/**
+ * The gallery's filters as one pure computation: the search box, the status
+ * chips, the animal chips and the objection picker, each count computed with
+ * the OTHER filters applied (so "Cats 2" means two cats in what you're
+ * looking at, not two cats overall).
+ */
+export function galleryFacets(
+  entries: readonly StudioEntry[],
+  sel: GallerySelection,
+  query: string,
+  team: readonly ObjectionRef[] = [],
+): GalleryFacets {
+  const searched = sortForGallery(entries.filter((e) => matchesGalleryQuery(e, query, team)));
+  const byStatus = (e: StudioEntry) => matchesGalleryFilter(e, sel.status);
+  const byAnimal = (e: StudioEntry) => matchesAnimalFilter(e, sel.animal);
+  const byObjection = (e: StudioEntry) => matchesObjectionFilter(e, sel.objection);
+
+  const status = {} as Record<GalleryFilter, number>;
+  for (const f of GALLERY_FILTERS) {
+    status[f.key] = searched.filter((e) => matchesGalleryFilter(e, f.key) && byAnimal(e) && byObjection(e)).length;
+  }
+  const animal = {} as Record<AnimalFilter, number>;
+  for (const f of ANIMAL_FILTERS) {
+    animal[f.key] = searched.filter((e) => matchesAnimalFilter(e, f.key) && byStatus(e) && byObjection(e)).length;
+  }
+  const pool = searched.filter((e) => byStatus(e) && byAnimal(e));
+  const counts = new Map<string, number>();
+  for (const e of pool) {
+    const id = e.draft.pushback_id;
+    if (typeof id === 'string' && id.trim()) counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  if (sel.objection !== ALL_OBJECTIONS && !counts.has(sel.objection)) counts.set(sel.objection, 0);
+  const objections = [...counts.entries()]
+    .map(([id, count]) => ({ id, label: objectionFilterLabel(id, team), count }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  return {
+    shown: pool.filter(byObjection),
+    status,
+    animal,
+    objections,
+    objectionTotal: pool.length,
+  };
+}
+
+/** "Something else" reads better than "Other pushback" in a filter. */
+function objectionFilterLabel(id: string, team: readonly ObjectionRef[]): string {
+  return id === 'custom' ? 'Something else (described in the scenario)' : objectionLabel(id, team);
+}
+
+/** What a gallery card says about a scenario's standing with trainees. */
+export function entryStatusText(
+  entry: Pick<StudioEntry, 'status'>,
+  /** For a trainee's scenario: its saved library copies (see `libraryCopiesByTrainee`). */
+  libraryCopies: readonly StudioEntry[] = [],
+): { tone: 'success' | 'neutral' | 'warn' | 'info'; text: string } {
+  switch (entry.status) {
+    case 'live':
+      return { tone: 'success', text: 'Live in the app' };
+    case 'hidden':
+      return { tone: 'warn', text: 'Hidden from trainees' };
+    case 'draft':
+      return { tone: 'neutral', text: 'Saved draft — hidden' };
+    case 'trainee':
+      if (libraryCopies.length === 0) return { tone: 'neutral', text: 'Trainee’s own — not in the library' };
+      return libraryCopies.some((c) => c.status === 'live')
+        ? { tone: 'success', text: 'In the library — live' }
+        : { tone: 'info', text: 'In the library — hidden draft' };
+  }
+}
+
 /** Free-text search over what the card shows (and the id, for support). */
-export function matchesGalleryQuery(entry: StudioEntry, query: string): boolean {
+export function matchesGalleryQuery(
+  entry: StudioEntry,
+  query: string,
+  team: readonly ObjectionRef[] = [],
+): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   const d = entry.draft;
@@ -1048,7 +1348,7 @@ export function matchesGalleryQuery(entry: StudioEntry, query: string): boolean 
     entry.title,
     entry.id,
     scenarioSummary(d),
-    d.pushback_id ? PUSHBACK_LABELS[d.pushback_id] ?? '' : '',
+    d.pushback_id ? objectionLabel(d.pushback_id, team) : '',
     speciesOf(d.species),
     SOURCE_LABELS[entry.source],
     entry.status,

@@ -22,8 +22,20 @@ export const create: Record<keyof typeof en, string> = {
   'create.tab.build': 'Créer',
   'create.tab.library': 'Bibliothèque',
 
+  // ── Quel animal ? (les deux onglets + choix du jour de l'accueil) ──
+  'create.animal.title': 'Quel animal ?',
+  'create.animal.aria': 'Animal pour l’entraînement',
+  'create.animal.dog': 'Chien',
+  'create.animal.cat': 'Chat',
+
   // ── Onglet Bibliothèque ───────────────────────────────────
   'create.library.start': 'Lancer',
+  'create.library.startAria': 'Lancer : {title}',
+  'create.library.filterAria': 'Filtrer par objection',
+  'create.library.filterAll': 'Toutes',
+  'create.library.emptyDog': 'Aucun scénario sur un chien dans la bibliothèque pour l’instant.',
+  'create.library.emptyCat': 'Aucun scénario sur un chat dans la bibliothèque pour l’instant.',
+  'create.library.emptyCta': 'En créer un',
 
   // ── Titres de section ─────────────────────────────────────
   'create.section.breed': 'Race',
@@ -35,11 +47,13 @@ export const create: Record<keyof typeof en, string> = {
   'create.section.details': 'Détails supplémentaires',
 
   // ── Race et poids ─────────────────────────────────────────
-  'create.breed.placeholder': 'Rechercher une race',
+  'create.breed.placeholderDog': 'Rechercher une race de chien',
+  'create.breed.placeholderCat': 'Rechercher une race de chat',
   'create.breed.error': 'Choisissez une race ou saisissez-en une.',
   'create.savedPets.eyebrow': 'Fiches enregistrées',
   'create.weight.unit': 'kg',
-  'create.weight.label': 'Poids du chien (facultatif)',
+  'create.weight.labelDog': 'Poids du chien (facultatif)',
+  'create.weight.labelCat': 'Poids du chat (facultatif)',
 
   // ── Sélecteur d'objection ─────────────────────────────────
   'create.pushback.selectAria': "Choisir un type d'objection",

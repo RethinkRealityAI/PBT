@@ -16,7 +16,7 @@ import { FirstRunCard } from '../primitives/FirstRunCard';
 import { LoadingShimmer } from '../primitives';
 import { useConfirm } from '../primitives/Confirm';
 import { COLOR } from '../lib/tokens';
-import type { ScenarioSpecies } from '../../../src/shared/scenarios/species';
+import { speciesOf, type ScenarioSpecies } from '../../../src/shared/scenarios/species';
 import {
   ASSIST_GRADIENT,
   AssistMark,
@@ -27,17 +27,21 @@ import {
 } from './ui';
 import { CardPreview } from './CardPreview';
 import {
+  ALL_OBJECTIONS,
+  ANIMAL_FILTERS,
   GALLERY_FILTERS,
   SOURCE_LABELS,
   difficultyText,
-  matchesGalleryFilter,
-  matchesGalleryQuery,
+  entryStatusText,
+  galleryFacets,
   relativeTime,
   scenarioSummary,
-  sortForGallery,
+  type AnimalFilter,
   type GalleryFilter,
   type StudioEntry,
 } from './studioModel';
+import { objectionLabel, type ObjectionRef } from './objections/objectionsModel';
+import { SPECIES_GLYPH } from './ui';
 
 /** Species choice on the composer; null = let the assistant decide. */
 export type ComposerSpecies = ScenarioSpecies | null;
@@ -78,6 +82,12 @@ export interface StudioHomeProps {
   onCreate: (args: { species: ComposerSpecies; prompt: string | null }) => void;
   onOpen: (entry: StudioEntry) => void;
   onDuplicate: (entry: StudioEntry) => void;
+  /** "Add to library" on a trainee's scenario: open an unsaved, hidden admin copy. */
+  onAddToLibrary: (entry: StudioEntry) => void;
+  /** Saved library copies of each trainee scenario, by the trainee entry's id. */
+  libraryCopies: ReadonlyMap<string, StudioEntry[]>;
+  /** The team's objections (active + retired), for objection names. */
+  objections: readonly ObjectionRef[];
   resumable: ResumableDraft[];
   onResume: (id: string) => void;
   onDiscardLocal: (id: string) => void;
@@ -85,6 +95,11 @@ export interface StudioHomeProps {
 
 export function StudioHome(props: StudioHomeProps) {
   const { entries, loading, canWrite, query, onQuery } = props;
+  /** Saved scenarios with edits kept in this browser, for an "Unsaved changes" mark. */
+  const unsavedIds = useMemo(
+    () => new Set(props.resumable.filter((r) => !r.neverSaved).map((r) => r.id)),
+    [props.resumable],
+  );
   return (
     <>
       <ContextBar
@@ -106,9 +121,10 @@ export function StudioHome(props: StudioHomeProps) {
         <FirstRunCard id="studio" title="Three kinds of scenario live here">
           <strong>Built-in</strong> scenarios ship with the app — changing one saves only what you
           changed, on top. <strong>Studio</strong> scenarios are ones your team wrote here.{' '}
-          <strong>Trainee-built</strong> ones were made by a trainee for their own practice. Every
-          save and publish is recorded in <strong>Audit</strong>, and any of them can be undone
-          from there — even a deleted scenario.
+          <strong>Trainee-built</strong> ones were made by a trainee for their own practice — only
+          that trainee sees them, until you use <strong>Add to library</strong> to make a copy for
+          everyone. Every save and publish is recorded in <strong>Audit</strong>, and any of them can
+          be undone from there — even a deleted scenario.
         </FirstRunCard>
         <Gallery
           entries={entries}
@@ -118,6 +134,10 @@ export function StudioHome(props: StudioHomeProps) {
           onClearQuery={() => onQuery('')}
           onOpen={props.onOpen}
           onDuplicate={props.onDuplicate}
+          onAddToLibrary={props.onAddToLibrary}
+          libraryCopies={props.libraryCopies}
+          objections={props.objections}
+          unsavedIds={unsavedIds}
         />
       </ScreenShell>
     </>
@@ -455,6 +475,10 @@ function Gallery({
   onClearQuery,
   onOpen,
   onDuplicate,
+  onAddToLibrary,
+  libraryCopies,
+  objections,
+  unsavedIds,
 }: {
   entries: StudioEntry[];
   loading: boolean;
@@ -463,23 +487,36 @@ function Gallery({
   onClearQuery: () => void;
   onOpen: (entry: StudioEntry) => void;
   onDuplicate: (entry: StudioEntry) => void;
+  onAddToLibrary: (entry: StudioEntry) => void;
+  libraryCopies: ReadonlyMap<string, StudioEntry[]>;
+  objections: readonly ObjectionRef[];
+  unsavedIds: ReadonlySet<string>;
 }) {
   const [filter, setFilter] = useState<GalleryFilter>('all');
+  const [animal, setAnimal] = useState<AnimalFilter>('all');
+  const [objection, setObjection] = useState<string>(ALL_OBJECTIONS);
   const [limit, setLimit] = useState(PAGE);
+  const objectionId = useId();
 
-  const searched = useMemo(
-    () => sortForGallery(entries.filter((e) => matchesGalleryQuery(e, query))),
-    [entries, query],
+  const facets = useMemo(
+    () => galleryFacets(entries, { status: filter, animal, objection }, query, objections),
+    [entries, filter, animal, objection, query, objections],
   );
-  const counts = useMemo(() => {
-    const out = {} as Record<GalleryFilter, number>;
-    for (const f of GALLERY_FILTERS) out[f.key] = searched.filter((e) => matchesGalleryFilter(e, f.key)).length;
-    return out;
-  }, [searched]);
-  const shown = searched.filter((e) => matchesGalleryFilter(e, filter));
+  const shown = facets.shown;
+  const filtered = filter !== 'all' || animal !== 'all' || objection !== ALL_OBJECTIONS;
+  const showAll = () => {
+    setFilter('all');
+    setAnimal('all');
+    setObjection(ALL_OBJECTIONS);
+  };
 
   return (
-    <section aria-labelledby="studio-gallery-title" style={{ display: 'grid', gap: 14 }}>
+    // `minmax(0, 1fr)`: a <select> is as wide as its longest option, and an
+    // `auto` column would grow to it — pushing every card off a phone screen.
+    <section
+      aria-labelledby="studio-gallery-title"
+      style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14 }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <h2 id="studio-gallery-title" style={{ margin: 0, fontSize: 18, fontWeight: 750, color: COLOR.ink, letterSpacing: '-0.02em' }}>
           Your scenarios
@@ -495,11 +532,64 @@ function Gallery({
               }}
             >
               {f.label}
-              <span style={{ marginLeft: 6, opacity: 0.7, fontFamily: 'var(--pbt-mono)', fontSize: 11 }}>
-                {loading ? '…' : counts[f.key]}
-              </span>
+              <Count loading={loading} n={facets.status[f.key]} />
             </Chip>
           ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div role="group" aria-label="Animal" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {ANIMAL_FILTERS.map((f) => (
+            <Chip
+              key={f.key}
+              selected={animal === f.key}
+              onClick={() => {
+                setAnimal(f.key);
+                setLimit(PAGE);
+              }}
+            >
+              {f.key !== 'all' && (
+                <span aria-hidden style={{ marginRight: 5 }}>
+                  {SPECIES_GLYPH[f.key]}
+                </span>
+              )}
+              {f.label}
+              <Count loading={loading} n={facets.animal[f.key]} />
+            </Chip>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 240px', minWidth: 0, maxWidth: 420 }}>
+          <label htmlFor={objectionId} style={{ fontSize: 12.5, fontWeight: 700, color: COLOR.inkSoft, flexShrink: 0 }}>
+            Objection
+          </label>
+          <select
+            id={objectionId}
+            className="pbt-studio-field"
+            value={objection}
+            onChange={(e) => {
+              setObjection(e.target.value);
+              setLimit(PAGE);
+            }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              padding: '7px 10px',
+              borderRadius: 12,
+              border: '1px solid rgba(60,20,15,0.14)',
+              background: 'rgba(255,255,255,0.78)',
+              fontSize: 13,
+              fontFamily: 'var(--pbt-font)',
+              color: COLOR.ink,
+            }}
+          >
+            <option value={ALL_OBJECTIONS}>All objections{loading ? '' : ` (${facets.objectionTotal})`}</option>
+            {facets.objections.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label} ({o.count})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -510,13 +600,29 @@ function Gallery({
           ))}
         </div>
       ) : shown.length === 0 ? (
-        <EmptyGallery filter={filter} query={query} canWrite={canWrite} onClearQuery={onClearQuery} onShowAll={() => setFilter('all')} />
+        <EmptyGallery
+          filter={filter}
+          filtered={filtered}
+          query={query}
+          canWrite={canWrite}
+          onClearQuery={onClearQuery}
+          onShowAll={showAll}
+        />
       ) : (
         <>
           <ul aria-label="Scenarios" style={{ ...cardGrid, listStyle: 'none', margin: 0, padding: 0 }}>
             {shown.slice(0, limit).map((e) => (
               <li key={e.id} style={{ display: 'flex' }}>
-                <GalleryCard entry={e} canWrite={canWrite} onOpen={() => onOpen(e)} onDuplicate={() => onDuplicate(e)} />
+                <GalleryCard
+                  entry={e}
+                  canWrite={canWrite}
+                  objections={objections}
+                  copies={libraryCopies.get(e.id) ?? []}
+                  unsaved={unsavedIds.has(e.id)}
+                  onOpen={onOpen}
+                  onDuplicate={() => onDuplicate(e)}
+                  onAddToLibrary={() => onAddToLibrary(e)}
+                />
               </li>
             ))}
           </ul>
@@ -533,32 +639,46 @@ function Gallery({
   );
 }
 
+function Count({ loading, n }: { loading: boolean; n: number }) {
+  return (
+    <span style={{ marginLeft: 6, opacity: 0.7, fontFamily: 'var(--pbt-mono)', fontSize: 11 }}>
+      {loading ? '…' : n}
+    </span>
+  );
+}
+
 const cardGrid: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))',
   gap: 14,
 };
 
-const STATUS_DOT: Record<StudioEntry['status'], { tone: 'success' | 'neutral' | 'warn'; text: string }> = {
-  live: { tone: 'success', text: 'Live' },
-  draft: { tone: 'neutral', text: 'Draft' },
-  hidden: { tone: 'warn', text: 'Hidden' },
-  trainee: { tone: 'neutral', text: 'Trainee’s own' },
-};
-
 function GalleryCard({
   entry,
   canWrite,
+  objections,
+  copies,
+  unsaved,
   onOpen,
   onDuplicate,
+  onAddToLibrary,
 }: {
   entry: StudioEntry;
   canWrite: boolean;
-  onOpen: () => void;
+  objections: readonly ObjectionRef[];
+  /** For a trainee's scenario: its saved library copies, newest first. */
+  copies: StudioEntry[];
+  /** There are edits to it kept in this browser. */
+  unsaved: boolean;
+  onOpen: (entry: StudioEntry) => void;
   onDuplicate: () => void;
+  onAddToLibrary: () => void;
 }) {
-  const status = STATUS_DOT[entry.status];
+  const status = entryStatusText(entry, copies);
   const difficulty = difficultyText(entry.draft.difficulty_override);
+  const species = speciesOf(entry.draft.species);
+  const trainee = entry.source === 'user';
+  const libraryVersion = copies[0] ?? null;
   const openLabel = canWrite ? 'Edit' : 'View';
   return (
     <article
@@ -580,7 +700,16 @@ function GalleryCard({
     >
       <CardPreview draft={{ ...entry.draft, card_title_override: entry.title }} compact />
       <div style={{ padding: '0 4px', display: 'grid', gap: 6, flex: 1 }}>
-        <div style={{ fontSize: 13, color: COLOR.inkSoft, overflowWrap: 'anywhere' }}>
+        <div style={{ fontSize: 13, color: COLOR.ink, fontWeight: 650, overflowWrap: 'anywhere' }}>
+          <span aria-hidden style={{ marginRight: 5 }}>
+            {SPECIES_GLYPH[species]}
+          </span>
+          {species === 'cat' ? 'Cat' : 'Dog'} ·{' '}
+          <span style={{ fontWeight: 700 }}>
+            {entry.draft.pushback_id ? objectionLabel(entry.draft.pushback_id, objections) : 'No objection yet'}
+          </span>
+        </div>
+        <div style={{ fontSize: 12.5, color: COLOR.inkSoft, overflowWrap: 'anywhere' }}>
           {scenarioSummary(entry.draft)}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -590,36 +719,114 @@ function GalleryCard({
         <div style={{ fontSize: 11.5, color: COLOR.inkMute }}>
           {SOURCE_LABELS[entry.source]}
           {entry.editedAt !== null && <> · Edited {relativeTime(entry.editedAt)}</>}
+          {unsaved && (
+            <span style={{ color: COLOR.warn, fontWeight: 700 }}> · Unsaved changes in this browser</span>
+          )}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 8, padding: '0 4px 4px' }}>
-        <Button
-          tone="secondary"
-          size="sm"
-          onClick={onOpen}
-          aria-label={`${openLabel} “${entry.title}”`}
-          style={{ flex: 1, background: 'rgba(255,255,255,0.9)' }}
-        >
-          {openLabel}
-        </Button>
-        {canWrite && (
-          <Button tone="ghost" size="sm" onClick={onDuplicate} aria-label={`Duplicate “${entry.title}”`}>
-            Duplicate
-          </Button>
+      <div style={{ display: 'flex', gap: 8, padding: '0 4px 4px', flexWrap: 'wrap' }}>
+        {trainee ? (
+          <TraineeActions
+            title={entry.title}
+            canWrite={canWrite}
+            libraryVersion={libraryVersion}
+            onOpenEntry={() => onOpen(entry)}
+            onOpenLibrary={() => libraryVersion && onOpen(libraryVersion)}
+            onAddToLibrary={onAddToLibrary}
+          />
+        ) : (
+          <>
+            <Button
+              tone="secondary"
+              size="sm"
+              onClick={() => onOpen(entry)}
+              aria-label={`${openLabel} “${entry.title}”`}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.9)' }}
+            >
+              {openLabel}
+            </Button>
+            {canWrite && (
+              <Button tone="ghost" size="sm" onClick={onDuplicate} aria-label={`Duplicate “${entry.title}”`}>
+                Duplicate
+              </Button>
+            )}
+          </>
         )}
       </div>
     </article>
   );
 }
 
+/**
+ * A trainee's scenario belongs to that trainee: the Studio never edits it in
+ * place (an edit there reached nobody). It is promoted instead — "Add to
+ * library" opens a hidden copy for everyone — and once that copy exists the
+ * card leads to it.
+ */
+function TraineeActions({
+  title,
+  canWrite,
+  libraryVersion,
+  onOpenEntry,
+  onOpenLibrary,
+  onAddToLibrary,
+}: {
+  title: string;
+  canWrite: boolean;
+  libraryVersion: StudioEntry | null;
+  onOpenEntry: () => void;
+  onOpenLibrary: () => void;
+  onAddToLibrary: () => void;
+}) {
+  const wide = { flex: 1, background: 'rgba(255,255,255,0.9)' };
+  if (!canWrite) {
+    return libraryVersion ? (
+      <Button tone="secondary" size="sm" onClick={onOpenLibrary} aria-label={`View the library version of “${title}”`} style={wide}>
+        View library version
+      </Button>
+    ) : (
+      <Button tone="secondary" size="sm" onClick={onOpenEntry} aria-label={`View “${title}”`} style={wide}>
+        View
+      </Button>
+    );
+  }
+  if (libraryVersion) {
+    return (
+      <>
+        <Button tone="secondary" size="sm" onClick={onOpenLibrary} aria-label={`Open the library version of “${title}”`} style={wide}>
+          Open library version
+        </Button>
+        <Button tone="ghost" size="sm" onClick={onAddToLibrary} aria-label={`Add another copy of “${title}” to the library`}>
+          Add another copy
+        </Button>
+      </>
+    );
+  }
+  return (
+    <Button
+      tone="primary"
+      size="sm"
+      onClick={onAddToLibrary}
+      aria-label={`Add “${title}” to the library`}
+      title="Make a copy your whole team can use — it stays hidden until you publish it"
+      style={{ flex: 1 }}
+    >
+      Add to library
+    </Button>
+  );
+}
+
 function EmptyGallery({
   filter,
+  filtered,
   query,
   canWrite,
   onClearQuery,
   onShowAll,
 }: {
   filter: GalleryFilter;
+  /** Any of the status / animal / objection filters is narrowing the list. */
+  filtered: boolean;
   query: string;
   canWrite: boolean;
   onClearQuery: () => void;
@@ -630,6 +837,9 @@ function EmptyGallery({
   if (query.trim()) {
     title = `Nothing matches “${query.trim()}”`;
     body = 'Try a breed, a pushback or a driver — or clear the search.';
+  } else if (filtered && filter === 'all') {
+    title = 'No scenarios match these filters';
+    body = 'Try another animal or objection — or show everything.';
   } else if (filter === 'drafts') {
     title = 'No drafts right now';
     body = canWrite
@@ -665,7 +875,7 @@ function EmptyGallery({
         <Button tone="secondary" size="sm" onClick={onClearQuery}>
           Clear search
         </Button>
-      ) : filter !== 'all' ? (
+      ) : filtered ? (
         <Button tone="secondary" size="sm" onClick={onShowAll}>
           Show all scenarios
         </Button>

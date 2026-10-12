@@ -53,11 +53,12 @@ describe('NAV_SECTIONS', () => {
     ]);
   });
 
-  it('gives the Studio two tabs, both readable with scenarios.read', () => {
+  it('gives the Studio three tabs, all readable with scenarios.read', () => {
     const studio = findNavItem('scenarios')!;
     expect(studio.requires).toBe('scenarios.read');
     expect(studio.tabs?.map((t) => [t.key, t.label, t.requires])).toEqual([
       ['studio', 'Studio', 'scenarios.read'],
+      ['objections', 'Objections', 'scenarios.read'],
       ['trainee', 'Trainee-built', 'scenarios.read'],
     ]);
     expect(findNavItem('knowledge')).toMatchObject({ label: 'Knowledge', requires: 'knowledge.read' });
@@ -84,11 +85,12 @@ describe('visibleItems by role', () => {
     }
   });
 
-  it('shows the Studio (both tabs) to anyone with scenarios.read', () => {
+  it('shows the Studio (all three tabs) to anyone with scenarios.read', () => {
     const items = visibleItems(['scenarios.read']);
     expect(items.map((i) => i.key)).toEqual(['scenarios']);
     expect(visibleTabs(items[0], ['scenarios.read']).map((t) => t.key)).toEqual([
       'studio',
+      'objections',
       'trainee',
     ]);
   });

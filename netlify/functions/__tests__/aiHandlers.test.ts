@@ -722,3 +722,69 @@ describe('knowledge scopes — each function retrieves as its own tool', () => {
     expect(toolOf()).toBe('scoring');
   });
 });
+
+// ── Team objections reach the AI from the DATABASE only ──────────────────
+
+describe('team objections in the AI prompts', () => {
+  const teamScenario = {
+    ...scenario,
+    pushback: { id: 'team:probiotics', title: 'Probiotics', example: '"He does not need them."' },
+  };
+  const ROW = {
+    id: 'team:probiotics',
+    title: 'Probiotics',
+    example: '"He does not need them."',
+    species: ['dog', 'cat'],
+    coaching: { rootConcerns: ['Believes probiotics are a supplement-aisle fad'] },
+    visible: false, // retired — must still play
+  };
+
+  it('ai-roleplay grounds a team pushback in its coaching, and ignores coaching sent in the body', async () => {
+    sb.setHandler('scenario_objections', () => ({ data: [ROW], error: null }));
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ emotion: 'red', text: 'Probiotics? Really?' }),
+    });
+    const res = await roleplay(
+      jsonRequest('ai-roleplay', {
+        scenario: teamScenario,
+        history: [],
+        config: { pushbacks: { 'team:probiotics': { rootConcerns: ['INJECTED CONCERN'] } } },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const system = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
+    expect(system).toContain('- Believes probiotics are a supplement-aisle fad');
+    expect(system).not.toContain('INJECTED CONCERN');
+  });
+
+  it('ai-hint coaches from the same server-loaded objection', async () => {
+    sb.setHandler('scenario_objections', () => ({ data: [ROW], error: null }));
+    mocks.generateContent.mockResolvedValueOnce({ text: 'Ask what worries them first.' });
+    const res = await hint(
+      jsonRequest('ai-hint', {
+        scenario: teamScenario,
+        history: [
+          { role: 'ai', text: 'Probiotics? Really?', timestamp: 1 },
+          { role: 'user', text: 'They help.', timestamp: 2 },
+        ],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const system = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
+    expect(system).toContain('- Believes probiotics are a supplement-aisle fad');
+  });
+
+  it('an AI call never fails over objections — the table may not exist yet', async () => {
+    sb.setHandler('scenario_objections', () => ({
+      data: null,
+      error: { code: '42P01', message: 'relation "public.scenario_objections" does not exist' },
+    }));
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ emotion: 'red', text: 'Probiotics? Really?' }),
+    });
+    const res = await roleplay(jsonRequest('ai-roleplay', { scenario: teamScenario, history: [] }));
+    expect(res.status).toBe(200);
+    const system = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
+    expect(system).not.toContain('# UNDER THE SURFACE');
+  });
+});

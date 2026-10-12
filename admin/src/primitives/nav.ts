@@ -9,7 +9,7 @@
  *
  *   Monitor   Overview · Analytics [insights|traffic|quality] · Activity [sessions|analyzer]
  *   People    People   [users|members|roles|invites]
- *   Content   Scenario Studio [studio|trainee] · Knowledge · AI tuning · Feedback [sessions|reports]
+ *   Content   Scenario Studio [studio|objections|trainee] · Knowledge · AI tuning · Feedback [sessions|reports]
  *   Platform  Email    [templates|settings|log] · Flags · Audit · Preview
  *
  * Content used to be a single "Library" destination with four unrelated jobs
@@ -124,6 +124,9 @@ export const NAV_SECTIONS: NavSection[] = [
         requires: 'scenarios.read',
         tabs: [
           { key: 'studio', label: 'Studio', requires: 'scenarios.read' },
+          // The pushbacks scenarios are built on — the team adds its own
+          // (a new subject such as probiotics) without a deploy.
+          { key: 'objections', label: 'Objections', requires: 'scenarios.read' },
           { key: 'trainee', label: 'Trainee-built', requires: 'scenarios.read' },
         ],
       },

@@ -5,9 +5,10 @@
  *
  * The trust boundary these helpers implement is spelled out in
  * `src/shared/ai/contract.ts`. In short:
- *   • the simulation config and admin prompt overrides are loaded HERE from
- *     the database — never read from the request (except preview overrides,
- *     which wrap the customer turn only);
+ *   • the simulation config (with the team's objection coaching merged in)
+ *     and admin prompt overrides are loaded HERE from the database — never
+ *     read from the request (except preview overrides, which wrap the
+ *     customer turn only);
  *   • the caller is identified from the Supabase JWT when one is sent, and
  *     an INVALID token is a 401 (never silently downgraded to anonymous);
  *   • anonymous callers are first-class — they get the AI, and no persistence;
@@ -15,14 +16,21 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient } from './admin';
+import { readTeamObjections } from './objectionsStore';
 import { retrieveChunks } from './retrieval';
 import type { Difficulty, Scenario } from '../../../src/data/scenarios';
 import type { ChatMessage } from '../../../src/services/types';
 import type { PromptOverrides } from '../../../src/data/knowledge/promptBuilders';
+import type { PushbackKnowledge } from '../../../src/data/knowledge/pushbackTaxonomy';
 import {
   resolveRag,
   type SimulationConfig,
 } from '../../../src/data/knowledge/simulationConfig';
+import {
+  isTeamObjectionId,
+  teamObjectionKnowledge,
+  type TeamObjection,
+} from '../../../src/shared/scenarios/objections';
 import type { RetrievedChunk } from '../../../src/services/ragShared';
 import {
   AI_LIMITS,
@@ -301,15 +309,96 @@ export async function parseJsonBody<T>(
 
 const CONFIG_TTL_MS = 60_000;
 let simCache: { value: SimulationConfig | undefined; expiresAt: number } | null = null;
+let teamCache: { value: TeamObjection[]; expiresAt: number } | null = null;
+/** Last merge, so an unchanged config + objection list keeps its identity. */
+let mergeMemo: {
+  base: SimulationConfig | undefined;
+  team: readonly TeamObjection[];
+  value: SimulationConfig | undefined;
+} | null = null;
 
 /**
- * The global admin simulation config (scoring weights/prompt, driver +
- * pushback edits). THIS IS THE ONLY SOURCE OF THE SIMULATION CONFIG — it is
- * never read from the request, so a client cannot re-weight its own score.
- * Cached in-module for 60 s (same TTL as the flags snapshot the browser
- * sees). On a read error the last good value is served rather than nothing.
+ * The EFFECTIVE simulation config every AI function builds its prompts from:
+ * the stored global config (`loadStoredSimulationConfig`) with the team's
+ * objections merged in (`withTeamObjections`). THIS IS THE ONLY SOURCE OF
+ * THE SIMULATION CONFIG — neither half is ever read from the request, so a
+ * client cannot re-weight its own score or write its own coaching. Both
+ * halves are cached for 60 s and fail open independently: an objections
+ * outage (or a project that has not run the migration) yields the stored
+ * config unchanged, never a failed AI call.
  */
 export async function loadSimulationConfig(
+  sb: SupabaseClient,
+): Promise<SimulationConfig | undefined> {
+  const [base, team] = await Promise.all([loadStoredSimulationConfig(sb), loadTeamObjections(sb)]);
+  if (mergeMemo && mergeMemo.base === base && mergeMemo.team === team) return mergeMemo.value;
+  const value = withTeamObjections(base, team);
+  mergeMemo = { base, team, value };
+  return value;
+}
+
+/**
+ * Team objections as prompt knowledge. For each objection whose id is NOT
+ * already a key of `config.pushbacks` (an AI-tuning entry an admin wrote by
+ * hand wins), `pushbacks[id] = teamObjectionKnowledge(o)`, so the prompt
+ * builders' `resolvePushbackKnowledge` treats it exactly like a built-in.
+ * Retired objections are merged too — a scenario built on one still plays.
+ * An objection without root concerns adds nothing: the prompts read only
+ * that list, and an empty one would print its heading over nothing, while
+ * leaving it out reads exactly as before team objections existed. Returns `config` itself (same
+ * reference) when there is nothing to add.
+ */
+export function withTeamObjections(
+  config: SimulationConfig | undefined,
+  team: readonly TeamObjection[],
+): SimulationConfig | undefined {
+  const existing = config?.pushbacks ?? {};
+  const additions: Record<string, Partial<PushbackKnowledge>> = {};
+  for (const o of team) {
+    if (!isTeamObjectionId(o.id)) continue;
+    if (Object.prototype.hasOwnProperty.call(existing, o.id)) continue;
+    const knowledge = teamObjectionKnowledge(o);
+    // The prompts read only `rootConcerns` from the taxonomy (the customer's
+    // "UNDER THE SURFACE" block and the coach's root concerns); the other
+    // lists are trainee hints, served from the snapshot. Merging an objection
+    // with hints but no root concerns would print those headings over an
+    // empty list, so it adds nothing — exactly as if it had no coaching.
+    if (knowledge.rootConcerns.length === 0) continue;
+    additions[o.id] = knowledge;
+  }
+  if (Object.keys(additions).length === 0) return config;
+  return { ...(config ?? {}), pushbacks: { ...existing, ...additions } };
+}
+
+/**
+ * Non-deleted team objections (retired included), cached 60 s like the
+ * config. A missing table (migration pending) is cached as "none" for the
+ * TTL; any other read error serves the last good list (or none) and is
+ * retried on the next call. Never throws.
+ */
+export async function loadTeamObjections(sb: SupabaseClient): Promise<TeamObjection[]> {
+  const now = Date.now();
+  if (teamCache && teamCache.expiresAt > now) return teamCache.value;
+  const read = await readTeamObjections(sb);
+  if (read.error && !read.missing) {
+    console.warn('[ai] scenario_objections fetch failed', read.error.message);
+    return teamCache?.value ?? NO_TEAM_OBJECTIONS;
+  }
+  const value = read.objections.length > 0 ? read.objections : NO_TEAM_OBJECTIONS;
+  teamCache = { value, expiresAt: now + CONFIG_TTL_MS };
+  return value;
+}
+
+/** One shared empty list, so "no objections" keeps the merge memo warm. */
+const NO_TEAM_OBJECTIONS: TeamObjection[] = [];
+
+/**
+ * The global admin simulation config as STORED (scoring weights/prompt,
+ * driver + pushback edits) — no team objections. Cached in-module for 60 s
+ * (same TTL as the flags snapshot the browser sees). On a read error the last
+ * good value is served rather than nothing.
+ */
+export async function loadStoredSimulationConfig(
   sb: SupabaseClient,
 ): Promise<SimulationConfig | undefined> {
   const now = Date.now();
@@ -395,6 +484,8 @@ export async function loadPromptOverrides(
 /** Test hook — config + override caches are module-level. */
 export function __resetAiCaches(): void {
   simCache = null;
+  teamCache = null;
+  mergeMemo = null;
   overrideCache.clear();
 }
 

@@ -4,6 +4,7 @@
  * against these and nothing else, so they can evolve independently.
  */
 import type { KnowledgeDocument } from '../data/types';
+import type { TeamObjection } from '../../../src/shared/scenarios/objections';
 import type { StudioContext, StudioDraft, StudioSource, StudioStepKey } from './studioModel';
 import type { CopilotTranscript } from './copilot/types';
 
@@ -55,6 +56,12 @@ export interface CopilotPanelProps {
   step: StudioStepKey;
   canWrite: boolean;
   knowledge: KnowledgeState;
+  /**
+   * The team's ACTIVE objections. Cards may offer them as pushback choices,
+   * and every proposal is re-normalised against them on confirm (a `team:`
+   * id not listed here is dropped). Absent = built-in objections only.
+   */
+  objections?: ReadonlyArray<Pick<TeamObjection, 'id' | 'title' | 'species'>>;
   /**
    * Apply an already-validated change to the draft. `summary` is what the
    * shell may toast ("Applied: breed, life stage").

@@ -17,6 +17,7 @@
  * (set on document root by the consumer app, defaulted by the admin shell).
  */
 import { useMemo, useState } from 'react';
+import { pushbackLabel } from '../lib/labels';
 import {
   DriverChip,
   EmptyState,
@@ -385,7 +386,7 @@ function SessionsTab({
         >
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>
-              {s.scenario_summary ?? s.pushback_id ?? '—'}
+              {s.scenario_summary ?? (s.pushback_id ? pushbackLabel(s.pushback_id) : '—')}
             </div>
             <div style={{ fontSize: 11, color: COLOR.inkMute }}>
               {s.driver ?? '—'} · {s.mode ?? '—'}

@@ -4,7 +4,10 @@
  *   - hidden scenarios are filtered out
  *   - sort_order overrides their order
  *   - persona / difficulty / context / openingLine fields are swapped in
- *   - admin-authored scenarios (id `admin:<uuid>`) are appended
+ *   - admin-authored scenarios (id `admin:<uuid>`) are appended, their
+ *     pushback resolved against the built-ins AND the team's objections
+ *     (`snapshot.objections`) — so a probiotics or cat scenario published
+ *     from the Studio reaches trainees without a deploy
  *
  * Each returned item carries the `override` row so callers can read the
  * card-level fields (card_title_override, info_modal_body, etc.) without
@@ -17,7 +20,9 @@ import {
   adminOverrideToScenario,
   applyScenarioOverride,
   isAdminScenarioId,
+  overridePushbackUnresolvable,
   seedScenarioId,
+  teamObjectionsFromSnapshot,
 } from './scenarioOverrides';
 import type { ScenarioOverride } from '../services/flagsClient';
 import { useFlags } from '../app/providers/FlagProvider';
@@ -32,12 +37,18 @@ export function useResolvedLibraryScenarios(): ResolvedScenario[] {
   const { snapshot, getOverride } = useFlags();
   return useMemo(() => {
     const items: Array<ResolvedScenario & { sort: number | null }> = [];
+    // Team-authored objections (Scenario Studio). Retired ones are included so
+    // a published scenario built on one still plays; an unknown id drops it.
+    const team = teamObjectionsFromSnapshot(snapshot?.objections);
 
     LIBRARY_SCENARIOS.forEach((scenario, i) => {
       const scenarioId = seedScenarioId(i);
       const override = getOverride(scenarioId);
+      // Re-pointed at an objection this snapshot can't resolve: hide it rather
+      // than play the shipped objection with a story written for another.
+      if (overridePushbackUnresolvable(override, team)) return;
       items.push({
-        scenario: applyScenarioOverride(scenario, override, scenarioId),
+        scenario: applyScenarioOverride(scenario, override, scenarioId, team),
         scenarioId,
         override,
         sort: override?.sort_order ?? null,
@@ -47,7 +58,7 @@ export function useResolvedLibraryScenarios(): ResolvedScenario[] {
     if (snapshot) {
       for (const o of snapshot.scenarioOverrides) {
         if (!isAdminScenarioId(o.scenario_id)) continue;
-        const synthesized = adminOverrideToScenario(o);
+        const synthesized = adminOverrideToScenario(o, team);
         if (!synthesized) continue;
         items.push({
           scenario: synthesized,

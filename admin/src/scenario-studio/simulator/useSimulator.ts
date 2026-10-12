@@ -22,6 +22,7 @@ import {
   type SimState,
 } from './simulatorModel';
 import { getSimulatorSession } from './simulatorSession';
+import { useObjectionsContext } from '../objections/ObjectionsContext';
 
 export interface UseSimulator {
   state: SimState;
@@ -69,8 +70,11 @@ export function useSimulator({
   const session = getSimulatorSession(scenarioId);
   const state = useSyncExternalStore(session.subscribe, session.getState, session.getState);
 
-  const scenario = useMemo(() => draftToScenario(draft), [draft]);
-  const missing = useMemo(() => missingScenarioFields(draft), [draft]);
+  // Team objections (retired ones included — they still play) resolve the
+  // pushback exactly as they will for trainees.
+  const { objections } = useObjectionsContext();
+  const scenario = useMemo(() => draftToScenario(draft, objections), [draft, objections]);
+  const missing = useMemo(() => missingScenarioFields(draft, objections), [draft, objections]);
   const staleFields = useMemo(
     () => (state.convo ? changedAiFields(state.convo.snapshot, draft) : []),
     [state.convo, draft],

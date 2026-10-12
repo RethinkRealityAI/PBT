@@ -25,6 +25,7 @@ import {
 import { CardPreview, cardText } from '../CardPreview';
 import { STUDIO_STEPS, canPublish, readiness, stepIndex, type ReadinessItem } from '../studioModel';
 import type { StepProps } from '../types';
+import { useObjectionsContext } from '../objections/ObjectionsContext';
 
 export interface PublishStepProps extends StepProps {
   /** Trainees can see the saved version right now. */
@@ -40,7 +41,7 @@ export interface PublishStepProps extends StepProps {
   onPublish: () => void;
   onSaveDraft: () => void;
   onUnpublish: () => void;
-  /** For trainee-built scenarios: make an admin copy that can be published. */
+  /** For trainee-built scenarios: add a copy to the library (it can be published). */
   onDuplicate: () => void;
 }
 
@@ -59,7 +60,12 @@ export function PublishStep(props: PublishStepProps) {
     speciesPending,
     fallbackTitle,
   } = props;
-  const text = cardText({ ...draft, card_title_override: null, card_subtitle_override: null, start_button_label: null }, fallbackTitle);
+  const { objections } = useObjectionsContext();
+  const text = cardText(
+    { ...draft, card_title_override: null, card_subtitle_override: null, start_button_label: null },
+    fallbackTitle,
+    objections,
+  );
   const items = readiness(draft, ctx);
   const ready = canPublish(items);
   const requiredOpen = items.filter((i) => !i.ok && i.level === 'required').length;
@@ -248,13 +254,13 @@ export function PublishStep(props: PublishStepProps) {
         <InlineAlert tone="warn" title="Trainee-built scenarios can’t be published from here">
           <div>
             This one belongs to the trainee who built it, and the app keeps showing them their own
-            version. To offer it to everyone, publish a copy — it starts as a hidden draft you can
-            polish first.
+            version. To offer it to everyone, add it to the library — the copy starts as a hidden
+            draft you can polish first.
           </div>
           {canWrite && (
             <div style={{ marginTop: 10 }}>
               <Button tone="primary" size="sm" onClick={props.onDuplicate}>
-                Duplicate to publish your version
+                Add to library
               </Button>
             </div>
           )}

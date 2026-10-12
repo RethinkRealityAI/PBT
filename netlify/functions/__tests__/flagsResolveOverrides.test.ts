@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  loadPublicObjections,
   publicOverrideRows,
   publicSimulationConfig,
+  resetObjectionsProbe,
   resetSpeciesProbe,
   selectOverrideRows,
 } from '../flags-resolve';
+import type { TeamObjectionsRead } from '../_shared/objectionsStore';
+import type { TeamObjection } from '../../../src/shared/scenarios/objections';
 
 /**
  * flags-resolve is PUBLIC (`cache-control: public`). The trainee app renders
@@ -37,6 +41,14 @@ describe('flags-resolve — what the public snapshot may carry', () => {
     expect(row.breed).toBe('Lab');
     expect(row.title_override).toBe('Buddy');
     expect(row.visible).toBe(true);
+  });
+
+  it('strips copied_from (admin-only provenance) from every row', () => {
+    const [row] = publicOverrideRows([
+      { ...live, copied_from: 'user:0b1a3c9e-5d2f-4a6b-8c7d-9e0f1a2b3c4d' } as never,
+    ]) as unknown as Array<Record<string, unknown>>;
+    expect(row).not.toHaveProperty('copied_from');
+    expect(row.breed).toBe('Lab');
   });
 
   it('reduces a hidden row to "this scenario is hidden" — no draft content leaves the server', () => {
@@ -137,5 +149,72 @@ describe('flags-resolve selectOverrideRows', () => {
       error: columns.includes('focus_area') ? fullError : { code: 'x' },
     }));
     await expect(selectOverrideRows(none, 9_000_000)).rejects.toBe(fullError);
+  });
+});
+
+/**
+ * Team objections ride the public snapshot (the trainee app resolves saved
+ * scenarios and builds its pickers from them). The table arrives with a
+ * hand-run migration, so: a MISSING table is remembered for ten minutes, a
+ * transient error serves the last good list and is not remembered.
+ */
+describe('flags-resolve loadPublicObjections', () => {
+  const probiotics: TeamObjection = {
+    id: 'team:probiotics',
+    title: 'Probiotics',
+    example: '"He does not need them."',
+    titleFr: null,
+    exampleFr: null,
+    species: ['dog', 'cat'],
+    focusArea: 'gi',
+    coaching: {},
+    visible: true,
+    sortOrder: null,
+    updatedAt: null,
+  };
+  const ok = (objections: TeamObjection[]): TeamObjectionsRead => ({ objections, missing: false, error: null });
+  const missing: TeamObjectionsRead = {
+    objections: [],
+    missing: true,
+    error: { code: 'PGRST205', message: "Could not find the table 'public.scenario_objections'" },
+  };
+  const blip: TeamObjectionsRead = {
+    objections: [],
+    missing: false,
+    error: { code: '57014', message: 'canceling statement due to statement timeout' },
+  };
+
+  beforeEach(() => {
+    resetObjectionsProbe();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('serves what the store read', async () => {
+    const read = vi.fn(async () => ok([probiotics]));
+    expect(await loadPublicObjections(read, 1_000)).toEqual([probiotics]);
+  });
+
+  it('remembers a missing table for ten minutes, then re-probes', async () => {
+    const read = vi.fn(async () => missing);
+    expect(await loadPublicObjections(read, 1_000_000)).toEqual([]);
+    expect(await loadPublicObjections(read, 1_000_000 + 9 * 60_000)).toEqual([]);
+    expect(read).toHaveBeenCalledTimes(1);
+    read.mockResolvedValueOnce(ok([probiotics]));
+    expect(await loadPublicObjections(read, 1_000_000 + 11 * 60_000)).toEqual([probiotics]);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('a transient error serves the last good list and is not remembered', async () => {
+    const read = vi.fn(async () => ok([probiotics]));
+    await loadPublicObjections(read, 2_000_000);
+    read.mockResolvedValueOnce(blip);
+    expect(await loadPublicObjections(read, 2_000_100)).toEqual([probiotics]);
+    // The very next load reads again.
+    expect(await loadPublicObjections(read, 2_000_200)).toEqual([probiotics]);
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it('a transient error before any good read is simply none', async () => {
+    expect(await loadPublicObjections(async () => blip, 3_000_000)).toEqual([]);
   });
 });
