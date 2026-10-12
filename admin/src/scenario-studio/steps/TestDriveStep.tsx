@@ -27,6 +27,9 @@ import { TrainerAppFrame } from '../simulator/TrainerAppFrame';
 import { MISSING_FIELD_PHRASE, MISSING_FIELD_STEP, joinList } from '../simulator/simulatorModel';
 import { objectionLabel } from '../objections/objectionsModel';
 import { useObjectionsContext } from '../objections/ObjectionsContext';
+import { knowledgeSummaryText } from '../objections/categoriesModel';
+import type { ObjectionCategory } from '../../../../src/shared/scenarios/objectionCategories';
+import { inheritedKnowledge } from './knowledgeModel';
 
 export function TestDriveStep({ draft, scenarioId, onTested, goTo }: TestDriveProps) {
   const [appOpen, setAppOpen] = useState(false);
@@ -85,6 +88,8 @@ export function summariseDraft(
   draft: StudioDraft,
   /** The team's objections (retired included), so a team pushback is named and counted. */
   objections: readonly TeamObjection[] = [],
+  /** Every category, so knowledge inherited from the objection's category is named. */
+  categories: readonly ObjectionCategory[] = [],
 ): Array<{
   step: StudioStepKey;
   label: string;
@@ -122,12 +127,19 @@ export function summariseDraft(
   ].filter(Boolean);
 
   const slugs = (draft.knowledge_slugs ?? []).filter((s) => hasText(s));
+  // Same rule as the server (`effectiveKnowledge`): the scenario's own choice,
+  // else its category's, else the whole library.
+  const inherited = inheritedKnowledge(draft, objections, categories);
   const knowledge =
     slugs.length > 0
       ? `${slugs.length} chosen document${slugs.length === 1 ? '' : 's'}`
       : hasText(draft.focus_area)
         ? `One topic: ${focusAreaLabel(draft.focus_area)}`
-        : 'The whole knowledge library';
+        : inherited.source === 'category' && inherited.category
+          ? `The ${inherited.category.name} knowledge${
+              knowledgeSummaryText(inherited.knowledge) ? ` (${knowledgeSummaryText(inherited.knowledge)})` : ''
+            }`
+          : 'The whole knowledge library';
 
   const notes = [
     hasText(draft.prompt_prefix) && 'opening notes',
@@ -175,8 +187,8 @@ function clip(s: string, max: number): string {
 }
 
 function WhatYoureTesting({ draft, goTo }: { draft: StudioDraft; goTo: (s: StudioStepKey) => void }) {
-  const { objections } = useObjectionsContext();
-  const rows = summariseDraft(draft, objections);
+  const { objections, categories } = useObjectionsContext();
+  const rows = summariseDraft(draft, objections, categories);
   return (
     <Panel title="What you’re testing">
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 10 }}>

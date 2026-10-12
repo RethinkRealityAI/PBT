@@ -76,6 +76,45 @@ describe('TestDriveStep', () => {
     expect(summariseDraft({}).find((r) => r.label === 'AI brief')!.value).toBe('Standard briefing only');
   });
 
+  it('names the category’s knowledge when the scenario inherits it (never “the whole library”)', () => {
+    const team = [
+      {
+        id: 'team:qa-chews',
+        title: 'Chews are just treats',
+        example: '',
+        titleFr: null,
+        exampleFr: null,
+        species: ['dog' as const],
+        categoryId: 'category:dental',
+        coaching: {},
+        visible: true,
+        sortOrder: null,
+        updatedAt: null,
+      },
+    ];
+    const categories = [
+      {
+        id: 'category:dental',
+        name: 'Dental care',
+        nameFr: null,
+        description: '',
+        focusArea: null,
+        knowledgeSlugs: ['custom:study-1'],
+        sortOrder: null,
+        builtIn: false,
+        updatedAt: null,
+      },
+    ];
+    const inherit = summariseDraft({ pushback_id: 'team:qa-chews' }, team, categories);
+    expect(inherit.find((r) => r.label === 'Knowledge')!.value).toBe('The Dental care knowledge (1 document)');
+    // The scenario's own choice still wins over its category's.
+    const own = summariseDraft({ pushback_id: 'team:qa-chews', knowledge_slugs: ['x'] }, team, categories);
+    expect(own.find((r) => r.label === 'Knowledge')!.value).toBe('1 chosen document');
+    // A category with nothing attached leaves the whole library.
+    const empty = summariseDraft({ pushback_id: 'team:qa-chews' }, team, [{ ...categories[0], knowledgeSlugs: [] }]);
+    expect(empty.find((r) => r.label === 'Knowledge')!.value).toBe('The whole knowledge library');
+  });
+
   it('renders the simulator, the side panel, and edit links to each step', async () => {
     const p = props();
     const user = userEvent.setup();

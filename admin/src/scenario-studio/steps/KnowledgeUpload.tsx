@@ -729,7 +729,7 @@ function ReviewForm({
         </div>
         <div style={{ fontSize: 12, color: COLOR.inkMute, lineHeight: 1.5 }}>
           {categoryName && categoryBoth
-            ? `“${categoryName}” covers dogs and cats, so tick only the animals this document is really about${
+            ? `“${categoryName}” can hold scenarios for dogs and cats, so tick only the animals this document is really about${
                 analysis ? ' (pre-filled from the assistant’s reading — check it)' : ''
               }. A dog study ticked for cats would be read in cat scenarios.`
             : categoryName
