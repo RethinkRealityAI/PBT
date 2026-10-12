@@ -532,6 +532,18 @@ editable `scenario_overrides` column exactly once (unit-tested).
   words are never what the turn cap cuts. Local drafts report whether the
   browser actually kept them (`writeLocalDraft` → boolean; full storage
   drops the oldest entries and retries once).
+- **End-to-end check (repeatable):** the `pbt-e2e-tester` agent
+  (`.claude/agents/pbt-e2e-tester.md`) runs `scripts/e2e/studio-e2e.mjs`
+  against a DEPLOYED site (PR preview — it shares the prod database) as a
+  throwaway Scenario Author (`qa-account.mjs`, publishable key only):
+  per-animal categories with knowledge uploaded from the category editor,
+  objections, a scenario per animal through the seven steps (saved hidden,
+  never published), marker words proving the preview and briefing read the
+  right document and never the other animal's, Test drive conversation +
+  score, the trainee-app frame, and a cross-contamination probe; then
+  `cleanup.sql` hard-deletes everything (admin deletes are soft) and must
+  show zero rows. Fixtures: `scripts/e2e/fixtures.mjs` ("QA E2E", markers
+  BRIGHTBITE / RIVULET).
 - UI vocabulary: `ui.tsx` (never put step content inside `<Glass>` or any
   transformed ancestor — `backdrop-filter`/`transform` trap in-place
   `position: fixed` modals; `.pbt-studio-in` uses fill-mode `backwards` for
