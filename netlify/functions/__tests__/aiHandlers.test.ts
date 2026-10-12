@@ -820,7 +820,7 @@ describe('category knowledge in the AI functions', () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect(filtersOf()).toEqual({ docSlugs: ['study:weight-1'], species: 'dog', tool: 'roleplay' });
+    expect(filtersOf()).toEqual({ docSlugs: ['study:weight-1'], inheritedDocs: true, species: 'dog', tool: 'roleplay' });
   });
 
   it('with no stored knowledge, a body cannot add any — retrieval is exactly as before categories', async () => {
@@ -842,7 +842,7 @@ describe('category knowledge in the AI functions', () => {
     expect((await voiceToken(jsonRequest('ai-voice-token', { scenario, categoryKnowledge: INJECTED }))).status).toBe(
       200,
     );
-    expect(filtersOf(0)).toEqual({ docSlugs: ['study:weight-1'], species: 'dog', tool: 'roleplay' });
+    expect(filtersOf(0)).toEqual({ docSlugs: ['study:weight-1'], inheritedDocs: true, species: 'dog', tool: 'roleplay' });
 
     mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
     const res = await evaluate(
@@ -857,7 +857,7 @@ describe('category knowledge in the AI functions', () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect(filtersOf(1)).toEqual({ docSlugs: ['study:weight-1'], species: 'dog', tool: 'scoring' });
+    expect(filtersOf(1)).toEqual({ docSlugs: ['study:weight-1'], inheritedDocs: true, species: 'dog', tool: 'scoring' });
   });
 
   it('an AI call never fails over categories — the table may not exist yet', async () => {

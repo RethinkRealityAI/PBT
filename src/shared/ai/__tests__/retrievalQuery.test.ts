@@ -160,11 +160,21 @@ describe('scenarioRetrievalFilters — category knowledge', () => {
   it('a scenario with no knowledge of its own reads its category’s documents', () => {
     expect(scenarioRetrievalFilters({ age: 'Adult (3-7)' }, { categoryKnowledge: category })).toEqual({
       docSlugs: ['custom:probiotics-monograph'],
+      inheritedDocs: true,
       species: 'dog',
     });
     expect(
       scenarioRetrievalFilters({ age: 'Adult (3-7)' }, { categoryKnowledge: { focusArea: 'gi', knowledgeSlugs: [] } }),
     ).toEqual({ focus: 'gi', species: 'dog' });
+  });
+
+  it('only INHERITED documents are soft — a scenario’s own documents never are', () => {
+    expect(
+      scenarioRetrievalFilters(
+        { knowledgeSlugs: ['study:own'], age: 'Adult (3-7)' },
+        { categoryKnowledge: category },
+      ),
+    ).toEqual({ docSlugs: ['study:own'], species: 'dog' });
   });
 
   it('the scenario’s own choice replaces the category’s', () => {

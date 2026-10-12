@@ -679,7 +679,7 @@ describe('retrieveForScenario — category knowledge', () => {
   it("a scenario with no knowledge of its own reads its built-in category's documents (an admin's edit)", async () => {
     sb.setHandler('scenario_objection_categories', () => ({ data: [WEIGHT_EDIT], error: null }));
     await retrieveForScenario(client(), SEED_SCENARIOS[0], undefined, 'scoring');
-    expect(filtersOf()).toEqual({ docSlugs: ['study:weight-1', 'study:weight-2'], species: 'dog', tool: 'scoring' });
+    expect(filtersOf()).toEqual({ docSlugs: ['study:weight-1', 'study:weight-2'], inheritedDocs: true, species: 'dog', tool: 'scoring' });
     // Another category's knowledge never leaks: a cost scenario reads the library.
     mocks.retrieveChunks.mockClear();
     await retrieveForScenario(client(), SEED_SCENARIOS[1], undefined, 'roleplay');

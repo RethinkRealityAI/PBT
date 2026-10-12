@@ -317,6 +317,7 @@ export default async (req: Request): Promise<Response> => {
     let retrieved: RetrievedChunk[] = [];
     let appliedFilter: Record<string, unknown> = {};
     let focusRelaxed = false;
+    let docsRelaxed = false;
     if (rag.enabled && (include.prompt || include.knowledge)) {
       const detailed = await retrieveChunksDetailed(scenarioRetrievalQuery(scenario), {
         k: rag.k,
@@ -326,6 +327,7 @@ export default async (req: Request): Promise<Response> => {
       retrieved = detailed.results;
       appliedFilter = detailed.appliedFilter;
       focusRelaxed = detailed.focusRelaxed;
+      docsRelaxed = detailed.docsRelaxed;
     }
 
     const prompt = include.prompt
@@ -351,6 +353,7 @@ export default async (req: Request): Promise<Response> => {
         mode,
         appliedFilter: include.knowledge ? appliedFilter : {},
         focusRelaxed: include.knowledge ? focusRelaxed : false,
+        docsRelaxed: include.knowledge ? docsRelaxed : false,
         passages: include.knowledge ? retrieved.map(toPassage) : [],
       },
     };

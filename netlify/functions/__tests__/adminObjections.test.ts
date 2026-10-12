@@ -603,6 +603,17 @@ describe('admin-objections — restore', () => {
     expect(writes('scenario_objections')).toHaveLength(0);
   });
 
+  it('refuses to restore into a category deleted meanwhile — restore the category first', async () => {
+    objections[0].deleted_at = T1;
+    categories[0].deleted_at = T1; // category:probiotics, the one it is filed under
+    const res = await post({ op: 'restore', id: 'team:probiotics' });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as Bag;
+    expect(body.code).toBe('category_deleted');
+    expect(body.error).toMatch(/Restore the category/);
+    expect(writes('scenario_objections')).toHaveLength(0);
+  });
+
   it('respects the live cap, and is a no-op for a live objection', async () => {
     expect((await post({ op: 'restore', id: 'team:probiotics' })).status).toBe(200);
     expect(writes('scenario_objections')).toHaveLength(0);

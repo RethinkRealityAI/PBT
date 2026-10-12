@@ -10,15 +10,16 @@
  * real App through loading → signed in so it cannot ship again.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-const { session, updateUser, signOut } = vi.hoisted(() => ({
+const { session, updateUser, signOut, authChange } = vi.hoisted(() => ({
   session: {
     access_token: 'mock-access-token',
     user: { user_metadata: {} as Record<string, unknown> },
   },
   updateUser: vi.fn(),
   signOut: vi.fn(),
+  authChange: { current: null as null | ((event: string, s: unknown) => void) },
 }));
 
 vi.mock('../lib/supabase', () => ({
@@ -27,7 +28,10 @@ vi.mock('../lib/supabase', () => ({
       // Resolve on a later tick, so the first render is the loading state.
       getSession: () =>
         new Promise((resolve) => setTimeout(() => resolve({ data: { session } }), 0)),
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+      onAuthStateChange: (cb: (event: string, s: unknown) => void) => {
+        authChange.current = cb;
+        return { data: { subscription: { unsubscribe: () => {} } } };
+      },
       updateUser,
       signOut,
     },
@@ -91,6 +95,37 @@ describe('admin App sign-in transition', () => {
     expect(await screen.findAllByText('Scenario Studio', {}, { timeout: 8000 })).not.toHaveLength(0);
     expect(screen.queryByRole('heading', { name: 'Choose your own password' })).not.toBeInTheDocument();
     expect(hookErrors()).toEqual([]);
+  });
+
+  it('a second admin signing in on the same tab still gets their own prompt', async () => {
+    session.user.user_metadata = { must_change_password: true };
+    updateUser.mockResolvedValue({ data: {}, error: null });
+    const { App } = await import('../App');
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Choose your own password' }, { timeout: 8000 });
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'first-admin-picks-one' } });
+    fireEvent.change(screen.getByLabelText('Type it again'), { target: { value: 'first-admin-picks-one' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+    expect(await screen.findAllByText('Scenario Studio', {}, { timeout: 8000 })).not.toHaveLength(0);
+
+    // Sign-out doesn't reload the page; another account with a temporary
+    // password signs in on the same tab.
+    const mocked = window.fetch;
+    window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('admin-whoami')) {
+        const res = await mocked(input, init);
+        const me = await res.json();
+        return new Response(JSON.stringify({ ...me, user_id: 'second-admin' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return mocked(input, init);
+    }) as typeof fetch;
+    await act(async () => {
+      authChange.current?.('SIGNED_IN', { ...session, user: { user_metadata: { must_change_password: true } } });
+    });
+    expect(await screen.findByRole('heading', { name: 'Choose your own password' }, { timeout: 8000 })).toBeInTheDocument();
   });
 
   it('Sign out instead signs out from the temporary-password screen', async () => {

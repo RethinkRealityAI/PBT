@@ -67,7 +67,10 @@ export function App() {
   const [range, setRange] = useState<Range>('28d');
   const [query, setQuery] = useState('');
   /** The temporary password was replaced this session (the flag may lag in the session). */
-  const [passwordChosen, setPasswordChosen] = useState(false);
+  // WHICH account already replaced its temporary password in this tab — a
+  // plain boolean leaked to the next admin who signs in here without a
+  // reload (sign-out doesn't reload), skipping their prompt.
+  const [passwordChosenFor, setPasswordChosenFor] = useState<string | null>(null);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [rawHashRoute, navigate] = useHashRoute();
   // Old `#/library/…` links (the Library destination was split into Scenario
@@ -235,11 +238,11 @@ export function App() {
   // A temporary password (set by another admin) is replaced before the
   // portal opens. Rendered after every hook above — see the note on
   // `resolved` — so the extra screen can't change the hook count.
-  if (auth.mustChangePassword && !passwordChosen) {
+  if (auth.mustChangePassword && passwordChosenFor !== auth.me.user_id) {
     return (
       <ChooseOwnPasswordScreen
         email={auth.me.email}
-        onDone={() => setPasswordChosen(true)}
+        onDone={() => setPasswordChosenFor(auth.me.user_id)}
         onSignOut={() => void getSupabase().auth.signOut()}
       />
     );

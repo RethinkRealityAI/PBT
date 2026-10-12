@@ -32,6 +32,7 @@ import {
 import { focusAreaLabel } from '../../../../src/shared/knowledge/focusAreas';
 import { ALL_KNOWLEDGE_SPECIES } from '../../../../src/shared/knowledge/knowledgeScopes';
 import { SCENARIO_SPECIES, type ScenarioSpecies } from '../../../../src/shared/scenarios/species';
+import { resolveDocScope } from '../../data/knowledgeActions';
 
 // ─────────────────────────────────────────────────────────────
 // Reading the server's answer
@@ -337,4 +338,42 @@ export function categoryUsageLabel(objections: number, scenarios: number): strin
  */
 export function knowledgeOf(name: string): string {
   return `the ${name.trim()} knowledge`;
+}
+
+const REACH_SPECIES: Record<ScenarioSpecies, readonly ('dog' | 'puppy' | 'cat')[]> = {
+  dog: ['dog', 'puppy'],
+  cat: ['cat'],
+};
+const REACH_SPECIES_LABEL: Record<'dog' | 'puppy' | 'cat', string> = {
+  dog: 'adult dogs',
+  puppy: 'puppies',
+  cat: 'cats',
+};
+
+/**
+ * Why an attached document won't reach every scenario in a category — one
+ * plain sentence per gap, empty when it reaches them all. A category's
+ * documents are read by the roleplay AND the scoring, inside each
+ * scenario's species scope; one filed for another animal or tool gives
+ * those scenarios nothing from it (retrieval then widens to the whole
+ * library for them, so they are never left ungrounded — but the category's
+ * choice doesn't apply). `animals` = the animals the category's objections
+ * cover; a category with none yet is checked against both.
+ */
+export function categoryDocReach(
+  doc: { metadata: Record<string, unknown> | null | undefined },
+  animals: readonly ScenarioSpecies[],
+): string[] {
+  const scope = resolveDocScope(doc.metadata);
+  const wanted = (animals.length ? animals : SCENARIO_SPECIES).flatMap((a) => REACH_SPECIES[a]);
+  const missing = wanted.filter((s) => !scope.species.includes(s));
+  const out: string[] = [];
+  if (missing.length) {
+    out.push(
+      `Not filed for ${missing.map((s) => REACH_SPECIES_LABEL[s]).join(' or ')}, so those scenarios read the whole library instead.`,
+    );
+  }
+  if (!scope.tools.includes('roleplay')) out.push('The AI customer doesn’t read it.');
+  if (!scope.tools.includes('scoring')) out.push('The scoring doesn’t read it, so scorecards won’t draw on it.');
+  return out;
 }

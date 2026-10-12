@@ -146,6 +146,14 @@ create table if not exists public.scenario_objections (
   deleted_at timestamptz
 );
 
+-- A database that ran an earlier draft of this file (before categories)
+-- already has scenario_objections WITHOUT category_id, so the create above
+-- was skipped: add the column, file existing rows under the built-in
+-- 'everyday-nutrition' category, then require it. No-ops on a fresh table.
+alter table public.scenario_objections add column if not exists category_id text;
+update public.scenario_objections set category_id = 'everyday-nutrition' where category_id is null;
+alter table public.scenario_objections alter column category_id set not null;
+
 do $$
 begin
   if not exists (

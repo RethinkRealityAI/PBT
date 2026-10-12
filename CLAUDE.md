@@ -159,7 +159,11 @@ the DOCUMENT. Vocabulary: `src/shared/knowledge/knowledgeScopes.ts`.
 `netlify/functions/_shared/retrieval.ts`: `tool` + `species` are **HARD** —
 present on every RPC call including the zero-row and RPC-error retries.
 `focus` is **SOFT** (dropped on a zero-row retry); `docSlugs` replace `focus`
-and run *inside* the scope. `retrieveChunksDetailed()` also returns the
+and run *inside* the scope — never relaxed when the scenario chose them, but
+SOFT when inherited from its category (`inheritedDocs: true` → zero rows
+retries inside the scope, `docsRelaxed` reports it), so a category's
+dog-only or roleplay-only documents never leave a cat scenario or the
+scorer ungrounded. `retrieveChunksDetailed()` also returns the
 applied filter + `focusRelaxed`; `buildScopeFilter()` is the pure builder.
 
 Per-consumer tool: `ai-roleplay` / `ai-voice-token` / browser `useTextChat` →
@@ -429,14 +433,22 @@ editable `scenario_overrides` column exactly once (unit-tested).
   (`_shared/ai.ts::loadCategoryKnowledge`, 60 s cache, fail-open, skipped
   when the scenario has its own) and fed to
   `scenarioRetrievalFilters(s, { categoryKnowledge })` — never from a
-  request body. `flags-resolve` publishes `snapshot.objectionCategories`
+  request body; inherited slugs ride `inheritedDocs: true` (SOFT, see
+  "Knowledge scopes"). The species scope stays HARD, so one category can
+  hold dog and cat documents side by side: each scenario reads only its
+  animal's. The category editor lists attached documents some of its
+  scenarios can't read (`categoryDocReach`). `flags-resolve` publishes `snapshot.objectionCategories`
   (stored rows; a failed cold read = degraded, `no-store`) so the trainee
   app groups and filters by category and its provenance retrieval matches.
   `admin-objections` ops `upsert-category` (`baseUpdatedAt` → 409 `stale`;
   duplicate names refused; ≤ 50 team categories; knowledge slugs not live
   in `knowledge_documents` are dropped and listed in `_dropped`),
   `delete-category` (built-ins 400; 409 `in_use` while any non-deleted
-  objection — retired included — uses it), `restore-category`. The
+  objection — retired included — uses it; re-checked after the write and
+  undone if one appeared), `restore-category`. An objection can't be
+  restored into a deleted category (409 `category_deleted`), and an
+  upsert re-checks its category after the write (rolled back if it
+  vanished). The
   inspector reports `knowledgeSource` + `knowledgeCategory`; the assistant's
   DATA block lists OBJECTION CATEGORIES with their objections.
 - **Objections** (`src/shared/scenarios/objections.ts` — ONE contract for

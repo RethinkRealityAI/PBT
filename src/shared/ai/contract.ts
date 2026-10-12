@@ -293,6 +293,12 @@ export interface ScenarioInspectResponse {
     appliedFilter: Record<string, unknown>;
     /** True when a focus filter found nothing and the search widened. */
     focusRelaxed: boolean;
+    /**
+     * True when the category's documents gave nothing readable for this
+     * scenario (filed for another animal or tool) and the search widened to
+     * the scope — a real session does the same. Optional: older servers omit it.
+     */
+    docsRelaxed?: boolean;
     passages: InspectPassage[];
   };
 }

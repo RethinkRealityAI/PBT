@@ -77,10 +77,11 @@ export default async (req: Request): Promise<Response> => {
     // keeps the citations the browser records (`rag_documents.retrieved`)
     // the same passages the server grounded the prompt on. Anything the
     // client said about `tool` is dropped.
-    const { focus, docSlugs, species } = sanitizeFilters(body.filters);
+    const { focus, docSlugs, inheritedDocs, species } = sanitizeFilters(body.filters);
     const filters = {
       ...(focus ? { focus } : {}),
       ...(docSlugs ? { docSlugs } : {}),
+      ...(inheritedDocs ? { inheritedDocs } : {}),
       ...(species ? { species } : {}),
       tool: PUBLIC_RETRIEVAL_TOOL,
     };

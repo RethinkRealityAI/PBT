@@ -117,6 +117,14 @@ export function KnowledgePreview({
                   runs on its standard briefing and reads none of these documents.
                 </InlineAlert>
               )}
+              {data.knowledge.docsRelaxed && (
+                <InlineAlert tone="warn">
+                  None of the category’s documents can be read for this scenario — they are filed for
+                  another animal, or not for the roleplay — so the search widened to the whole library, as a
+                  real session does. Attach documents filed for this animal to the category, or pick
+                  documents for this scenario.
+                </InlineAlert>
+              )}
               {data.knowledge.focusRelaxed && (
                 <InlineAlert tone="warn">
                   Nothing on this topic matched, so the search widened to the whole library — a real

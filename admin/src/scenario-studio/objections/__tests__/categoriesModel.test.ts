@@ -8,6 +8,7 @@ import {
   builtInObjectionsIn,
   canDeleteCategory,
   categoryAnimals,
+  categoryDocReach,
   categoryFormErrors,
   categoryFormToWrite,
   categoryKnowledgeLine,
@@ -204,5 +205,34 @@ describe('the category editor form', () => {
     const form = formFromCategory(BUILT_IN_CATEGORIES[1]);
     expect(form).toMatchObject({ id: 'weight', builtIn: true });
     expect(categoryFormErrors({ ...form, name: 'Obesity & weight loss', focusArea: 'weight' })).toEqual({});
+  });
+});
+
+describe('categoryDocReach — documents a category attaches that some of its scenarios cannot read', () => {
+  const doc = (species: string[], tools: string[]) => ({ metadata: { tags: { species, tools } } });
+
+  it('is silent for a document every scenario in the category reads', () => {
+    expect(categoryDocReach(doc(['dog', 'puppy', 'cat'], ['roleplay', 'scoring']), ['dog', 'cat'])).toEqual([]);
+    expect(categoryDocReach(doc(['cat'], ['roleplay', 'scoring']), ['cat'])).toEqual([]);
+  });
+
+  it('names the animals a dog-only document misses (cat scenarios widen to the library)', () => {
+    expect(categoryDocReach(doc(['dog', 'puppy'], ['roleplay', 'scoring']), ['dog', 'cat'])).toEqual([
+      'Not filed for cats, so those scenarios read the whole library instead.',
+    ]);
+    expect(categoryDocReach(doc(['dog'], ['roleplay', 'scoring']), ['dog'])[0]).toMatch(/^Not filed for puppies/);
+  });
+
+  it('checks both animals while the category has no objections yet', () => {
+    expect(categoryDocReach(doc(['cat'], ['roleplay', 'scoring']), [])[0]).toMatch(/adult dogs or puppies/);
+  });
+
+  it('flags a document the scoring (or the AI customer) does not read', () => {
+    expect(categoryDocReach(doc(['dog', 'puppy', 'cat'], ['roleplay']), ['dog'])).toEqual([
+      'The scoring doesn’t read it, so scorecards won’t draw on it.',
+    ]);
+    expect(categoryDocReach(doc(['dog', 'puppy', 'cat'], ['scoring']), ['dog'])).toEqual([
+      'The AI customer doesn’t read it.',
+    ]);
   });
 });

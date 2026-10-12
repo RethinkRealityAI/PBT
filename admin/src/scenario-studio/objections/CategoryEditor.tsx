@@ -40,6 +40,7 @@ import { KnowledgeUpload } from '../steps/KnowledgeUpload';
 import { BodyPortal, Disclosure, EditorFrame, selectStyle } from './editorParts';
 import {
   categoryAnimals,
+  categoryDocReach,
   categoryFormErrors,
   categoryFormToWrite,
   categoryUploadSpecies,
@@ -153,6 +154,19 @@ function EditorBody({
     [knowledge.docs, form.knowledgeSlugs],
   );
   const hiddenDocs = knowledge.docs.length - roleplayDocs.length;
+  // Attached documents that won't reach every scenario here (another
+  // animal, or not read by the roleplay / scoring) — said up front, since
+  // those scenarios quietly read the whole library instead.
+  const reachGaps = useMemo(
+    () =>
+      form.knowledgeSlugs.flatMap((slug) => {
+        const doc = knowledge.docs.find((d) => d.slug === slug);
+        if (!doc) return [];
+        const problems = categoryDocReach(doc, animals);
+        return problems.length ? [{ slug, title: doc.title || slug, problems }] : [];
+      }),
+    [form.knowledgeSlugs, knowledge.docs, animals],
+  );
   const summary = knowledgeSummaryText(form);
   const name = form.name.trim() || 'this category';
 
@@ -495,6 +509,18 @@ function EditorBody({
               holder="category"
               onChange={(next) => update({ knowledgeSlugs: next ?? [] })}
             />
+          )}
+          {!knowledge.error && reachGaps.length > 0 && (
+            <InlineAlert tone="warn" title="Not every scenario here can read these">
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                {reachGaps.map((g) => (
+                  <li key={g.slug}>
+                    <strong>{g.title}</strong>: {g.problems.join(' ')}
+                  </li>
+                ))}
+              </ul>
+              <div style={{ marginTop: 6 }}>Widen its animals or “Used by” in Knowledge to fix it.</div>
+            </InlineAlert>
           )}
           {!knowledge.error && hiddenDocs > 0 && (
             <div style={{ fontSize: 12, color: COLOR.inkMute, lineHeight: 1.5 }}>

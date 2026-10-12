@@ -134,6 +134,10 @@ export const MIGRATION_NEEDED_MESSAGE = `Objections need a database update first
 export const DELETED_OBJECTION_MESSAGE =
   'This objection was deleted. Restore it from "Recently deleted" before editing it.';
 export const CATEGORY_GONE_MESSAGE = 'That category no longer exists — pick another.';
+export const RESTORE_CATEGORY_FIRST_MESSAGE =
+  'Its category was deleted. Restore the category from "Recently deleted" first, then this objection.';
+export const CATEGORY_DELETED_WHILE_SAVING_MESSAGE =
+  'That category was deleted while you were saving — nothing was saved. Pick another category and save again.';
 export const DELETED_CATEGORY_MESSAGE =
   'This category was deleted. Restore it from "Recently deleted" before editing it.';
 export const BUILT_IN_CATEGORY_DELETE_MESSAGE = "Built-in categories can't be deleted — rename them instead.";
@@ -141,7 +145,13 @@ export const BUILT_IN_CATEGORY_DELETE_MESSAGE = "Built-in categories can't be de
 type DbError = { code?: string; message?: string };
 type Usage = AdminObjection['usage'];
 type CategoryUsage = AdminObjectionCategory['usage'];
-type StoredRow = { id: string; title?: unknown; deleted_at?: string | null; updated_at?: string | null };
+type StoredRow = {
+  id: string;
+  title?: unknown;
+  category_id?: unknown;
+  deleted_at?: string | null;
+  updated_at?: string | null;
+};
 type StoredCategoryRow = {
   id: string;
   name?: unknown;
@@ -508,6 +518,12 @@ async function upsert(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
       .select(OBJECTION_ADMIN_COLUMNS)
       .single();
     if (ins.error) return writeFailure(ins.error);
+    // A category deleted between the check above and this insert (another
+    // admin's delete-category ran in the gap): take the row back out.
+    if (await categoryVanished(ctx.sb, valid.value.categoryId)) {
+      await ctx.sb.from('scenario_objections').delete().eq('id', id);
+      return jsonResponse({ error: CATEGORY_DELETED_WHILE_SAVING_MESSAGE, code: 'category_deleted' }, { status: 409 });
+    }
     await writeAuditLog(ctx, {
       entity_type: 'scenario_objection',
       entity_id: id,
@@ -558,6 +574,18 @@ async function upsert(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
   const upd = await q.select(OBJECTION_ADMIN_COLUMNS).maybeSingle();
   if (upd.error) return writeFailure(upd.error);
   if (!upd.data) return stale();
+  // Moved INTO a category deleted in the gap: move it back (its old
+  // category had it live all along, so that one can't have been deleted).
+  if (
+    valid.value.categoryId !== existing.category_id &&
+    (await categoryVanished(ctx.sb, valid.value.categoryId))
+  ) {
+    await ctx.sb
+      .from('scenario_objections')
+      .update({ category_id: existing.category_id })
+      .eq('id', id);
+    return jsonResponse({ error: CATEGORY_DELETED_WHILE_SAVING_MESSAGE, code: 'category_deleted' }, { status: 409 });
+  }
   await writeAuditLog(ctx, {
     entity_type: 'scenario_objection',
     entity_id: id,
@@ -590,6 +618,18 @@ async function checkCategory(sb: SupabaseClient, id: string): Promise<'ok' | 'un
   if (error) return readFailure(error);
   const row = data as { deleted_at?: string | null } | null;
   return row && !row.deleted_at ? 'ok' : 'unknown';
+}
+
+/**
+ * Post-write re-check: was this TEAM category deleted after the pre-write
+ * check passed? Built-ins can't be. A read error counts as "still there" —
+ * the pre-check already passed, and a rollback on a hiccup would lose a
+ * good save.
+ */
+async function categoryVanished(sb: SupabaseClient, id: string): Promise<boolean> {
+  if (!isTeamCategoryId(id)) return false;
+  const res = await checkCategory(sb, id);
+  return res === 'unknown';
 }
 
 async function readOne(ctx: AdminCtx, id: string): Promise<{ row: StoredRow | null } | Response> {
@@ -671,6 +711,14 @@ async function restore(ctx: AdminCtx, id: string): Promise<Response> {
       409,
       `An objection called "${clash}" already exists. Rename or delete it before restoring this one.`,
     );
+  }
+
+  // Its category must still exist: restoring into a deleted one would leave
+  // a live objection no picker offers and no category knowledge reaches.
+  const category = await checkCategory(ctx.sb, String(read.row.category_id ?? ''));
+  if (category instanceof Response) return category;
+  if (category === 'unknown') {
+    return jsonResponse({ error: RESTORE_CATEGORY_FIRST_MESSAGE, code: 'category_deleted' }, { status: 409 });
   }
 
   const res = await ctx.sb
@@ -959,6 +1007,28 @@ async function removeCategory(ctx: AdminCtx, id: string): Promise<Response> {
     .select(CATEGORY_ADMIN_COLUMNS)
     .maybeSingle();
   if (del.error) return categoryWriteFailure(del.error);
+  // An objection filed under it between the check above and this write
+  // (another admin saving at the same moment): undo the delete.
+  const after = await ctx.sb
+    .from('scenario_objections')
+    .select('id, title')
+    .eq('category_id', id)
+    .is('deleted_at', null);
+  if (!after.error && (after.data ?? []).length > 0) {
+    await ctx.sb.from('scenario_objection_categories').update({ deleted_at: null }).eq('id', id);
+    const late = ((after.data ?? []) as Array<{ id: string; title?: unknown }>).map((o) => ({
+      id: o.id,
+      title: typeof o.title === 'string' && o.title.trim() ? o.title : o.id,
+    }));
+    return jsonResponse(
+      {
+        error: 'An objection was just filed under this category, so it was not deleted. Move it to another category first.',
+        code: 'in_use',
+        objections: late,
+      },
+      { status: 409 },
+    );
+  }
   await writeAuditLog(ctx, {
     entity_type: 'scenario_objection_category',
     entity_id: id,

@@ -366,6 +366,7 @@ describe('useTextChat — knowledge scope', () => {
     flags.snapshot = snapshotWith([GI]);
     expect(await openWith(probioticsScenario)).toEqual({
       docSlugs: ['study:gi-1', 'study:gi-2'],
+      inheritedDocs: true,
       species: 'dog',
       tool: 'roleplay',
     });

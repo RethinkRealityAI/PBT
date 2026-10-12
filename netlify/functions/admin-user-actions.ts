@@ -37,7 +37,6 @@ import {
   can,
   errorResponse,
   jsonResponse,
-  loadRoles,
   requireAdmin,
   writeAuditLog,
   type AdminCtx,
@@ -346,9 +345,17 @@ export default async (req: Request): Promise<Response> => {
       // escalation rule for roles: a non-owner may not take over an account
       // that holds permissions they don't (owners are covered above).
       if (!ctx.access.isOwner) {
+        // Read the roles directly, failing CLOSED: `loadRoles` answers []
+        // on any error (right for sign-in, wrong here), and an empty list
+        // would resolve a custom-role target to its overrides alone —
+        // letting this guard pass for an account that holds more.
+        const rolesRead = await ctx.sb.from('admin_roles').select('key, permissions');
+        if (rolesRead.error || !rolesRead.data) {
+          return errorResponse(503, 'Couldn’t check that account’s permissions just now. Try again in a moment.');
+        }
         const targetAccess = resolveAccess({
           role: target.admin_role,
-          roles: await loadRoles(ctx.sb),
+          roles: rolesRead.data as Array<{ key: string; permissions: string[] }>,
           overrides: target.permission_overrides,
           legacyIsAdmin: target.is_admin === true,
         });

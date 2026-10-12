@@ -144,6 +144,40 @@ describe('retrieveChunks — hard scope', () => {
     expect(filterOf(0)).toEqual({ tools: ['fecal-scan'], species: ['dog'] });
   });
 
+  it('INHERITED (category) documents are soft: zero rows retries inside the scope', async () => {
+    sb.rpc
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [ROW], error: null });
+    // A category's dog-only documents, read by a CAT scenario: nothing in
+    // scope — so the scenario reads its cat-scoped library instead of nothing.
+    const out = await retrieveChunksDetailed('q', {
+      filters: { tool: 'roleplay', species: 'cat', docSlugs: ['clinical:reference'], inheritedDocs: true },
+    });
+    expect(out.results).toHaveLength(1);
+    expect(out.docsRelaxed).toBe(true);
+    expect(out.focusRelaxed).toBe(false);
+    expect(sb.rpc).toHaveBeenCalledTimes(2);
+    expect(argsOf(0).doc_slugs).toEqual(['clinical:reference']);
+    expect(argsOf(1).doc_slugs).toBeUndefined();
+    // The scope itself never relaxes.
+    expect(filterOf(1)).toEqual({ tools: ['roleplay'], species: ['cat'] });
+  });
+
+  it('inherited documents that DO match are used as-is (no retry)', async () => {
+    sb.rpc.mockResolvedValueOnce({ data: [ROW], error: null });
+    const out = await retrieveChunksDetailed('q2', {
+      filters: { tool: 'scoring', species: 'dog', docSlugs: ['study:gut'], inheritedDocs: true },
+    });
+    expect(sb.rpc).toHaveBeenCalledTimes(1);
+    expect(out.docsRelaxed).toBe(false);
+  });
+
+  it('inheritedDocs means nothing without docSlugs, and only `true` counts', () => {
+    expect(sanitizeFilters({ inheritedDocs: true, tool: 'roleplay' })).toEqual({ tool: 'roleplay' });
+    expect(sanitizeFilters({ inheritedDocs: 'yes', docSlugs: ['a'] })).toEqual({ docSlugs: ['a'] });
+    expect(sanitizeFilters({ inheritedDocs: true, docSlugs: ['a'] })).toEqual({ docSlugs: ['a'], inheritedDocs: true });
+  });
+
   it('drops an unknown tool/species rather than filtering on it', async () => {
     sb.rpc.mockResolvedValueOnce({ data: [ROW], error: null });
     await retrieveChunks('q', {

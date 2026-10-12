@@ -389,6 +389,7 @@ describe('admin-scenario-inspect — a complete draft', () => {
       mode: 'documents',
       appliedFilter: {},
       focusRelaxed: false,
+      docsRelaxed: false,
       passages: [],
     });
     expect(body.prompt).toContain('# PUSHBACK');
@@ -591,7 +592,7 @@ describe('admin-scenario-inspect — category knowledge', () => {
     });
     expect(body.knowledge.mode).toBe('documents');
     const [, opts] = mocks.retrieveChunksDetailed.mock.calls[0];
-    expect(opts.filters).toEqual({ docSlugs: ['study:weight-1', 'study:weight-2'], species: 'dog', tool: 'roleplay' });
+    expect(opts.filters).toEqual({ docSlugs: ['study:weight-1', 'study:weight-2'], inheritedDocs: true, species: 'dog', tool: 'roleplay' });
   });
 
   it("a draft's own documents replace the category's (the category is still named)", async () => {
@@ -657,6 +658,7 @@ describe('admin-scenario-inspect — category knowledge', () => {
     expect(body.knowledgeCategory).toMatchObject({ id: 'category:probiotics', knowledgeSlugs: ['study:gut'] });
     expect(mocks.retrieveChunksDetailed.mock.calls[1][1].filters).toEqual({
       docSlugs: ['study:gut'],
+      inheritedDocs: true,
       species: 'dog',
       tool: 'roleplay',
     });

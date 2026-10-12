@@ -523,8 +523,9 @@ export default async (req: Request, context?: NetlifyContextLike): Promise<Respo
           fetchedAt: now,
         },
         // Built on a failed cold objections OR categories read: serve it,
-        // don't keep it.
-        expiresAt: catalogueReadDegraded() ? now : now + CACHE_TTL_MS,
+        // don't keep it. 0, not `now`: the check above is `expiresAt < now`,
+        // so `now` was still reused by a request in the same millisecond.
+        expiresAt: catalogueReadDegraded() ? 0 : now + CACHE_TTL_MS,
       };
       // Stash the raw rows on the snapshot for resolve.
       (snapshotCache.value as ResolvedSnapshot & {

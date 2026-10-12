@@ -145,6 +145,15 @@ describe('admin-user-actions — set_password', () => {
     expect(res.status).toBe(200);
   });
 
+  it('fails CLOSED when the roles can’t be read (503), never treating a custom role as empty', async () => {
+    caller({ admin_role: 'support' });
+    profiles['user-2'].admin_role = 'admin';
+    sb.setHandler('admin_roles', () => ({ data: null, error: { message: 'connection reset' } }));
+    const res = await setPassword();
+    expect(res.status).toBe(503);
+    expect(updateUserById).not.toHaveBeenCalled();
+  });
+
   it('needs team.manage', async () => {
     caller({ admin_role: 'analyst' });
     const res = await setPassword();

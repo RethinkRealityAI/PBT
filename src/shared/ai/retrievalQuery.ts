@@ -18,6 +18,12 @@ export interface RetrievalFilters {
   /** Explicit document attachment — wins over `focus`, never relaxed. */
   docSlugs?: string[];
   /**
+   * `docSlugs` were INHERITED from the scenario's category: SOFT — when none
+   * of them is readable in scope (another animal, another tool) retrieval
+   * retries inside the scope instead of returning nothing.
+   */
+  inheritedDocs?: boolean;
+  /**
    * The consumer asking (KNOWLEDGE_TOOL_KEYS) — HARD: only documents whose
    * `tools` scope lists it are ever returned. Every production caller sets it.
    */
@@ -86,7 +92,11 @@ export function scenarioRetrievalFilters(
 ): RetrievalFilters {
   const scope = { species: retrievalSpeciesFor(scenario.species, scenario.age) };
   const k = effectiveKnowledge(scenario, opts.categoryKnowledge ?? null);
-  if (k.knowledgeSlugs.length) return { docSlugs: k.knowledgeSlugs, ...scope };
+  if (k.knowledgeSlugs.length) {
+    return k.source === 'category'
+      ? { docSlugs: k.knowledgeSlugs, inheritedDocs: true, ...scope }
+      : { docSlugs: k.knowledgeSlugs, ...scope };
+  }
   if (k.focusArea) return { focus: k.focusArea, ...scope };
   return scope;
 }
