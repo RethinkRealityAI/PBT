@@ -437,7 +437,9 @@ editable `scenario_overrides` column exactly once (unit-tested).
   "Knowledge scopes"). The species scope stays HARD, so one category can
   hold dog and cat documents side by side: each scenario reads only its
   animal's. The category editor lists attached documents some of its
-  scenarios can't read (`categoryDocReach`). `flags-resolve` publishes `snapshot.objectionCategories`
+  scenarios can't read (`categoryDocReach`), and a document uploaded for a
+  category that covers BOTH animals starts with no animal ticked (or the
+  assistant's reading) — never "every animal" (`categoryUploadStartSpecies`). `flags-resolve` publishes `snapshot.objectionCategories`
   (stored rows; a failed cold read = degraded, `no-store`) so the trainee
   app groups and filters by category and its provenance retrieval matches.
   `admin-objections` ops `upsert-category` (`baseUpdatedAt` → 409 `stale`;

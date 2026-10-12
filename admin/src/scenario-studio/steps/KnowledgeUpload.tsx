@@ -65,6 +65,26 @@ export interface CategoryUploadTarget {
   species: string[];
 }
 
+/**
+ * A category whose objections cover BOTH dogs and cats can't decide a new
+ * document's animal for the admin: defaulting to "every animal" would file
+ * a dog-only study where cat scenarios read it. So the choice is theirs,
+ * pre-filled from the assistant's reading of the document when there is one.
+ */
+export function categorySpansBothAnimals(target: Pick<CategoryUploadTarget, 'species'> | null | undefined): boolean {
+  if (!target) return false;
+  return target.species.includes('cat') && (target.species.includes('dog') || target.species.includes('puppy'));
+}
+
+/** The animals a category upload starts with (see `categorySpansBothAnimals`). */
+export function categoryUploadStartSpecies(
+  target: Pick<CategoryUploadTarget, 'species'>,
+  suggested: readonly string[] | null,
+): string[] {
+  if (!categorySpansBothAnimals(target)) return [...target.species];
+  return (suggested ?? []).filter((s) => target.species.includes(s));
+}
+
 /** Same cap the server's PDF extraction enforces (`MAX_PDF_BYTES`). */
 export const MAX_UPLOAD_PDF_BYTES = 4 * 1024 * 1024;
 /** Shorter than this, pasted text isn't worth a model call. */
@@ -469,6 +489,7 @@ export function KnowledgeUpload({
             ids={{ title: titleId, citation: citationId }}
             scope={scope}
             categoryName={forCategory?.name ?? null}
+            categoryBoth={categorySpansBothAnimals(forCategory)}
           />
         )}
 
@@ -535,7 +556,7 @@ function blankForm(draft: StudioDraft, forCategory: CategoryUploadTarget | null)
     focus: forCategory?.focus ?? null,
     category: 'clinical',
     citation: '',
-    species: forCategory ? [...forCategory.species] : uploadSpeciesDefault(draft),
+    species: forCategory ? categoryUploadStartSpecies(forCategory, null) : uploadSpeciesDefault(draft),
   };
 }
 
@@ -553,8 +574,9 @@ function formFromAnalysis(
     focus: forCategory?.focus ?? (isFocusAreaKey(a.focus) ? a.focus : null),
     category: a.category === 'custom' ? 'custom' : 'clinical',
     citation: (a.citation ?? extractedCitation ?? '').trim(),
-    // The scenario (or category) decides the animal; the assistant's view is shown beside it.
-    species: forCategory ? [...forCategory.species] : uploadSpeciesDefault(draft),
+    // The scenario (or a one-animal category) decides the animal; a category
+    // covering both starts from the assistant's reading, for the admin to check.
+    species: forCategory ? categoryUploadStartSpecies(forCategory, a.species) : uploadSpeciesDefault(draft),
   };
 }
 
@@ -565,6 +587,7 @@ function ReviewForm({
   ids,
   scope,
   categoryName,
+  categoryBoth,
 }: {
   analysis: KnowledgeAnalysis | null;
   form: Form;
@@ -573,6 +596,8 @@ function ReviewForm({
   scope: RetrievalSpecies | undefined;
   /** Uploading for a category (its animals were pre-filled), or null. */
   categoryName: string | null;
+  /** That category covers dogs AND cats: the admin picks the document's animals. */
+  categoryBoth: boolean;
 }) {
   const set = (p: Partial<Form>) => setForm({ ...form, ...p });
   const confidence = analysis ? confidenceTone(analysis.confidence) : null;
@@ -703,7 +728,11 @@ function ReviewForm({
           ))}
         </div>
         <div style={{ fontSize: 12, color: COLOR.inkMute, lineHeight: 1.5 }}>
-          {categoryName
+          {categoryName && categoryBoth
+            ? `“${categoryName}” covers dogs and cats, so tick only the animals this document is really about${
+                analysis ? ' (pre-filled from the assistant’s reading — check it)' : ''
+              }. A dog study ticked for cats would be read in cat scenarios.`
+            : categoryName
             ? `Set to match the objections in “${categoryName}”. A document is only read for the animals ticked here.`
             : scope
               ? `Set to match this scenario. A document is only read for the animals ticked here.`
