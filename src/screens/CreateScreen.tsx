@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { Fragment, useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
 import { Chip } from '../design-system/Chip';
 import { PillButton } from '../design-system/PillButton';
 import { Segmented, type SegmentedOption } from '../design-system/Segmented';
+import { ViewTabs } from '../design-system/ViewTabs';
+import { ChipScroller } from '../design-system/ChipScroller';
 import { SpeciesIcon } from '../design-system/SpeciesIcon';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
@@ -346,12 +348,26 @@ export function CreateScreen() {
 
   return (
     <>
-      <TopBar showBack title={t('create.title')} />
+      <TopBar showBack title={t(tab === 'library' ? 'create.titleLibrary' : 'create.title')} />
       <Page>
+        {/*
+         * Three controls, three jobs, three looks: underline tabs switch the
+         * VIEW, the pill picks the ANIMAL (it scopes both views), chips
+         * NARROW the list. They used to be three identical gold pill rows.
+         */}
+        <div className="lg:max-w-md" style={{ marginBottom: 16 }}>
+          <ViewTabs
+            options={tabOptions}
+            value={tab}
+            onChange={(v) => setTab(v)}
+            ariaLabel={t('create.tabsAria')}
+          />
+        </div>
+
         {/* ── Which animal? — first choice, drives both tabs ── */}
         <div
           className="flex items-center justify-between gap-3 lg:justify-start lg:gap-5"
-          style={{ marginBottom: 14 }}
+          style={{ marginBottom: 16 }}
         >
           <div
             style={{
@@ -369,15 +385,6 @@ export function CreateScreen() {
             value={species}
             onChange={changeSpecies}
             ariaLabel={t('create.animal.aria')}
-          />
-        </div>
-
-        <div className="flex justify-center mb-5">
-          <Segmented
-            options={tabOptions}
-            value={tab}
-            onChange={(v) => setTab(v)}
-            ariaLabel={t('create.tabsAria')}
           />
         </div>
 
@@ -401,139 +408,84 @@ export function CreateScreen() {
           ) : (
           <>
             {showCategoryFilters && (
-              <div
-                role="group"
-                aria-label={t('create.library.categoryAria')}
-                className={`pbt-scroll flex gap-2 overflow-x-auto pb-1 ${showObjectionFilters ? 'mb-3' : 'mb-4'}`}
+              <ChipScroller
+                ariaLabel={t('create.library.categoryAria')}
+                className={showObjectionFilters ? 'mb-2' : 'mb-3'}
               >
-                <Chip
+                <FilterChip
+                  label={t('create.library.categoryAll')}
+                  count={libraryForAnimal.length}
                   active={activeLibraryCategory === 'all'}
                   onClick={() => selectLibraryCategory('all')}
-                >
-                  {t('create.library.categoryAll')}
-                </Chip>
+                />
                 {categoryFilters.map((f) => (
-                  <Chip
+                  <FilterChip
                     key={f.id}
+                    label={f.label}
+                    count={
+                      libraryForAnimal.filter(
+                        (r) => libraryGroupOf(r, teamObjections, categories) === f.id,
+                      ).length
+                    }
                     active={activeLibraryCategory === f.id}
                     onClick={() => selectLibraryCategory(f.id)}
-                    className="max-w-full shrink-0 truncate"
-                    title={f.label}
-                  >
-                    {f.label}
-                  </Chip>
+                  />
                 ))}
-              </div>
+              </ChipScroller>
             )}
             {showObjectionFilters && (
-              <div
-                role="group"
-                aria-label={t('create.library.filterAria')}
-                className="pbt-scroll flex gap-2 overflow-x-auto pb-1 mb-4"
-              >
-                <Chip active={activeFilter === 'all'} onClick={() => setLibraryFilter('all')}>
-                  {t('create.library.filterAll')}
-                </Chip>
+              <ChipScroller ariaLabel={t('create.library.filterAria')} className="mb-3">
+                <FilterChip
+                  label={t('create.library.filterAll')}
+                  count={libraryInCategory.length}
+                  active={activeFilter === 'all'}
+                  onClick={() => setLibraryFilter('all')}
+                />
                 {libraryFilters.map((f) => (
-                  <Chip
+                  <FilterChip
                     key={f.id}
+                    label={f.label}
+                    count={libraryInCategory.filter((r) => r.scenario.pushback.id === f.id).length}
                     active={activeFilter === f.id}
                     onClick={() => setLibraryFilter(f.id)}
-                    className="max-w-full shrink-0 truncate"
-                    title={f.label}
-                  >
-                    {f.label}
-                  </Chip>
+                  />
                 ))}
-              </div>
+              </ChipScroller>
             )}
-          <div className="lg:grid lg:grid-cols-2 lg:gap-4 flex flex-col gap-3">
-            {visibleLibrary.map((item) => {
-              const { scenario, override } = item;
-              const objectionTitle = localizedScenario(scenario, locale).pushback.title;
-              const cardTitle = override?.card_title_override?.trim() || objectionTitle;
-              const categoryLabel =
-                categoryById(objectionCategoryId(scenario.pushback.id, teamObjections))?.label ?? null;
-              // One eyebrow line: the category, plus the objection when a
-              // custom card title hides which objection this is (and the
-              // objection is what the trainee came here to pick).
-              const eyebrowObjection = cardTitle !== objectionTitle ? objectionTitle : null;
-              return (
-              <Glass key={item.scenarioId} radius={18} padding={14}>
-                <div className="flex items-start justify-between gap-3">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {(categoryLabel || eyebrowObjection) && (
-                      <div
-                        style={{
-                          fontFamily: 'var(--pbt-font-mono)',
-                          fontSize: 9,
-                          fontWeight: 600,
-                          letterSpacing: '0.18em',
-                          textTransform: 'uppercase',
-                          color: 'var(--pbt-driver-primary)',
-                          marginBottom: 4,
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        {categoryLabel && <span>{categoryLabel}</span>}
-                        {categoryLabel && eyebrowObjection && <span> · </span>}
-                        {eyebrowObjection && <span>{eyebrowObjection}</span>}
-                      </div>
-                    )}
-                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
-                      {cardTitle}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', marginBottom: 8 }}>
-                      {scenario.breed} · {localizedLifeStage(scenario.age, locale, scenario.species)} ·{' '}
-                      {localizedPersona(scenario.persona, locale)}
-                    </div>
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        padding: '3px 10px',
-                        borderRadius: 9999,
-                        fontSize: 10,
-                        fontFamily: 'var(--pbt-font-mono)',
-                        fontWeight: 600,
-                        letterSpacing: '0.10em',
-                        textTransform: 'uppercase',
-                        background: 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
-                        color: '#fff',
-                      }}
-                    >
-                      {localizedDifficultyLabel(scenario.difficulty, locale)}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => startLibraryScenario(item)}
-                    aria-label={t('create.library.startAria', { title: cardTitle })}
-                    style={{
-                      flexShrink: 0,
-                      alignSelf: 'center',
-                      padding: '8px 18px',
-                      borderRadius: 9999,
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontFamily: 'var(--pbt-font-mono)',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      letterSpacing: '0.10em',
-                      textTransform: 'uppercase',
-                      background: 'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
-                      color: '#fff',
-                      boxShadow:
-                        '0 4px 12px -4px color-mix(in oklab, var(--pbt-driver-primary) 42%, transparent)',
-                    }}
-                  >
-                    {t('create.library.start')}
-                  </button>
-                </div>
-              </Glass>
-              );
-            })}
-          </div>
+            <div className="lg:grid lg:grid-cols-2 lg:gap-4 flex flex-col gap-3">
+              {visibleLibrary.map((item) => {
+                const { scenario, override } = item;
+                const objectionTitle = localizedScenario(scenario, locale).pushback.title;
+                const cardTitle = override?.card_title_override?.trim() || objectionTitle;
+                const categoryLabel =
+                  categoryById(objectionCategoryId(scenario.pushback.id, teamObjections))?.label ??
+                  null;
+                // One eyebrow line: the category, plus the objection when a
+                // custom card title hides which objection this is (and the
+                // objection is what the trainee came here to pick).
+                const eyebrowObjection = cardTitle !== objectionTitle ? objectionTitle : null;
+                return (
+                  <LibraryCard
+                    key={item.scenarioId}
+                    title={cardTitle}
+                    eyebrow={[categoryLabel, eyebrowObjection].filter((x): x is string => !!x)}
+                    species={speciesOf(scenario.species)}
+                    pet={`${scenario.breed} · ${localizedLifeStage(scenario.age, locale, scenario.species)}`}
+                    owner={t('create.library.persona', {
+                      persona: localizedPersona(scenario.persona, locale),
+                    })}
+                    difficulty={scenario.difficulty}
+                    difficultyLabel={localizedDifficultyLabel(scenario.difficulty, locale)}
+                    difficultyAria={t('create.library.difficultyAria', {
+                      label: localizedDifficultyLabel(scenario.difficulty, locale),
+                      level: String(scenario.difficulty),
+                    })}
+                    startAria={t('create.library.startAria', { title: cardTitle })}
+                    onStart={() => startLibraryScenario(item)}
+                  />
+                );
+              })}
+            </div>
           </>
           )
         ) : (
@@ -1035,6 +987,182 @@ export function CreateScreen() {
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * A Library filter chip: the label, plus how many scenarios it leaves. The
+ * count is decoration (the list itself is the answer), so assistive tech
+ * hears just the label.
+ */
+function FilterChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Chip active={active} onClick={onClick} className="shrink-0" title={label}>
+      {label}
+      <span aria-hidden style={{ marginLeft: 7, opacity: active ? 0.85 : 0.55, fontWeight: 500 }}>
+        {count}
+      </span>
+    </Chip>
+  );
+}
+
+/**
+ * One ready-made scenario. The WHOLE card starts it: one large target and
+ * one affordance (the arrow), instead of a gold Start button beside a gold
+ * difficulty badge that looked like a second button. Difficulty is a
+ * 4-step meter (the level at a glance) with its word, and the persona
+ * says "owner" — "Skeptical" is both a persona and a difficulty level.
+ */
+/**
+ * The card's accent text/marks: the driver colour pulled toward the text
+ * colour, so a light driver (Energizer yellow) stays legible on white glass
+ * and a dark one stays legible on dark glass.
+ */
+const CARD_ACCENT = 'color-mix(in oklab, var(--pbt-driver-primary) 72%, var(--pbt-text))';
+
+function LibraryCard({
+  title,
+  eyebrow,
+  species,
+  pet,
+  owner,
+  difficulty,
+  difficultyLabel,
+  difficultyAria,
+  startAria,
+  onStart,
+}: {
+  title: string;
+  eyebrow: string[];
+  species: ScenarioSpecies;
+  pet: string;
+  owner: string;
+  difficulty: Difficulty;
+  difficultyLabel: string;
+  difficultyAria: string;
+  startAria: string;
+  onStart: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onStart}
+      aria-label={startAria}
+      whileTap={{ scale: 0.985 }}
+      className="pbt-library-card"
+      style={{
+        display: 'block',
+        width: '100%',
+        padding: 0,
+        border: 'none',
+        background: 'none',
+        textAlign: 'left',
+        color: 'inherit',
+        font: 'inherit',
+        cursor: 'pointer',
+        borderRadius: 18,
+      }}
+    >
+      <Glass radius={18} padding={16}>
+        <div className="flex items-center gap-3">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {eyebrow.length > 0 && (
+              <div
+                style={{
+                  fontFamily: 'var(--pbt-font-mono)',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: '0.16em',
+                  textTransform: 'uppercase',
+                  color: CARD_ACCENT,
+                  marginBottom: 6,
+                  lineHeight: 1.4,
+                }}
+              >
+                {eyebrow.map((part, i) => (
+                  <Fragment key={part}>
+                    {i > 0 && <span aria-hidden> · </span>}
+                    <span>{part}</span>
+                  </Fragment>
+                ))}
+              </div>
+            )}
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: 16,
+                lineHeight: 1.3,
+                letterSpacing: '-0.01em',
+                marginBottom: 6,
+              }}
+            >
+              {title}
+            </div>
+            <div
+              className="flex items-center gap-1.5"
+              style={{ fontSize: 13, color: 'var(--pbt-text-muted)', marginBottom: 10 }}
+            >
+              <span aria-hidden style={{ display: 'inline-flex', flexShrink: 0 }}>
+                <SpeciesIcon species={species} size={14} />
+              </span>
+              <span style={{ minWidth: 0 }}>{pet}</span>
+            </div>
+            <div
+              className="flex flex-wrap items-center"
+              style={{ columnGap: 14, rowGap: 6, fontSize: 12.5, color: 'var(--pbt-text-muted)' }}
+            >
+              <span>{owner}</span>
+              <span className="inline-flex items-center gap-1.5" aria-label={difficultyAria} role="img">
+                <span aria-hidden className="inline-flex items-end" style={{ gap: 2 }}>
+                  {[1, 2, 3, 4].map((step) => (
+                    <span
+                      key={step}
+                      style={{
+                        width: 4,
+                        height: 5 + step * 2,
+                        borderRadius: 2,
+                        background:
+                          step <= difficulty
+                            ? CARD_ACCENT
+                            : 'color-mix(in oklab, var(--pbt-text) 18%, transparent)',
+                      }}
+                    />
+                  ))}
+                </span>
+                <span aria-hidden>{difficultyLabel}</span>
+              </span>
+            </div>
+          </div>
+          <span
+            aria-hidden
+            style={{
+              flexShrink: 0,
+              width: 40,
+              height: 40,
+              borderRadius: 9999,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: CARD_ACCENT,
+              background: 'color-mix(in oklab, var(--pbt-driver-primary) 16%, transparent)',
+              border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 30%, transparent)',
+            }}
+          >
+            <Icon.arrow />
+          </span>
+        </div>
+      </Glass>
+    </motion.button>
   );
 }
 

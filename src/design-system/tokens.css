@@ -235,3 +235,15 @@
     -webkit-backdrop-filter: none;
   }
 }
+
+/* Library cards (whole card = button) and the view tabs: a visible ring for
+   keyboard users, none for taps. */
+.pbt-library-card:focus-visible,
+.pbt-view-tab:focus-visible {
+  outline: 2px solid var(--pbt-driver-primary);
+  outline-offset: 3px;
+}
+.pbt-view-tab:focus-visible {
+  outline-offset: -2px;
+  border-radius: 10px;
+}

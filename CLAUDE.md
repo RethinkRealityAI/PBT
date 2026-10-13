@@ -284,11 +284,15 @@ shape: 400 / 404 / 502 (Gemini). Tests:
   Pets are white line icons (`src/design-system/SpeciesIcon.tsx`: lucide
   `Dog`/`Cat` — `SpeciesIcon`, `SpeciesBadge`), never emoji; `Segmented`
   takes an optional per-option `icon`.
-- **Library** tab = the RESOLVED library (`useResolvedLibraryScenarios`: the
+- **View tabs** (`ViewTabs`, underline — deliberately not a third gold pill
+  row): **Build your own** | **Ready-made** (never "Library": the bottom tab
+  bar's Library is the clinical resources). The TopBar title follows the tab.
+  Filter rows are `ChipScroller` (edge fade = "swipe for more") with counts.
+- **Ready-made** tab (keys still `create.library.*`) = the RESOLVED library (`useResolvedLibraryScenarios`: the
   three `LIBRARY_SCENARIOS` with overrides + every published `admin:`
   scenario), filtered to the animal, with CATEGORY chips (when ≥ 2 groups;
   "Other pushback" and unresolvable team objections share one group), then
-  objection chips that narrow a CHOSEN category, and an honest empty state. A card with a custom title shows its objection
+  objection chips that narrow a CHOSEN category, and an honest empty state. The WHOLE card starts a scenario (one target, an arrow affordance, no separate Start button); difficulty is a 4-step meter + word, and the persona reads "<persona> owner" ("Skeptical" is both a persona and a level). A card with a custom title shows its objection
   as an eyebrow. (It used to list the static three, so scenarios the
   admins published never appeared there.)
 - **Build** tab: breed chips from `POPULAR_BREEDS[species]`, kitten-aware
@@ -1047,8 +1051,7 @@ The static test catches "migration file missing"; `verify:db` catches
    the new `clinical:reference-cat`, and the three fecal charts once, since
    they now carry a `scopeHash`). Confirm in Admin → Knowledge that
    `clinical:reference-cat` exists and `study:davies-2024` reads dog/puppy.
-10. **Deploy the categories release** (PR #25): its migration is applied
-    (2026-10-12), so production only needs the code.
+10. *(Done 2026-10-13: the categories release, PR #25, is live in production.)*
 11. **Feline content** (see the Feline SoW): no seed cat scenarios; canine-only
     product anchors (`PRODUCT_ANCHORS`), calorie table and BCS/MCS data;
     built-in pushback examples written for dogs ("all Labs look like that",

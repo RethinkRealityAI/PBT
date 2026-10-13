@@ -189,7 +189,7 @@ function snapshot(
 
 const animalTab = (name: 'Dog' | 'Cat') =>
   within(screen.getByRole('tablist', { name: 'Animal to train on' })).getByRole('tab', { name });
-const screenTab = (name: 'Build' | 'Library') =>
+const screenTab = (name: 'Build your own' | 'Ready-made') =>
   within(screen.getByRole('tablist', { name: 'Scenario tabs' })).getByRole('tab', { name });
 const breedInput = () => screen.getByRole('textbox', { name: 'Breed' }) as HTMLInputElement;
 const chip = (name: string) => screen.queryByRole('button', { name });
@@ -219,7 +219,7 @@ beforeEach(() => {
 describe('CreateScreen — which animal (Build tab)', () => {
   it('opens on Build with Dog chosen and dog breed suggestions', () => {
     render(<CreateScreen />);
-    expect(screenTab('Build')).toHaveAttribute('aria-selected', 'true');
+    expect(screenTab('Build your own')).toHaveAttribute('aria-selected', 'true');
     expect(animalTab('Dog')).toHaveAttribute('aria-selected', 'true');
     expect(breedInput().value).toBe(POPULAR_BREEDS.dog[0]);
     expect(chip(POPULAR_BREEDS.dog[1])).not.toBeNull();
@@ -416,7 +416,7 @@ describe('CreateScreen — Library tab', () => {
   it('lists the RESOLVED library for the chosen animal: hidden seed gone, published scenarios in', async () => {
     const user = userEvent.setup();
     render(<CreateScreen />);
-    await user.click(screenTab('Library'));
+    await user.click(screenTab('Ready-made'));
     const dogCards = startButtons();
     expect(dogCards).toContain('Weight / obesity denial');
     expect(dogCards).toContain('Switching brands hesitation');
@@ -427,24 +427,26 @@ describe('CreateScreen — Library tab', () => {
 
     await user.click(animalTab('Cat'));
     expect(startButtons()).toEqual(['Kitten on dry food']);
-    expect(screen.getByText('Maine Coon · Kitten (<1) · Skeptical')).toBeInTheDocument();
+    const kitten = screen.getByRole('button', { name: 'Start: Kitten on dry food' });
+    expect(within(kitten).getByText('Maine Coon · Kitten (<1)')).toBeInTheDocument();
+    expect(within(kitten).getByText('Skeptical owner')).toBeInTheDocument();
   });
 
   it("names the category on every card, and the objection when the admin customised the title", async () => {
     const user = userEvent.setup();
     render(<CreateScreen />);
     await user.click(animalTab('Cat'));
-    await user.click(screenTab('Library'));
+    await user.click(screenTab('Ready-made'));
     // The custom title says nothing about the pushback; the eyebrow names the
     // category AND the objection on ONE line.
-    const catCard = screen.getByRole('button', { name: 'Start: Kitten on dry food' }).parentElement!;
+    const catCard = screen.getByRole('button', { name: 'Start: Kitten on dry food' });
     expect(within(catCard).getByText(WET_FOOD.title)).toBeInTheDocument();
     expect(within(catCard).getByText('Urinary').parentElement).toBe(
       within(catCard).getByText(WET_FOOD.title).parentElement,
     );
     // A card titled by its objection doesn't repeat it: category eyebrow only.
     await user.click(animalTab('Dog'));
-    const card = screen.getByRole('button', { name: 'Start: Weight / obesity denial' }).parentElement!;
+    const card = screen.getByRole('button', { name: 'Start: Weight / obesity denial' });
     expect(within(card).getAllByText('Weight / obesity denial')).toHaveLength(1);
     expect(within(card).getByText('Weight management')).toBeInTheDocument();
   });
@@ -453,7 +455,7 @@ describe('CreateScreen — Library tab', () => {
     const user = userEvent.setup();
     render(<CreateScreen />);
     await user.click(animalTab('Cat'));
-    await user.click(screenTab('Library'));
+    await user.click(screenTab('Ready-made'));
     await user.click(screen.getByRole('button', { name: 'Start: Kitten on dry food' }));
     const started = setScenario.mock.calls[0][0] as Scenario;
     expect(started._overrideId).toBe('admin:cat-1');
@@ -466,19 +468,21 @@ describe('CreateScreen — Library tab', () => {
     const user = userEvent.setup();
     flagSnapshot = snapshot([HIDDEN_SEED, ADMIN_CAT, ADMIN_DOG_PROBIOTICS, ADMIN_DOG_COST, ADMIN_DOG_OTHER]);
     render(<CreateScreen />);
-    await user.click(screenTab('Library'));
+    await user.click(screenTab('Ready-made'));
     const categories = screen.getByRole('group', { name: 'Filter by category' });
+    // Each chip carries how many scenarios it leaves (decoration: the
+    // accessible name is the label alone).
     const categoryNames = within(categories).getAllByRole('button').map((b) => b.textContent);
     // Only categories present among the animal's scenarios, in category
     // order; "Other pushback" (outside every category) last.
     expect(categoryNames).toEqual([
-      'All categories',
-      'Everyday nutrition',
-      'Weight management',
-      'GI',
-      'Other pushback',
+      'All5',
+      'Everyday nutrition2',
+      'Weight management1',
+      'GI1',
+      'Other pushback1',
     ]);
-    expect(within(categories).getByRole('button', { name: 'All categories' })).toHaveAttribute(
+    expect(within(categories).getByRole('button', { name: 'All' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -491,9 +495,9 @@ describe('CreateScreen — Library tab', () => {
     expect(startButtons()).toEqual(['Switching brands hesitation', 'Budget-minded owner']);
     const objections = screen.getByRole('group', { name: 'Filter by objection' });
     expect(within(objections).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'All',
-      'Cost / price pushback',
-      'Switching brands hesitation',
+      'All2',
+      'Cost / price pushback1',
+      'Switching brands hesitation1',
     ]);
     await user.click(within(objections).getByRole('button', { name: 'Cost / price pushback' }));
     expect(startButtons()).toEqual(['Budget-minded owner']);
@@ -512,7 +516,7 @@ describe('CreateScreen — Library tab', () => {
     await user.click(within(categories).getByRole('button', { name: 'Everyday nutrition' }));
     expect(startButtons()).toHaveLength(2);
 
-    await user.click(within(categories).getByRole('button', { name: 'All categories' }));
+    await user.click(within(categories).getByRole('button', { name: 'All' }));
     expect(startButtons()).toHaveLength(5);
   });
 
@@ -525,7 +529,7 @@ describe('CreateScreen — Library tab', () => {
       ADMIN_DOG_COST,
     ]);
     render(<CreateScreen />);
-    await user.click(screenTab('Library'));
+    await user.click(screenTab('Ready-made'));
     expect(screen.queryByRole('group', { name: 'Filter by category' })).toBeNull();
     const objections = screen.getByRole('group', { name: 'Filter by objection' });
     await user.click(within(objections).getByRole('button', { name: 'Switching brands hesitation' }));
@@ -536,20 +540,56 @@ describe('CreateScreen — Library tab', () => {
     const user = userEvent.setup();
     flagSnapshot = snapshot([HIDDEN_SEED]);
     render(<CreateScreen />);
-    await user.click(screenTab('Library'));
+    await user.click(screenTab('Ready-made'));
     await user.click(animalTab('Cat'));
-    expect(screen.getByText('No cat scenarios in the library yet.')).toBeInTheDocument();
+    expect(screen.getByText('No ready-made cat scenarios yet.')).toBeInTheDocument();
     expect(startButtons()).toEqual([]);
     await user.click(screen.getByRole('button', { name: 'Build one' }));
-    expect(screenTab('Build')).toHaveAttribute('aria-selected', 'true');
+    expect(screenTab('Build your own')).toHaveAttribute('aria-selected', 'true');
     expect(breedInput().value).toBe(POPULAR_BREEDS.cat[0]);
+  });
+
+  it('makes the whole card the Start target, with difficulty as a labelled meter and the persona as the owner', async () => {
+    const user = userEvent.setup();
+    flagSnapshot = null;
+    render(<CreateScreen />);
+    await user.click(screenTab('Ready-made'));
+    const card = screen.getByRole('button', { name: 'Start: Weight / obesity denial' });
+    // One target per card: no separate Start button inside it.
+    expect(within(card).queryAllByRole('button')).toHaveLength(0);
+    expect(within(card).queryByText('Start')).toBeNull();
+    // "Skeptical" is both a persona and a difficulty level: each is labelled.
+    expect(within(card).getByText('Skeptical owner')).toBeInTheDocument();
+    expect(within(card).getByRole('img', { name: 'Difficulty: Hostile, level 3 of 4' })).toBeInTheDocument();
+    await user.click(card);
+    expect(go).toHaveBeenCalledWith('chat');
+  });
+
+  it('names the view in the title and avoids the bottom bar’s "Library" for this tab', async () => {
+    const user = userEvent.setup();
+    render(<CreateScreen />);
+    expect(screen.getByText('Build a scenario')).toBeInTheDocument();
+    await user.click(screenTab('Ready-made'));
+    expect(screen.getByText('Ready-made scenarios')).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Library' })).toBeNull();
+  });
+
+  it('moves between the view tabs with the arrow keys', async () => {
+    const user = userEvent.setup();
+    render(<CreateScreen />);
+    screenTab('Build your own').focus();
+    await user.keyboard('{ArrowRight}');
+    expect(screenTab('Ready-made')).toHaveAttribute('aria-selected', 'true');
+    expect(screenTab('Ready-made')).toHaveFocus();
+    await user.keyboard('{ArrowLeft}');
+    expect(screenTab('Build your own')).toHaveAttribute('aria-selected', 'true');
   });
 
   it('without a snapshot the Library is the three shipped dog scenarios', async () => {
     const user = userEvent.setup();
     flagSnapshot = null;
     render(<CreateScreen />);
-    await user.click(screenTab('Library'));
+    await user.click(screenTab('Ready-made'));
     expect(startButtons()).toEqual([
       'Weight / obesity denial',
       'Cost / price pushback',
@@ -591,17 +631,17 @@ describe('CreateScreen — French', () => {
     expect(within(group).getByRole('button', { name: 'Urinary' })).toBeInTheDocument();
   });
 
-  it('labels the Library category row in French', async () => {
+  it('labels the Ready-made tab and its category row in French', async () => {
     const user = userEvent.setup();
     await renderFr();
     await user.click(
       within(screen.getByRole('tablist', { name: 'Onglets de scénario' })).getByRole('tab', {
-        name: 'Bibliothèque',
+        name: 'Clés en main',
       }),
     );
     const categories = screen.getByRole('group', { name: 'Filtrer par catégorie' });
-    expect(within(categories).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'Toutes les catégories',
+    expect(within(categories).getAllByRole('button').map((b) => b.getAttribute('title'))).toEqual([
+      'Toutes',
       'Nutrition au quotidien',
       'Gestion du poids',
       'Gastro-intestinal',

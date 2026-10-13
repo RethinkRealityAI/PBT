@@ -18,9 +18,10 @@ import type { create as en } from '../en/create';
 export const create: Record<keyof typeof en, string> = {
   // ── Chrome de l'écran / onglets ───────────────────────────
   'create.title': 'Créer un scénario',
+  'create.titleLibrary': 'Scénarios clés en main',
   'create.tabsAria': 'Onglets de scénario',
-  'create.tab.build': 'Créer',
-  'create.tab.library': 'Bibliothèque',
+  'create.tab.build': 'Créer le vôtre',
+  'create.tab.library': 'Clés en main',
 
   // ── Quel animal ? (les deux onglets + choix du jour de l'accueil) ──
   'create.animal.title': 'Quel animal ?',
@@ -28,15 +29,16 @@ export const create: Record<keyof typeof en, string> = {
   'create.animal.dog': 'Chien',
   'create.animal.cat': 'Chat',
 
-  // ── Onglet Bibliothèque ───────────────────────────────────
-  'create.library.start': 'Lancer',
+  // ── Onglet Clés en main (les clés gardent l'ancien nom `library`) ──
   'create.library.startAria': 'Lancer : {title}',
   'create.library.filterAria': 'Filtrer par objection',
   'create.library.filterAll': 'Toutes',
   'create.library.categoryAria': 'Filtrer par catégorie',
-  'create.library.categoryAll': 'Toutes les catégories',
-  'create.library.emptyDog': 'Aucun scénario sur un chien dans la bibliothèque pour l’instant.',
-  'create.library.emptyCat': 'Aucun scénario sur un chat dans la bibliothèque pour l’instant.',
+  'create.library.categoryAll': 'Toutes',
+  'create.library.persona': 'Propriétaire : {persona}',
+  'create.library.difficultyAria': 'Difficulté : {label}, niveau {level} sur 4',
+  'create.library.emptyDog': 'Aucun scénario clés en main sur un chien pour l’instant.',
+  'create.library.emptyCat': 'Aucun scénario clés en main sur un chat pour l’instant.',
   'create.library.emptyCta': 'En créer un',
 
   // ── Titres de section ─────────────────────────────────────
