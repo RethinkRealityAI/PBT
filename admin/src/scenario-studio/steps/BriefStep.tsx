@@ -13,6 +13,7 @@ import { COLOR } from '../../lib/tokens';
 import { SCENARIO_LIMITS } from '../../../../src/shared/scenarios/limits';
 import type { StudioDraft } from '../studioModel';
 import {
+  CRITERIA_EXAMPLES,
   PREFIX_EXAMPLES,
   SUFFIX_EXAMPLES,
   appendSentence,
@@ -23,7 +24,8 @@ import {
 import { PromptViewer } from './PromptViewer';
 import { BuiltInHint, StepBody } from './stepParts';
 
-const MAX = SCENARIO_LIMITS.promptMax;
+const NOTE_MAX = SCENARIO_LIMITS.promptMax;
+const CRITERIA_MAX = SCENARIO_LIMITS.successCriteriaMax;
 
 /** The order the AI customer reads things in — a small picture, not a paragraph. */
 function BriefingOrder() {
@@ -72,7 +74,7 @@ function NoteField({
   canWrite,
   base,
 }: {
-  field: 'prompt_prefix' | 'prompt_suffix';
+  field: 'prompt_prefix' | 'prompt_suffix' | 'success_criteria';
   label: string;
   hint: string;
   placeholder: string;
@@ -84,6 +86,7 @@ function NoteField({
 }) {
   const id = useFieldId();
   const value = draft[field] ?? '';
+  const MAX = field === 'success_criteria' ? CRITERIA_MAX : NOTE_MAX;
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <FieldBlock label={label} htmlFor={id} optional hint={hint} count={{ value: value.length, max: MAX }}>
@@ -126,7 +129,13 @@ function NoteField({
         field={field}
         patch={patch}
         canWrite={canWrite}
-        noun={field === 'prompt_prefix' ? 'opening notes' : 'final reminders'}
+        noun={
+          field === 'prompt_prefix'
+            ? 'opening notes'
+            : field === 'prompt_suffix'
+              ? 'final reminders'
+              : 'success criteria'
+        }
       />
     </div>
   );
@@ -140,7 +149,7 @@ export function BriefStep({ draft, patch, canWrite, base, askAssistant, goTo }: 
         pushback, the owner and the knowledge — plus the rules that keep the conversation realistic
         and scoreable. You can add notes <em>around</em> it, but you can’t replace it. Your notes never
         change how conversations are scored, and the notes set in AI tuning apply to every scenario,
-        wrapped outside yours.
+        wrapped outside yours. Scoring has its own field at the bottom of this step.
       </Explainer>
 
       <StudioSection title="What the AI customer reads" hint="In this order, every conversation.">
@@ -190,6 +199,30 @@ export function BriefStep({ draft, patch, canWrite, base, askAssistant, goTo }: 
         hint="The exact text the AI customer would receive for this draft, with your notes highlighted."
       >
         <PromptViewer draft={draft} goTo={goTo} />
+      </StudioSection>
+
+      <StudioSection title="How the scorecard judges it" optional>
+        <div style={{ display: 'grid', gap: 14 }}>
+          <Explainer title="What the scorer already knows">
+            Every scenario is scored on the same five skills (Acknowledge, Clarify, Transform,
+            Empathy, Rapport), so scores stay comparable. For this scenario the scorer also reads the
+            objection’s coaching — the owner’s real worries, good questions, credible next steps and
+            common mistakes — and any documents filed for scoring. Add what a great answer must
+            include <em>here</em> when this scenario has a specific point to hit. The AI customer never
+            sees it.
+          </Explainer>
+          <NoteField
+            field="success_criteria"
+            label="What a great answer includes"
+            hint="Observable things the trainee should do. They sharpen the five skills for this scenario; they never add a skill or change a weight."
+            placeholder="e.g. Offers a two-week probiotic trial and books a follow-up call."
+            examples={CRITERIA_EXAMPLES}
+            draft={draft}
+            patch={patch}
+            canWrite={canWrite}
+            base={base}
+          />
+        </div>
       </StudioSection>
     </StepBody>
   );

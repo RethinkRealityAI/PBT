@@ -87,6 +87,7 @@ describe('TestDriveStep', () => {
         species: ['dog' as const],
         categoryId: 'category:dental',
         coaching: {},
+        coachingFr: {},
         visible: true,
         sortOrder: null,
         updatedAt: null,

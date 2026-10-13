@@ -475,6 +475,78 @@ describe('ai-evaluate', () => {
   }, 10_000);
 });
 
+describe('per-scenario success criteria — the scorer reads them, the customer never does', () => {
+  const transcript = [
+    { role: 'ai', text: 'Too pricey.', timestamp: 1, emotion: 'red' },
+    { role: 'user', text: 'Could a small bag help?', timestamp: 2 },
+  ];
+  const CRITERIA = 'Offers a two-week small-bag trial and books a follow-up call.';
+
+  it('ai-evaluate loads them server-side by _overrideId and ignores criteria sent outside preview', async () => {
+    sb.setHandler('scenario_overrides', () => ({
+      data: { prompt_prefix: 'CUSTOMER NOTE', prompt_suffix: null, success_criteria: CRITERIA },
+      error: null,
+    }));
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+    const res = await evaluate(
+      jsonRequest('ai-evaluate', {
+        scenario: { ...scenario, _overrideId: 'admin:crit' },
+        transcript,
+        mode: 'text',
+        promptOverrides: { successCriteria: 'FROM CLIENT' },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const system = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
+    expect(system).toContain("# THIS SCENARIO'S SUCCESS CRITERIA");
+    expect(system).toContain(CRITERIA);
+    expect(system).not.toContain('FROM CLIENT');
+    // The customer's AI notes wrap the customer turn only — never the scorer.
+    expect(system).not.toContain('CUSTOMER NOTE');
+  });
+
+  it('ai-evaluate uses a preview draft’s criteria (the Studio Test drive)', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+    await evaluate(
+      jsonRequest('ai-evaluate', {
+        scenario,
+        transcript,
+        mode: 'text',
+        preview: true,
+        promptOverrides: { successCriteria: 'DRAFT CRITERIA' },
+      }),
+    );
+    const system = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
+    expect(system).toContain('DRAFT CRITERIA');
+    expect(sb.callsFor('training_sessions')).toHaveLength(0);
+  });
+
+  it('without criteria the scoring prompt has no criteria block', async () => {
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+    await evaluate(jsonRequest('ai-evaluate', { scenario, transcript, mode: 'text' }));
+    const system = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
+    expect(system).not.toContain('SUCCESS CRITERIA');
+  });
+
+  it('ai-roleplay and ai-voice-token never put the criteria in the customer prompt', async () => {
+    sb.setHandler('scenario_overrides', () => ({
+      data: { prompt_prefix: 'CUSTOMER NOTE', prompt_suffix: null, success_criteria: CRITERIA },
+      error: null,
+    }));
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify({ emotion: 'red', text: 'ok' }) });
+    await roleplay(jsonRequest('ai-roleplay', { scenario: { ...scenario, _overrideId: 'admin:crit' }, history: [] }));
+    const customer = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
+    expect(customer).toContain('CUSTOMER NOTE');
+    expect(customer).not.toContain(CRITERIA);
+
+    mocks.authTokensCreate.mockResolvedValueOnce({ name: 'auth_tokens/abc' });
+    await voiceToken(jsonRequest('ai-voice-token', { scenario: { ...scenario, _overrideId: 'admin:crit' } }));
+    const voiceConfig = JSON.stringify(mocks.authTokensCreate.mock.calls[0][0]);
+    expect(voiceConfig).toContain('CUSTOMER NOTE');
+    expect(voiceConfig).not.toContain('small-bag trial');
+  });
+});
+
 describe('ai-vision', () => {
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
@@ -773,6 +845,41 @@ describe('team objections in the AI prompts', () => {
     expect(res.status).toBe(200);
     const system = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
     expect(system).toContain('- Believes probiotics are a supplement-aisle fad');
+  });
+
+  it('ai-evaluate judges a team pushback against its coaching — and the body cannot inject any', async () => {
+    sb.setHandler('scenario_objections', () => ({
+      data: [
+        {
+          ...ROW,
+          coaching: {
+            ...ROW.coaching,
+            takeActionPatterns: ['Offer a two-week probiotic trial with a recheck'],
+            watchOuts: ['Dismissing the cost worry'],
+          },
+        },
+      ],
+      error: null,
+    }));
+    mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+    const res = await evaluate(
+      jsonRequest('ai-evaluate', {
+        scenario: teamScenario,
+        transcript: [
+          { role: 'ai', text: 'Probiotics? Really?', timestamp: 1, emotion: 'red' },
+          { role: 'user', text: 'They help.', timestamp: 2 },
+        ],
+        mode: 'text',
+        config: { pushbacks: { 'team:probiotics': { rootConcerns: ['INJECTED CONCERN'] } } },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const system = mocks.generateContent.mock.calls[0][0].config.systemInstruction as string;
+    expect(system).toContain('WHAT GOOD LOOKS LIKE FOR THIS OBJECTION');
+    expect(system).toContain('- Believes probiotics are a supplement-aisle fad');
+    expect(system).toContain('- Offer a two-week probiotic trial with a recheck');
+    expect(system).toContain('- Dismissing the cost worry');
+    expect(system).not.toContain('INJECTED CONCERN');
   });
 
   it('an AI call never fails over objections — the table may not exist yet', async () => {

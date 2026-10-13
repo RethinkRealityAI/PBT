@@ -58,6 +58,20 @@ export const COACHING_KEYS = [
 export type CoachingKey = (typeof COACHING_KEYS)[number];
 export type ObjectionCoaching = Partial<Record<CoachingKey, string[]>>;
 
+/**
+ * The coaching lists trainees SEE (the pre-session hints) — the only ones
+ * with a French version. `rootConcerns` and `watchOuts` are read by the AI
+ * alone, in English (the prompt's language block makes it answer in French).
+ */
+export const HINT_COACHING_KEYS = ['acknowledgePatterns', 'clarifyQuestions', 'takeActionPatterns'] as const;
+export type HintCoachingKey = (typeof HINT_COACHING_KEYS)[number];
+/**
+ * Canadian-French versions of the hint lists. Stored INSIDE the
+ * `scenario_objections.coaching` jsonb under the key `fr` (no column of its
+ * own); a group left empty shows the English list to French trainees.
+ */
+export type ObjectionCoachingFr = Partial<Record<HintCoachingKey, string[]>>;
+
 export const COACHING_LABELS: Record<CoachingKey, { label: string; help: string }> = {
   rootConcerns: {
     label: 'What the owner is really worried about',
@@ -99,6 +113,11 @@ export interface TeamObjection {
    */
   categoryId: string;
   coaching: ObjectionCoaching;
+  /**
+   * French versions of the three trainee-hint lists (`HINT_COACHING_KEYS`);
+   * empty when the team wrote none. Stored as `coaching.fr`.
+   */
+  coachingFr: ObjectionCoachingFr;
   /** False = retired: kept so existing scenarios still play, hidden from pickers. */
   visible: boolean;
   sortOrder: number | null;
@@ -215,12 +234,12 @@ function cleanSpecies(v: unknown): ScenarioSpecies[] {
   return SCENARIO_SPECIES.filter((s) => v.includes(s));
 }
 
-/** Trim, drop blanks and duplicates, cap the item count and length. */
-export function cleanCoaching(v: unknown): ObjectionCoaching {
-  const out: ObjectionCoaching = {};
+/** The named lists of `v`, each trimmed, de-blanked, de-duplicated and capped. */
+function cleanLists<K extends string>(v: unknown, keys: readonly K[]): Partial<Record<K, string[]>> {
+  const out: Partial<Record<K, string[]>> = {};
   if (!v || typeof v !== 'object' || Array.isArray(v)) return out;
   const src = v as Record<string, unknown>;
-  for (const key of COACHING_KEYS) {
+  for (const key of keys) {
     const list = src[key];
     if (!Array.isArray(list)) continue;
     const seen = new Set<string>();
@@ -235,6 +254,25 @@ export function cleanCoaching(v: unknown): ObjectionCoaching {
     if (items.length > 0) out[key] = items;
   }
   return out;
+}
+
+/**
+ * Trim, drop blanks and duplicates, cap the item count and length. Unknown
+ * keys — including the stored French lists under `fr` — are ignored.
+ */
+export function cleanCoaching(v: unknown): ObjectionCoaching {
+  return cleanLists(v, COACHING_KEYS);
+}
+
+/** `cleanCoaching` for the French hint lists: only `HINT_COACHING_KEYS`, same limits. */
+export function cleanCoachingFr(v: unknown): ObjectionCoachingFr {
+  return cleanLists(v, HINT_COACHING_KEYS);
+}
+
+/** The French hint lists stored inside a `coaching` jsonb (`coaching.fr`), cleaned. */
+export function frenchCoachingOf(coaching: unknown): ObjectionCoachingFr {
+  if (!coaching || typeof coaching !== 'object' || Array.isArray(coaching)) return {};
+  return cleanCoachingFr((coaching as Record<string, unknown>).fr);
 }
 
 function cleanSortOrder(v: unknown): number | null {
@@ -267,6 +305,9 @@ export function rowToTeamObjection(raw: unknown): TeamObjection | null {
     species,
     categoryId,
     coaching: cleanCoaching(r.coaching),
+    // A snapshot / admin answer carries it camelCase; a stored row nests it
+    // in the coaching jsonb.
+    coachingFr: r.coachingFr != null ? cleanCoachingFr(r.coachingFr) : frenchCoachingOf(r.coaching),
     visible: r.visible !== false,
     sortOrder: cleanSortOrder(r.sort_order ?? r.sortOrder),
     updatedAt: typeof (r.updated_at ?? r.updatedAt) === 'string' ? String(r.updated_at ?? r.updatedAt) : null,
@@ -326,6 +367,17 @@ export function validateObjectionInput(raw: unknown): ObjectionValidation {
   if (r.coaching != null && (typeof r.coaching !== 'object' || Array.isArray(r.coaching))) {
     return { ok: false, error: 'coaching must be an object of lists' };
   }
+  // French hint lists: `coachingFr` (what the editor sends), or the stored
+  // shape `coaching.fr`.
+  const coachingFr =
+    r.coachingFr !== undefined
+      ? r.coachingFr
+      : r.coaching && typeof r.coaching === 'object'
+        ? (r.coaching as Record<string, unknown>).fr
+        : undefined;
+  if (coachingFr != null && (typeof coachingFr !== 'object' || Array.isArray(coachingFr))) {
+    return { ok: false, error: 'coachingFr must be an object of lists' };
+  }
   if (r.visible != null && typeof r.visible !== 'boolean') {
     return { ok: false, error: 'visible must be true or false' };
   }
@@ -344,13 +396,26 @@ export function validateObjectionInput(raw: unknown): ObjectionValidation {
       // Shape checked above; that it EXISTS is the server's check.
       categoryId: r.categoryId,
       coaching: cleanCoaching(r.coaching),
+      coachingFr: cleanCoachingFr(coachingFr),
       visible: r.visible !== false,
       sortOrder: cleanSortOrder(r.sortOrder),
     },
   };
 }
 
-/** The columns a write sets (server-managed columns excluded). */
+/** True when the write body says anything about French coaching (absent = "not this client's concern"). */
+export function mentionsCoachingFr(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const r = raw as Record<string, unknown>;
+  if (r.coachingFr !== undefined) return true;
+  return !!r.coaching && typeof r.coaching === 'object' && (r.coaching as Record<string, unknown>).fr !== undefined;
+}
+
+/**
+ * The columns a write sets (server-managed columns excluded). The French hint
+ * lists ride inside `coaching` as `fr` — omitted when there are none, so an
+ * objection without French reads exactly as before.
+ */
 export function teamObjectionToRow(
   o: Omit<TeamObjection, 'updatedAt'>,
 ): Pick<
@@ -365,10 +430,16 @@ export function teamObjectionToRow(
     example_fr: o.exampleFr,
     species: [...o.species],
     category_id: o.categoryId,
-    coaching: o.coaching,
+    coaching: hasCoachingFr(o.coachingFr) ? { ...o.coaching, fr: cleanCoachingFr(o.coachingFr) } : o.coaching,
     visible: o.visible,
     sort_order: o.sortOrder,
   };
+}
+
+/** At least one non-empty French hint list. */
+export function hasCoachingFr(fr: ObjectionCoachingFr | null | undefined): boolean {
+  if (fr == null) return false;
+  return HINT_COACHING_KEYS.some((k) => (fr[k]?.length ?? 0) > 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

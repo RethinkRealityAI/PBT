@@ -186,6 +186,8 @@ export const AI_RELEVANT_FIELDS = [
   'knowledge_slugs',
   'prompt_prefix',
   'prompt_suffix',
+  // The scorer reads it, so a test scored before it changed is stale.
+  'success_criteria',
 ] as const satisfies ReadonlyArray<keyof ScenarioOverrideRow>;
 
 export type AiRelevantField = (typeof AI_RELEVANT_FIELDS)[number];

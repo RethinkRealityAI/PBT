@@ -1,5 +1,6 @@
 import type { DriverKey } from '../lib/tokens';
 import type { ScenarioSpecies } from '../../../src/shared/scenarios/species';
+import type { DifficultyLevel } from '../../../src/shared/scenarios/difficulty';
 
 export interface AdminUser {
   user_id: string;
@@ -53,6 +54,14 @@ export interface AdminSession {
    * average, count and trend. Derived server-side in `admin-sessions`.
    */
   score_unavailable: boolean;
+  /**
+   * The scenario's difficulty (1 Coachable … 4 Combative), read server-side
+   * from the stored `scenario` jsonb in `admin-sessions`; null when the row
+   * never stored one (backfilled / older sessions). Optional because a
+   * deploy older than this field omits it. Context beside a score only — the
+   * scorer holds every level to the same standard.
+   */
+  difficulty?: DifficultyLevel | null;
   duration_seconds: number | null;
   mode: 'text' | 'voice' | null;
   completed: boolean;
@@ -207,6 +216,12 @@ export interface ScenarioOverrideRow {
   persona_override: string | null;
   prompt_prefix: string | null;
   prompt_suffix: string | null;
+  /**
+   * What a great answer includes — read by the SCORER only (never the AI
+   * customer, never the public snapshot). Column added by migration
+   * 20261013000000_scenario_success_criteria.sql; absent on an older project.
+   */
+  success_criteria?: string | null;
   card_title_override: string | null;
   card_subtitle_override: string | null;
   info_modal_title: string | null;

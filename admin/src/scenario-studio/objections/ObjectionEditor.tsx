@@ -11,7 +11,8 @@
  * editor opened (`baseUpdatedAt`) so two admins can't silently overwrite
  * each other.
  */
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { TriangleAlert } from 'lucide-react';
 import { Modal } from '../../primitives';
 import { Button, InlineAlert } from '../../primitives/form';
 import { useConfirm } from '../../primitives/Confirm';
@@ -21,6 +22,7 @@ import { COLOR } from '../../lib/tokens';
 import {
   COACHING_KEYS,
   COACHING_LABELS,
+  HINT_COACHING_KEYS,
   OBJECTION_LIMITS,
   type AdminObjection,
   type TeamObjection,
@@ -36,11 +38,14 @@ import {
   emptyObjectionForm,
   formFromObjection,
   formToWrite,
+  frenchHintField,
   objectionFormErrors,
   toAdminObjection,
+  untranslatedHintKeys,
   type ObjectionForm,
 } from './objectionsModel';
 import { useObjectionsContext } from './ObjectionsContext';
+import { HIDDEN_CONCERNS_WHY } from '../readinessWarnings';
 
 export interface ObjectionEditorProps {
   open: boolean;
@@ -57,6 +62,11 @@ export interface ObjectionEditorProps {
   canWrite: boolean;
   /** After a successful save, with the objection as the server stored it. */
   onSaved?: (saved: AdminObjection) => void;
+  /**
+   * Open on the Coaching section with "What the owner is really worried
+   * about" focused — the fix for an objection with no hidden concerns.
+   */
+  focus?: 'coaching';
 }
 
 export function ObjectionEditor(props: ObjectionEditorProps) {
@@ -86,6 +96,7 @@ function EditorBody({
   knowledge,
   canWrite,
   onSaved,
+  focus,
   heading,
   guard,
 }: ObjectionEditorProps & { heading: string; guard: React.MutableRefObject<() => boolean> }) {
@@ -116,10 +127,28 @@ function EditorBody({
   const [base, setBase] = useState<string | null>(objection?.updatedAt ?? null);
   /** Someone else saved it meanwhile; their version (when the server sent it). */
   const [theirs, setTheirs] = useState<TeamObjection | null>(null);
-  const [frenchOpen, setFrenchOpen] = useState(Boolean(initial.titleFr || initial.exampleFr));
-  const [coachingOpen, setCoachingOpen] = useState(
-    COACHING_KEYS.some((k) => initial.coaching[k].trim() !== ''),
+  const [frenchOpen, setFrenchOpen] = useState(
+    Boolean(initial.titleFr || initial.exampleFr) || HINT_COACHING_KEYS.some((k) => initial.coachingFr[k].trim() !== ''),
   );
+  const [coachingOpen, setCoachingOpen] = useState(
+    focus === 'coaching' || COACHING_KEYS.some((k) => initial.coaching[k].trim() !== ''),
+  );
+  const concernsId = useId();
+  // Opened to add hidden concerns: put the cursor in that box. After the
+  // Modal's own "focus the first control" (a parent effect, so it runs after
+  // this one) — hence the timeout.
+  useEffect(() => {
+    if (focus !== 'coaching' || !canWrite) return;
+    const t = window.setTimeout(() => {
+      const box = document.getElementById(concernsId);
+      box?.focus();
+      box?.scrollIntoView?.({ block: 'center' });
+    }, 0);
+    return () => window.clearTimeout(t);
+    // Once per opening (the body is keyed on the objection).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const noConcerns = coachingLines(form.coaching.rootConcerns).length === 0;
   const alertRef = useRef<HTMLDivElement | null>(null);
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
   const categories = api.categories;
@@ -385,7 +414,7 @@ function EditorBody({
 
         <Disclosure
           title="French version"
-          note="Optional — English is shown when it’s empty."
+          note="Optional — the name, the owner’s line and the trainee hints. English is shown where it’s empty."
           open={frenchOpen}
           onToggle={() => setFrenchOpen((v) => !v)}
         >
@@ -421,11 +450,36 @@ function EditorBody({
               style={{ minHeight: 64 }}
             />
           </FieldBlock>
+          <div style={{ fontSize: 12.5, lineHeight: 1.55, color: COLOR.inkSoft }}>
+            The hints trainees see when they use the app in French — one idea per line, up to{' '}
+            {OBJECTION_LIMITS.coachingItems} per box. A box left empty shows the English hints.
+          </div>
+          {untranslatedHintKeys(form).length > 0 && (
+            <div role="note" style={{ fontSize: 12.5, lineHeight: 1.5, fontWeight: 600, color: COLOR.inkMute }}>
+              French trainees will see these hints in English until you add French versions.
+            </div>
+          )}
+          {HINT_COACHING_KEYS.map((key) => (
+            <CoachingBox
+              key={key}
+              lang="fr-CA"
+              label={`${COACHING_LABELS[key].label} (French)`}
+              help="Shown to trainees using the app in French."
+              value={form.coachingFr[key]}
+              disabled={!canWrite}
+              error={visibleErrors[frenchHintField(key)]}
+              onChange={(v) => update({ coachingFr: { ...form.coachingFr, [key]: v } })}
+            />
+          ))}
         </Disclosure>
 
         <Disclosure
           title="Coaching"
-          note="Optional — makes the AI owner and the trainee hints sharper."
+          note={
+            noConcerns
+              ? 'Recommended — without hidden concerns the AI owner and the scoring are generic.'
+              : 'Optional — makes the AI owner and the trainee hints sharper.'
+          }
           open={coachingOpen}
           onToggle={() => setCoachingOpen((v) => !v)}
         >
@@ -435,15 +489,25 @@ function EditorBody({
             questions; the other boxes show up as hints for the trainee.
           </div>
           {COACHING_KEYS.map((key) => (
-            <CoachingBox
-              key={key}
-              label={COACHING_LABELS[key].label}
-              help={COACHING_LABELS[key].help}
-              value={form.coaching[key]}
-              disabled={!canWrite}
-              error={visibleErrors[key]}
-              onChange={(v) => update({ coaching: { ...form.coaching, [key]: v } })}
-            />
+            <Fragment key={key}>
+              <CoachingBox
+                id={key === 'rootConcerns' ? concernsId : undefined}
+                label={COACHING_LABELS[key].label}
+                help={COACHING_LABELS[key].help}
+                value={form.coaching[key]}
+                disabled={!canWrite}
+                error={visibleErrors[key]}
+                onChange={(v) => update({ coaching: { ...form.coaching, [key]: v } })}
+              />
+              {key === 'rootConcerns' && noConcerns && (
+                <InlineAlert tone="warn" title="No hidden concerns yet">
+                  <span style={{ display: 'inline-flex', gap: 6, alignItems: 'flex-start' }}>
+                    <TriangleAlert aria-hidden size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span>{HIDDEN_CONCERNS_WHY}</span>
+                  </span>
+                </InlineAlert>
+              )}
+            </Fragment>
           ))}
         </Disclosure>
 
@@ -494,13 +558,19 @@ function EditorBody({
 }
 
 function CoachingBox({
+  id: givenId,
   label,
   help,
   value,
   disabled,
   error,
   onChange,
+  lang,
 }: {
+  /** A caller-chosen id (to focus the box from outside); one is made up otherwise. */
+  id?: string;
+  /** The language of what is typed (spell-check), e.g. `fr-CA` for the French hints. */
+  lang?: string;
   label: string;
   help: string;
   value: string;
@@ -508,7 +578,8 @@ function CoachingBox({
   error?: string;
   onChange: (v: string) => void;
 }) {
-  const id = useId();
+  const ownId = useId();
+  const id = givenId ?? ownId;
   const lines = coachingLines(value).length;
   return (
     <FieldBlock
@@ -521,6 +592,7 @@ function CoachingBox({
     >
       <TextArea
         id={id}
+        lang={lang}
         rows={3}
         value={value}
         disabled={disabled}

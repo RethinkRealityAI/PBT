@@ -17,6 +17,7 @@ import {
   pushbackOptionsFor,
   splitObjections,
   toAdminObjection,
+  untranslatedHintKeys,
   usageLabel,
 } from '../objectionsModel';
 import { pushbackLabel } from '../../../lib/labels';
@@ -31,6 +32,7 @@ function team(over: Partial<TeamObjection> & Pick<TeamObjection, 'id' | 'title'>
     species: ['dog', 'cat'],
     categoryId: 'everyday-nutrition',
     coaching: {},
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: '2026-10-10T10:00:00Z',
@@ -269,9 +271,56 @@ describe('the editor form', () => {
       species: ['dog', 'cat'],
       categoryId: PROBIOTICS,
       coaching: { rootConcerns: ['Upsell', 'Daily for life'], watchOuts: ['Product first'] },
+      coachingFr: {},
       visible: true,
       sortOrder: null,
     });
+  });
+
+  it('round-trips the French hint lists, and always sends them (empty = clear)', () => {
+    const o = team({
+      ...PRO,
+      coaching: { acknowledgePatterns: ['Fair question.'] },
+      coachingFr: { acknowledgePatterns: ['Bonne question.', 'C’est logique.'] },
+    });
+    const form = formFromObjection(o);
+    expect(form.coachingFr.acknowledgePatterns).toBe('Bonne question.\nC’est logique.');
+    expect(form.coachingFr.clarifyQuestions).toBe('');
+    expect(formToWrite(form).coachingFr).toEqual({ acknowledgePatterns: ['Bonne question.', 'C’est logique.'] });
+    // Cleared in the editor: sent as an explicit empty object, never left out.
+    const cleared = { ...form, coachingFr: { ...form.coachingFr, acknowledgePatterns: '  \n' } };
+    expect(formToWrite(cleared)).toHaveProperty('coachingFr', {});
+    expect(formToWrite(emptyObjectionForm())).toHaveProperty('coachingFr', {});
+  });
+
+  it('lists the hint groups a French trainee would read in English', () => {
+    const form = formFromObjection(
+      team({
+        ...PRO,
+        coaching: { acknowledgePatterns: ['A'], clarifyQuestions: ['Q?'], rootConcerns: ['AI only'] },
+        coachingFr: { acknowledgePatterns: ['A fr'], takeActionPatterns: ['Only in French'] },
+      }),
+    );
+    // rootConcerns is AI-only (no French version) and never counts.
+    expect(untranslatedHintKeys(form)).toEqual(['clarifyQuestions']);
+    expect(untranslatedHintKeys(emptyObjectionForm())).toEqual([]);
+  });
+
+  it('checks the French boxes with the English limits', () => {
+    const errors = objectionFormErrors({
+      ...emptyObjectionForm(null, PROBIOTICS),
+      title: 'T',
+      example: 'E',
+      coachingFr: {
+        acknowledgePatterns: 'a\nb\nc\nd\ne\nf\ng',
+        clarifyQuestions: 'x'.repeat(301),
+        takeActionPatterns: 'ok',
+      },
+    });
+    expect(errors.acknowledgePatternsFr).toBe('Up to 6 lines here (now 7).');
+    expect(errors.clarifyQuestionsFr).toBe('Keep each line under 300 characters.');
+    expect(errors.takeActionPatternsFr).toBeUndefined();
+    expect(errors.acknowledgePatterns).toBeUndefined();
   });
 
   it('drops blank coaching lines and empty lists', () => {

@@ -21,7 +21,11 @@
  *     Builder's "Test in app" iframe drives an unsaved draft). They wrap the
  *     customer turn only and never touch the scorer, so a non-admin abusing
  *     the flag can only alter their own role-play — and a preview call
- *     writes no telemetry and no session row.
+ *     writes no telemetry and no session row. The one scorer-side override,
+ *     `successCriteria` (the scenario's "what a great answer includes"),
+ *     follows the same rule: server-loaded, or from the body only in a
+ *     preview, which never writes a score — so it can only change an
+ *     admin's own unrecorded test grade.
  *   • `allowTelemetry` and `preview` let the caller REDUCE what is recorded
  *     about them (privacy opt-out, admin preview); they can never widen it.
  *   • Identity: when the app is signed in it sends the Supabase access token
@@ -103,6 +107,12 @@ export interface EvaluateRequest extends AiRequestMeta {
   scenario: Scenario;
   transcript: ChatMessage[];
   mode: 'text' | 'voice';
+  /**
+   * Honoured ONLY when `preview === true` (the Studio's Test drive scoring an
+   * unsaved draft), and only `successCriteria` is read; otherwise the
+   * criteria are loaded server-side by `scenario._overrideId`.
+   */
+  promptOverrides?: PromptOverrides;
 }
 
 export interface EvaluateResponse {

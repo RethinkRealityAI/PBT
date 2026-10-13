@@ -918,6 +918,7 @@ function teamObjection(over: Partial<TeamObjection>): TeamObjection {
     species: ['dog', 'cat'],
     categoryId: 'everyday-nutrition',
     coaching: {},
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: null,

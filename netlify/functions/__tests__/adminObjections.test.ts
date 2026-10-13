@@ -541,6 +541,71 @@ describe('admin-objections — update', () => {
   });
 });
 
+// ── French hint lists (stored as coaching.fr) ────────────────────────────
+
+describe('admin-objections — French hint lists', () => {
+  const FR = {
+    acknowledgePatterns: ['C’est une bonne question.'],
+    clarifyQuestions: ['Qu’avez-vous remarqué?'],
+  };
+
+  it('a create stores coachingFr inside coaching as `fr` and answers with coachingFr', async () => {
+    const res = await post({ op: 'upsert', objection: { ...NEW, coachingFr: FR } });
+    expect(res.status).toBe(200);
+    const { objection } = (await res.json()) as { objection: Bag };
+    expect(objection.coachingFr).toEqual(FR);
+    expect(objection.coaching).toEqual(NEW.coaching);
+    const [ins] = writes('scenario_objections');
+    expect(ins.payload.coaching).toEqual({ ...NEW.coaching, fr: FR });
+    expect(ins.payload).not.toHaveProperty('coachingFr');
+    expect(ins.payload).not.toHaveProperty('coaching_fr');
+  });
+
+  it('GET returns the stored French lists as coachingFr', async () => {
+    objections[0].coaching = { rootConcerns: ['Cash grab'], fr: FR };
+    const { objections: list } = (await (await get()).json()) as { objections: Bag[] };
+    expect(list[0].coachingFr).toEqual(FR);
+    expect(list[0].coaching).toEqual({ rootConcerns: ['Cash grab'] });
+  });
+
+  it('an update that does not mention French keeps the stored lists (an editor from before French hints)', async () => {
+    objections[0].coaching = { rootConcerns: ['Cash grab'], fr: FR };
+    const res = await post({
+      op: 'upsert',
+      objection: { id: 'team:probiotics', title: 'Probiotics', example: '"Fad."', species: ['dog'], categoryId: 'category:probiotics', coaching: { rootConcerns: ['Sceptical'] } },
+    });
+    expect(res.status).toBe(200);
+    const [upd] = writes('scenario_objections');
+    expect(upd.payload.coaching).toEqual({ rootConcerns: ['Sceptical'], fr: FR });
+    expect(((await res.json()) as { objection: Bag }).objection.coachingFr).toEqual(FR);
+  });
+
+  it('an explicit empty coachingFr clears them (and `fr` is omitted)', async () => {
+    objections[0].coaching = { rootConcerns: ['Cash grab'], fr: FR };
+    const res = await post({
+      op: 'upsert',
+      objection: {
+        id: 'team:probiotics',
+        title: 'Probiotics',
+        example: '"Fad."',
+        species: ['dog'],
+        categoryId: 'category:probiotics',
+        coaching: { rootConcerns: ['Sceptical'] },
+        coachingFr: {},
+      },
+    });
+    expect(res.status).toBe(200);
+    const [upd] = writes('scenario_objections');
+    expect(upd.payload.coaching).toEqual({ rootConcerns: ['Sceptical'] });
+  });
+
+  it('refuses a malformed coachingFr (400) and writes nothing', async () => {
+    const res = await post({ op: 'upsert', objection: { ...NEW, coachingFr: ['nope'] } });
+    expect(res.status).toBe(400);
+    expect(writes('scenario_objections')).toHaveLength(0);
+  });
+});
+
 // ── POST delete / restore ────────────────────────────────────────────────
 
 describe('admin-objections — delete', () => {

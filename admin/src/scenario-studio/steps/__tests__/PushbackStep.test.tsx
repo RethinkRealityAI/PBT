@@ -20,6 +20,7 @@ function objection(over: Partial<AdminObjection> & Pick<AdminObjection, 'id' | '
     species: ['dog', 'cat'],
     categoryId: PROBIOTICS,
     coaching: {},
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: '2026-10-10T10:00:00Z',

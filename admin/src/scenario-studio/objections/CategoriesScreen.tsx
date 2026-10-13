@@ -17,7 +17,7 @@
  * them and so do we). "Recently deleted" restores both kinds.
  */
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { Library, Pencil, Plus } from 'lucide-react';
+import { Library, Pencil, Plus, TriangleAlert } from 'lucide-react';
 import { ContextBar, ScreenShell } from '../../primitives/Shell';
 import { Button, InlineAlert } from '../../primitives/form';
 import { ReadOnlyBanner, useCan } from '../../primitives/access';
@@ -47,10 +47,16 @@ import { ObjectionsProvider } from './ObjectionsContext';
 import { ObjectionEditor } from './ObjectionEditor';
 import { CategoryEditor } from './CategoryEditor';
 import { useObjections, type ObjectionsApi } from './useObjections';
+import { NO_HIDDEN_CONCERNS, lacksHiddenConcerns } from '../readinessWarnings';
 
 const NO_KNOWLEDGE_ACCESS = 'Your role can’t open the knowledge library, so its documents can’t be listed here.';
 
-type ObjectionEditorState = { objection: AdminObjection | null; categoryId: string | null } | null;
+type ObjectionEditorState = {
+  objection: AdminObjection | null;
+  categoryId: string | null;
+  /** Open on Coaching ("Add hidden concerns" on a row). */
+  focus?: 'coaching';
+} | null;
 type CategoryEditorState = { category: AdminObjectionCategory | null } | null;
 
 export function CategoriesScreen({ query, onQuery }: { query: string; onQuery: (q: string) => void }) {
@@ -355,6 +361,7 @@ function CategoriesBody({ api, query, onQuery }: { api: ObjectionsApi; query: st
                     refused={refused[o.id] ?? null}
                     titleOf={(id) => scenarioTitles.get(id) ?? null}
                     onEdit={() => setObjectionEditor({ objection: o, categoryId: o.categoryId })}
+                    onAddConcerns={() => setObjectionEditor({ objection: o, categoryId: o.categoryId, focus: 'coaching' })}
                     onRetire={() => void setActive(o, !o.visible)}
                     onDelete={() => void removeObjection(o)}
                     onDismissRefusal={() => setRefused((r) => omit(r, o.id))}
@@ -382,6 +389,7 @@ function CategoriesBody({ api, query, onQuery }: { api: ObjectionsApi; query: st
                       refused={refused[o.id] ?? null}
                       titleOf={(id) => scenarioTitles.get(id) ?? null}
                       onEdit={() => setObjectionEditor({ objection: o, categoryId: null })}
+                      onAddConcerns={() => setObjectionEditor({ objection: o, categoryId: null, focus: 'coaching' })}
                       onRetire={() => void setActive(o, !o.visible)}
                       onDelete={() => void removeObjection(o)}
                       onDismissRefusal={() => setRefused((r) => omit(r, o.id))}
@@ -467,6 +475,7 @@ function CategoriesBody({ api, query, onQuery }: { api: ObjectionsApi; query: st
         open={objectionEditor !== null}
         objection={objectionEditor?.objection ?? null}
         defaultCategoryId={objectionEditor?.categoryId ?? null}
+        focus={objectionEditor?.focus}
         canWrite={canWrite}
         knowledge={knowledge}
         onClose={() => setObjectionEditor(null)}
@@ -691,6 +700,7 @@ function TeamRow({
   refused,
   titleOf,
   onEdit,
+  onAddConcerns,
   onRetire,
   onDelete,
   onDismissRefusal,
@@ -702,6 +712,8 @@ function TeamRow({
   refused: Array<{ scenario_id: string; title: string }> | null;
   titleOf: (id: string) => string | null;
   onEdit: () => void;
+  /** Edit, opened on Coaching with the hidden-concerns box focused. */
+  onAddConcerns: () => void;
   onRetire: () => void;
   onDelete: () => void;
   onDismissRefusal: () => void;
@@ -751,6 +763,23 @@ function TeamRow({
                 </li>
               ))}
             </ul>
+          )}
+          {lacksHiddenConcerns(o) && (
+            <div style={concernsWarning}>
+              <TriangleAlert aria-hidden size={14} style={{ flexShrink: 0 }} />
+              <span style={{ flex: '1 1 200px', minWidth: 0 }}>{NO_HIDDEN_CONCERNS}</span>
+              {canWrite && (
+                <button
+                  type="button"
+                  className="pbt-focusable"
+                  onClick={onAddConcerns}
+                  aria-label={`Add hidden concerns to “${o.title}”`}
+                  style={{ ...linkStyle, fontSize: 12.5 }}
+                >
+                  Add them
+                </button>
+              )}
+            </div>
           )}
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -924,4 +953,21 @@ const linkStyle: CSSProperties = {
   fontWeight: 750,
   color: COLOR.brand,
   cursor: 'pointer',
+};
+
+/** The "no hidden concerns" line on an objection row — the warn tone of `InlineAlert`, one line tall. */
+const concernsWarning: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  marginTop: 8,
+  padding: '6px 10px',
+  borderRadius: 10,
+  background: COLOR.warnSoft,
+  border: '1px solid color-mix(in oklab, oklch(0.62 0.18 70) 26%, transparent)',
+  color: 'oklch(0.42 0.14 70)',
+  fontSize: 12.5,
+  fontWeight: 650,
+  lineHeight: 1.45,
 };

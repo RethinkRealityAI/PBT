@@ -13,12 +13,30 @@ NEXT reply.
 - Customer's ECHO driver: Activator — motivation: Results, speed, control, and respect. Activators want to get to the point, get the job done, and be in charge. They measure success by what gets done, not how it feels.; under stress: Becomes dictatorial, autocratic, intimidating. Will steamroll people who are not keeping pace. Misreads caution as weakness.
 
 # WHAT'S REALLY GOING ON
-Root concerns the trainee needs to surface:
+Background for your nudge, not lines to hand over: point the trainee at the move, never give them a full sentence from this list.
+The real concerns underneath (what genuine clarifying should surface):
 - Owner normalised the weight because it changed gradually
 - Guilt or shame about being "a bad owner"
 - Fear that agreeing means expensive or complicated changes ahead
 - Genuine confusion — breed norms are not well understood by most owners
 - Concern that a diet food will make the dog miserable or hungry
+Questions that tend to surface them:
+- Can you feel his ribs without pressing? (BCS palpation invite)
+- How long has he been at this weight?
+- Does he slow down on longer walks, or strain to get up?
+- How many treats does he get in a day — roughly?
+- What would bother you most: the diet change, or joint issues down the road?
+Credible next steps for this objection (what a strong transform lands on):
+- Use the BCS 1–9 scale as a shared, non-shaming reference tool
+- Cite the joint load equation: every 1 kg excess = 3–4 kg extra joint force
+- Frame Satiety Support as "feels full on less" — dog won't be hungry
+- Anchor on the 12-week visual change: "You'll see it before we weigh him"
+- Offer a monthly weight check — turns it into a shared project, not a verdict
+Common mistakes with this objection (steer the trainee away from them):
+- Do not call the dog "obese" or "fat" — say "above ideal condition score"
+- Do not imply the owner caused the problem
+- Do not skip palpation demonstration — seeing is believing for this pushback
+- Do not lead with joint disease before earning trust
 
 # THE ACT METHOD (the skill being trained)
 Acknowledge: Validate the customer's feelings without agreeing or disagreeing.

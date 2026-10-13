@@ -8,6 +8,7 @@ import { Segmented, type SegmentedOption } from '../design-system/Segmented';
 import { ViewTabs } from '../design-system/ViewTabs';
 import { ChipScroller } from '../design-system/ChipScroller';
 import { SpeciesIcon } from '../design-system/SpeciesIcon';
+import { DifficultyMeter, DIFFICULTY_METER_FILL } from '../design-system/DifficultyMeter';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
@@ -1028,7 +1029,7 @@ function FilterChip({
  * colour, so a light driver (Energizer yellow) stays legible on white glass
  * and a dark one stays legible on dark glass.
  */
-const CARD_ACCENT = 'color-mix(in oklab, var(--pbt-driver-primary) 72%, var(--pbt-text))';
+const CARD_ACCENT = DIFFICULTY_METER_FILL;
 
 function LibraryCard({
   title,
@@ -1122,25 +1123,7 @@ function LibraryCard({
               style={{ columnGap: 14, rowGap: 6, fontSize: 12.5, color: 'var(--pbt-text-muted)' }}
             >
               <span>{owner}</span>
-              <span className="inline-flex items-center gap-1.5" aria-label={difficultyAria} role="img">
-                <span aria-hidden className="inline-flex items-end" style={{ gap: 2 }}>
-                  {[1, 2, 3, 4].map((step) => (
-                    <span
-                      key={step}
-                      style={{
-                        width: 4,
-                        height: 5 + step * 2,
-                        borderRadius: 2,
-                        background:
-                          step <= difficulty
-                            ? CARD_ACCENT
-                            : 'color-mix(in oklab, var(--pbt-text) 18%, transparent)',
-                      }}
-                    />
-                  ))}
-                </span>
-                <span aria-hidden>{difficultyLabel}</span>
-              </span>
+              <DifficultyMeter level={difficulty} label={difficultyLabel} ariaLabel={difficultyAria} />
             </div>
           </div>
           <span

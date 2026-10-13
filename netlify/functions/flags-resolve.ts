@@ -199,19 +199,24 @@ export function objectionsReadDegraded(): boolean {
 /**
  * What a team objection may say in PUBLIC. The snapshot is anonymous and
  * cached, so it carries only what the trainee app renders: the three hint
- * lists. `rootConcerns` (what the AI owner hides until asked — the answer
- * key, like the admin's AI notes) and `watchOuts` stay server-side; the AI
- * functions read them from the database (`_shared/ai.ts`).
+ * lists, in English and (`coachingFr`) French. `rootConcerns` (what the AI
+ * owner hides until asked — the answer key, like the admin's AI notes) and
+ * `watchOuts` stay server-side; the AI functions read them from the database
+ * (`_shared/ai.ts`).
  */
 export function publicObjection(o: TeamObjection): TeamObjection {
-  const { acknowledgePatterns, clarifyQuestions, takeActionPatterns } = o.coaching;
-  return {
-    ...o,
-    coaching: {
+  const hintsOnly = (lists: TeamObjection['coachingFr'] | undefined): TeamObjection['coachingFr'] => {
+    const { acknowledgePatterns, clarifyQuestions, takeActionPatterns } = lists ?? {};
+    return {
       ...(acknowledgePatterns ? { acknowledgePatterns } : {}),
       ...(clarifyQuestions ? { clarifyQuestions } : {}),
       ...(takeActionPatterns ? { takeActionPatterns } : {}),
-    },
+    };
+  };
+  return {
+    ...o,
+    coaching: hintsOnly(o.coaching),
+    coachingFr: hintsOnly(o.coachingFr),
   };
 }
 

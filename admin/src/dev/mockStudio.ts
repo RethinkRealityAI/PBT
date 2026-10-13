@@ -184,6 +184,7 @@ function objection(over: Partial<AdminObjection> & Pick<AdminObjection, 'id' | '
     species: ['dog', 'cat'],
     categoryId: 'everyday-nutrition',
     coaching: {},
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: ago(3 * DAY),
@@ -212,6 +213,10 @@ let OBJECTIONS: AdminObjection[] = [
       clarifyQuestions: ['What does a normal week of stools and appetite look like for him?'],
       takeActionPatterns: ['Suggest a 4-week trial alongside the next course of antibiotics, with a check-in call.'],
       watchOuts: ['Leading with the product name before asking about the pet.'],
+    },
+    // Partly translated on purpose: the editor's "seen in English" note shows.
+    coachingFr: {
+      acknowledgePatterns: ['« C’est normal de se demander pourquoi ajouter quelque chose quand tout va bien. »'],
     },
     updatedAt: ago(2 * DAY),
     usage: { scenarios: 1, live: 0, trainee: 2 },

@@ -8,7 +8,7 @@ vi.mock('../../api', () => ({ inspectScenario }));
 // eslint-disable-next-line import/first
 import { BriefStep } from '../BriefStep';
 // eslint-disable-next-line import/first
-import { PREFIX_EXAMPLES, SUFFIX_EXAMPLES } from '../briefModel';
+import { CRITERIA_EXAMPLES, PREFIX_EXAMPLES, SUFFIX_EXAMPLES } from '../briefModel';
 // eslint-disable-next-line import/first
 import { completeDraft, renderStep } from './harness';
 
@@ -44,6 +44,35 @@ function response(over: Partial<ScenarioInspectResponse> = {}): ScenarioInspectR
 }
 
 beforeEach(() => inspectScenario.mockReset());
+
+describe('BriefStep — what a great answer includes (scoring)', () => {
+  it('says what the scorer already reads, and that the AI customer never sees it', () => {
+    renderStep(BriefStep, { draft: completeDraft() });
+    expect(screen.getByText('How the scorecard judges it')).toBeInTheDocument();
+    expect(screen.getByText(/The AI customer never\s+sees it/)).toBeInTheDocument();
+  });
+
+  it('edits success_criteria with its own 1500-character limit', () => {
+    const { patchSpy } = renderStep(BriefStep, { draft: completeDraft() });
+    const box = screen.getByLabelText('What a great answer includes');
+    fireEvent.change(box, { target: { value: 'Offers a trial.' } });
+    expect(patchSpy).toHaveBeenLastCalledWith({ success_criteria: 'Offers a trial.' });
+    expect(screen.getByText('15/1500')).toBeInTheDocument();
+  });
+
+  it('example chips append observable criteria', () => {
+    const { patchSpy } = renderStep(BriefStep, { draft: completeDraft() });
+    const ex = CRITERIA_EXAMPLES[2];
+    fireEvent.click(screen.getByRole('button', { name: `+ ${ex.label}` }));
+    expect(patchSpy).toHaveBeenLastCalledWith({ success_criteria: ex.sentence });
+  });
+
+  it('read-only disables it', () => {
+    renderStep(BriefStep, { canWrite: false, draft: completeDraft({ success_criteria: 'Books a recheck.' }) });
+    expect(screen.getByLabelText('What a great answer includes')).toBeDisabled();
+    expect(screen.getByLabelText('What a great answer includes')).toHaveValue('Books a recheck.');
+  });
+});
 
 describe('BriefStep — notes', () => {
   it('explains the wrap: notes go around a briefing they can’t replace', () => {

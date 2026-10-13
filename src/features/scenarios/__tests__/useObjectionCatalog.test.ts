@@ -25,6 +25,7 @@ const base: Omit<TeamObjection, 'id' | 'title'> = {
   species: ['dog', 'cat'],
   categoryId: 'everyday-nutrition',
   coaching: {},
+  coachingFr: {},
   visible: true,
   sortOrder: null,
   updatedAt: null,

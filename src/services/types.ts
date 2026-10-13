@@ -164,4 +164,11 @@ export interface SessionRecord {
   scoreReport: ScoreReport;
   transcript: ChatMessage[];
   createdAt: string;
+  /**
+   * The scenario's difficulty (1–4) when the session was played — shown
+   * beside the score, never folded into it. Absent on records saved before
+   * it was stored; read it through `parseDifficulty` (the record lives in
+   * user-editable localStorage).
+   */
+  difficulty?: 1 | 2 | 3 | 4;
 }

@@ -25,6 +25,7 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 import handler, {
   COPIED_FROM_COLUMN_MISSING,
   SPECIES_COLUMN_MISSING,
+  SUCCESS_CRITERIA_COLUMN_MISSING,
   UNKNOWN_OBJECTION_MESSAGE,
   isMissingSpeciesColumn,
   pickWritable,
@@ -627,5 +628,66 @@ describe('POST upsert — copied_from', () => {
     // Nobody asked for provenance on a copy, so nothing to warn about.
     expect(await res.json()).not.toHaveProperty('_notice');
     expect(upserts()[1]).not.toHaveProperty('copied_from');
+  });
+});
+
+describe('success_criteria — "what a great answer includes" (scorer only)', () => {
+  /** A database that predates 20261013000000_scenario_success_criteria.sql. */
+  function withoutCriteriaColumn(payload: Bag): SbResult {
+    if ('success_criteria' in payload) {
+      return {
+        data: null,
+        error: {
+          code: 'PGRST204',
+          message: "Could not find the 'success_criteria' column of 'scenario_overrides' in the schema cache",
+        },
+      };
+    }
+    return { data: payload, error: null };
+  }
+
+  it('is a writable column, saved with the scenario', async () => {
+    expect(pickWritable({ scenario_id: 'admin:x', success_criteria: 'Offers a trial.' })).toMatchObject({
+      success_criteria: 'Offers a trial.',
+    });
+    overridesTable(null);
+    const res = await save({ ...ROW, success_criteria: 'Offers a two-week trial.' });
+    expect(res.status).toBe(200);
+    expect(upserts()[0].success_criteria).toBe('Offers a two-week trial.');
+    expect(await res.json()).not.toHaveProperty('_notice');
+  });
+
+  it('is capped at 1500 characters (the DB CHECK) with a plain 400', async () => {
+    overridesTable(null);
+    expect((await save({ ...ROW, success_criteria: 'x'.repeat(1501) })).status).toBe(400);
+    expect(upserts()).toHaveLength(0);
+    expect((await save({ ...ROW, success_criteria: 'x'.repeat(1500) })).status).toBe(200);
+  });
+
+  it('retries without the column when it is missing, and says so', async () => {
+    overridesTable(null, withoutCriteriaColumn);
+    const res = await save({ ...ROW, success_criteria: 'Offers a trial.' });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Bag)._notice).toBe(SUCCESS_CRITERIA_COLUMN_MISSING);
+    const [first, retry] = upserts();
+    const { success_criteria: _c, ...rest } = first;
+    expect(retry).toEqual(rest);
+  });
+
+  it('a dropped blank criteria saves silently — nothing was lost', async () => {
+    overridesTable(null, withoutCriteriaColumn);
+    const res = await save({ ...ROW, success_criteria: null });
+    expect(res.status).toBe(200);
+    expect(await res.json()).not.toHaveProperty('_notice');
+  });
+
+  it('a missing species column still wins the notice', async () => {
+    overridesTable(null, (payload) =>
+      'species' in payload ? withoutSpeciesColumn(payload) : withoutCriteriaColumn(payload),
+    );
+    const res = await save({ ...ROW, species: 'cat', success_criteria: 'Offers a trial.' });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Bag)._notice).toBe(SPECIES_COLUMN_MISSING);
+    expect(upserts().at(-1)).not.toHaveProperty('success_criteria');
   });
 });

@@ -13,7 +13,11 @@
  *   4. Sentiment distribution — each completed session's mean
  *      `turnSentiment` bucketed hostile→warm (mirrors AnalyzerScreen's
  *      hand-rolled "Verdict mix" distribution style).
- *   5. Feedback summary — mean realism / AI quality / comfort meters.
+ *   5. Average score by difficulty — the same scoring standard applies at
+ *      every level (deliberate: scores stay comparable), so this is where a
+ *      lower average against Combative owners is read as context, not as
+ *      weaker training. The level comes from each row's stored scenario.
+ *   6. Feedback summary — mean realism / AI quality / comfort meters.
  *
  * Sessions whose scoring attempt failed carry a placeholder 0/100 report
  * (`score_unavailable`). They are stripped out before any aggregate runs —
@@ -41,6 +45,8 @@ import { useAdminSessions, useSessionFeedback } from '../data/queries';
 import { rangeToDays } from '../lib/api';
 import { COLOR } from '../lib/tokens';
 import type { AdminSession, SessionFeedbackRow } from '../data/types';
+import { averageScoreByDifficulty, type DifficultyScoreBucket } from '../lib/difficulty';
+import { AdminDifficultyMeter } from '../primitives/DifficultyMeter';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -252,6 +258,7 @@ export function InsightsScreen({
   const scoreTrend = useMemo(() => buildScoreTrend(scored, range), [scored, range]);
   const actStats = useMemo(() => buildActStats(scored), [scored]);
   const sentimentDist = useMemo(() => buildSentimentDistribution(scored), [scored]);
+  const byDifficulty = useMemo(() => averageScoreByDifficulty(scored), [scored]);
   const feedbackStats = useMemo(() => buildFeedbackStats(feedback.data), [feedback.data]);
 
   const sessionsReady = !sessions.loading;
@@ -497,6 +504,39 @@ export function InsightsScreen({
             </Glass>
           </div>
 
+          {/* ── Average score by difficulty ── */}
+          <Glass padding={24} radius={20}>
+            <SectionTitle
+              title="Average score by difficulty"
+              subtitle="Every level is scored to the same standard, so expect lower averages against harder owners"
+            />
+            {!sessionsReady ? (
+              <div style={{ marginTop: 16 }}>
+                <LoadingShimmer height={160} />
+              </div>
+            ) : byDifficulty.hasData ? (
+              <>
+                <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 640 }}>
+                  {byDifficulty.buckets.map((b) => (
+                    <DifficultyScoreRow key={b.level} bucket={b} />
+                  ))}
+                </div>
+                {byDifficulty.unknown > 0 && (
+                  <div style={{ marginTop: 12, fontSize: 11, color: COLOR.inkMute }}>
+                    {byDifficulty.unknown} scored session{byDifficulty.unknown === 1 ? '' : 's'} did not
+                    record a difficulty (saved before it was tracked) and{' '}
+                    {byDifficulty.unknown === 1 ? 'is' : 'are'} left out of this breakdown.
+                  </div>
+                )}
+              </>
+            ) : (
+              <EmptyState
+                title="No difficulty data yet"
+                subtitle="Scored sessions show here by the difficulty of the owner they faced."
+              />
+            )}
+          </Glass>
+
           {/* ── Feedback summary ── */}
           <Glass padding={24} radius={20}>
             <SectionTitle
@@ -520,6 +560,48 @@ export function InsightsScreen({
         </QueryBoundary>
       </ScreenShell>
     </>
+  );
+}
+
+// ─── One difficulty level: meter · average bar · score · session count ──
+function DifficultyScoreRow({ bucket }: { bucket: DifficultyScoreBucket }) {
+  const has = bucket.avgScore != null;
+  const value = bucket.avgScore ?? 0;
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '132px 1fr 36px 88px',
+        gap: 12,
+        alignItems: 'center',
+      }}
+    >
+      <AdminDifficultyMeter level={bucket.level} />
+      <div style={{ height: 8, borderRadius: 4, background: 'oklch(0.96 0.01 20)', overflow: 'hidden' }}>
+        <div
+          style={{
+            width: `${has ? Math.max(0, Math.min(100, value)) : 0}%`,
+            height: '100%',
+            background: bandColor(value),
+            transition: 'width 0.6s ease',
+          }}
+        />
+      </div>
+      <span
+        style={{
+          fontFamily: 'var(--pbt-mono)',
+          fontWeight: 700,
+          fontSize: 13,
+          textAlign: 'right',
+          color: has ? COLOR.ink : COLOR.inkMute,
+        }}
+      >
+        {fmtScore(bucket.avgScore)}
+      </span>
+      <span style={{ fontSize: 11, color: COLOR.inkMute }}>
+        {bucket.count} session{bucket.count === 1 ? '' : 's'}
+      </span>
+    </div>
   );
 }
 

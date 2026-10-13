@@ -5,8 +5,9 @@ import {
   requireAdmin,
 } from './_shared/admin';
 import { isScoreUnavailable, type ScoreReport } from '../../src/services/types';
+import { difficultyFromScenario } from '../../src/shared/scenarios/difficulty';
 
-type SessionRow = { score_report: ScoreReport | null };
+type SessionRow = { score_report: ScoreReport | null; scenario: unknown };
 
 export default async (req: Request) => {
   const ctx = await requireAdmin(req, 'sessions.read');
@@ -27,9 +28,16 @@ export default async (req: Request) => {
   // rather than in each of the screens that consume these rows. A row with
   // no report at all was never scored (abandoned mid-session) — that is a
   // missing score, not a failed one.
+  //
+  // `difficulty` (1–4, or null) is read the same way, from the scenario the
+  // session stored — the app writes the full Scenario, so no column or
+  // migration is needed; backfilled and older rows simply have none. It is
+  // context shown beside a score: the scorer holds every level to the same
+  // standard, so it never adjusts `score_overall`.
   const rows = ((data ?? []) as SessionRow[]).map((row) => ({
     ...row,
     score_unavailable: row.score_report != null && isScoreUnavailable(row.score_report),
+    difficulty: difficultyFromScenario(row.scenario),
   }));
   return jsonResponse(rows);
 };

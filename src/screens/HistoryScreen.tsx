@@ -20,6 +20,7 @@ import {
 import { formatDateTime, formatPercent } from '../i18n/format';
 import { useTeamObjections } from '../features/scenarios/useObjectionCatalog';
 import { sortTeamObjections } from '../shared/scenarios/objections';
+import { SessionDifficulty } from '../features/scorecard/SessionDifficulty';
 
 export function HistoryScreen() {
   const { go } = useNavigation();
@@ -195,7 +196,25 @@ export function HistoryScreen() {
                       —
                     </span>
                   ) : (
-                    <ScoreChip score={s.scoreReport.overall} />
+                    // The level sits under the score it qualifies (same
+                    // scoring standard at every level, so a 75 at Combative
+                    // is the harder result). Not shown beside the "—" of an
+                    // unscored session, where it could read as a score.
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 5,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <ScoreChip score={s.scoreReport.overall} />
+                      <SessionDifficulty
+                        level={s.difficulty}
+                        style={{ fontSize: 10.5, color: 'var(--pbt-text-muted)' }}
+                      />
+                    </div>
                   )}
                   <span style={{ color: 'var(--pbt-text-muted)', fontSize: 18 }}>›</span>
                 </div>

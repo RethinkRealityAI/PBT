@@ -27,6 +27,7 @@ import { useT, type TFunction } from '../i18n/useT';
 import { formatDateTime, formatTime } from '../i18n/format';
 import { localizedSessionSummary } from '../i18n/dataL10n/pushbacks';
 import { useTeamObjections } from '../features/scenarios/useObjectionCatalog';
+import { SessionDifficulty } from '../features/scorecard/SessionDifficulty';
 
 type Tab = 'scorecard' | 'transcript';
 
@@ -195,6 +196,13 @@ function ScorecardView({ session }: { session: SessionRecord }) {
               >
                 {t('history.detail.turns', { count: session.transcript.length })}
               </div>
+              {/* Context for the score, not part of it — same standard at
+                  every level. Absent on records saved before it was stored. */}
+              <SessionDifficulty
+                level={session.difficulty}
+                caption
+                style={{ marginTop: 10, fontSize: 12.5, color: 'var(--pbt-text)' }}
+              />
             </div>
           </div>
         </Glass>

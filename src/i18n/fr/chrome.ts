@@ -29,6 +29,8 @@ export const chrome: Record<keyof typeof enChrome, string> = {
   'chrome.score.ringAria': 'Résultat de {score} sur 100',
   'chrome.score.ringAriaLabelled': 'Résultat de {score} sur 100 — {label}',
   'chrome.score.chipAria': 'Résultat de {score}',
+  'chrome.difficulty.label': 'Difficulté',
+  'chrome.difficulty.aria': 'Difficulté : {label}, niveau {level} sur 4',
 
   // ── Reprise après plantage (ErrorBoundary) ────────────────
   'chrome.error.eyebrow': 'Une erreur est survenue',

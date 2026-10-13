@@ -53,6 +53,7 @@ export function conversationFor(draft: StudioDraft, scenario: Scenario): SimConv
     notes: {
       promptPrefix: blankToNull(draft.prompt_prefix),
       promptSuffix: blankToNull(draft.prompt_suffix),
+      successCriteria: blankToNull(draft.success_criteria),
     },
     snapshot: snapshotAiFields(draft),
   };

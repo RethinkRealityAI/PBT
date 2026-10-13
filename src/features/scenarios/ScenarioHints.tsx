@@ -21,9 +21,10 @@ type CueGroups = {
  *   re-worded for a cat.
  * • TEAM objection (`team:<slug>`) → the coaching the team wrote for it in the
  *   Scenario Studio (shown verbatim — it was written for its own animals),
- *   group by group; a group the team left empty falls back to the generic
- *   "Other pushback" cues, as does an objection the snapshot no longer
- *   carries.
+ *   group by group. In French, a group the team translated shows its French
+ *   list, else its English one. A group the team left empty falls back to
+ *   the generic "Other pushback" cues (localised), as does an objection the
+ *   snapshot no longer carries.
  *
  * Null when there is nothing to show (a pushback outside the taxonomy).
  */
@@ -37,13 +38,17 @@ export function scenarioHintCues(
   const id = scenario.pushback.id;
   if (isTeamObjectionId(id)) {
     const generic = localizedPushbackHints('custom', locale);
-    const coaching = team.find((o) => o.id === id)?.coaching ?? {};
-    const pick = (own: string[] | undefined, fallback: string[] | undefined) =>
-      own && own.length > 0 ? own : canned(fallback ?? []);
+    const objection = team.find((o) => o.id === id);
+    const coaching = objection?.coaching ?? {};
+    // Only French trainees read the French lists; English is unchanged.
+    const french = locale === 'fr' ? (objection?.coachingFr ?? {}) : {};
+    const nonEmpty = (list: string[] | undefined): list is string[] => !!list && list.length > 0;
+    const pick = (fr: string[] | undefined, own: string[] | undefined, fallback: string[] | undefined) =>
+      nonEmpty(fr) ? fr : nonEmpty(own) ? own : canned(fallback ?? []);
     const groups: CueGroups = {
-      acknowledge: pick(coaching.acknowledgePatterns, generic?.acknowledgePatterns),
-      clarify: pick(coaching.clarifyQuestions, generic?.clarifyQuestions),
-      takeAction: pick(coaching.takeActionPatterns, generic?.takeActionPatterns),
+      acknowledge: pick(french.acknowledgePatterns, coaching.acknowledgePatterns, generic?.acknowledgePatterns),
+      clarify: pick(french.clarifyQuestions, coaching.clarifyQuestions, generic?.clarifyQuestions),
+      takeAction: pick(french.takeActionPatterns, coaching.takeActionPatterns, generic?.takeActionPatterns),
     };
     if (!groups.acknowledge.length && !groups.clarify.length && !groups.takeAction.length) {
       return null;

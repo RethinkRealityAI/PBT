@@ -18,6 +18,8 @@ import {
   weakestDimension,
 } from '../features/scorecard/scorecardInsights';
 import { ResolutionJourney } from '../features/scorecard/ResolutionJourney';
+import { SessionDifficulty } from '../features/scorecard/SessionDifficulty';
+import { parseDifficulty } from '../shared/scenarios/difficulty';
 import { COLORS } from '../design-system/tokens';
 import { readStorage } from '../lib/storage';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
@@ -87,6 +89,16 @@ export function StatsScreen() {
   }, [report, chat.sessionId]);
 
   const journey = useMemo(() => emotionJourney(chat.messages), [chat.messages]);
+
+  // The level this session was played at, shown beside the score (scoring is
+  // the same standard at every level). From its saved record — what History
+  // will show — else the scenario on screen (an admin preview saves none).
+  const difficulty = useMemo(() => {
+    const saved = chat.sessionId
+      ? readStorage(SESSIONS_KEY).find((s) => s.id === chat.sessionId)
+      : undefined;
+    return parseDifficulty(saved?.difficulty) ?? parseDifficulty(scenario?.difficulty);
+  }, [chat.sessionId, scenario]);
 
   const retryScoring = async () => {
     setRescoring(true);
@@ -241,6 +253,11 @@ export function StatsScreen() {
                   ? t('stats.turnsOne')
                   : t('stats.turns', { count: chat.messages.length })}
               </div>
+              <SessionDifficulty
+                level={difficulty}
+                caption
+                style={{ marginTop: 10, fontSize: 12.5, color: 'var(--pbt-text)' }}
+              />
               {deltaChip && (
                 <div
                   style={{

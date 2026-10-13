@@ -51,6 +51,7 @@ function team(over: Partial<TeamObjection> & Pick<TeamObjection, 'id' | 'title'>
     species: ['dog', 'cat'],
     categoryId: 'category:probiotics',
     coaching: {},
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: null,

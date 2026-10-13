@@ -35,6 +35,8 @@ export function inspectScenario(req: ScenarioInspectRequest): Promise<ScenarioIn
 export interface SimulatorNotes {
   promptPrefix: string | null;
   promptSuffix: string | null;
+  /** What a great answer includes — sent to the SCORER only (End & score). */
+  successCriteria?: string | null;
 }
 
 /**
@@ -64,14 +66,21 @@ export async function simulateCustomerTurn(args: {
   return res.message;
 }
 
-/** Score a finished Test drive with the real rubric. Never persisted. */
+/**
+ * Score a finished Test drive with the real rubric. Never persisted. The
+ * draft's success criteria are ALWAYS sent (even empty), for the same reason
+ * as the notes above: without them a preview would fall back to the saved
+ * row's criteria.
+ */
 export async function simulateScore(args: {
   scenario: Scenario;
   transcript: ChatMessage[];
+  successCriteria?: string | null;
 }): Promise<ScoreReport> {
   const body: EvaluateRequest = {
     scenario: args.scenario,
     transcript: args.transcript,
+    promptOverrides: { successCriteria: args.successCriteria ?? null },
     mode: 'text',
     preview: true,
     allowTelemetry: false,

@@ -82,7 +82,11 @@ export function createSimulatorSession(): SimulatorSession {
     dispatch({ type: 'scoreStarted' });
     if (state.phase !== 'scoring') return;
     try {
-      const report = await simulateScore({ scenario: convo.scenario, transcript: messages });
+      const report = await simulateScore({
+        scenario: convo.scenario,
+        transcript: messages,
+        successCriteria: convo.notes.successCriteria ?? null,
+      });
       dispatch({ type: 'scored', run, report });
     } catch (err) {
       dispatch({ type: 'scoreFailed', run, error: describeSimError(err) });

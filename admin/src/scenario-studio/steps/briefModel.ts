@@ -124,3 +124,27 @@ export function segmentPrompt(prompt: string, notes: AdminNotesLike): PromptSegm
 export function isHeadingLine(line: string): boolean {
   return /^#{1,3} \S/.test(line);
 }
+
+/**
+ * One-tap starters for "What a great answer includes" — the scorer's
+ * per-scenario criteria. Phrased as observable behaviour, so the scorer can
+ * check them against the transcript.
+ */
+export const CRITERIA_EXAMPLES: NoteExample[] = [
+  {
+    label: 'Names the real worry back to the owner',
+    sentence: 'Names the owner’s real worry back to them in their own words before recommending anything.',
+  },
+  {
+    label: 'Offers a short, specific trial',
+    sentence: 'Offers a specific, time-bound trial (for example two weeks) rather than an open-ended change.',
+  },
+  {
+    label: 'Books a follow-up',
+    sentence: 'Agrees a concrete follow-up (a call or a recheck date) before the owner leaves.',
+  },
+  {
+    label: 'Product only after clarifying',
+    sentence: 'Mentions a product only after asking at least one open question about the pet’s situation.',
+  },
+];

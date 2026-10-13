@@ -328,6 +328,7 @@ describe('useTextChat — knowledge scope', () => {
     species: ['dog'],
     categoryId: 'category:gi',
     coaching: {},
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: null,

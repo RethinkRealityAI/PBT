@@ -60,6 +60,7 @@ const OBJECTION: Omit<TeamObjection, 'id' | 'title' | 'species' | 'categoryId'> 
   titleFr: null,
   exampleFr: null,
   coaching: {},
+  coachingFr: {},
   visible: true,
   sortOrder: null,
   updatedAt: null,

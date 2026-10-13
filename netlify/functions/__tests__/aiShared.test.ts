@@ -422,6 +422,7 @@ function teamObjection(over: Partial<TeamObjection> = {}): TeamObjection {
     species: ['dog', 'cat'],
     categoryId: 'category:probiotics',
     coaching: { rootConcerns: ['Believes probiotics are a supplement-aisle fad'] },
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: null,
@@ -471,12 +472,21 @@ describe('withTeamObjections', () => {
     expect(withTeamObjections(undefined, [])).toBeUndefined();
   });
 
-  it('adds nothing for hints without root concerns (the prompts would print an empty heading)', () => {
+  it('merges coaching without root concerns too — the scorer and coach read every list', () => {
     const config = { rag: { k: 2 } };
     const hintsOnly = teamObjection({
       coaching: { acknowledgePatterns: ['That makes sense to question.'], watchOuts: ['Pitching first'] },
     });
-    expect(withTeamObjections(config, [hintsOnly])).toBe(config);
+    const merged = withTeamObjections(config, [hintsOnly]);
+    expect(merged).not.toBe(config);
+    const knowledge = merged?.pushbacks?.[hintsOnly.id];
+    expect(knowledge?.watchOuts).toEqual(['Pitching first']);
+    expect(knowledge?.rootConcerns).toEqual([]);
+  });
+
+  it('adds nothing for an objection with no coaching at all', () => {
+    const config = { rag: { k: 2 } };
+    expect(withTeamObjections(config, [teamObjection({ coaching: {} })])).toBe(config);
   });
 
   it('ignores anything that is not a team id (a built-in can never be redefined here)', () => {
@@ -580,12 +590,54 @@ describe('loadPromptOverrides', () => {
     const scenario = { ...SEED_SCENARIOS[0], _overrideId: 'seed:0' };
     const a = await loadPromptOverrides(client(), scenario, {});
     const b = await loadPromptOverrides(client(), scenario, {});
-    expect(a).toEqual({ promptPrefix: 'be terse', promptSuffix: null });
+    expect(a).toEqual({ promptPrefix: 'be terse', promptSuffix: null, successCriteria: null });
     expect(b).toEqual(a);
     expect(handler).toHaveBeenCalledTimes(1);
     const ops = sb.callsFor('scenario_overrides')[0].ops;
+    expect(ops.find((o) => o.op === 'select')?.args[0]).toBe('prompt_prefix, prompt_suffix, success_criteria');
     expect(ops.find((o) => o.op === 'eq')?.args).toEqual(['scenario_id', 'seed:0']);
     expect(ops.find((o) => o.op === 'is')?.args).toEqual(['deleted_at', null]);
+  });
+
+  it("loads the scenario's success criteria with the notes", async () => {
+    sb.setHandler('scenario_overrides', () => ({
+      data: { prompt_prefix: null, prompt_suffix: null, success_criteria: 'Offers a two-week trial.' },
+      error: null,
+    }));
+    const scenario = { ...SEED_SCENARIOS[0], _overrideId: 'admin:crit' };
+    expect(await loadPromptOverrides(client(), scenario, {})).toEqual({
+      promptPrefix: null,
+      promptSuffix: null,
+      successCriteria: 'Offers a two-week trial.',
+    });
+  });
+
+  it('falls back to the notes alone on a project without the success_criteria column', async () => {
+    const handler = vi.fn((call: { ops: Array<{ op: string; args: unknown[] }> }) => {
+      const columns = call.ops.find((o) => o.op === 'select')?.args[0] as string;
+      return columns.includes('success_criteria')
+        ? { data: null, error: { code: 'PGRST204', message: "Could not find the 'success_criteria' column" } }
+        : { data: { prompt_prefix: 'be terse', prompt_suffix: null }, error: null };
+    });
+    sb.setHandler('scenario_overrides', handler);
+    const scenario = { ...SEED_SCENARIOS[0], _overrideId: 'admin:old-db' };
+    expect(await loadPromptOverrides(client(), scenario, {})).toEqual({
+      promptPrefix: 'be terse',
+      promptSuffix: null,
+      successCriteria: null,
+    });
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('a preview supplies its own success criteria, clamped; the saved row is not read', async () => {
+    const long = 'c'.repeat(AI_LIMITS.maxOverrideChars + 50);
+    const preview = await loadPromptOverrides(client(), { ...SEED_SCENARIOS[0], _overrideId: 'admin:x' }, {
+      preview: true,
+      promptOverrides: { successCriteria: long },
+    });
+    expect(preview?.successCriteria).toHaveLength(AI_LIMITS.maxOverrideChars);
+    expect(preview?.promptPrefix).toBeNull();
+    expect(sb.callsFor('scenario_overrides')).toHaveLength(0);
   });
 
   it('is undefined without an _overrideId', async () => {
