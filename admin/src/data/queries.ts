@@ -222,7 +222,15 @@ export function useScenarioOverrides(refreshKey: number = 0) {
 }
 
 export function upsertScenarioOverride(
-  row: Partial<ScenarioOverrideRow> & { scenario_id: string },
+  row: Partial<ScenarioOverrideRow> & {
+    scenario_id: string;
+    /**
+     * Optimistic-concurrency token: the row's `updated_at` as the editor
+     * loaded it (`null` = it saw no row). The server answers 409
+     * `{ code: 'stale', current }` when it no longer matches. Omit to skip.
+     */
+    baseUpdatedAt?: string | null;
+  },
 ): Promise<ScenarioOverrideRow> {
   return postJson<ScenarioOverrideRow>('admin-scenario-overrides', row);
 }

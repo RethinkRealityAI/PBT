@@ -24,14 +24,48 @@
 
 export const PREVIEW_PARAM = 'pbt_preview';
 
-/** True when this document was loaded inside the admin preview iframe. */
+/**
+ * Is this document embedded in another one? The admin dashboard is the only
+ * thing allowed to frame the app (`frame-ancestors 'self'` in netlify.toml),
+ * so "framed" is as good as "framed by the admin".
+ *
+ * jsdom's `window.top` is a non-configurable getter, so tests can't fake a
+ * frame by redefining it — hence the override hook below.
+ */
+let framedOverride: boolean | null = null;
+
+function isFramed(): boolean {
+  if (framedOverride !== null) return framedOverride;
+  try {
+    return window.self !== window.top;
+  } catch {
+    // A cross-origin parent makes `window.top` throw in some browsers —
+    // which can only happen when we ARE framed.
+    return true;
+  }
+}
+
+/**
+ * True when this document was loaded inside the admin preview iframe.
+ *
+ * Both halves matter. The query string alone is not enough: anyone can type
+ * `/?pbt_preview=1` into the address bar, and preview mode is exactly the
+ * mode that skips the Terms gate, the ECHO quiz, telemetry and history —
+ * an unmetered, invisible session. The frame check keeps that to the one
+ * place it belongs: the admin's same-origin iframe.
+ */
 export function isPreviewMode(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    return new URLSearchParams(window.location.search).has(PREVIEW_PARAM);
+    return new URLSearchParams(window.location.search).has(PREVIEW_PARAM) && isFramed();
   } catch {
     return false;
   }
+}
+
+/** Test-only: pretend the document is (or is not) inside an iframe. */
+export function __setFramedForTests(framed: boolean | null): void {
+  framedOverride = framed;
 }
 
 export type PreviewChatMode = 'text' | 'voice';

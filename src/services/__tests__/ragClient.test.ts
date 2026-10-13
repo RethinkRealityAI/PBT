@@ -220,30 +220,34 @@ describe('scenarioRetrievalCacheKey', () => {
 });
 
 describe('scenarioRetrievalFilters', () => {
+  // Every scenario carries its species as a HARD scope; absent = dog.
   it('prefers explicit knowledge slugs over the focus area', () => {
     expect(
       scenarioRetrievalFilters({ focusArea: 'weight', knowledgeSlugs: ['doc-1'] }),
-    ).toEqual({ docSlugs: ['doc-1'] });
+    ).toEqual({ docSlugs: ['doc-1'], species: 'dog' });
   });
 
   it('falls back to the focus area', () => {
-    expect(scenarioRetrievalFilters({ focusArea: 'gi' })).toEqual({ focus: 'gi' });
+    expect(scenarioRetrievalFilters({ focusArea: 'gi' })).toEqual({ focus: 'gi', species: 'dog' });
     expect(scenarioRetrievalFilters({ focusArea: 'gi', knowledgeSlugs: [] })).toEqual({
       focus: 'gi',
+      species: 'dog',
     });
   });
 
-  it('returns undefined for an unlinked scenario', () => {
-    expect(scenarioRetrievalFilters({})).toBeUndefined();
+  it('an unlinked scenario is scoped to its species and nothing else', () => {
+    expect(scenarioRetrievalFilters({})).toEqual({ species: 'dog' });
+    expect(scenarioRetrievalFilters({ species: 'cat' })).toEqual({ species: 'cat' });
   });
 
-  it('stays scope-free — the tool is added by the caller that owns it', () => {
-    // Scenario targeting and knowledge scope are different questions: the
-    // same scenario is retrieved as `roleplay` by the customer and as
+  it('stays tool-free — the tool is added by the caller that owns it', () => {
+    // Scenario targeting and knowledge TOOL scope are different questions:
+    // the same scenario is retrieved as `roleplay` by the customer and as
     // `scoring` by the scorer, so this helper must not pick one.
     expect(scenarioRetrievalFilters({ focusArea: 'gi' })).not.toHaveProperty('tool');
     expect({ ...scenarioRetrievalFilters({ focusArea: 'gi' }), tool: 'roleplay' }).toEqual({
       focus: 'gi',
+      species: 'dog',
       tool: 'roleplay',
     });
   });

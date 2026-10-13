@@ -29,6 +29,7 @@ import {
 import { getDataOverlay } from '../dataRegistry';
 import { DEFAULT_LOCALE, type Locale } from '../locales';
 import { localizedPushbackCategory } from './pushbacks';
+import { lifeStageLabel } from '../../shared/scenarios/species';
 
 /**
  * Overlay keys for the authored seed scenarios, aligned index-for-index with
@@ -61,6 +62,12 @@ export interface ScenarioDataOverlay {
   scenarios: Record<ScenarioL10nId, ScenarioDisplayL10n>;
   /** `LifeStage` union values are DB/enum keys; only their labels translate. */
   lifeStages: Record<LifeStage, string>;
+  /**
+   * How a CAT's `Puppy (<1)` stage reads ("Kitten (<1)" in English, which
+   * `lifeStageLabel` owns). The stored vocabulary is shared by both species;
+   * only the label is species-aware.
+   */
+  kittenLifeStage: string;
   /** Same for `OwnerPersona`. */
   personas: Record<OwnerPersona, string>;
 }
@@ -143,8 +150,23 @@ export function getLocalizedOpeningLine(
   return localizedScenario(scenario, locale).openingLine ?? '';
 }
 
-/** Display label for a life-stage chip (`Adult (3-7)` → `Adulte (3-7)`). */
-export function localizedLifeStage(stage: LifeStage, locale: Locale): string {
+/**
+ * Display label for a life-stage chip (`Adult (3-7)` → `Adulte (3-7)`).
+ *
+ * Pass the scenario's `species` so a cat's `Puppy (<1)` reads as a kitten
+ * ("Kitten (<1)" / « Chaton (<1) »). Omitted or anything but 'cat' → the
+ * dog label, exactly as before species existed.
+ */
+export function localizedLifeStage(
+  stage: LifeStage,
+  locale: Locale,
+  species?: unknown,
+): string {
+  const speciesLabel = lifeStageLabel(stage, species);
+  if (speciesLabel !== stage) {
+    // Only the kitten stage differs by species today.
+    return overlayFor(locale)?.kittenLifeStage ?? speciesLabel;
+  }
   return overlayFor(locale)?.lifeStages[stage] ?? stage;
 }
 

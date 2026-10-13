@@ -815,7 +815,7 @@ export function SimulationScreen() {
       setNote('');
       setSaveStatus('saved');
       setRefreshKey((k) => k + 1);
-      toast({ message: 'Simulation settings saved — live within a minute.', tone: 'success' });
+      toast({ message: 'AI tuning saved — live within a minute.', tone: 'success' });
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (err) {
       if (isSimulationConflict(err)) {
@@ -900,7 +900,7 @@ export function SimulationScreen() {
   return (
     <>
       <ContextBar
-        title="Roleplay & scoring"
+        title="AI tuning"
         subtitle="Set how the AI pet owner behaves and how sessions are marked. You can change all of it here — no developer needed — and it reaches everyone within a minute."
         actions={
           <button

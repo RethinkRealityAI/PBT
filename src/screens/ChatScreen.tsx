@@ -28,6 +28,8 @@ import {
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
+import { useResolvedLibraryScenarios, type ResolvedScenario } from '../data/useResolvedScenarios';
+import { seedScenarioId } from '../data/scenarioOverrides';
 import { SessionEndingOverlay } from '../features/chat/SessionEndingOverlay';
 import { ScenarioHints } from '../features/scenarios/ScenarioHints';
 import {
@@ -44,6 +46,7 @@ import type { CatalogKey } from '../i18n/catalog';
 import { useLanguage } from '../app/providers/LanguageProvider';
 import { getLocalizedOpeningLine, localizedScenario, localizedLifeStage, localizedPersona } from '../i18n/dataL10n/scenarios';
 import { localizedPushbackCategory } from '../i18n/dataL10n/pushbacks';
+import { adaptPetWords, speciesOf } from '../shared/scenarios/species';
 
 function useThinkingSound(active: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -79,6 +82,30 @@ function seedScenarioIndex(scenario: Scenario): number {
         seed.pushback.id === scenario.pushback.id &&
         seed.openingLine === scenario.openingLine),
   );
+}
+
+/**
+ * Where `scenario` sits in the rotation the in-chat prev/next arrows walk: the
+ * RESOLVED library (admin-hidden scenarios removed, scenarios the team
+ * published appended — what Home and the Library tab show), restricted to the
+ * scenario's own animal so a dog session never pages into a cat one. Matched
+ * by the stable `_overrideId` handle library scenarios carry; a raw seed
+ * object without one is matched structurally to its seed slot. `index` is -1
+ * for anything outside the library (a trainee-built scenario).
+ */
+function libraryRotation(
+  library: readonly ResolvedScenario[],
+  scenario: Scenario,
+): { ring: Scenario[]; index: number } {
+  const species = speciesOf(scenario.species);
+  const ring = library.filter((r) => speciesOf(r.scenario.species) === species);
+  let id = scenario._overrideId;
+  if (!id) {
+    const seedIndex = seedScenarioIndex(scenario);
+    if (seedIndex >= 0) id = seedScenarioId(seedIndex);
+  }
+  const index = id ? ring.findIndex((r) => r.scenarioId === id) : -1;
+  return { ring: ring.map((r) => r.scenario), index };
 }
 
 /** Emotion traffic-light colors blended from the learner's ECHO palette — orb / glow only. */
@@ -318,7 +345,7 @@ function ScenarioDetailsPanel({
 
               {/* Meta chips row */}
               <div className="flex flex-wrap gap-2" style={{ marginBottom: 10 }}>
-                {[scenario.breed, localizedLifeStage(scenario.age, locale), localizedPersona(scenario.persona, locale)].map((tag) => (
+                {[scenario.breed, localizedLifeStage(scenario.age, locale, scenario.species), localizedPersona(scenario.persona, locale)].map((tag) => (
                   <span
                     key={tag}
                     style={{
@@ -372,7 +399,12 @@ function ScenarioDetailsPanel({
                 <em style={{ fontWeight: 600, color: 'var(--pbt-text)', fontStyle: 'italic' }}>
                   {getLocalizedOpeningLine(scenario, locale) ||
                     scenario.pushbackNotes ||
-                    localizedPushbackCategory(scenario.pushback, locale).example}
+                    // Canned example copy is dog-worded ("My dog already
+                    // eats fine…") — re-worded for a cat scenario.
+                    adaptPetWords(
+                      localizedPushbackCategory(scenario.pushback, locale).example,
+                      scenario.species,
+                    )}
                 </em>
               </p>
 
@@ -763,7 +795,13 @@ export function ChatScreen() {
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const finalizeGenRef = useRef(0);
-  const scenarioIndex = scenario ? seedScenarioIndex(scenario) : -1;
+  const resolvedLibrary = useResolvedLibraryScenarios();
+  const rotation = useMemo(
+    () => (scenario ? libraryRotation(resolvedLibrary, scenario) : { ring: [], index: -1 }),
+    [resolvedLibrary, scenario],
+  );
+  const scenarioIndex = rotation.index;
+  const scenarioTotal = rotation.ring.length;
   const scenarioCounterIndex = scenarioIndex >= 0 ? scenarioIndex : undefined;
 
   // Per-scenario AI prompt wraps from the scenario's `scenario_overrides` row.
@@ -861,10 +899,10 @@ export function ChatScreen() {
 
   const cycleScenario = useCallback(
     (delta: number) => {
-      const currentIndex = scenario ? seedScenarioIndex(scenario) : -1;
-      if (currentIndex < 0) return;
-      const n = LIBRARY_SCENARIOS.length;
-      const nextScenario = LIBRARY_SCENARIOS[(currentIndex + delta + n) % n];
+      const { ring, index: currentIndex } = rotation;
+      if (currentIndex < 0 || ring.length === 0) return;
+      const n = ring.length;
+      const nextScenario = ring[(currentIndex + delta + n) % n];
       voiceStopRef.current();
       chatRef.current.reset();
       voiceFinalizeBusyRef.current = false;
@@ -874,7 +912,7 @@ export function ChatScreen() {
       // Re-open the details panel so Begin Simulation is available for the new scenario
       if (mode === 'voice') setScenarioDetailsOpen(true);
     },
-    [mode, scenario, setScenario],
+    [mode, rotation, setScenario],
   );
 
   const handleModeChange = useCallback((nextMode: 'text' | 'voice') => {
@@ -1107,10 +1145,10 @@ useThinkingSound(
           onNext={() => cycleScenario(1)}
           indexDisplay={
             scenarioCounterIndex !== undefined
-              ? `${scenarioCounterIndex + 1}/${LIBRARY_SCENARIOS.length}`
+              ? `${scenarioCounterIndex + 1}/${scenarioTotal}`
               : null
           }
-          disabled={scenarioIndex < 0}
+          disabled={scenarioIndex < 0 || scenarioTotal < 2}
         />
       </div>
 
@@ -1314,7 +1352,7 @@ useThinkingSound(
           onClose={() => setScenarioDetailsOpen(false)}
           onBegin={mode === 'voice' && voice.status === 'idle' ? beginVoice : undefined}
           scenarioIndex={scenarioIndex}
-          scenarioTotal={LIBRARY_SCENARIOS.length}
+          scenarioTotal={scenarioTotal}
         />
         {mode === 'text' && <CoachHintPanel coach={coach} />}
         <div style={{ position: 'relative' }}>

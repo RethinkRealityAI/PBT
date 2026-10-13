@@ -46,6 +46,8 @@ export const home: Record<keyof typeof enHome, string> = {
 
   // ── Carte vedette « choix du jour » ───────────────────────
   'home.pick.subtitle': '{breed}, {age}. Moteur : {driver}.',
+  'home.pick.subtitleCat': 'Chat · {breed}, {age}. Moteur : {driver}.',
+  'home.pick.speciesAria': 'Animal du choix du jour',
   'home.pick.start': 'Lancer le scénario',
   'home.pick.prevAria': 'Scénario précédent',
   'home.pick.nextAria': 'Scénario suivant',

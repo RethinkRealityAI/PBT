@@ -20,6 +20,7 @@ import {
   PERMISSION_CATEGORIES,
   SYSTEM_ROLES,
 } from '../../../src/shared/access/permissions';
+import { MockHttpError, STUDIO_POST_HANDLERS, STUDIO_ROUTES } from './mockStudio';
 import {
   ALL_KNOWLEDGE_SPECIES,
   DEFAULT_KNOWLEDGE_TOOLS,
@@ -33,7 +34,7 @@ const ahead = (ms: number) => new Date(now + ms).toISOString();
 
 const ME = '00000000-0000-4000-8000-000000000001';
 
-function seedSession(): void {
+function seedSession(temporaryPassword = false): void {
   const session = {
     access_token: 'mock-access-token',
     refresh_token: 'mock-refresh-token',
@@ -46,7 +47,9 @@ function seedSession(): void {
       role: 'authenticated',
       email: 'dapo@rethinkreality.ai',
       app_metadata: {},
-      user_metadata: { display_name: 'Dapo Ajisafe' },
+      // `?mock=temppassword`: signed in on a temporary password, so the
+      // "Choose your own password" screen shows before the portal.
+      user_metadata: { display_name: 'Dapo Ajisafe', ...(temporaryPassword ? { must_change_password: true } : {}) },
       created_at: ago(400 * DAY),
     },
   };
@@ -702,6 +705,9 @@ const POST_HANDLERS: Record<
   string,
   (body: Record<string, unknown>) => unknown | Promise<unknown>
 > = {
+  // Scenario Studio: assistant, inspector and the preview-only simulator
+  // (ai-roleplay / ai-evaluate) — see ./mockStudio.ts.
+  ...STUDIO_POST_HANDLERS,
   'admin-knowledge-search': knowledgeSearchMock,
   'admin-knowledge-analyze': knowledgeAnalyzeMock,
   'admin-knowledge': (body) => {
@@ -731,7 +737,9 @@ const POST_HANDLERS: Record<
 export function installAdminMocks(): void {
   // `?mock=signedout` skips the seeded session so the sign-in and recovery
   // screens can be reviewed too.
-  if (!/(^|[?&])mock=signedout(&|$)/.test(location.search)) seedSession();
+  if (!/(^|[?&])mock=signedout(&|$)/.test(location.search)) {
+    seedSession(/(^|[?&])mock=temppassword(&|$)/.test(location.search));
+  }
   const real = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -753,7 +761,10 @@ export function installAdminMocks(): void {
         } catch {
           parsed = {};
         }
-        return json(await handler(parsed));
+        const answer = await handler(parsed);
+        // A handler can refuse like the real function does (409 in_use, 400 …).
+        if (answer instanceof MockHttpError) return json(answer.body, answer.status);
+        return json(answer);
       }
       const posted = POST_ROUTES[name];
       return json(posted === undefined ? { ok: true, status: 'sent' } : posted);
@@ -763,7 +774,7 @@ export function installAdminMocks(): void {
     if (name === 'admin-knowledge' && /[?&]trash=/.test(url)) {
       return json({ documents: [] });
     }
-    const body = ROUTES[name];
+    const body = name in STUDIO_ROUTES ? STUDIO_ROUTES[name] : ROUTES[name];
     if (body === undefined) return json({ error: `No mock for ${name}` }, 404);
     return json(body);
   };

@@ -197,3 +197,41 @@ describe('life stage / persona labels', () => {
     expect(localizedPersona('Devoted', 'fr')).toBe('Dévoué');
   });
 });
+
+describe('species-aware life stage labels', () => {
+  it('shows a cat under one year as a kitten in every locale', () => {
+    expect(localizedLifeStage('Puppy (<1)', 'en', 'cat')).toBe('Kitten (<1)');
+    expect(localizedLifeStage('Puppy (<1)', 'fr', 'cat')).toBe('Chaton (<1)');
+  });
+
+  it('changes nothing else for a cat', () => {
+    for (const stage of LIFE_STAGES.filter((s) => s !== 'Puppy (<1)')) {
+      expect(localizedLifeStage(stage, 'en', 'cat')).toBe(stage);
+      expect(localizedLifeStage(stage, 'fr', 'cat')).toBe(overlay.lifeStages[stage]);
+    }
+  });
+
+  it('a dog, an absent species or junk reads exactly as before species existed', () => {
+    for (const species of ['dog', undefined, null, 'hamster', 'Cat']) {
+      for (const stage of LIFE_STAGES) {
+        expect(localizedLifeStage(stage, 'en', species)).toBe(localizedLifeStage(stage, 'en'));
+        expect(localizedLifeStage(stage, 'fr', species)).toBe(localizedLifeStage(stage, 'fr'));
+      }
+    }
+    expect(localizedLifeStage('Puppy (<1)', 'fr', 'dog')).toBe('Chiot (<1)');
+  });
+
+  it('French has a real kitten label (not English, not the puppy label)', () => {
+    expect(overlay.kittenLifeStage.trim().length).toBeGreaterThan(0);
+    expect(overlay.kittenLifeStage).not.toBe('Kitten (<1)');
+    expect(overlay.kittenLifeStage).not.toBe(overlay.lifeStages['Puppy (<1)']);
+    // Same "(<1)" suffix as the stored stage — the age band never translates.
+    expect(overlay.kittenLifeStage.endsWith('(<1)')).toBe(true);
+  });
+
+  it('localizedScenario keeps the species on the display copy', () => {
+    const cat: Scenario = { ...SEED_SCENARIOS[0], species: 'cat' };
+    expect(localizedScenario(cat, 'fr').species).toBe('cat');
+    expect(localizedScenario(cat, 'en').species).toBe('cat');
+  });
+});

@@ -65,6 +65,10 @@ export const scenarios: ScenarioDataOverlay = {
     'Senior (7+)': 'Sénior (7+)',
   },
 
+  // Un chat de moins d'un an : même valeur stockée (`Puppy (<1)`), libellé
+  // propre à l'espèce.
+  kittenLifeStage: 'Chaton (<1)',
+
   personas: {
     Skeptical: 'Sceptique',
     Anxious: 'Anxieux',

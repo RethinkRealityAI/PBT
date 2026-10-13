@@ -124,6 +124,19 @@ export const STORAGE_KEYS = {
     fallback: true,
     validate: (v): v is boolean => typeof v === 'boolean',
   } as StorageKeyDef<boolean>,
+
+  /**
+   * Which animal the trainee is training on ('dog' | 'cat') — the shared
+   * "Which animal?" choice behind the scenario builder, its library tab and
+   * Home's Today's-pick switch. Values mirror `ScenarioSpecies`
+   * (src/shared/scenarios/species.ts; inline here like `locale` to keep lib
+   * free of feature imports). Read it through `useTrainingSpecies()`.
+   */
+  trainSpecies: {
+    key: 'train_species',
+    fallback: 'dog' as 'dog' | 'cat',
+    validate: (v): v is 'dog' | 'cat' => v === 'dog' || v === 'cat',
+  } as StorageKeyDef<'dog' | 'cat'>,
 };
 
 /**

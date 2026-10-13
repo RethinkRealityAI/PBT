@@ -9,7 +9,7 @@ import { Sidebar, SidebarTrigger, useSidebarState } from './primitives/Sidebar';
 import { AccessProvider } from './primitives/access';
 import { ConfirmProvider } from './primitives/Confirm';
 import { ToastProvider } from './primitives/Toast';
-import { defaultTab, findNavItem, visibleItems, visibleTabs } from './primitives/nav';
+import { defaultTab, findNavItem, legacyRoute, visibleItems, visibleTabs } from './primitives/nav';
 import { useHashRoute } from './lib/route';
 import { OverviewScreen } from './screens/OverviewScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
@@ -22,7 +22,8 @@ import { QualityScreen } from './screens/QualityScreen';
 import { FeedbackScreen } from './screens/FeedbackScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { FlagsScreen } from './screens/FlagsScreen';
-import { ScenarioBuilderScreen } from './screens/ScenarioBuilderScreen';
+import { ScenarioStudioScreen } from './scenario-studio/ScenarioStudioScreen';
+import { CategoriesScreen } from './scenario-studio/objections/CategoriesScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { PreviewScreen } from './screens/PreviewScreen';
 import { SimulationScreen } from './screens/SimulationScreen';
@@ -30,6 +31,8 @@ import { KnowledgeScreen } from './screens/KnowledgeScreen';
 import { TeamScreen } from './screens/TeamScreen';
 import { EmailScreen } from './screens/EmailScreen';
 import { InviteAcceptPage, ResetPasswordPage } from './screens/AuthPages';
+import { ChangePasswordDialog, ChooseOwnPasswordScreen } from './screens/PasswordScreens';
+import { mustChangePassword } from './lib/passwords';
 import { SignInGate } from './screens/SignInGate';
 import type { Whoami } from './data/access';
 import type { TeamTab } from './screens/TeamScreen';
@@ -40,7 +43,12 @@ type AdminState =
   | { status: 'signed_out' }
   | { status: 'not_admin' }
   | { status: 'error'; message: string }
-  | { status: 'admin'; me: Whoami };
+  | {
+      status: 'admin';
+      me: Whoami;
+      /** Signed in with a temporary password someone set — must choose their own first. */
+      mustChangePassword: boolean;
+    };
 
 /**
  * Two paths under /admin render before the auth gate: accepting an invitation
@@ -58,7 +66,21 @@ export function App() {
   const [auth, setAuth] = useState<AdminState>({ status: 'loading' });
   const [range, setRange] = useState<Range>('28d');
   const [query, setQuery] = useState('');
-  const [hashRoute, navigate] = useHashRoute();
+  /** The temporary password was replaced this session (the flag may lag in the session). */
+  // WHICH account already replaced its temporary password in this tab — a
+  // plain boolean leaked to the next admin who signs in here without a
+  // reload (sign-out doesn't reload), skipping their prompt.
+  const [passwordChosenFor, setPasswordChosenFor] = useState<string | null>(null);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [rawHashRoute, navigate] = useHashRoute();
+  // Old `#/library/…` links (the Library destination was split into Scenario
+  // Studio, Knowledge and AI tuning) and `#/scenarios/objections` (now
+  // Categories) resolve to their new home this render,
+  // and the URL is rewritten in place so Back doesn't return to the old one.
+  const hashRoute = rawHashRoute ? legacyRoute(rawHashRoute) : null;
+  useEffect(() => {
+    if (rawHashRoute && hashRoute && hashRoute !== rawHashRoute) navigate(hashRoute, true);
+  }, [rawHashRoute, hashRoute, navigate]);
   const sidebar = useSidebarState();
   const route = publicRoute();
 
@@ -79,7 +101,7 @@ export function App() {
       // deployment issues are debuggable).
       try {
         const me = await apiFetch<Whoami>('admin-whoami');
-        if (!cancelled) setAuth({ status: 'admin', me });
+        if (!cancelled) setAuth({ status: 'admin', me, mustChangePassword: mustChangePassword(session.user) });
       } catch (err) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : 'Auth check failed';
@@ -99,6 +121,34 @@ export function App() {
       sub.subscription.unsubscribe();
     };
   }, [route]);
+
+  /*
+   * Resolve the URL against what this role may actually open. Three things can
+   * go wrong and all three land on the same fallback rather than a 403 screen:
+   * no hash at all (first visit), a hash naming a destination that no longer
+   * exists (old bookmark), and a hash naming one this role lost access to
+   * (their permissions changed while they had the tab open).
+   *
+   * Computed (and its effect declared) BEFORE the early returns below: a hook
+   * that only runs once auth has resolved changes the hook count between
+   * renders, and React throws ("Rendered more hooks than during the previous
+   * render") — the whole portal went blank after sign-in.
+   */
+  const resolved = auth.status === 'admin' ? resolveDestination(auth.me.permissions, hashRoute) : null;
+
+  // Canonicalise the address bar: a hash the fallback above resolved to a
+  // DIFFERENT destination or tab (a forbidden screen, a tab this role can't
+  // open) would otherwise sit in the URL while another screen renders — and
+  // be what Back and a copied link return to.
+  const resolvedKey = resolved?.item.key ?? null;
+  const resolvedTab = resolved?.tab ?? '';
+  useEffect(() => {
+    if (!hashRoute || resolvedKey === null) return;
+    const wantTab = resolvedTab || null;
+    if (hashRoute.screen !== resolvedKey || (hashRoute.tab ?? null) !== wantTab) {
+      navigate({ screen: resolvedKey, tab: wantTab }, true);
+    }
+  }, [hashRoute, resolvedKey, resolvedTab, navigate]);
 
   if (route === 'invite') return <InviteAcceptPage />;
   if (route === 'reset') return <ResetPasswordPage />;
@@ -185,11 +235,23 @@ export function App() {
     );
   }
 
+  // A temporary password (set by another admin) is replaced before the
+  // portal opens. Rendered after every hook above — see the note on
+  // `resolved` — so the extra screen can't change the hook count.
+  if (auth.mustChangePassword && passwordChosenFor !== auth.me.user_id) {
+    return (
+      <ChooseOwnPasswordScreen
+        email={auth.me.email}
+        onDone={() => setPasswordChosenFor(auth.me.user_id)}
+        onSignOut={() => void getSupabase().auth.signOut()}
+      />
+    );
+  }
+
   const { me } = auth;
   const perms = me.permissions;
-  const allowed = visibleItems(perms);
 
-  if (allowed.length === 0) {
+  if (!resolved) {
     return (
       <FullCenterMessage>
         <Glass padding={24} radius={16}>
@@ -203,18 +265,7 @@ export function App() {
     );
   }
 
-  /*
-   * Resolve the URL against what this role may actually open. Three things can
-   * go wrong and all three land on the same fallback rather than a 403 screen:
-   * no hash at all (first visit), a hash naming a destination that no longer
-   * exists (old bookmark), and a hash naming one this role lost access to
-   * (their permissions changed while they had the tab open).
-   */
-  const item =
-    (hashRoute && allowed.find((i) => i.key === hashRoute.screen)) ?? allowed[0];
-  const tabs = visibleTabs(item, perms);
-  const tab =
-    tabs.find((t) => t.key === hashRoute?.tab)?.key ?? defaultTab(item, perms) ?? '';
+  const { item, tabs, tab } = resolved;
 
   const go = (screen: AdminScreen, nextTab?: string) => {
     // Clear the shared search on destination change — a filter typed on one
@@ -260,6 +311,7 @@ export function App() {
           role: me.role_name || me.role || 'admin',
         }}
         onSignOut={() => void getSupabase().auth.signOut()}
+        onChangePassword={() => setChangePasswordOpen(true)}
         collapsed={sidebar.collapsed}
         onToggleCollapsed={() => sidebar.setCollapsed(!sidebar.collapsed)}
         compact={sidebar.compact}
@@ -329,16 +381,17 @@ export function App() {
             />
           )}
 
-          {item.key === 'library' && tab === 'scenarios' && (
-            <ScenariosScreen query={query} onQuery={setQuery} />
+          {item.key === 'scenarios' && tab === 'studio' && (
+            <ScenarioStudioScreen query={query} onQuery={setQuery} meUserId={me.user_id} />
           )}
-          {item.key === 'library' && tab === 'builder' && (
-            <ScenarioBuilderScreen query={query} onQuery={setQuery} />
+          {item.key === 'scenarios' && tab === 'categories' && (
+            <CategoriesScreen query={query} onQuery={setQuery} />
           )}
-          {item.key === 'library' && tab === 'knowledge' && (
-            <KnowledgeScreen query={query} onQuery={setQuery} />
+          {item.key === 'scenarios' && tab === 'trainee' && (
+            <ScenariosScreen query={query} onQuery={setQuery} onOpenStudio={() => go('scenarios', 'studio')} />
           )}
-          {item.key === 'library' && tab === 'simulation' && <SimulationScreen />}
+          {item.key === 'knowledge' && <KnowledgeScreen query={query} onQuery={setQuery} />}
+          {item.key === 'tuning' && <SimulationScreen />}
 
           {item.key === 'feedback' && tab === 'sessions' && (
             <FeedbackScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
@@ -359,11 +412,26 @@ export function App() {
           {item.key === 'preview' && <PreviewScreen />}
         </SectionTabsProvider>
       </div>
+      {/* Outside the sidebar: its backdrop-filter would trap a fixed dialog. */}
+      <ChangePasswordDialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} />
     </div>
     </ConfirmProvider>
     </ToastProvider>
     </AccessProvider>
   );
+}
+
+/** The destination + tab this role lands on for a hash (null = none it may open). */
+function resolveDestination(
+  perms: readonly string[],
+  hashRoute: { screen: string; tab?: string | null } | null,
+): { item: ReturnType<typeof visibleItems>[number]; tabs: ReturnType<typeof visibleTabs>; tab: string } | null {
+  const allowed = visibleItems(perms);
+  if (allowed.length === 0) return null;
+  const item = (hashRoute && allowed.find((i) => i.key === hashRoute.screen)) ?? allowed[0];
+  const tabs = visibleTabs(item, perms);
+  const tab = tabs.find((t) => t.key === hashRoute?.tab)?.key ?? defaultTab(item, perms) ?? '';
+  return { item, tabs, tab };
 }
 
 function BackgroundHalos() {

@@ -13,6 +13,10 @@ import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { useUserScenarios } from '../data/queries';
 import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
+import { pushbackLabel } from '../lib/labels';
+import { Button } from '../primitives/form';
+import { lifeStageLabel, speciesOf } from '../../../src/shared/scenarios/species';
+import { SpeciesIcon } from '../../../src/design-system/SpeciesIcon';
 import type { UserScenario } from '../data/types';
 import { ScenarioDetailModal } from './ScenarioDetailModal';
 
@@ -23,12 +27,16 @@ const DIFFICULTY_LABEL: Record<number, string> = {
   4: 'Combative',
 };
 
+
 export function ScenariosScreen({
   query,
   onQuery,
+  onOpenStudio,
 }: {
   query: string;
   onQuery: (q: string) => void;
+  /** Jump to the Studio, where a trainee's scenario is added to the library. */
+  onOpenStudio?: () => void;
 }) {
   const scenarios = useUserScenarios(500);
   const [selected, setSelected] = useState<UserScenario | null>(null);
@@ -38,7 +46,7 @@ export function ScenariosScreen({
       scenarios.data.filter((s) =>
         !query
           ? true
-          : `${s.title} ${s.breed ?? ''} ${s.pushback_id ?? ''}`
+          : `${s.title} ${s.breed ?? ''} ${pushbackLabel(s.pushback_id, [], '')} ${speciesOf(s.species)}`
               .toLowerCase()
               .includes(query.toLowerCase()),
       ),
@@ -48,7 +56,9 @@ export function ScenariosScreen({
   const topByPushback = useMemo(() => {
     const groups = new Map<string, { count: number; plays: number; scores: number[] }>();
     for (const s of scenarios.data) {
-      const key = s.pushback_id ?? s.title;
+      // Grouped by objection, named the way a person reads it (a team
+      // objection's `team:` id never reaches the screen).
+      const key = s.pushback_id ? pushbackLabel(s.pushback_id) : s.title;
       const g = groups.get(key) ?? { count: 0, plays: 0, scores: [] };
       g.count++;
       g.plays += s.plays;
@@ -74,12 +84,23 @@ export function ScenariosScreen({
   return (
     <>
       <ContextBar
-        title="Scenarios"
-        subtitle="Scenarios built and replayed"
+        title="Trainee-built scenarios"
+        subtitle="Scenarios trainees built for their own practice, and how often they replay them. To offer one to your whole team, use “Add to library” on its card in the Studio."
         query={query}
         onQuery={onQuery}
       />
       <ScreenShell>
+        {onOpenStudio && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, color: COLOR.inkSoft }}>
+            <span>
+              A trainee’s scenario stays theirs. “Add to library” in the Studio makes a copy your team can
+              check, test and publish.
+            </span>
+            <Button size="sm" tone="secondary" onClick={onOpenStudio}>
+              Open the Studio
+            </Button>
+          </div>
+        )}
         <div
           style={{
             display: 'grid',
@@ -249,7 +270,13 @@ export function ScenariosScreen({
                 </div>
               </div>
               <div style={{ fontSize: 12, color: COLOR.inkSoft }}>
-                {s.breed ?? '—'} · {s.life_stage ?? '—'}
+                <SpeciesIcon
+                  species={speciesOf(s.species)}
+                  size={14}
+                  title={speciesOf(s.species) === 'cat' ? 'Cat' : 'Dog'}
+                  style={{ marginRight: 4, verticalAlign: '-2px' }}
+                />
+                {s.breed ?? '—'} · {lifeStageLabel(s.life_stage, s.species) || '—'}
               </div>
               <div
                 style={{

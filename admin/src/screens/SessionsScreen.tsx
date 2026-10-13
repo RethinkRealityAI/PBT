@@ -24,7 +24,7 @@ import { fmtAgo, fmtDuration } from '../lib/format';
 import {
   ENDED_REASON_LABELS,
   MODE_LABELS,
-  PUSHBACK_LABELS,
+  pushbackLabel,
   humanize,
   labelOf,
 } from '../lib/labels';
@@ -70,7 +70,7 @@ export function SessionsScreen({
       // Search the label the row actually shows, not just the stored slug —
       // "obesity denial" has to find a `weight-denial` session.
       const hay = `${u?.display_name ?? ''} ${s.scenario_summary ?? ''} ${s.pushback_id ?? ''} ${
-        s.pushback_id ? labelOf(PUSHBACK_LABELS, s.pushback_id) : ''
+        s.pushback_id ? pushbackLabel(s.pushback_id) : ''
       }`.toLowerCase();
       if (!hay.includes(query.toLowerCase())) return false;
     }
@@ -247,7 +247,7 @@ export function SessionsScreen({
                         }}
                       >
                         {s.scenario_summary ??
-                          (s.pushback_id ? labelOf(PUSHBACK_LABELS, s.pushback_id) : '—')}
+                          (s.pushback_id ? pushbackLabel(s.pushback_id) : '—')}
                       </div>
                       <div style={{ fontSize: 11, color: COLOR.inkMute }}>
                         {s.driver ? humanize(s.driver) : '—'} ·{' '}

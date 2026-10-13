@@ -14,8 +14,10 @@
  * drawer left open across navigations is a nuisance on a phone.
  */
 import { useEffect, useState } from 'react';
+import { BookOpen, KeyRound } from 'lucide-react';
 import { COLOR } from '../lib/tokens';
 import {
+  DOCUMENTATION_URL,
   visibleSections,
   type AdminScreen,
   type NavItem,
@@ -72,6 +74,7 @@ export function Sidebar({
   permissions,
   identity,
   onSignOut,
+  onChangePassword,
   collapsed,
   onToggleCollapsed,
   compact,
@@ -83,6 +86,8 @@ export function Sidebar({
   permissions: readonly string[];
   identity: { name: string; email: string | null; role: string };
   onSignOut: () => void;
+  /** Opens "Change password" (rendered by the caller, outside the rail). */
+  onChangePassword?: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   compact: boolean;
@@ -254,6 +259,7 @@ export function Sidebar({
               </RailButton>
             </div>
           )}
+          <DocsLink showLabel={showLabels} />
           <div
             style={{
               display: 'flex',
@@ -308,6 +314,11 @@ export function Sidebar({
                     {identity.role}
                   </div>
                 </div>
+                {onChangePassword && (
+                  <RailButton label="Change password" onClick={onChangePassword}>
+                    <KeyRound aria-hidden size={13} style={{ verticalAlign: '-2px' }} />
+                  </RailButton>
+                )}
                 <RailButton label="Sign out" onClick={onSignOut}>
                   ⏻
                 </RailButton>
@@ -373,6 +384,53 @@ function NavRow({
       </span>
       {showLabel && <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>}
     </button>
+  );
+}
+
+/** The admin handbook, in a new tab — same row shape as a destination. */
+function DocsLink({ showLabel }: { showLabel: boolean }) {
+  return (
+    <a
+      href={DOCUMENTATION_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Documentation (opens in a new tab)"
+      title={showLabel ? 'Opens in a new tab' : 'Documentation (opens in a new tab)'}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        width: showLabel ? '100%' : 44,
+        margin: showLabel ? '0 0 6px' : '0 auto 8px',
+        height: 34,
+        padding: showLabel ? '0 10px' : 0,
+        justifyContent: showLabel ? 'flex-start' : 'center',
+        boxSizing: 'border-box',
+        borderRadius: 10,
+        textDecoration: 'none',
+        fontFamily: 'var(--pbt-font)',
+        fontSize: 12.5,
+        fontWeight: 600,
+        color: COLOR.inkSoft,
+        transition: 'background 0.14s ease',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = 'rgba(60,20,15,0.05)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'transparent';
+      }}
+    >
+      <BookOpen aria-hidden size={15} style={{ width: 16, flexShrink: 0 }} />
+      {showLabel && (
+        <>
+          <span style={{ flex: 1, minWidth: 0 }}>Documentation</span>
+          <span aria-hidden style={{ fontSize: 11, color: COLOR.inkMute }}>
+            ↗
+          </span>
+        </>
+      )}
+    </a>
   );
 }
 

@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
 import { Chip } from '../design-system/Chip';
 import { PillButton } from '../design-system/PillButton';
-import { Segmented } from '../design-system/Segmented';
+import { Segmented, type SegmentedOption } from '../design-system/Segmented';
+import { SpeciesIcon } from '../design-system/SpeciesIcon';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
@@ -12,25 +13,36 @@ import { useScenario } from '../app/providers/ScenarioProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { useSavedPets } from '../features/pet-analyzer/useSavedPets';
 import {
-  BREEDS,
-  DIFFICULTY_DESCRIPTIONS,
-  DIFFICULTY_LABELS,
-  LIBRARY_SCENARIOS,
   LIFE_STAGES,
   OWNER_PERSONAS,
   PUSHBACK_CATEGORIES,
-  SEED_SCENARIOS,
   type Difficulty,
   type LifeStage,
   type OwnerPersona,
   type PushbackCategory,
   type Scenario,
 } from '../data/scenarios';
+import { useResolvedLibraryScenarios, type ResolvedScenario } from '../data/useResolvedScenarios';
 import { DRIVER_KEYS, type DriverKey } from '../design-system/tokens';
 import { persistUserScenario } from '../features/scenarios/persistScenario';
+import { useTrainingSpecies } from '../features/scenarios/useTrainingSpecies';
+import {
+  useObjectionCatalog,
+  type TrainingCategory,
+  type TrainingObjection,
+} from '../features/scenarios/useObjectionCatalog';
 import { logEvent } from '../lib/analytics';
+import { SCENARIO_LIMITS } from '../shared/scenarios/limits';
+import { objectionCategoryId } from '../shared/scenarios/objectionCategories';
+import type { TeamObjection } from '../shared/scenarios/objections';
+import {
+  POPULAR_BREEDS,
+  speciesOf,
+  type ScenarioSpecies,
+} from '../shared/scenarios/species';
 import { useT } from '../i18n/useT';
 import { useLanguage } from '../app/providers/LanguageProvider';
+import type { Locale } from '../i18n/locales';
 import {
   localizedScenario,
   localizedLifeStage,
@@ -44,9 +56,78 @@ import {
 
 type Tab = 'build' | 'library';
 
-// Dropdown: all named pushbacks (not custom)
-const DROPDOWN_PUSHBACKS = PUSHBACK_CATEGORIES.filter((c) => c.id !== 'custom');
 const CUSTOM_PUSHBACK = PUSHBACK_CATEGORIES.find((c) => c.id === 'custom')!;
+/** Quick-pick breed chips shown per animal (the field stays free text). */
+const BREED_CHIP_COUNT = 6;
+
+function breedChips(species: ScenarioSpecies): readonly string[] {
+  return POPULAR_BREEDS[species].slice(0, BREED_CHIP_COUNT);
+}
+
+/** One "filter by category / objection" chip on the Library tab. */
+interface ObjectionFilterOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * The Library's group for scenarios outside every known category: "Other
+ * pushback" (`custom`), or a team objection whose category this snapshot
+ * doesn't carry. Never a real category id (those are built-in words or
+ * `category:<slug>`).
+ */
+const OTHER_GROUP = '__other';
+
+/** The category group a library scenario files under (see OTHER_GROUP). */
+function libraryGroupOf(
+  item: ResolvedScenario,
+  team: readonly TeamObjection[],
+  categories: readonly TrainingCategory[],
+): string {
+  const id = objectionCategoryId(item.scenario.pushback.id, team);
+  return id && categories.some((c) => c.id === id) ? id : OTHER_GROUP;
+}
+
+/**
+ * The categories present in a list of library scenarios, in category display
+ * order, with the "Other" group (labelled `otherLabel`) last.
+ */
+function libraryCategoryFilters(
+  items: readonly ResolvedScenario[],
+  team: readonly TeamObjection[],
+  categories: readonly TrainingCategory[],
+  otherLabel: string,
+): ObjectionFilterOption[] {
+  const present = new Set(items.map((item) => libraryGroupOf(item, team, categories)));
+  const out: ObjectionFilterOption[] = categories
+    .filter((c) => present.has(c.id))
+    .map((c) => ({ id: c.id, label: c.label }));
+  if (present.has(OTHER_GROUP)) out.push({ id: OTHER_GROUP, label: otherLabel });
+  return out;
+}
+
+/**
+ * The objections present in a list of library scenarios, labelled in the
+ * locale, ordered like the catalogue (built-ins, then the team's), with
+ * "Other pushback" and anything the catalogue doesn't know last.
+ */
+function libraryObjectionFilters(
+  items: readonly ResolvedScenario[],
+  catalogue: readonly TrainingObjection[],
+  locale: Locale,
+): ObjectionFilterOption[] {
+  const seen = new Map<string, ObjectionFilterOption>();
+  for (const { scenario } of items) {
+    const id = scenario.pushback.id;
+    if (seen.has(id)) continue;
+    seen.set(id, { id, label: localizedPushbackCategory(scenario.pushback, locale).title });
+  }
+  const rank = (id: string) => {
+    const i = catalogue.findIndex((o) => o.id === id);
+    return i >= 0 ? i : catalogue.length + (id === 'custom' ? 0 : 1);
+  };
+  return [...seen.values()].sort((a, b) => rank(a.id) - rank(b.id));
+}
 
 export function CreateScreen() {
   const { go } = useNavigation();
@@ -55,18 +136,29 @@ export function CreateScreen() {
   const { savedPets } = useSavedPets();
   const t = useT();
   const { locale } = useLanguage();
+  const [species, setSpecies] = useTrainingSpecies();
+  const { objections, teamObjections, categories, categoriesFor, objectionsIn, categoryById } =
+    useObjectionCatalog();
+  const resolvedLibrary = useResolvedLibraryScenarios();
   const tabOptions: { value: Tab; label: string }[] = [
     { value: 'build', label: t('create.tab.build') },
     { value: 'library', label: t('create.tab.library') },
+  ];
+  // Line icons, not emoji: white on the active gradient, muted otherwise.
+  const animalOptions: SegmentedOption<ScenarioSpecies>[] = [
+    { value: 'dog', label: t('create.animal.dog'), icon: <SpeciesIcon species="dog" size={14} /> },
+    { value: 'cat', label: t('create.animal.cat'), icon: <SpeciesIcon species="cat" size={14} /> },
   ];
 
   const [tab, setTab] = useState<Tab>('build');
   // Default matches the first quick-pick chip so it renders as selected
   // on load instead of an orphan value no chip highlights.
-  const [breed, setBreed] = useState(BREEDS[0]);
+  const [breed, setBreed] = useState(() => POPULAR_BREEDS[species][0]);
   const [weight, setWeight] = useState('');
   const [age, setAge] = useState<LifeStage>(LIFE_STAGES[2]);
-  const [pushback, setPushback] = useState<PushbackCategory>(PUSHBACK_CATEGORIES[0]);
+  const [pushbackId, setPushbackId] = useState<string>(PUSHBACK_CATEGORIES[0].id);
+  /** Build tab category; null = the first one available for the animal. */
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [persona, setPersona] = useState<OwnerPersona>(OWNER_PERSONAS[0]);
   const [difficulty, setDifficulty] = useState<Difficulty>(1);
@@ -76,9 +168,65 @@ export function CreateScreen() {
   const [pushbackError, setPushbackError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [driver, setDriver] = useState<DriverKey>(profile?.primary ?? 'Activator');
+  const [libraryCategory, setLibraryCategory] = useState<string>('all');
+  const [libraryFilter, setLibraryFilter] = useState<string>('all');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const isCustomSelected = pushback.id === 'custom';
+  // Build: animal → category → objection. The categories offered are those
+  // holding at least one visible objection for this animal; the dropdown
+  // offers that category's objections ("Other pushback" is its own card
+  // below the dropdown, outside every category).
+  const buildCategories = categoriesFor(species);
+  const activeCategory: TrainingCategory | null =
+    buildCategories.find((c) => c.id === categoryId) ?? buildCategories[0] ?? null;
+  const pickable: TrainingObjection[] = activeCategory ? objectionsIn(activeCategory.id, species) : [];
+  // A choice that no longer applies (the snapshot refreshed and the team
+  // retired it) falls back to the first available one rather than building a
+  // scenario on an objection the picker no longer shows.
+  const selectedObjection: TrainingObjection | null =
+    pushbackId === 'custom'
+      ? null
+      : (pickable.find((o) => o.id === pushbackId) ?? pickable[0] ?? null);
+  const isCustomSelected = selectedObjection == null;
+  const pushbackCategory: PushbackCategory = selectedObjection?.pushback ?? CUSTOM_PUSHBACK;
+
+  // Library: the RESOLVED library (admin-hidden seeds removed, scenarios the
+  // team published appended), for the chosen animal only — then category
+  // chips (when there are at least two groups), then the chosen category's
+  // objection chips (when it holds at least two objections), then the cards.
+  const libraryForAnimal = useMemo(
+    () => resolvedLibrary.filter((r) => speciesOf(r.scenario.species) === species),
+    [resolvedLibrary, species],
+  );
+  const otherLabel = t('create.pushback.otherTitle');
+  const categoryFilters = useMemo(
+    () => libraryCategoryFilters(libraryForAnimal, teamObjections, categories, otherLabel),
+    [libraryForAnimal, teamObjections, categories, otherLabel],
+  );
+  const showCategoryFilters = categoryFilters.length > 1;
+  const activeLibraryCategory =
+    showCategoryFilters && categoryFilters.some((f) => f.id === libraryCategory)
+      ? libraryCategory
+      : 'all';
+  const libraryInCategory =
+    activeLibraryCategory === 'all'
+      ? libraryForAnimal
+      : libraryForAnimal.filter(
+          (r) => libraryGroupOf(r, teamObjections, categories) === activeLibraryCategory,
+        );
+  // Objection chips narrow a CHOSEN category; under "All categories" the
+  // category row is the first step. With a single category (no category row)
+  // the objection chips work across the whole animal, as before.
+  const objectionScope =
+    showCategoryFilters && activeLibraryCategory === 'all' ? [] : libraryInCategory;
+  const libraryFilters = libraryObjectionFilters(objectionScope, objections, locale);
+  const showObjectionFilters = libraryFilters.length > 1;
+  const activeFilter =
+    showObjectionFilters && libraryFilters.some((f) => f.id === libraryFilter) ? libraryFilter : 'all';
+  const visibleLibrary =
+    activeFilter === 'all'
+      ? libraryInCategory
+      : libraryInCategory.filter((r) => r.scenario.pushback.id === activeFilter);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -92,10 +240,55 @@ export function CreateScreen() {
     return () => document.removeEventListener('mousedown', handler);
   }, [dropdownOpen]);
 
-  const selectPushback = (cat: PushbackCategory) => {
-    setPushback(cat);
+  const selectPushback = (id: string) => {
+    setPushbackId(id);
     setPushbackError(null);
     setDropdownOpen(false);
+  };
+
+  // Picking a category picks from it: the dropdown moves to its first
+  // objection (kept when the current one is already in it).
+  const selectCategory = (id: string) => {
+    setCategoryId(id);
+    const inCategory = objectionsIn(id, species);
+    if (!inCategory.some((o) => o.id === pushbackId)) {
+      setPushbackId(inCategory[0]?.id ?? 'custom');
+    }
+    setPushbackError(null);
+    setDropdownOpen(false);
+  };
+
+  const selectLibraryCategory = (id: string) => {
+    setLibraryCategory(id);
+    setLibraryFilter('all');
+  };
+
+  const changeSpecies = (next: ScenarioSpecies) => {
+    if (next === species) return;
+    // Swap the breed only when it is still one of the previous animal's
+    // suggestions — a breed the trainee typed is theirs to keep.
+    const trimmed = breed.trim();
+    if (trimmed === POPULAR_BREEDS[species][0] || breedChips(species).includes(trimmed)) {
+      setBreed(POPULAR_BREEDS[next][0]);
+      setBreedError(null);
+    }
+    // A category with nothing for the new animal gives way to the first one
+    // that has something; an objection that doesn't apply gives way to the
+    // first one of that category.
+    const nextCategories = categoriesFor(next);
+    const nextCategory =
+      nextCategories.find((c) => c.id === activeCategory?.id) ?? nextCategories[0] ?? null;
+    setCategoryId(nextCategory?.id ?? null);
+    if (pushbackId !== 'custom') {
+      const nextPickable = nextCategory ? objectionsIn(nextCategory.id, next) : [];
+      if (!nextPickable.some((o) => o.id === pushbackId)) {
+        setPushbackId(nextPickable[0]?.id ?? 'custom');
+      }
+    }
+    setLibraryCategory('all');
+    setLibraryFilter('all');
+    setDropdownOpen(false);
+    setSpecies(next);
   };
 
   const handleGenerate = () => {
@@ -107,34 +300,45 @@ export function CreateScreen() {
     setBreedError(null);
 
     const notesTrim = pushbackNotes.trim();
-    if (pushback.id === 'custom' && !notesTrim) {
+    if (isCustomSelected && !notesTrim) {
       setPushbackError(t('create.pushback.error'));
       return;
     }
     setPushbackError(null);
     setIsSubmitting(true);
     const built: Scenario = {
+      // Absent species = dog everywhere (prompts stay byte-identical), so
+      // only a cat scenario carries the key.
+      ...(species === 'cat' ? { species: 'cat' as const } : {}),
       breed: breedTrim,
       age,
-      pushback,
+      pushback: pushbackCategory,
       persona,
       difficulty,
       context: context.trim() || undefined,
       pushbackNotes: notesTrim || undefined,
       suggestedDriver: driver,
       weightKg: weight.trim() || undefined,
+      // No knowledge keys: the objection's CATEGORY grounds the roleplay, and
+      // the server applies it (never a copy carried by the scenario).
     };
     setScenario(built);
     void persistUserScenario(built);
     go('chat');
   };
 
-  const startLibraryScenario = (scenario: Scenario) => {
+  const startLibraryScenario = (item: ResolvedScenario) => {
+    const { scenario } = item;
     logEvent({
       type: 'card_click',
       screen: 'create',
       target: 'library_scenario',
-      meta: { pushback: scenario.pushback.id, breed: scenario.breed },
+      meta: {
+        pushback: scenario.pushback.id,
+        breed: scenario.breed,
+        species: speciesOf(scenario.species),
+        scenarioId: item.scenarioId,
+      },
     });
     setScenario(scenario);
     go('chat');
@@ -144,6 +348,30 @@ export function CreateScreen() {
     <>
       <TopBar showBack title={t('create.title')} />
       <Page>
+        {/* ── Which animal? — first choice, drives both tabs ── */}
+        <div
+          className="flex items-center justify-between gap-3 lg:justify-start lg:gap-5"
+          style={{ marginBottom: 14 }}
+        >
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              letterSpacing: '-0.01em',
+              color: 'var(--pbt-text)',
+              paddingLeft: 2,
+            }}
+          >
+            {t('create.animal.title')}
+          </div>
+          <Segmented
+            options={animalOptions}
+            value={species}
+            onChange={changeSpecies}
+            ariaLabel={t('create.animal.aria')}
+          />
+        </div>
+
         <div className="flex justify-center mb-5">
           <Segmented
             options={tabOptions}
@@ -154,16 +382,109 @@ export function CreateScreen() {
         </div>
 
         {tab === 'library' ? (
+          libraryForAnimal.length === 0 ? (
+            <Glass radius={18} padding={18}>
+              <p
+                style={{
+                  margin: '0 0 14px',
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                  color: 'var(--pbt-text-muted)',
+                }}
+              >
+                {t(species === 'cat' ? 'create.library.emptyCat' : 'create.library.emptyDog')}
+              </p>
+              <PillButton icon={<Icon.spark />} onClick={() => setTab('build')}>
+                {t('create.library.emptyCta')}
+              </PillButton>
+            </Glass>
+          ) : (
+          <>
+            {showCategoryFilters && (
+              <div
+                role="group"
+                aria-label={t('create.library.categoryAria')}
+                className={`pbt-scroll flex gap-2 overflow-x-auto pb-1 ${showObjectionFilters ? 'mb-3' : 'mb-4'}`}
+              >
+                <Chip
+                  active={activeLibraryCategory === 'all'}
+                  onClick={() => selectLibraryCategory('all')}
+                >
+                  {t('create.library.categoryAll')}
+                </Chip>
+                {categoryFilters.map((f) => (
+                  <Chip
+                    key={f.id}
+                    active={activeLibraryCategory === f.id}
+                    onClick={() => selectLibraryCategory(f.id)}
+                    className="max-w-full shrink-0 truncate"
+                    title={f.label}
+                  >
+                    {f.label}
+                  </Chip>
+                ))}
+              </div>
+            )}
+            {showObjectionFilters && (
+              <div
+                role="group"
+                aria-label={t('create.library.filterAria')}
+                className="pbt-scroll flex gap-2 overflow-x-auto pb-1 mb-4"
+              >
+                <Chip active={activeFilter === 'all'} onClick={() => setLibraryFilter('all')}>
+                  {t('create.library.filterAll')}
+                </Chip>
+                {libraryFilters.map((f) => (
+                  <Chip
+                    key={f.id}
+                    active={activeFilter === f.id}
+                    onClick={() => setLibraryFilter(f.id)}
+                    className="max-w-full shrink-0 truncate"
+                    title={f.label}
+                  >
+                    {f.label}
+                  </Chip>
+                ))}
+              </div>
+            )}
           <div className="lg:grid lg:grid-cols-2 lg:gap-4 flex flex-col gap-3">
-            {LIBRARY_SCENARIOS.map((scenario, i) => (
-              <Glass key={i} radius={18} padding={14}>
+            {visibleLibrary.map((item) => {
+              const { scenario, override } = item;
+              const objectionTitle = localizedScenario(scenario, locale).pushback.title;
+              const cardTitle = override?.card_title_override?.trim() || objectionTitle;
+              const categoryLabel =
+                categoryById(objectionCategoryId(scenario.pushback.id, teamObjections))?.label ?? null;
+              // One eyebrow line: the category, plus the objection when a
+              // custom card title hides which objection this is (and the
+              // objection is what the trainee came here to pick).
+              const eyebrowObjection = cardTitle !== objectionTitle ? objectionTitle : null;
+              return (
+              <Glass key={item.scenarioId} radius={18} padding={14}>
                 <div className="flex items-start justify-between gap-3">
                   <div style={{ flex: 1, minWidth: 0 }}>
+                    {(categoryLabel || eyebrowObjection) && (
+                      <div
+                        style={{
+                          fontFamily: 'var(--pbt-font-mono)',
+                          fontSize: 9,
+                          fontWeight: 600,
+                          letterSpacing: '0.18em',
+                          textTransform: 'uppercase',
+                          color: 'var(--pbt-driver-primary)',
+                          marginBottom: 4,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {categoryLabel && <span>{categoryLabel}</span>}
+                        {categoryLabel && eyebrowObjection && <span> · </span>}
+                        {eyebrowObjection && <span>{eyebrowObjection}</span>}
+                      </div>
+                    )}
                     <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
-                      {localizedScenario(scenario, locale).pushback.title}
+                      {cardTitle}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', marginBottom: 8 }}>
-                      {scenario.breed} · {localizedLifeStage(scenario.age, locale)} ·{' '}
+                      {scenario.breed} · {localizedLifeStage(scenario.age, locale, scenario.species)} ·{' '}
                       {localizedPersona(scenario.persona, locale)}
                     </div>
                     <span
@@ -185,7 +506,9 @@ export function CreateScreen() {
                     </span>
                   </div>
                   <button
-                    onClick={() => startLibraryScenario(scenario)}
+                    type="button"
+                    onClick={() => startLibraryScenario(item)}
+                    aria-label={t('create.library.startAria', { title: cardTitle })}
                     style={{
                       flexShrink: 0,
                       alignSelf: 'center',
@@ -208,125 +531,58 @@ export function CreateScreen() {
                   </button>
                 </div>
               </Glass>
-            ))}
+              );
+            })}
           </div>
+          </>
+          )
         ) : (
           /*
            * Build tab: two-column grid on desktop.
-           * Left col: Breed, Life stage, Owner persona, ECHO driver.
-           * Right col: The pushback, Difficulty, Additional details.
+           * Left col: Category, The pushback, Breed, Life stage, Owner
+           *   persona, ECHO driver — category → objection first, mirroring
+           *   animal → category → objection (and the Library tab's chips).
+           * Right col: Difficulty, Additional details.
            * On mobile: single column, JSX order preserved.
            */
           <div className="lg:grid lg:grid-cols-2 lg:gap-8 lg:items-start">
             {/* Left column */}
             <div>
-            {/* ── Breed ── */}
-            <Section label={t('create.section.breed')}>
-              <Glass
-                radius={20}
-                padding={12}
-                style={breedError ? { border: '1.5px solid var(--pbt-score-poor)' } : undefined}
-              >
-                <div className="flex items-center gap-2">
-                  <Icon.search />
-                  <input
-                    value={breed}
-                    onChange={(e) => { setBreed(e.target.value); if (breedError) setBreedError(null); }}
-                    placeholder={t('create.breed.placeholder')}
-                    style={{
-                      flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                      fontFamily: 'inherit', fontSize: 15, color: 'var(--pbt-text)',
-                    }}
-                    aria-invalid={breedError != null}
-                  />
+            {/* ── Category — the subject area; scopes the pushback dropdown ── */}
+            {buildCategories.length > 0 && (
+              <Section label={t('create.section.category')}>
+                <div
+                  role="group"
+                  aria-label={t('create.category.aria')}
+                  className="flex flex-wrap gap-2"
+                >
+                  {buildCategories.map((c) => (
+                    <Chip
+                      key={c.id}
+                      active={c.id === activeCategory?.id}
+                      onClick={() => selectCategory(c.id)}
+                      className="max-w-full truncate"
+                      title={c.label}
+                    >
+                      {c.label}
+                    </Chip>
+                  ))}
                 </div>
-              </Glass>
-              {breedError && (
-                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--pbt-score-poor)', paddingLeft: 4 }}>
-                  {breedError}
-                </div>
-              )}
-              {savedPets.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--pbt-driver-primary)', marginBottom: 6, paddingLeft: 2 }}>
-                    {t('create.savedPets.eyebrow')}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {savedPets.map((pet) => (
-                      <Chip key={pet.id} active={breed === pet.breed} onClick={() => setBreed(pet.breed)}>
-                        <Icon.paw style={{ width: 12, height: 12, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
-                        {pet.name || pet.breed}
-                      </Chip>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {BREEDS.slice(0, 6).map((b) => (
-                  <Chip key={b} active={b === breed} onClick={() => setBreed(b)}>{b}</Chip>
-                ))}
-              </div>
-
-              {/* Weight — compact, prominent */}
-              <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Glass radius={16} padding="10px 16px" style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
-                  <input
-                    id="dog-weight"
-                    type="number"
-                    min="0.5"
-                    max="100"
-                    step="0.5"
-                    value={weight}
-                    onChange={(e) => setWeight(e.target.value)}
-                    placeholder="—"
+                {activeCategory?.blurb && (
+                  <p
                     style={{
-                      width: 64,
-                      border: 'none',
-                      outline: 'none',
-                      background: 'transparent',
-                      fontFamily: 'inherit',
-                      fontSize: 30,
-                      fontWeight: 700,
-                      letterSpacing: '-0.03em',
-                      color: 'var(--pbt-text)',
-                      lineHeight: 1,
-                    }}
-                  />
-                  <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 13, color: 'var(--pbt-text-muted)', fontWeight: 600 }}>
-                    {t('create.weight.unit')}
-                  </span>
-                </Glass>
-                <span style={{ fontSize: 13, color: 'var(--pbt-text-muted)' }}>
-                  {t('create.weight.label')}
-                </span>
-              </div>
-            </Section>
-
-            {/* ── Life stage ── */}
-            <Section label={t('create.section.lifeStage')}>
-              <div className="grid grid-cols-2 gap-2">
-                {LIFE_STAGES.map((stage) => (
-                  <Glass
-                    key={stage}
-                    radius={18}
-                    padding={14}
-                    onClick={() => setAge(stage)}
-                    ariaLabel={localizedLifeStage(stage, locale)}
-                    glow={stage === age ? 'var(--pbt-driver-primary)' : null}
-                    style={{
-                      border:
-                        stage === age
-                          ? '1px solid color-mix(in oklab, var(--pbt-driver-primary) 58%, rgba(255,255,255,0.42))'
-                          : undefined,
+                      margin: '10px 0 0',
+                      paddingLeft: 2,
+                      fontSize: 12.5,
+                      lineHeight: 1.45,
+                      color: 'var(--pbt-text-muted)',
                     }}
                   >
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      {localizedLifeStage(stage, locale)}
-                    </div>
-                  </Glass>
-                ))}
-              </div>
-            </Section>
+                    {activeCategory.blurb}
+                  </p>
+                )}
+              </Section>
+            )}
 
             {/* ── The pushback ── */}
             <Section label={t('create.section.pushback')}>
@@ -354,10 +610,10 @@ export function CreateScreen() {
                       ) : (
                         <>
                           <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--pbt-text)' }}>
-                            {localizedPushbackCategory(pushback, locale).title}
+                            {selectedObjection?.title}
                           </div>
                           <div style={{ fontSize: 12.5, color: 'var(--pbt-text-muted)', marginTop: 2, fontStyle: 'italic' }}>
-                            {localizedPushbackCategory(pushback, locale).example}
+                            {selectedObjection?.example}
                           </div>
                         </>
                       )}
@@ -390,13 +646,14 @@ export function CreateScreen() {
                     >
                       <Glass radius={18} padding={6} blur={28} tint={0.06}>
                         <div className="flex flex-col" style={{ gap: 2 }}>
-                          {DROPDOWN_PUSHBACKS.map((cat) => {
-                            const active = cat.id === pushback.id;
+                          {pickable.map((objection) => {
+                            const active = objection.id === selectedObjection?.id;
                             return (
                               <button
-                                key={cat.id}
+                                key={objection.id}
                                 type="button"
-                                onClick={() => selectPushback(cat)}
+                                aria-pressed={active}
+                                onClick={() => selectPushback(objection.id)}
                                 style={{
                                   textAlign: 'left',
                                   padding: '10px 12px',
@@ -430,10 +687,10 @@ export function CreateScreen() {
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--pbt-text)' }}>
-                                    {localizedPushbackCategory(cat, locale).title}
+                                    {objection.title}
                                   </div>
                                   <div style={{ fontSize: 12, color: 'var(--pbt-text-muted)', fontStyle: 'italic', marginTop: 1 }}>
-                                    {localizedPushbackCategory(cat, locale).example}
+                                    {objection.example}
                                   </div>
                                 </div>
                               </button>
@@ -462,6 +719,7 @@ export function CreateScreen() {
                       </div>
                       <textarea
                         value={pushbackNotes}
+                        maxLength={SCENARIO_LIMITS.pushbackNotesMax}
                         onChange={(e) => { setPushbackNotes(e.target.value); if (pushbackError) setPushbackError(null); }}
                         placeholder={t('create.pushback.notesOptionalPlaceholder')}
                         rows={2}
@@ -496,8 +754,8 @@ export function CreateScreen() {
               <Glass
                 radius={18}
                 padding={14}
-                onClick={() => { selectPushback(CUSTOM_PUSHBACK); }}
-                ariaLabel={CUSTOM_PUSHBACK.title}
+                onClick={() => { selectPushback(CUSTOM_PUSHBACK.id); }}
+                ariaLabel={t('create.pushback.otherTitle')}
                 glow={isCustomSelected ? 'var(--pbt-driver-primary)' : null}
                 style={{
                   border: isCustomSelected
@@ -550,6 +808,7 @@ export function CreateScreen() {
                       </div>
                       <textarea
                         value={pushbackNotes}
+                        maxLength={SCENARIO_LIMITS.pushbackNotesMax}
                         onChange={(e) => { setPushbackNotes(e.target.value); if (pushbackError) setPushbackError(null); }}
                         placeholder={t('create.pushback.notesRequiredPlaceholder')}
                         rows={3}
@@ -569,6 +828,117 @@ export function CreateScreen() {
                   </motion.div>
                 )}
               </AnimatePresence>
+            </Section>
+
+            {/* ── Breed ── */}
+            <Section label={t('create.section.breed')}>
+              <Glass
+                radius={20}
+                padding={12}
+                style={breedError ? { border: '1.5px solid var(--pbt-score-poor)' } : undefined}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon.search />
+                  <input
+                    value={breed}
+                    onChange={(e) => { setBreed(e.target.value); if (breedError) setBreedError(null); }}
+                    placeholder={t(
+                      species === 'cat' ? 'create.breed.placeholderCat' : 'create.breed.placeholderDog',
+                    )}
+                    aria-label={t('create.section.breed')}
+                    style={{
+                      flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                      fontFamily: 'inherit', fontSize: 15, color: 'var(--pbt-text)',
+                    }}
+                    aria-invalid={breedError != null}
+                  />
+                </div>
+              </Glass>
+              {breedError && (
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--pbt-score-poor)', paddingLeft: 4 }}>
+                  {breedError}
+                </div>
+              )}
+              {savedPets.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--pbt-driver-primary)', marginBottom: 6, paddingLeft: 2 }}>
+                    {t('create.savedPets.eyebrow')}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {savedPets.map((pet) => (
+                      <Chip key={pet.id} active={breed === pet.breed} onClick={() => setBreed(pet.breed)}>
+                        <Icon.paw style={{ width: 12, height: 12, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
+                        {pet.name || pet.breed}
+                      </Chip>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {breedChips(species).map((b) => (
+                  <Chip key={b} active={b === breed} onClick={() => setBreed(b)}>{b}</Chip>
+                ))}
+              </div>
+
+              {/* Weight — compact, prominent */}
+              <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Glass radius={16} padding="10px 16px" style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
+                  <input
+                    id="pet-weight"
+                    type="number"
+                    min="0.5"
+                    max="100"
+                    step="0.5"
+                    value={weight}
+                    onChange={(e) => setWeight(e.target.value)}
+                    placeholder="—"
+                    style={{
+                      width: 64,
+                      border: 'none',
+                      outline: 'none',
+                      background: 'transparent',
+                      fontFamily: 'inherit',
+                      fontSize: 30,
+                      fontWeight: 700,
+                      letterSpacing: '-0.03em',
+                      color: 'var(--pbt-text)',
+                      lineHeight: 1,
+                    }}
+                  />
+                  <span style={{ fontFamily: 'var(--pbt-font-mono)', fontSize: 13, color: 'var(--pbt-text-muted)', fontWeight: 600 }}>
+                    {t('create.weight.unit')}
+                  </span>
+                </Glass>
+                <label htmlFor="pet-weight" style={{ fontSize: 13, color: 'var(--pbt-text-muted)' }}>
+                  {t(species === 'cat' ? 'create.weight.labelCat' : 'create.weight.labelDog')}
+                </label>
+              </div>
+            </Section>
+
+            {/* ── Life stage ── */}
+            <Section label={t('create.section.lifeStage')}>
+              <div className="grid grid-cols-2 gap-2">
+                {LIFE_STAGES.map((stage) => (
+                  <Glass
+                    key={stage}
+                    radius={18}
+                    padding={14}
+                    onClick={() => setAge(stage)}
+                    ariaLabel={localizedLifeStage(stage, locale, species)}
+                    glow={stage === age ? 'var(--pbt-driver-primary)' : null}
+                    style={{
+                      border:
+                        stage === age
+                          ? '1px solid color-mix(in oklab, var(--pbt-driver-primary) 58%, rgba(255,255,255,0.42))'
+                          : undefined,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {localizedLifeStage(stage, locale, species)}
+                    </div>
+                  </Glass>
+                ))}
+              </div>
             </Section>
 
             {/* ── Owner persona ── */}
@@ -608,6 +978,7 @@ export function CreateScreen() {
               <Glass radius={20} padding={14}>
                 <textarea
                   value={context}
+                  maxLength={SCENARIO_LIMITS.contextMax}
                   onChange={(e) => setContext(e.target.value)}
                   placeholder={t('create.details.placeholder')}
                   rows={4}

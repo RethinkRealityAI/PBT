@@ -313,6 +313,25 @@ export const SYSTEM_ROLES: RoleDefinition[] = [
     rank: 20,
   },
   {
+    // For the people who ONLY build training scenarios. Knowledge write is
+    // included because the Studio's Knowledge step uploads the documents a
+    // scenario is grounded in (a narrower "upload only" permission is a
+    // follow-up). No Monitor screens, so they land straight on the Studio.
+    key: 'scenario_author',
+    name: 'Scenario Author',
+    description:
+      'Builds, tests and publishes training scenarios, and can add the documents they are grounded in. Sees the full AI briefing for a scenario (including the global AI-tuning notes, read-only) and can edit or remove knowledge documents — but not the Fecal Scan charts. Nothing else.',
+    permissions: [
+      'scenarios.read',
+      'scenarios.write',
+      'knowledge.read',
+      'knowledge.write',
+      'preview.read',
+    ],
+    system: true,
+    rank: 25,
+  },
+  {
     key: 'clinical_reviewer',
     name: 'Clinical Reviewer',
     description:
@@ -435,7 +454,14 @@ export function resolveAccess(input: AccessInput): ResolvedAccess {
   }
 
   const table = input.roles?.length ? input.roles : SYSTEM_ROLES;
-  const def = table.find((r) => r.key === roleKey);
+  // A SYSTEM role the database does not know yet (a preset added in code
+  // that `ensureSystemRoles` has not installed because nobody has opened
+  // Team & roles since the deploy) resolves to its code definition rather
+  // than to an empty permission set — otherwise an account given the role
+  // by hand sees "No screens available" until an unrelated page load.
+  const def =
+    table.find((r) => r.key === roleKey) ??
+    (isSystemRole(roleKey) ? SYSTEM_ROLES.find((r) => r.key === roleKey) : undefined);
   const base = (def?.permissions ?? []).filter(isPermission);
 
   const effective = new Set<Permission>(base);

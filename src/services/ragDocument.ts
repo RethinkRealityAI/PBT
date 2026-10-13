@@ -17,6 +17,7 @@ import { getSupabase } from '../features/auth/supabaseClient';
 import { estimateTokens } from './aiTelemetry';
 import { isTrainingUseAllowed } from '../lib/privacy';
 import { isPreviewMode } from '../lib/previewMode';
+import { speciesOf } from '../shared/scenarios/species';
 import type { RetrievedChunk } from './ragShared';
 
 /**
@@ -48,6 +49,9 @@ export function buildSessionChunks(
   const baseTags: Record<string, unknown> = {
     pushback_id: scenario.pushback.id,
     driver: scenario.suggestedDriver,
+    // Absent = dog, like everywhere else; stored explicitly so an exported
+    // kitten session ("Puppy (<1)" is the shared life-stage key) reads as one.
+    species: speciesOf(scenario.species),
     breed: scenario.breed,
     life_stage: scenario.age,
     difficulty: scenario.difficulty,
@@ -173,6 +177,7 @@ export async function persistRagDocument(args: PersistArgs): Promise<void> {
     const metadata: Record<string, unknown> = {
       pushback_id: args.scenario.pushback.id,
       driver: args.scenario.suggestedDriver,
+      species: speciesOf(args.scenario.species),
       breed: args.scenario.breed,
       life_stage: args.scenario.age,
       persona: args.scenario.persona,

@@ -53,6 +53,7 @@ function filterKey(filters: RetrievalFilters | undefined): string {
   const parts: string[] = [];
   if (filters.focus) parts.push(`focus=${filters.focus}`);
   if (filters.docSlugs?.length) parts.push(`docs=${[...filters.docSlugs].sort().join(',')}`);
+  if (filters.inheritedDocs) parts.push('inherited');
   // The knowledge scope changes WHICH documents are reachable, so two tools
   // asking the same question are two different results — never one cache row.
   if (filters.tool) parts.push(`tool=${filters.tool}`);

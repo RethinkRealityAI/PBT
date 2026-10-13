@@ -8,6 +8,8 @@
  */
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 import type { Permission } from '../../src/shared/access/permissions';
+import { isTeamObjectionId } from '../../src/shared/scenarios/objections';
+import { checkTeamObjection } from './_shared/objectionsStore';
 
 type AuditEntityType =
   | 'flag'
@@ -120,6 +122,23 @@ export default async (req: Request): Promise<Response> => {
         await ctx.sb.from('scenario_overrides').delete().eq('scenario_id', row.entity_id)
       ).error;
     } else if (row.before) {
+      // A scenario is only ever saved on an objection that exists
+      // (admin-scenario-overrides checks it); a revert must keep that promise.
+      // Otherwise reverting a delete (or an edit) could restore a LIVE
+      // scenario onto an objection deleted since — trainees would silently
+      // lose it, since nothing can resolve its pushback.
+      const pushbackId = (row.before as { pushback_id?: unknown }).pushback_id;
+      if (isTeamObjectionId(pushbackId)) {
+        const check = await checkTeamObjection(ctx.sb, pushbackId);
+        if (check !== 'ok') {
+          return errorResponse(
+            check === 'unknown' ? 409 : 500,
+            check === 'unknown'
+              ? 'This scenario was built on an objection that has since been deleted. Restore the objection first (Scenario Studio → Objections → Recently deleted), then revert.'
+              : check.error,
+          );
+        }
+      }
       mutErr = (await ctx.sb.from('scenario_overrides').upsert(row.before)).error;
     }
   } else if (row.entity_type === 'knowledge_document') {

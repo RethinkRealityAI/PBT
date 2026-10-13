@@ -3,8 +3,12 @@ import {
   adminOverrideToScenario,
   applyScenarioOverride,
   isAdminScenarioId,
+  objectionCategoriesFromSnapshot,
+  overridePushbackUnresolvable,
   seedScenarioId,
+  teamObjectionsFromSnapshot,
 } from '../scenarioOverrides';
+import type { TeamObjection } from '../../shared/scenarios/objections';
 import type { Scenario } from '../scenarios';
 import { LIBRARY_SCENARIOS, PUSHBACK_CATEGORIES } from '../scenarios';
 import type { ScenarioOverride } from '../../services/flagsClient';
@@ -266,5 +270,188 @@ describe('scenarioOverrides', () => {
       suggested_driver: 'NotADriver',
     };
     expect(adminOverrideToScenario(bad)).toBeNull();
+  });
+});
+
+describe('scenarioOverrides — species', () => {
+  const ADMIN_ROW: ScenarioOverride = {
+    ...NULL_OVERRIDE,
+    scenario_id: 'admin:cat-1',
+    breed: 'Maine Coon',
+    life_stage: 'Puppy (<1)',
+    pushback_id: 'cost',
+    suggested_driver: 'Harmonizer',
+  };
+
+  it('a legacy row (no species key, or null) leaves the merged scenario key-for-key unchanged', () => {
+    const withoutKey = applyScenarioOverride(base, NULL_OVERRIDE, 'seed:0');
+    const withNull = applyScenarioOverride(base, { ...NULL_OVERRIDE, species: null }, 'seed:0');
+    expect(withoutKey).not.toHaveProperty('species');
+    expect(withNull).not.toHaveProperty('species');
+    expect(Object.keys(withNull).sort()).toEqual(Object.keys(withoutKey).sort());
+    expect(withNull).toStrictEqual(withoutKey);
+  });
+
+  it('applies a valid override species onto a base scenario', () => {
+    const merged = applyScenarioOverride(base, { ...NULL_OVERRIDE, species: 'cat' }, 'seed:0');
+    expect(merged.species).toBe('cat');
+    // Nothing else about the base moves.
+    expect(merged.breed).toBe(base.breed);
+    expect(merged.age).toBe(base.age);
+  });
+
+  it('ignores an unknown override species and keeps the base species', () => {
+    const catBase: Scenario = { ...base, species: 'cat' };
+    expect(
+      applyScenarioOverride(catBase, { ...NULL_OVERRIDE, species: 'hamster' }, 'seed:0').species,
+    ).toBe('cat');
+    expect(applyScenarioOverride(catBase, NULL_OVERRIDE, 'seed:0').species).toBe('cat');
+    expect(
+      applyScenarioOverride(base, { ...NULL_OVERRIDE, species: 'hamster' }, 'seed:0'),
+    ).not.toHaveProperty('species');
+  });
+
+  it('adminOverrideToScenario carries a valid species and omits the key otherwise', () => {
+    expect(adminOverrideToScenario({ ...ADMIN_ROW, species: 'cat' })?.species).toBe('cat');
+    expect(adminOverrideToScenario({ ...ADMIN_ROW, species: 'dog' })?.species).toBe('dog');
+    for (const species of [undefined, null, '', 'Cat', 'hamster']) {
+      const row = { ...ADMIN_ROW, species } as ScenarioOverride;
+      const scenario = adminOverrideToScenario(row);
+      expect(scenario, String(species)).not.toBeNull();
+      expect(scenario, String(species)).not.toHaveProperty('species');
+    }
+  });
+
+  it('stores a kitten under the shared life-stage vocabulary', () => {
+    // Life stage stays one stored vocabulary; only the DISPLAY says "Kitten".
+    expect(adminOverrideToScenario({ ...ADMIN_ROW, species: 'cat' })?.age).toBe('Puppy (<1)');
+  });
+});
+
+describe('scenarioOverrides — team objections', () => {
+  const PROBIOTICS: TeamObjection = {
+    id: 'team:probiotics',
+    title: "Probiotics: 'my dog doesn't need them'",
+    example: '"He eats fine — why would he need a probiotic?"',
+    titleFr: 'Probiotiques : « mon chien n’en a pas besoin »',
+    exampleFr: '« Il mange bien — pourquoi un probiotique ? »',
+    species: ['dog', 'cat'],
+    categoryId: 'category:gi',
+    coaching: {},
+    visible: true,
+    sortOrder: null,
+    updatedAt: null,
+  };
+  const RETIRED: TeamObjection = {
+    ...PROBIOTICS,
+    id: 'team:old-topic',
+    title: 'An old topic',
+    example: '"Old line."',
+    titleFr: null,
+    exampleFr: null,
+    visible: false,
+  };
+  const ROW: ScenarioOverride = {
+    ...NULL_OVERRIDE,
+    scenario_id: 'admin:probiotics-1',
+    breed: 'Beagle',
+    life_stage: 'Adult (3-7)',
+    pushback_id: 'team:probiotics',
+    suggested_driver: 'Energizer',
+  };
+
+  it('resolves a team objection, French included', () => {
+    const scenario = adminOverrideToScenario(ROW, [PROBIOTICS]);
+    expect(scenario?.pushback).toEqual({
+      id: 'team:probiotics',
+      title: PROBIOTICS.title,
+      example: PROBIOTICS.example,
+      titleFr: PROBIOTICS.titleFr,
+      exampleFr: PROBIOTICS.exampleFr,
+    });
+  });
+
+  it('still resolves a RETIRED team objection (a published scenario keeps playing)', () => {
+    const scenario = adminOverrideToScenario(
+      { ...ROW, pushback_id: 'team:old-topic' },
+      [PROBIOTICS, RETIRED],
+    );
+    expect(scenario?.pushback).toEqual({
+      id: 'team:old-topic',
+      title: 'An old topic',
+      example: '"Old line."',
+    });
+  });
+
+  it('drops a scenario whose team objection is unknown (deleted, or an older snapshot)', () => {
+    expect(adminOverrideToScenario(ROW)).toBeNull();
+    expect(adminOverrideToScenario(ROW, [RETIRED])).toBeNull();
+    expect(adminOverrideToScenario({ ...ROW, pushback_id: 'team:nope' }, [PROBIOTICS])).toBeNull();
+  });
+
+  it('a built-in id still resolves to its canonical category', () => {
+    const scenario = adminOverrideToScenario({ ...ROW, pushback_id: 'rx-diet' }, [PROBIOTICS]);
+    expect(scenario?.pushback).toBe(PUSHBACK_CATEGORIES.find((p) => p.id === 'rx-diet'));
+  });
+
+  it('a seed override can move a library scenario onto a team objection', () => {
+    const merged = applyScenarioOverride(
+      base,
+      { ...NULL_OVERRIDE, pushback_id: 'team:probiotics' },
+      'seed:0',
+      [PROBIOTICS],
+    );
+    expect(merged.pushback.id).toBe('team:probiotics');
+    // Unknown team id → the base pushback, like any unresolvable id.
+    const fallback = applyScenarioOverride(
+      base,
+      { ...NULL_OVERRIDE, pushback_id: 'team:probiotics' },
+      'seed:0',
+    );
+    expect(fallback.pushback).toBe(base.pushback);
+  });
+
+  it('teamObjectionsFromSnapshot keeps usable entries and drops junk', () => {
+    expect(teamObjectionsFromSnapshot(undefined)).toEqual([]);
+    expect(teamObjectionsFromSnapshot('nope')).toEqual([]);
+    const list = teamObjectionsFromSnapshot([
+      PROBIOTICS,
+      { id: 'cost', title: 'Not a team id', species: ['dog'] },
+      { id: 'team:no-species', title: 'No animals', species: [] },
+      null,
+      RETIRED,
+    ]);
+    expect(list.map((o) => o.id)).toEqual(['team:probiotics', 'team:old-topic']);
+    expect(list[1].visible).toBe(false);
+  });
+
+  it('objectionCategoriesFromSnapshot keeps usable categories and drops junk', () => {
+    expect(objectionCategoriesFromSnapshot(undefined)).toEqual([]);
+    expect(objectionCategoriesFromSnapshot('nope')).toEqual([]);
+    const list = objectionCategoriesFromSnapshot([
+      { id: 'category:gi', name: 'GI', nameFr: 'Gastro-intestinal', description: '', knowledgeSlugs: ['doc-1'] },
+      // An admin's edit of a built-in category is a stored row too.
+      { id: 'weight', name: 'Weight & body condition', description: '' },
+      { id: 'team:probiotics', name: 'An objection id, not a category' },
+      { id: 'category:nameless', name: '  ' },
+      null,
+    ]);
+    expect(list.map((c) => c.id)).toEqual(['category:gi', 'weight']);
+    expect(list[0]).toMatchObject({ nameFr: 'Gastro-intestinal', knowledgeSlugs: ['doc-1'], builtIn: false });
+    expect(list[1].builtIn).toBe(true);
+  });
+
+  it('flags an override whose pushback this client cannot resolve', () => {
+    const seed = { ...NULL_OVERRIDE, scenario_id: 'seed:0', pushback_id: 'team:probiotics' };
+    // Resolvable: built-ins always, a team id only while the snapshot carries it.
+    expect(overridePushbackUnresolvable(seed, [PROBIOTICS])).toBe(false);
+    expect(overridePushbackUnresolvable({ ...seed, pushback_id: 'cost' })).toBe(false);
+    expect(overridePushbackUnresolvable({ ...seed, pushback_id: null })).toBe(false);
+    expect(overridePushbackUnresolvable(null)).toBe(false);
+    // Deleted (or not yet in this snapshot): applyScenarioOverride would fall
+    // back to the seed's own objection under a story written for this one.
+    expect(overridePushbackUnresolvable(seed, [])).toBe(true);
+    expect(overridePushbackUnresolvable(seed, [RETIRED])).toBe(true);
+    expect(overridePushbackUnresolvable({ ...seed, pushback_id: RETIRED.id }, [RETIRED])).toBe(false);
   });
 });

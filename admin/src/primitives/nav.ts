@@ -3,14 +3,22 @@
  *
  * The portal used to be eighteen flat links in a wrapping pill bar — every
  * screen equally prominent, nothing grouped, and two rows of chrome before you
- * reached any content. This restructures it into **four sections of ten
- * destinations**, where closely-related screens became tabs of one destination
+ * reached any content. This restructures it into **four sections of twelve
+ * destinations**, where closely-related screens are tabs of one destination
  * rather than separate entries:
  *
  *   Monitor   Overview · Analytics [insights|traffic|quality] · Activity [sessions|analyzer]
  *   People    People   [users|members|roles|invites]
- *   Content   Library  [scenarios|builder|knowledge|simulation] · Feedback [feedback|reports]
- *   Platform  Email    [templates|settings|delivery] · Flags · Audit · Preview
+ *   Content   Scenario Studio [studio|categories|trainee] · Knowledge · AI tuning · Feedback [sessions|reports]
+ *   Platform  Email    [templates|settings|log] · Flags · Audit · Preview
+ *
+ * Content used to be a single "Library" destination with four unrelated jobs
+ * (trainee scenarios, the builder, knowledge, simulation) behind one icon.
+ * Building scenarios is now its own destination — the Scenario Studio —
+ * because some admins do nothing else (the Scenario Author role lands straight
+ * on it). Knowledge and AI tuning (the old "Simulation" screen) stand on their
+ * own. Old `#/library/…` links are rewritten by `legacyRoute()` below, so
+ * bookmarks keep working.
  *
  * Nothing was removed — the same screens are all still reachable, in at most
  * two clicks, and related ones now sit next to each other instead of being
@@ -20,13 +28,16 @@
  * can't use any tab of a destination never sees the destination.
  */
 import type { Permission } from '../../../src/shared/access/permissions';
+import type { AdminRoute } from '../lib/route';
 
 export type AdminScreen =
   | 'overview'
   | 'analytics'
   | 'activity'
   | 'people'
-  | 'library'
+  | 'scenarios'
+  | 'knowledge'
+  | 'tuning'
   | 'feedback'
   | 'email'
   | 'flags'
@@ -54,6 +65,13 @@ export interface NavSection {
   label: string;
   items: NavItem[];
 }
+
+/**
+ * The admin handbook (Notion) — linked from the foot of the rail for every
+ * signed-in admin, whatever their role. Opens in a new tab; the page must be
+ * shared with the people who use the portal for the link to open for them.
+ */
+export const DOCUMENTATION_URL = 'https://www.notion.so/3d0dd85c630c8151bb66dcfb92257fae';
 
 export const NAV_SECTIONS: NavSection[] = [
   {
@@ -107,17 +125,22 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Content',
     items: [
       {
-        key: 'library',
-        label: 'Library',
-        icon: '▤',
+        key: 'scenarios',
+        label: 'Scenario Studio',
+        icon: '✎',
         requires: 'scenarios.read',
         tabs: [
-          { key: 'scenarios', label: 'Scenarios', requires: 'scenarios.read' },
-          { key: 'builder', label: 'Builder', requires: 'scenarios.read' },
-          { key: 'knowledge', label: 'Knowledge', requires: 'knowledge.read' },
-          { key: 'simulation', label: 'Simulation', requires: 'simulation.read' },
+          { key: 'studio', label: 'Studio', requires: 'scenarios.read' },
+          // The subjects training is organised by (Probiotics, GI, …): the
+          // objections inside each and the knowledge its scenarios read. The
+          // team adds its own without a deploy. Was `objections` — old links
+          // are rewritten by `legacyRoute()`.
+          { key: 'categories', label: 'Categories', requires: 'scenarios.read' },
+          { key: 'trainee', label: 'Trainee-built', requires: 'scenarios.read' },
         ],
       },
+      { key: 'knowledge', label: 'Knowledge', icon: '▤', requires: 'knowledge.read' },
+      { key: 'tuning', label: 'AI tuning', icon: '◎', requires: 'simulation.read' },
       {
         key: 'feedback',
         label: 'Feedback',
@@ -185,4 +208,33 @@ export function visibleItems(permissions: readonly string[]): NavItem[] {
 /** First tab the admin may open, used when a deep link names a forbidden one. */
 export function defaultTab(item: NavItem, permissions: readonly string[]): string | null {
   return visibleTabs(item, permissions)[0]?.key ?? null;
+}
+
+/**
+ * Where an old `#/library/…` link lives now. The Library destination was split
+ * into Scenario Studio, Knowledge and AI tuning; bookmarks, shared links and
+ * links in old emails must keep landing on the same screen. Likewise the
+ * Studio's old `#/scenarios/objections` tab, now `#/scenarios/categories`.
+ *
+ * Any route that isn't a Library one comes back as the SAME object, so a
+ * caller can test `legacyRoute(r) !== r` to decide whether to rewrite the URL.
+ */
+export function legacyRoute(route: AdminRoute): AdminRoute {
+  // The Studio's "Objections" tab became "Categories" (objections now live
+  // inside their category on the same screen).
+  if (route.screen === 'scenarios' && route.tab === 'objections') return { screen: 'scenarios', tab: 'categories' };
+  if (route.screen !== 'library') return route;
+  switch (route.tab) {
+    case 'scenarios':
+      return { screen: 'scenarios', tab: 'trainee' };
+    case 'knowledge':
+      return { screen: 'knowledge', tab: null };
+    case 'simulation':
+      return { screen: 'tuning', tab: null };
+    case 'builder':
+    default:
+      // A bare `#/library` (or a tab that no longer exists): scenario work
+      // happens in the Studio now.
+      return { screen: 'scenarios', tab: 'studio' };
+  }
 }

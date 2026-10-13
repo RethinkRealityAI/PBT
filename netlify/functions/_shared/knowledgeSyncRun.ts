@@ -52,6 +52,7 @@ import {
   canSkipExtraction,
   planKnowledgeSync,
   readSyncMeta,
+  scopeHashFor,
   sha256Hex,
   summarizeSync,
   withSyncMeta,
@@ -80,6 +81,8 @@ export interface ResolvedDoc {
   content: string | null;
   contentHash: string;
   sourceHash?: string;
+  /** `scopeHashFor(tagDefaults)` — see knowledgeSync.ts. */
+  scopeHash?: string;
   /** Document-level metadata other than `tags` / `citation` / `sync`. */
   baseMetadata: Record<string, unknown>;
   tagDefaults: Record<string, unknown>;
@@ -233,6 +236,7 @@ function seedDocsFor(groups: ReadonlySet<KnowledgeGroup>): ResolvedDoc[] {
       category: d.category,
       content: d.content,
       contentHash: sha256Hex(d.content),
+      scopeHash: scopeHashFor(d.tags),
       baseMetadata: d.metadata,
       tagDefaults: d.tags ?? {},
       citationDefault: d.citation,
@@ -259,11 +263,13 @@ async function studyDocs(
       throw new Error(`${study.file}: ${bytes.byteLength} bytes exceeds the 4MB extraction cap`);
     }
     const sourceHash = sha256Hex(bytes);
+    const scopeHash = scopeHashFor(study.tags);
     const row = rows.get(study.slug);
 
-    if (canSkipExtraction(row, sourceHash)) {
-      // Unchanged PDF: carry the stored fingerprint forward so the planner
-      // sees a match, and leave the body unresolved — nothing gets written.
+    if (canSkipExtraction(row, sourceHash, scopeHash)) {
+      // Unchanged PDF and scope: carry the stored fingerprint forward so the
+      // planner sees a match, and leave the body unresolved — nothing gets
+      // written.
       const sync = readSyncMeta(row!.metadata)!;
       docs.push({
         slug: study.slug,
@@ -273,6 +279,7 @@ async function studyDocs(
         content: null,
         contentHash: sync.contentHash,
         sourceHash,
+        scopeHash,
         baseMetadata: {},
         tagDefaults: study.tags,
       });
@@ -291,6 +298,7 @@ async function studyDocs(
         content: null,
         contentHash: `pending:${sourceHash}`,
         sourceHash,
+        scopeHash,
         baseMetadata: {},
         tagDefaults: study.tags,
       });
@@ -307,6 +315,7 @@ async function studyDocs(
       content: extracted.markdown,
       contentHash: sha256Hex(extracted.markdown),
       sourceHash,
+      scopeHash,
       baseMetadata: {},
       tagDefaults: study.tags,
       citationDefault: extracted.citation,
@@ -321,7 +330,7 @@ function metadataFor(doc: ResolvedDoc, catalogue: SeedCatalogue): Record<string,
   const citation = catalogue.citationFor({ slug: doc.slug, citation: doc.citationDefault });
   return withSyncMeta(
     { ...doc.baseMetadata, tags, ...(citation ? { citation } : {}) },
-    { contentHash: doc.contentHash, sourceHash: doc.sourceHash },
+    { contentHash: doc.contentHash, sourceHash: doc.sourceHash, scopeHash: doc.scopeHash },
   );
 }
 

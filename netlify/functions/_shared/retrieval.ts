@@ -18,7 +18,12 @@
  *                 cat passage must never ground a dog scan.
  *   • `docSlugs`— explicit scenario attachments. Restricts documents INSIDE
  *                 the scope, replaces `focus`, and never triggers a zero-row
- *                 retry (the admin UI promises "only inside them").
+ *                 retry (the admin UI promises "only inside them") — UNLESS
+ *                 `inheritedDocs` says they came from the scenario's
+ *                 CATEGORY, not its own choice: then they are SOFT like
+ *                 `focus` (a category's documents filed only for dogs, or
+ *                 only for the roleplay, must not strip a cat scenario or
+ *                 the scorer of all grounding).
  *   • `focus`   — clinical topic. SOFT: zero rows with a focus retries once
  *                 with the scope alone, so tagging a topic nobody has filed
  *                 yet can never return less than not tagging it.
@@ -49,6 +54,8 @@ interface CachedRetrieval {
   results: RetrievedChunk[];
   appliedFilter: Record<string, unknown>;
   focusRelaxed: boolean;
+  /** Inherited (category) documents matched nothing, so the scope alone was searched. */
+  docsRelaxed: boolean;
 }
 
 const cache = new Map<string, { value: CachedRetrieval; expiresAt: number }>();
@@ -58,6 +65,12 @@ export interface RetrievalFilters {
   focus?: string;
   /** Explicit document attachment — runs inside the scope, never relaxed. */
   docSlugs?: string[];
+  /**
+   * `docSlugs` came from the scenario's CATEGORY (inherited, not chosen):
+   * zero rows retries inside the scope, like `focus`. Can only ever widen
+   * back to the scope — never past `tool` / `species`.
+   */
+  inheritedDocs?: boolean;
   /** The consumer asking (KNOWLEDGE_TOOL_KEYS) — HARD. */
   tool?: string;
   /** Species / life-stage scope (KNOWLEDGE_SPECIES_KEYS) — HARD. */
@@ -80,14 +93,33 @@ export interface DetailedRetrieval extends CachedRetrieval {
 /** Test hook — the retrieval cache is module state. */
 export function __clearRetrievalCache(): void {
   cache.clear();
+  embeddingCache.clear();
+}
+
+/**
+ * Query embeddings, memoised separately from results: the result cache is
+ * keyed on the SCOPE too, so one caller asking the same question under two
+ * tools (the Scenario Studio assistant retrieves as `roleplay` AND as
+ * `scenario-builder` every turn) used to pay for the same embedding twice.
+ */
+const embeddingCache = new Map<string, { value: number[]; expiresAt: number }>();
+
+async function embedQuery(query: string): Promise<number[]> {
+  const hit = embeddingCache.get(query);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+  const [embedding] = await embedTexts([query], 'RETRIEVAL_QUERY');
+  if (embeddingCache.size > 200) embeddingCache.clear();
+  embeddingCache.set(query, { value: embedding, expiresAt: Date.now() + CACHE_TTL_MS });
+  return embedding;
 }
 
 /** Ignore-don't-reject validation: anything unrecognised is simply dropped. */
 export function sanitizeFilters(raw: unknown): RetrievalFilters {
   if (!raw || typeof raw !== 'object') return {};
-  const { focus, docSlugs, tool, species } = raw as {
+  const { focus, docSlugs, inheritedDocs, tool, species } = raw as {
     focus?: unknown;
     docSlugs?: unknown;
+    inheritedDocs?: unknown;
     tool?: unknown;
     species?: unknown;
   };
@@ -104,6 +136,7 @@ export function sanitizeFilters(raw: unknown): RetrievalFilters {
       .slice(0, MAX_DOC_SLUGS);
     if (slugs.length) out.docSlugs = slugs;
   }
+  if (inheritedDocs === true && out.docSlugs) out.inheritedDocs = true;
   return out;
 }
 
@@ -166,6 +199,7 @@ export async function retrieveChunksDetailed(
     results: [],
     appliedFilter: buildScopeFilter(filters),
     focusRelaxed: false,
+    docsRelaxed: false,
     latencyMs: elapsed(),
   });
 
@@ -179,13 +213,14 @@ export async function retrieveChunksDetailed(
       k,
       focus: filters.focus ?? null,
       docSlugs: filters.docSlugs ? [...filters.docSlugs].sort() : null,
+      inheritedDocs: filters.inheritedDocs === true,
       tool: filters.tool ?? null,
       species: filters.species ?? null,
     });
     const hit = cache.get(cacheKey);
     if (hit && hit.expiresAt > Date.now()) return { ...hit.value, latencyMs: elapsed() };
 
-    const [embedding] = await embedTexts([query], 'RETRIEVAL_QUERY');
+    const embedding = await embedQuery(query);
     const sb = opts.sb ?? getServiceClient();
     const literal = toPgvectorLiteral(embedding);
 
@@ -209,12 +244,18 @@ export async function retrieveChunksDetailed(
     // • ZERO ROWS with explicit doc attachments: honest empty result. The
     //   admin UI promises "the search only looks inside them", so pulling
     //   from the whole corpus here would silently break that contract.
+    // • ZERO ROWS with INHERITED (category) documents: retry inside the
+    //   scope. Inheriting is not that promise — a category's documents may
+    //   be filed for another animal or tool than this scenario's.
     const softened = Boolean(filters.docSlugs || filters.focus);
     const zeroRows = !(data as Row[] | null)?.length;
+    const softDocs = Boolean(filters.docSlugs && filters.inheritedDocs);
     let focusRelaxed = false;
-    if (softened && (error || (zeroRows && filters.focus && !filters.docSlugs))) {
+    let docsRelaxed = false;
+    if (softened && (error || (zeroRows && ((filters.focus && !filters.docSlugs) || softDocs)))) {
       if (error) console.warn('[rag-retrieve] filtered rpc failed', error.message);
       focusRelaxed = Boolean(filters.focus);
+      docsRelaxed = softDocs;
       appliedFilter = scopeOnly(filters);
       ({ data, error } = await sb.rpc('match_knowledge_chunks', {
         query_embedding: literal,
@@ -225,13 +266,14 @@ export async function retrieveChunksDetailed(
 
     if (error) {
       console.warn('[rag-retrieve] rpc failed', error.message);
-      return { results: [], appliedFilter, focusRelaxed, latencyMs: elapsed() };
+      return { results: [], appliedFilter, focusRelaxed, docsRelaxed, latencyMs: elapsed() };
     }
 
     const value: CachedRetrieval = {
       results: ((data ?? []) as Row[]).map(mapRow),
       appliedFilter,
       focusRelaxed,
+      docsRelaxed,
     };
 
     // Bound the cache so a scan of unique queries can't grow it unbounded.

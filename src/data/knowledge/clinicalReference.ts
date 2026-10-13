@@ -29,6 +29,27 @@ requirement (DMER) for adult dogs:
 For weight loss, target 80% of DMER for ideal weight, not current weight.
 `.trim();
 
+/**
+ * Feline counterparts of the canine blurbs above. Kept generic on purpose:
+ * the canine blurbs carry dog-specific cut-offs and DMER multipliers, and the
+ * product anchors quote a canine trial. Nothing here introduces a feline
+ * number that the clinic's own charts don't own. Used by the cat prompts and
+ * seeded as the cat-scoped `clinical:reference-cat` knowledge document.
+ */
+export const CAT_BCS_BLURB = `
+Body Condition Score (BCS) is scored 1–9 for cats too. Use the clinic's feline
+BCS chart for the exact bands: the ideal sits mid-scale, higher scores indicate
+progressive overweight and obesity, lower scores underweight. Never apply
+canine cut-offs to a cat.
+`.trim();
+
+export const CAT_CALORIE_FORMULA_BLURB = `
+Resting energy requirement (RER) ≈ 70 × kg^0.75 (the standard formula, used
+for cats as well). Feline maintenance and weight-loss targets use cat-specific
+factors, not the canine DMER multipliers — expect staff to defer to the
+clinic's calculated feeding plan, based on ideal (not current) weight.
+`.trim();
+
 export const PRODUCT_ANCHORS = {
   satietySupport: {
     name: 'Royal Canin Satiety Support',

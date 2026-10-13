@@ -1,4 +1,5 @@
 import type { DriverKey } from '../lib/tokens';
+import type { ScenarioSpecies } from '../../../src/shared/scenarios/species';
 
 export interface AdminUser {
   user_id: string;
@@ -27,7 +28,14 @@ export type UserAction =
       displayName?: string;
       roleKey?: string | null;
     }
-  | { op: 'delete'; userId: string };
+  | { op: 'delete'; userId: string }
+  /**
+   * A temporary password (12–72 characters). Needs `team.manage`; never your
+   * own account; an owner's only by an owner. The server flags the account
+   * (`user_metadata.must_change_password`) so they choose their own at
+   * next sign-in.
+   */
+  | { op: 'set_password'; userId: string; password: string };
 
 export interface AdminSession {
   id: string;
@@ -94,6 +102,12 @@ export interface UserScenario {
   avg_score: number | null;
   created_at: string;
   updated_at?: string | null;
+  /**
+   * 'dog' | 'cat' — which animal the trainee built it for (null/absent =
+   * dog). Column added by migration 20261012000000_scenario_objections.sql;
+   * rows from a project that has not run it have no such key.
+   */
+  species?: ScenarioSpecies | null;
 }
 
 export interface AnalyzerEvent {
@@ -205,10 +219,24 @@ export interface ScenarioOverrideRow {
   pushback_notes: string | null;
   suggested_driver: DriverKey | null;
   weight_kg: number | null;
+  /**
+   * 'dog' | 'cat' (null/absent = dog). Column added by migration
+   * 20260925000000_scenario_species.sql (applied to production 2026-09-27);
+   * rows read from a project that has not run it have no such key.
+   */
+  species?: ScenarioSpecies | null;
   /** Clinical focus area key (see src/shared/knowledge/focusAreas.ts). */
   focus_area: string | null;
   /** knowledge_documents.slug values explicitly attached to this scenario. */
   knowledge_slugs: string[] | null;
+  /**
+   * For an `admin:` scenario made from another one ("Add to library" on a
+   * trainee's scenario, or Duplicate): the source id — `user:<uuid>`,
+   * `seed:<n>` or `admin:<uuid>`. Display only. The server stores it when the
+   * row is CREATED and ignores it on updates. Column added by migration
+   * 20261012000000_scenario_objections.sql; absent before it is applied.
+   */
+  copied_from?: string | null;
   deleted_at: string | null;
   created_by: string | null;
   updated_by: string | null;

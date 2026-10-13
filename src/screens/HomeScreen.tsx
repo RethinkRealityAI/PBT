@@ -16,6 +16,12 @@ import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import { ScenarioHints } from '../features/scenarios/ScenarioHints';
 import { useResolvedLibraryScenarios } from '../data/useResolvedScenarios';
+import { useTrainingSpecies } from '../features/scenarios/useTrainingSpecies';
+import { Segmented, type SegmentedOption } from '../design-system/Segmented';
+import { SpeciesIcon } from '../design-system/SpeciesIcon';
+import { useObjectionCatalog } from '../features/scenarios/useObjectionCatalog';
+import { objectionCategoryId } from '../shared/scenarios/objectionCategories';
+import { speciesOf, type ScenarioSpecies } from '../shared/scenarios/species';
 import { useFlag, useFlagValue, useFlags, useSimulationConfig, IfFlag } from '../app/providers/FlagProvider';
 import { resolveDimensions, resolveWeights } from '../data/knowledge/simulationConfig';
 import type { DimensionKey } from '../data/knowledge/scoringRubric';
@@ -342,6 +348,9 @@ export function HomeScreen() {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   const resolvedLibrary = useResolvedLibraryScenarios();
+  const [trainSpecies, setTrainSpecies] = useTrainingSpecies();
+  // Today's pick names its category (the subject area) above the title.
+  const { teamObjections, categoryById } = useObjectionCatalog();
   const headlineOverride = useFlagValue<string>('field.home.headline', '');
   const showActCard = useFlag('component.home.act_guide_card', true);
   const showLibraryCard = useFlag('component.home.library_card', true);
@@ -377,15 +386,30 @@ export function HomeScreen() {
 
   const driver = ECHO_DRIVERS[profile.primary];
   const driverColors = DRIVER_COLORS[profile.primary];
-  const total = resolvedLibrary.length;
+  // Dog | Cat switch: only when the library actually holds scenarios for BOTH
+  // animals. With one animal (today: dogs only) there is no switch and no
+  // filter, so a stored preference can never empty the hero card.
+  const libraryHasBothAnimals =
+    resolvedLibrary.some((r) => speciesOf(r.scenario.species) === 'dog') &&
+    resolvedLibrary.some((r) => speciesOf(r.scenario.species) === 'cat');
+  const pickLibrary = libraryHasBothAnimals
+    ? resolvedLibrary.filter((r) => speciesOf(r.scenario.species) === trainSpecies)
+    : resolvedLibrary;
+  const total = pickLibrary.length;
   // Today's pick rotates by calendar day + the user's driver; the manual
   // prev/next pager offsets from that daily base. The base is held steady
   // once the library has resolved so a late flag snapshot (or the 5-minute
   // refresh) changing the visible scenario count can't shuffle the card the
-  // user is currently looking at.
+  // user is currently looking at. The CAT rotation gets its own seed (its own
+  // day+driver slot, so switching re-derives a base for the cat list instead
+  // of reusing an index computed for the dogs). The dog seed stays the plain
+  // driver: when an admin publishes the first cat scenario and the switch
+  // appears, a dog trainee's list and seed are unchanged, so the card they
+  // are reading does not reshuffle under them.
   pickBaseRef.current = resolveDailyPickBase(pickBaseRef.current, {
     total,
-    driverSeed: profile.primary,
+    driverSeed:
+      libraryHasBothAnimals && trainSpecies === 'cat' ? `${profile.primary}:cat` : profile.primary,
     resolved: flagsReady,
   });
   const dailyBase = pickBaseRef.current?.base ?? 0;
@@ -393,7 +417,7 @@ export function HomeScreen() {
   // `total === 0` renders <EmptyScenarioHero /> instead of this card, so the
   // LIBRARY_SCENARIOS[0] fallback below is only a type guard — it is never
   // shown, and must not be: it would resurrect a scenario the admin hid.
-  const resolvedSlot = resolvedLibrary[safeIndex];
+  const resolvedSlot = pickLibrary[safeIndex];
   const todaysPick = resolvedSlot?.scenario ?? LIBRARY_SCENARIOS[0];
   const todaysOverride = resolvedSlot?.override ?? null;
   const cardDriverKey =
@@ -414,11 +438,23 @@ export function HomeScreen() {
     localizedScenario(todaysPick, locale).pushback.title;
   const cardSubtitle =
     todaysOverride?.card_subtitle_override?.trim() ||
-    t('home.pick.subtitle', {
+    t(speciesOf(todaysPick.species) === 'cat' ? 'home.pick.subtitleCat' : 'home.pick.subtitle', {
       breed: todaysPick.breed,
-      age: localizedLifeStage(todaysPick.age, locale),
+      age: localizedLifeStage(todaysPick.age, locale, todaysPick.species),
       driver: todaysPick.suggestedDriver,
     });
+  const pickCategory =
+    categoryById(objectionCategoryId(todaysPick.pushback.id, teamObjections))?.label ?? null;
+  const speciesOptions: SegmentedOption<ScenarioSpecies>[] = [
+    { value: 'dog', label: t('create.animal.dog'), icon: <SpeciesIcon species="dog" size={14} /> },
+    { value: 'cat', label: t('create.animal.cat'), icon: <SpeciesIcon species="cat" size={14} /> },
+  ];
+  const changePickSpecies = (next: ScenarioSpecies) => {
+    if (next === trainSpecies) return;
+    // Start the other animal's rotation at its own daily pick.
+    setPickIndex(0);
+    setTrainSpecies(next);
+  };
   const startButtonLabel =
     todaysOverride?.start_button_label?.trim() || t('home.pick.start');
   const infoModalTitle = todaysOverride?.info_modal_title?.trim() || '';
@@ -824,7 +860,18 @@ export function HomeScreen() {
                 className="flex w-full min-w-0 items-center"
                 style={{ marginBottom: 8, gap: 12 }}
               >
-                <div aria-hidden style={{ flex: 1, minWidth: 8 }} />
+                {libraryHasBothAnimals ? (
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Segmented
+                      options={speciesOptions}
+                      value={trainSpecies}
+                      onChange={changePickSpecies}
+                      ariaLabel={t('home.pick.speciesAria')}
+                    />
+                  </div>
+                ) : (
+                  <div aria-hidden style={{ flex: 1, minWidth: 8 }} />
+                )}
                 <div className="flex shrink-0 items-center gap-1">
                   <button
                     onClick={() => setPickIndex((i) => i - 1)}
@@ -875,6 +922,25 @@ export function HomeScreen() {
                 </div>
               </div>
 
+              {pickCategory && (
+                <div
+                  style={{
+                    margin: '0 0 4px',
+                    paddingRight: 108,
+                    fontFamily: 'var(--pbt-font-mono)',
+                    fontSize: 9,
+                    fontWeight: 600,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color: 'var(--pbt-text-muted)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {pickCategory}
+                </div>
+              )}
               <h2
                 style={{
                   margin: '0 0 6px',

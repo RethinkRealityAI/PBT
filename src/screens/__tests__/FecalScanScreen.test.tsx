@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { FecalScanScreen } from '../FecalScanScreen';
 import { ThemeProvider } from '../../app/providers/ThemeProvider';
 import { LanguageProvider } from '../../app/providers/LanguageProvider';
+import { loadCatalog } from '../../i18n/translate';
 import { FECAL_CHARTS } from '../../data/knowledge/fecalCharts';
 import { COLORS } from '../../design-system/tokens';
 import type { UseFecalScan } from '../../features/fecal-scan/useFecalScan';
@@ -347,6 +348,10 @@ describe('FecalScanScreen', () => {
 
   it('names the search scope from the catalogs, not hardcoded English', async () => {
     const user = userEvent.setup();
+    // The French catalog is a lazy chunk. Load it first so the assertions
+    // below test the wording, not how fast a dynamic import resolves while
+    // 130 test files run in parallel (it timed out under that load).
+    await loadCatalog('fr');
     scan = baseScan({ status: 'done', result: RESULT, retrieval: RETRIEVAL });
     render(
       <ThemeProvider initialTheme="light">

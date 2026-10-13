@@ -21,6 +21,13 @@ import {
 import type { ScenarioOverride } from '../services/flagsClient';
 import type { DriverKey } from '../design-system/tokens';
 import { DRIVER_KEYS } from '../design-system/tokens';
+import { isScenarioSpecies, type ScenarioSpecies } from '../shared/scenarios/species';
+import {
+  resolveObjection,
+  rowToTeamObjection,
+  type TeamObjection,
+} from '../shared/scenarios/objections';
+import { rowToCategory, type ObjectionCategory } from '../shared/scenarios/objectionCategories';
 
 export function seedScenarioId(index: number): string {
   return `seed:${index}`;
@@ -32,6 +39,38 @@ export function userScenarioId(uuid: string): string {
 
 export function isAdminScenarioId(id: string): boolean {
   return id.startsWith('admin:');
+}
+
+/**
+ * Tolerant read of `snapshot.objections` (team-authored objections): anything
+ * that isn't a usable team objection is dropped (never rendered half-valid),
+ * and an absent list (an older server, or the migration not applied) is
+ * simply none.
+ */
+export function teamObjectionsFromSnapshot(raw: unknown): TeamObjection[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TeamObjection[] = [];
+  for (const entry of raw) {
+    const objection = rowToTeamObjection(entry);
+    if (objection) out.push(objection);
+  }
+  return out;
+}
+
+/**
+ * Tolerant read of `snapshot.objectionCategories` — the STORED categories
+ * (team categories + admin edits of the built-ins). Unusable entries are
+ * dropped; an absent list is none. Always merge the result with the code's
+ * built-ins (`mergeCategories`) before use.
+ */
+export function objectionCategoriesFromSnapshot(raw: unknown): ObjectionCategory[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ObjectionCategory[] = [];
+  for (const entry of raw) {
+    const category = rowToCategory(entry);
+    if (category) out.push(category);
+  }
+  return out;
 }
 
 function asLifeStage(v: string | null | undefined): LifeStage | null {
@@ -57,10 +96,41 @@ function asDifficulty(n: number | null | undefined): Difficulty | null {
   return null;
 }
 
-/** Resolve a `pushback_id` column to the real category. Unknown id → null. */
-function asPushback(v: string | null | undefined): PushbackCategory | null {
-  if (!v) return null;
-  return PUSHBACK_CATEGORIES.find((p) => p.id === v) ?? null;
+/**
+ * Resolve a `pushback_id` column to the real category. Unknown id → null.
+ *
+ * Goes through the shared `resolveObjection` — the ONE resolver the Studio's
+ * `draftToScenario` uses too — so a built-in id and a team objection
+ * (`team:<slug>`, retired ones included) resolve identically on both sides.
+ * A built-in hands back its canonical `PUSHBACK_CATEGORIES` entry (same text
+ * as the shared labels; the object identity is kept for callers that compare
+ * against the base scenario's category).
+ */
+function asPushback(
+  v: string | null | undefined,
+  teamObjections: readonly TeamObjection[],
+): PushbackCategory | null {
+  const resolved = resolveObjection(v, teamObjections);
+  if (!resolved) return null;
+  return PUSHBACK_CATEGORIES.find((p) => p.id === resolved.id) ?? resolved;
+}
+
+/**
+ * True when an override names a pushback this client cannot resolve (a team
+ * objection that was deleted, or one a stale snapshot doesn't carry yet).
+ * `applyScenarioOverride` would otherwise fall back to the BASE scenario's
+ * pushback while keeping the override's backstory, notes and opening line —
+ * written for the other objection — so a trainee would play "Cost" with a
+ * probiotics story. Callers hide such a scenario instead (the admin side,
+ * `draftToScenario`, refuses the same draft, so both sides agree).
+ */
+export function overridePushbackUnresolvable(
+  override: ScenarioOverride | null,
+  teamObjections: readonly TeamObjection[] = [],
+): boolean {
+  const id = override?.pushback_id;
+  if (!id) return false;
+  return resolveObjection(id, teamObjections) === null;
 }
 
 /**
@@ -72,6 +142,14 @@ function asWeightKg(n: number | null | undefined): string | null {
   if (n == null) return null;
   if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return null;
   return String(n);
+}
+
+/**
+ * `species` arrives only once migration 20260925000000_scenario_species.sql
+ * is applied, and is plain text — anything but 'dog' | 'cat' is ignored.
+ */
+function asSpecies(v: string | null | undefined): ScenarioSpecies | null {
+  return isScenarioSpecies(v) ? v : null;
 }
 
 /**
@@ -101,13 +179,18 @@ export function applyScenarioOverride(
   base: Scenario,
   override: ScenarioOverride | null,
   scenarioId?: string,
+  teamObjections: readonly TeamObjection[] = [],
 ): Scenario {
   if (!override) return scenarioId ? { ...base, _overrideId: scenarioId } : base;
+  // Only a scenario that HAS a species gets the key: a legacy row merged onto
+  // a legacy base stays key-for-key the object it always was.
+  const species = asSpecies(override.species) ?? base.species;
   return {
     ...base,
+    ...(species ? { species } : {}),
     breed: override.breed?.trim() || base.breed,
     age: asLifeStage(override.life_stage) ?? base.age,
-    pushback: asPushback(override.pushback_id) ?? base.pushback,
+    pushback: asPushback(override.pushback_id, teamObjections) ?? base.pushback,
     suggestedDriver: asDriver(override.suggested_driver) ?? base.suggestedDriver,
     weightKg: asWeightKg(override.weight_kg) ?? base.weightKg,
     persona: asPersona(override.persona_override) ?? base.persona,
@@ -129,15 +212,23 @@ export function applyScenarioOverride(
  *
  * Returns null if the row is missing required fields (graceful skip rather
  * than crash). The caller then drops it from the resolved library.
+ *
+ * `teamObjections` = the team-authored objections from the flags snapshot
+ * (`snapshot.objections`, retired ones included). A row built on a team
+ * objection the snapshot doesn't carry (deleted, or an older server) is
+ * dropped like any unknown pushback.
  */
 export function adminOverrideToScenario(
   override: ScenarioOverride,
+  teamObjections: readonly TeamObjection[] = [],
 ): Scenario | null {
   const lifeStage = asLifeStage(override.life_stage);
   const driver = asDriver(override.suggested_driver);
-  const pushback = asPushback(override.pushback_id);
+  const pushback = asPushback(override.pushback_id, teamObjections);
   if (!override.breed || !lifeStage || !driver || !pushback) return null;
+  const species = asSpecies(override.species);
   return {
+    ...(species ? { species } : {}),
     breed: override.breed,
     age: lifeStage,
     persona: asPersona(override.persona_override) ?? 'Skeptical',

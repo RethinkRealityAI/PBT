@@ -7,6 +7,7 @@
  */
 
 import type { DriverKey } from '../design-system/tokens';
+import type { ScenarioSpecies } from '../shared/scenarios/species';
 
 // ─────────────────────────────────────────────────────────────
 // Enums / union types
@@ -27,6 +28,13 @@ export interface PushbackCategory {
   title: string;
   /** Italic example quote, verbatim from prototype */
   example: string;
+  /**
+   * French text for a TEAM objection (`team:<slug>`, authored in the Scenario
+   * Studio). Built-ins are localised by the overlay in
+   * src/i18n/fr/data/pushbacks.ts instead, so they never carry these.
+   */
+  titleFr?: string;
+  exampleFr?: string;
 }
 
 export const PUSHBACK_CATEGORIES: PushbackCategory[] = [
@@ -116,6 +124,12 @@ export const DIFFICULTY_DESCRIPTIONS: Record<Difficulty, string> = {
 // ─────────────────────────────────────────────────────────────
 
 export interface Scenario {
+  /**
+   * Which animal the scenario is about. Absent = dog: every scenario written
+   * before the Scenario Studio (and every trainee-built one) is a dog, and
+   * the prompt builders keep the dog prompt byte-identical in that case.
+   */
+  species?: ScenarioSpecies;
   breed: string;
   age: LifeStage;
   pushback: PushbackCategory;

@@ -5,9 +5,11 @@
  *
  * The trust boundary these helpers implement is spelled out in
  * `src/shared/ai/contract.ts`. In short:
- *   • the simulation config and admin prompt overrides are loaded HERE from
- *     the database — never read from the request (except preview overrides,
- *     which wrap the customer turn only);
+ *   • the simulation config (with the team's objection coaching merged in),
+ *     the objection categories (whose knowledge a scenario without its own
+ *     reads) and admin prompt overrides are loaded HERE from the database —
+ *     never read from the request (except preview overrides, which wrap the
+ *     customer turn only);
  *   • the caller is identified from the Supabase JWT when one is sent, and
  *     an INVALID token is a 401 (never silently downgraded to anonymous);
  *   • anonymous callers are first-class — they get the AI, and no persistence;
@@ -15,14 +17,28 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient } from './admin';
+import { readCategories, readTeamObjections } from './objectionsStore';
 import { retrieveChunks } from './retrieval';
 import type { Difficulty, Scenario } from '../../../src/data/scenarios';
 import type { ChatMessage } from '../../../src/services/types';
 import type { PromptOverrides } from '../../../src/data/knowledge/promptBuilders';
+import type { PushbackKnowledge } from '../../../src/data/knowledge/pushbackTaxonomy';
 import {
   resolveRag,
   type SimulationConfig,
 } from '../../../src/data/knowledge/simulationConfig';
+import {
+  isTeamObjectionId,
+  teamObjectionKnowledge,
+  type TeamObjection,
+} from '../../../src/shared/scenarios/objections';
+import {
+  categoryKnowledgeFor,
+  effectiveKnowledge,
+  mergeCategories,
+  type KnowledgeSelection,
+  type ObjectionCategory,
+} from '../../../src/shared/scenarios/objectionCategories';
 import type { RetrievedChunk } from '../../../src/services/ragShared';
 import {
   AI_LIMITS,
@@ -35,6 +51,8 @@ import {
   scenarioRetrievalQuery,
 } from '../../../src/shared/ai/retrievalQuery';
 import { DRIVER_KEYS } from '../../../src/design-system/tokens';
+import { isScenarioSpecies } from '../../../src/shared/scenarios/species';
+import { SCENARIO_LIMITS, SCENARIO_WIRE_MAX } from '../../../src/shared/scenarios/limits';
 import { DEFAULT_LOCALE, isLocale, type Locale } from '../../../src/i18n/locales';
 
 // ─── Responses ─────────────────────────────────────────────────────────────
@@ -299,15 +317,138 @@ export async function parseJsonBody<T>(
 
 const CONFIG_TTL_MS = 60_000;
 let simCache: { value: SimulationConfig | undefined; expiresAt: number } | null = null;
+let teamCache: { value: TeamObjection[]; expiresAt: number } | null = null;
+let categoriesCache: { value: ObjectionCategory[]; expiresAt: number } | null = null;
+/** Last merge, so an unchanged config + objection list keeps its identity. */
+let mergeMemo: {
+  base: SimulationConfig | undefined;
+  team: readonly TeamObjection[];
+  value: SimulationConfig | undefined;
+} | null = null;
 
 /**
- * The global admin simulation config (scoring weights/prompt, driver +
- * pushback edits). THIS IS THE ONLY SOURCE OF THE SIMULATION CONFIG — it is
- * never read from the request, so a client cannot re-weight its own score.
- * Cached in-module for 60 s (same TTL as the flags snapshot the browser
- * sees). On a read error the last good value is served rather than nothing.
+ * The EFFECTIVE simulation config every AI function builds its prompts from:
+ * the stored global config (`loadStoredSimulationConfig`) with the team's
+ * objections merged in (`withTeamObjections`). THIS IS THE ONLY SOURCE OF
+ * THE SIMULATION CONFIG — neither half is ever read from the request, so a
+ * client cannot re-weight its own score or write its own coaching. Both
+ * halves are cached for 60 s and fail open independently: an objections
+ * outage (or a project that has not run the migration) yields the stored
+ * config unchanged, never a failed AI call.
  */
 export async function loadSimulationConfig(
+  sb: SupabaseClient,
+): Promise<SimulationConfig | undefined> {
+  const [base, team] = await Promise.all([loadStoredSimulationConfig(sb), loadTeamObjections(sb)]);
+  if (mergeMemo && mergeMemo.base === base && mergeMemo.team === team) return mergeMemo.value;
+  const value = withTeamObjections(base, team);
+  mergeMemo = { base, team, value };
+  return value;
+}
+
+/**
+ * Team objections as prompt knowledge. For each objection whose id is NOT
+ * already a key of `config.pushbacks` (an AI-tuning entry an admin wrote by
+ * hand wins), `pushbacks[id] = teamObjectionKnowledge(o)`, so the prompt
+ * builders' `resolvePushbackKnowledge` treats it exactly like a built-in.
+ * Retired objections are merged too — a scenario built on one still plays.
+ * An objection without root concerns adds nothing: the prompts read only
+ * that list, and an empty one would print its heading over nothing, while
+ * leaving it out reads exactly as before team objections existed. Returns `config` itself (same
+ * reference) when there is nothing to add.
+ */
+export function withTeamObjections(
+  config: SimulationConfig | undefined,
+  team: readonly TeamObjection[],
+): SimulationConfig | undefined {
+  const existing = config?.pushbacks ?? {};
+  const additions: Record<string, Partial<PushbackKnowledge>> = {};
+  for (const o of team) {
+    if (!isTeamObjectionId(o.id)) continue;
+    if (Object.prototype.hasOwnProperty.call(existing, o.id)) continue;
+    const knowledge = teamObjectionKnowledge(o);
+    // The prompts read only `rootConcerns` from the taxonomy (the customer's
+    // "UNDER THE SURFACE" block and the coach's root concerns); the other
+    // lists are trainee hints, served from the snapshot. Merging an objection
+    // with hints but no root concerns would print those headings over an
+    // empty list, so it adds nothing — exactly as if it had no coaching.
+    if (knowledge.rootConcerns.length === 0) continue;
+    additions[o.id] = knowledge;
+  }
+  if (Object.keys(additions).length === 0) return config;
+  return { ...(config ?? {}), pushbacks: { ...existing, ...additions } };
+}
+
+/**
+ * Non-deleted team objections (retired included), cached 60 s like the
+ * config. A missing table (migration pending) is cached as "none" for the
+ * TTL; any other read error serves the last good list (or none) and is
+ * retried on the next call. Never throws.
+ */
+export async function loadTeamObjections(sb: SupabaseClient): Promise<TeamObjection[]> {
+  const now = Date.now();
+  if (teamCache && teamCache.expiresAt > now) return teamCache.value;
+  const read = await readTeamObjections(sb);
+  if (read.error && !read.missing) {
+    console.warn('[ai] scenario_objections fetch failed', read.error.message);
+    return teamCache?.value ?? NO_TEAM_OBJECTIONS;
+  }
+  const value = read.objections.length > 0 ? read.objections : NO_TEAM_OBJECTIONS;
+  teamCache = { value, expiresAt: now + CONFIG_TTL_MS };
+  return value;
+}
+
+/** One shared empty list, so "no objections" keeps the merge memo warm. */
+const NO_TEAM_OBJECTIONS: TeamObjection[] = [];
+
+/**
+ * Non-deleted STORED objection categories (the team's own + admin edits of
+ * the built-ins), cached 60 s exactly like `loadTeamObjections`: a missing
+ * table is cached as "none", any other read error serves the last good list
+ * (or none) and is retried on the next call. Never throws.
+ */
+export async function loadStoredCategories(sb: SupabaseClient): Promise<ObjectionCategory[]> {
+  const now = Date.now();
+  if (categoriesCache && categoriesCache.expiresAt > now) return categoriesCache.value;
+  const read = await readCategories(sb);
+  if (read.error && !read.missing) {
+    console.warn('[ai] scenario_objection_categories fetch failed', read.error.message);
+    return categoriesCache?.value ?? [];
+  }
+  categoriesCache = { value: read.categories, expiresAt: now + CONFIG_TTL_MS };
+  return read.categories;
+}
+
+/**
+ * The knowledge the scenario's CATEGORY gives it (`categoryKnowledgeFor`
+ * over the server-loaded team objections and categories), or null when its
+ * objection has no category, the category has no knowledge attached, or
+ * anything failed. ALWAYS server-loaded: a request can neither supply nor
+ * widen it — `sanitizeScenario` keeps no such key, and nothing reads one
+ * from the body. Fail-open: an error is "no category knowledge" (the
+ * scenario retrieves exactly as before categories existed), never a failed
+ * AI call.
+ */
+export async function loadCategoryKnowledge(
+  sb: SupabaseClient,
+  objectionId: string | null | undefined,
+): Promise<KnowledgeSelection | null> {
+  try {
+    const [team, stored] = await Promise.all([loadTeamObjections(sb), loadStoredCategories(sb)]);
+    return categoryKnowledgeFor(objectionId, team, mergeCategories(stored));
+  } catch (err) {
+    console.warn('[ai] category knowledge unavailable', errorMessage(err));
+    return null;
+  }
+}
+
+/**
+ * The global admin simulation config as STORED (scoring weights/prompt,
+ * driver + pushback edits) — no team objections. Cached in-module for 60 s
+ * (same TTL as the flags snapshot the browser sees). On a read error the last
+ * good value is served rather than nothing.
+ */
+export async function loadStoredSimulationConfig(
   sb: SupabaseClient,
 ): Promise<SimulationConfig | undefined> {
   const now = Date.now();
@@ -393,6 +534,9 @@ export async function loadPromptOverrides(
 /** Test hook — config + override caches are module-level. */
 export function __resetAiCaches(): void {
   simCache = null;
+  teamCache = null;
+  categoriesCache = null;
+  mergeMemo = null;
   overrideCache.clear();
 }
 
@@ -404,6 +548,13 @@ export function __resetAiCaches(): void {
  * `src/shared/knowledge/knowledgeScopes.ts`): only documents an admin filed
  * for that tool can come back, on every fallback path. Required rather than
  * defaulted — an unscoped caller would quietly read the whole corpus.
+ *
+ * A scenario that chose no knowledge of its own reads its CATEGORY's
+ * (`loadCategoryKnowledge` — server-loaded, never from the request); one
+ * that chose its own ignores the category entirely (`effectiveKnowledge`),
+ * so the category is not even loaded. Built-in categories carry no
+ * knowledge until an admin attaches some, so every existing scenario
+ * retrieves exactly as before.
  */
 export async function retrieveForScenario(
   sb: SupabaseClient,
@@ -414,9 +565,11 @@ export async function retrieveForScenario(
   try {
     const rag = resolveRag(config);
     if (!rag.enabled) return [];
+    const ownChoice = effectiveKnowledge(scenario, null).source === 'scenario';
+    const categoryKnowledge = ownChoice ? null : await loadCategoryKnowledge(sb, scenario.pushback?.id);
     return await retrieveChunks(scenarioRetrievalQuery(scenario), {
       k: rag.k,
-      filters: { ...scenarioRetrievalFilters(scenario), tool },
+      filters: { ...scenarioRetrievalFilters(scenario, { categoryKnowledge }), tool },
       sb,
     });
   } catch {
@@ -512,14 +665,25 @@ export function sanitizeTurns(
   return out.length > maxTurns ? out.slice(out.length - maxTurns) : out;
 }
 
-const OPTIONAL_STRING_FIELDS = [
-  'context',
-  'pushbackNotes',
-  'openingLine',
-  'weightKg',
-  'focusArea',
-  '_overrideId',
-] as const;
+/**
+ * Optional string fields and what happens past their cap: `truncate` keeps
+ * the scenario playable (prose the model reads — bounded, never rejected);
+ * `reject` is for ids and labels, where over-length means a bad client.
+ */
+const OPTIONAL_STRING_FIELDS: ReadonlyArray<
+  readonly [
+    key: 'context' | 'pushbackNotes' | 'openingLine' | 'weightKg' | 'focusArea' | '_overrideId',
+    max: number,
+    over: 'truncate' | 'reject',
+  ]
+> = [
+  ['context', SCENARIO_WIRE_MAX.context, 'truncate'],
+  ['pushbackNotes', SCENARIO_WIRE_MAX.pushbackNotes, 'truncate'],
+  ['openingLine', SCENARIO_WIRE_MAX.openingLine, 'truncate'],
+  ['weightKg', SCENARIO_WIRE_MAX.weightKg, 'reject'],
+  ['focusArea', SCENARIO_WIRE_MAX.focusArea, 'reject'],
+  ['_overrideId', SCENARIO_WIRE_MAX.overrideId, 'reject'],
+];
 
 function nonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim() !== '';
@@ -527,46 +691,84 @@ function nonEmptyString(v: unknown): v is string {
 
 /**
  * Structural validation of a client-supplied scenario. The scenario is the
- * trainee's own content and passes through as-is — but the prompt builders
- * dereference these fields (an unknown driver would throw inside
- * `resolveDriverKnowledge`), so the shape is enforced. Returns null → 400.
+ * trainee's own content — but the prompt builders dereference these fields
+ * (an unknown driver would throw inside `resolveDriverKnowledge`), so the
+ * shape is enforced. Returns null → 400.
+ *
+ * Only the fields the prompt builders know are kept: the request used to be
+ * spread wholesale, so unknown keys rode into the prompt and into the
+ * caller's own `training_sessions.scenario`. Every string has a cap
+ * (`SCENARIO_WIRE_MAX`): before them a 400 KB `context` was accepted and
+ * became an ~800 k-character customer prompt, paid for on every turn and,
+ * with telemetry opted out, invisible in AI Quality.
  */
 export function sanitizeScenario(input: unknown): Scenario | null {
   if (!isPlainObject(input)) return null;
   const s = input;
-  if (!nonEmptyString(s.breed) || !nonEmptyString(s.age) || !nonEmptyString(s.persona)) {
+  const label = (v: unknown, max: number): v is string => nonEmptyString(v) && v.length <= max;
+  if (
+    !label(s.breed, SCENARIO_WIRE_MAX.breed) ||
+    !label(s.age, SCENARIO_WIRE_MAX.age) ||
+    !label(s.persona, SCENARIO_WIRE_MAX.persona)
+  ) {
     return null;
   }
   if (
     !isPlainObject(s.pushback) ||
-    !nonEmptyString(s.pushback.id) ||
-    !nonEmptyString(s.pushback.title)
+    !label(s.pushback.id, SCENARIO_WIRE_MAX.pushbackId) ||
+    !label(s.pushback.title, SCENARIO_WIRE_MAX.pushbackTitle)
   ) {
     return null;
   }
-  if (s.pushback.example !== undefined && typeof s.pushback.example !== 'string') return null;
+  const example = s.pushback.example;
+  if (
+    example !== undefined &&
+    (typeof example !== 'string' || example.length > SCENARIO_WIRE_MAX.pushbackExample)
+  ) {
+    return null;
+  }
   if (!(DRIVER_KEYS as readonly string[]).includes(s.suggestedDriver as string)) return null;
   if (typeof s.difficulty !== 'number' || !Number.isFinite(s.difficulty)) return null;
 
-  const out: Record<string, unknown> = { ...s };
-  out.difficulty = Math.max(1, Math.min(4, Math.round(s.difficulty))) as Difficulty;
-  for (const key of OPTIONAL_STRING_FIELDS) {
+  const out: Record<string, unknown> = {
+    breed: s.breed,
+    age: s.age,
+    pushback: {
+      id: s.pushback.id,
+      title: s.pushback.title,
+      ...(example !== undefined ? { example } : {}),
+    },
+    persona: s.persona,
+    difficulty: Math.max(1, Math.min(4, Math.round(s.difficulty))) as Difficulty,
+    suggestedDriver: s.suggestedDriver,
+  };
+  for (const [key, max, over] of OPTIONAL_STRING_FIELDS) {
     const v = s[key];
-    if (v === undefined || v === null) {
-      delete out[key];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== 'string') return null;
+    if (v.length > max) {
+      if (over === 'reject') return null;
+      out[key] = v.slice(0, max);
       continue;
     }
-    if (typeof v !== 'string') return null;
+    out[key] = v;
   }
   if (s.knowledgeSlugs !== undefined && s.knowledgeSlugs !== null) {
     if (
       !Array.isArray(s.knowledgeSlugs) ||
-      !s.knowledgeSlugs.every((x) => typeof x === 'string')
+      s.knowledgeSlugs.length > SCENARIO_LIMITS.knowledgeSlugsMax ||
+      !s.knowledgeSlugs.every(
+        (x) => typeof x === 'string' && x.length <= SCENARIO_LIMITS.knowledgeSlugLenMax,
+      )
     ) {
       return null;
     }
-  } else {
-    delete out.knowledgeSlugs;
+    out.knowledgeSlugs = s.knowledgeSlugs;
   }
+  // `species` switches the prompt wording and the HARD knowledge scope, so
+  // only the two values the prompt builders know may pass. Anything else is
+  // dropped (not rejected): the scenario simply runs as the dog it would
+  // have been before species existed.
+  if (isScenarioSpecies(s.species)) out.species = s.species;
   return out as unknown as Scenario;
 }

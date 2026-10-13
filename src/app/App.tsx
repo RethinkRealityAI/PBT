@@ -14,8 +14,10 @@ import { useScenario } from './providers/ScenarioProvider';
 import {
   adminOverrideToScenario,
   applyScenarioOverride,
+  overridePushbackUnresolvable,
   isAdminScenarioId,
   seedScenarioId,
+  teamObjectionsFromSnapshot,
 } from '../data/scenarioOverrides';
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import type { ScenarioOverride } from '../services/flagsClient';
@@ -273,7 +275,15 @@ function seedBaseFor(scenarioId: string): Scenario | null {
  *   { type: 'pbt:preview-run-scenario',
  *     scenarioId?: string,
  *     draft?: ScenarioOverride,
+ *     objections?: TeamObjection[],
  *     mode?: 'text' | 'voice' }
+ *
+ * A draft's pushback resolves against the built-ins and the team's
+ * objections: the snapshot's (`snapshot.objections`, retired included), with
+ * any `objections` the builder posts taking precedence by id — so an
+ * objection the admin created or renamed a moment ago previews as edited
+ * instead of waiting for the next snapshot refresh. Posted entries go through
+ * the same tolerant normaliser as the snapshot's.
  *
  * On receipt: resolve the scenario (from the posted draft, else from the flag
  * snapshot), set it via ScenarioProvider, publish the requested mode as a
@@ -317,10 +327,18 @@ function PreviewRunner() {
             type?: string;
             scenarioId?: string;
             draft?: ScenarioOverride;
+            objections?: unknown;
             mode?: 'text' | 'chat' | 'voice';
           }
         | null;
       if (!data || data.type !== 'pbt:preview-run-scenario') return;
+
+      const posted = teamObjectionsFromSnapshot(data.objections);
+      const postedIds = new Set(posted.map((o) => o.id));
+      const team = [
+        ...posted,
+        ...teamObjectionsFromSnapshot(snapshot?.objections).filter((o) => !postedIds.has(o.id)),
+      ];
 
       let scenario: Scenario | null = null;
       let reason: 'invalid' | 'unsupported' = 'unsupported';
@@ -331,12 +349,14 @@ function PreviewRunner() {
         // the row IS the scenario. (Previously only admin:/seed: drafts were
         // handled and a user scenario silently did nothing.)
         const draft = data.draft;
-        scenario = adminOverrideToScenario(draft);
+        scenario = adminOverrideToScenario(draft, team);
         if (!scenario) {
           // A seed draft may legitimately omit columns it inherits from the
           // shipped scenario — overlay it on the seed rather than rejecting.
           const base = seedBaseFor(draft.scenario_id);
-          if (base) scenario = applyScenarioOverride(base, draft, draft.scenario_id);
+          if (base && !overridePushbackUnresolvable(draft, team)) {
+            scenario = applyScenarioOverride(base, draft, draft.scenario_id, team);
+          }
         }
         if (!scenario) reason = 'invalid';
       } else if (data.scenarioId) {
@@ -344,12 +364,16 @@ function PreviewRunner() {
         const row =
           snapshot?.scenarioOverrides.find((o) => o.scenario_id === id) ?? null;
         if (isAdminScenarioId(id)) {
-          scenario = row ? adminOverrideToScenario(row) : null;
+          scenario = row ? adminOverrideToScenario(row, team) : null;
           // A saved admin row that won't build is malformed, not unsupported.
           if (!scenario && row) reason = 'invalid';
         } else {
           const base = seedBaseFor(id);
-          if (base) scenario = applyScenarioOverride(base, row, id);
+          if (base && !overridePushbackUnresolvable(row, team)) {
+            scenario = applyScenarioOverride(base, row, id, team);
+          } else if (base) {
+            reason = 'invalid';
+          }
           // `user:<uuid>` without a draft: the consumer bundle has no copy of
           // another account's scenario, so only the builder can supply it.
         }

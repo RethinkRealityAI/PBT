@@ -143,6 +143,32 @@ function expectedSchemaFromMigrations() {
   return { columns, views };
 }
 
+/**
+ * Columns a migration defines but that are DELIBERATELY not applied yet: the
+ * migration is written, hand-run later, and the app degrades safely without
+ * the column. A missing deferred column is reported as a WARNING, never a
+ * failure. Remove the entry once its migration is applied everywhere — from
+ * then on the column is checked like any other.
+ */
+const DEFERRED_COLUMNS = new Map([
+  // `scenario_overrides.species` sat here from 2026-09-25 until its migration
+  // was applied to production on 2026-09-27, and `user_scenarios.species` /
+  // `scenario_overrides.copied_from` from 2026-10-12 until
+  // 20261012000000_scenario_objections.sql was applied the same day. Add an
+  // entry only for a migration that is written but deliberately not yet run.
+]);
+
+/**
+ * Whole RELATIONS a deferred migration creates. Missing = WARNING, not a
+ * failure, for the same reason as DEFERRED_COLUMNS: every reader degrades to
+ * "none" (flags-resolve serves built-in objections only; admin-objections
+ * answers a plain "run the migration" 503). Remove once applied.
+ */
+const DEFERRED_RELATIONS = new Map([
+  // `scenario_objections` and `scenario_objection_categories` sat here until
+  // 20261012000000_scenario_objections.sql was applied (2026-10-12).
+]);
+
 const base = URL_ENV.replace(/\/$/, '');
 const headers = { apikey: KEY_ENV, Authorization: `Bearer ${KEY_ENV}` };
 
@@ -198,19 +224,27 @@ console.log(
 );
 
 const missing = [];
+const deferredMissing = []; // relations — warn only (DEFERRED_RELATIONS)
 const columnGaps = []; // "relation.column"
+const deferredGaps = []; // "relation.column" — warn only (DEFERRED_COLUMNS)
 const errored = [];
 for (const name of relations) {
   try {
     if (!(await relationExists(name))) {
-      missing.push(name);
+      (DEFERRED_RELATIONS.has(name) ? deferredMissing : missing).push(name);
       continue;
     }
     // Column-level check for tables the migrations define (views: existence only).
     if (!views.has(name) && expectedCols.has(name)) {
-      const cols = [...expectedCols.get(name)].sort();
+      const all = [...expectedCols.get(name)].sort();
+      const cols = all.filter((c) => !DEFERRED_COLUMNS.has(`${name}.${c}`));
       for (const col of await missingColumns(name, cols)) {
         columnGaps.push(`${name}.${col}`);
+      }
+      // Deferred columns are probed one by one so a gap can't fail the bulk
+      // probe of the columns that ARE required.
+      for (const col of all.filter((c) => DEFERRED_COLUMNS.has(`${name}.${c}`))) {
+        if ((await missingColumns(name, [col])).length) deferredGaps.push(`${name}.${col}`);
       }
     }
   } catch (err) {
@@ -237,6 +271,22 @@ if (columnGaps.length) {
       'Apply the migration that adds each column before deploying:',
   );
   for (const c of columnGaps) console.error(`  • ${c}`);
+}
+
+if (deferredGaps.length) {
+  console.warn(
+    '\nverify-db-schema: WARNING — deferred columns not applied yet (the app ' +
+      'degrades safely without them; apply when ready):',
+  );
+  for (const c of deferredGaps) console.warn(`  • ${c}  ← ${DEFERRED_COLUMNS.get(c)}`);
+}
+
+if (deferredMissing.length) {
+  console.warn(
+    '\nverify-db-schema: WARNING — deferred relations not created yet (every ' +
+      'reader degrades safely; apply when ready):',
+  );
+  for (const r of deferredMissing) console.warn(`  • ${r}  ← ${DEFERRED_RELATIONS.get(r)}`);
 }
 
 if (missing.length || columnGaps.length || errored.length) process.exit(1);

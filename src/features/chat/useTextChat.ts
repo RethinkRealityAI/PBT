@@ -12,8 +12,13 @@ import {
   type ScoreReport,
   type SessionRecord,
 } from '../../services/types';
-import { useScenarioOverride, useSimulationConfig } from '../../app/providers/FlagProvider';
-import { seedScenarioId } from '../../data/scenarioOverrides';
+import { useFlags, useScenarioOverride, useSimulationConfig } from '../../app/providers/FlagProvider';
+import {
+  objectionCategoriesFromSnapshot,
+  seedScenarioId,
+  teamObjectionsFromSnapshot,
+} from '../../data/scenarioOverrides';
+import { categoryKnowledgeFor, mergeCategories } from '../../shared/scenarios/objectionCategories';
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
 import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
 import { readStorage, writeStorage } from '../../lib/storage';
@@ -27,6 +32,7 @@ import {
   scenarioRetrievalCacheKey,
   scenarioRetrievalFilters,
 } from '../../services/ragClient';
+import { scenarioRetrievalQuery } from '../../shared/ai/retrievalQuery';
 import { scenarioSummaryLine } from '../../data/scenarioSummary';
 import { isPreviewMode } from '../../lib/previewMode';
 import { resolveRag } from '../../data/knowledge/simulationConfig';
@@ -244,6 +250,22 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // (`resolveRag`) — the AI functions load the config themselves server-side
   // and are authoritative for prompts + scoring, so it is never sent along.
   const simulationConfig = useSimulationConfig();
+  // The knowledge the scenario's CATEGORY gives it (documents / topic an admin
+  // attached to the subject area), from the flags snapshot — so the citations
+  // recorded below match what the server retrieved for the prompt, which
+  // applies the same category knowledge from its own database read. Null when
+  // the category has none (then the whole library, as before categories).
+  const { snapshot: flagSnapshot } = useFlags();
+  const pushbackId = scenario?.pushback?.id ?? null;
+  const categoryKnowledge = useMemo(
+    () =>
+      categoryKnowledgeFor(
+        pushbackId,
+        teamObjectionsFromSnapshot(flagSnapshot?.objections),
+        mergeCategories(objectionCategoriesFromSnapshot(flagSnapshot?.objectionCategories)),
+      ),
+    [pushbackId, flagSnapshot?.objections, flagSnapshot?.objectionCategories],
+  );
   // App locale — decides the language the AI customer speaks and the language
   // the scorecard's coaching prose comes back in. LanguageProvider sits above
   // ChatProvider, and useLanguage() falls back to English outside a provider.
@@ -296,6 +318,14 @@ export function useTextChat(scenario: Scenario): UseTextChat {
    * to them. The single-ref invariant rules out the entire failure mode.
    */
   const transcriptRef = useRef<ChatMessage[]>([]);
+  /**
+   * Generation of the current conversation. `reset()` / `restart()` bump it;
+   * an AI reply that comes back for an older generation is dropped instead
+   * of being appended to the conversation that replaced it. Without this,
+   * two quick "Test in app" runs (or a reset during the opener) put the OLD
+   * draft's opening line into the NEW run's transcript.
+   */
+  const genRef = useRef(0);
   // Exposed so ChatScreen can call end() after detecting [END_SIMULATION]
   const endRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
@@ -311,6 +341,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
 
   const open = useCallback(async () => {
     if (status !== 'idle') return;
+    const gen = ++genRef.current;
     setStatus('opening');
     setTransientError(null);
     startedAtRef.current = Date.now();
@@ -332,33 +363,37 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     try {
       // RAG: one fail-open retrieval per session, cached per scenario.
       const ragCfg = resolveRag(simulationConfig ?? undefined);
-      retrievedRef.current = ragCfg.enabled
-        ? await retrieveContext(
-            `${scenario.pushback.title} ${scenario.suggestedDriver} owner ${scenario.breed} ${scenario.age}`,
-            {
-              k: ragCfg.k,
-              cacheKey: scenarioRetrievalCacheKey(scenario),
-              // `tool` is the knowledge scope, not scenario targeting: the
-              // browser only ever retrieves as the roleplay customer, so a
-              // document filed for the Fecal Scan can never reach this prompt.
-              filters: { ...scenarioRetrievalFilters(scenario), tool: 'roleplay' },
-            },
-          )
+      // Same query string and filters as the server's own retrieval, so the
+      // citations this session records are the passages the prompt was
+      // grounded on (a cat scenario asks about cats, and is scoped to them).
+      const retrieved = ragCfg.enabled
+        ? await retrieveContext(scenarioRetrievalQuery(scenario), {
+            k: ragCfg.k,
+            cacheKey: scenarioRetrievalCacheKey(scenario),
+            // `tool` is the knowledge scope, not scenario targeting: the
+            // browser only ever retrieves as the roleplay customer, so a
+            // document filed for the Fecal Scan can never reach this prompt.
+            filters: { ...scenarioRetrievalFilters(scenario, { categoryKnowledge }), tool: 'roleplay' },
+          })
         : [];
+      if (gen !== genRef.current) return; // reset while retrieving — this run is dead
+      retrievedRef.current = retrieved;
 
       const first = await generateRoleplayMessage(scenario, [], undefined, {
         sessionId: recordIdRef.current,
         promptOverrides,
         locale,
       });
+      if (gen !== genRef.current) return; // reset while the owner was opening
       appendTurn(first);
       setStatus('awaitingUser');
     } catch (err) {
+      if (gen !== genRef.current) return;
       console.error('[useTextChat] open failed', err);
       setTransientError(translate(locale, 'chat.error.openFailed'));
       setStatus('error');
     }
-  }, [scenario, status, promptOverrides, simulationConfig, locale]);
+  }, [scenario, status, promptOverrides, simulationConfig, locale, categoryKnowledge]);
 
   const send = useCallback(
     async (text: string) => {
@@ -370,6 +405,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       const userMsg: ChatMessage = { role: 'user', text, timestamp: Date.now() };
       appendTurn(userMsg);
       setStatus('aiTyping');
+      const gen = genRef.current;
       try {
         // Send the canonical history (which now includes the new user
         // turn) to the model. Filter out any transient-error sentinel.
@@ -384,6 +420,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
             locale,
           },
         );
+        if (gen !== genRef.current) return; // the conversation was reset meanwhile
 
         // Detect end-of-simulation token. Strip every match (defensive —
         // model occasionally emits more than one) and clean up the
@@ -419,6 +456,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           setStatus('awaitingUser');
         }
       } catch (err) {
+        if (gen !== genRef.current) return;
         console.error('[useTextChat] send failed', err);
         // Show error as transient UI message — NOT added to canonical
         // transcript (appendTurn auto-strips the prior transient on next
@@ -618,7 +656,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       await abandon('user_exit');
     }
     // Keep only the AI's first message so the trainee retries the same
-    // opener — drop everything after it.
+    // opener — drop everything after it. Any reply still in flight belongs
+    // to the conversation being thrown away.
+    genRef.current += 1;
     const opener = transcriptRef.current.find((m) => m.role === 'ai' && !m._transientError) ?? null;
     transcriptRef.current = opener ? [opener] : [];
     setMessages(opener ? [opener] : []);
@@ -638,6 +678,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   }, [abandon]);
 
   const reset = useCallback(() => {
+    genRef.current += 1;
     transcriptRef.current = [];
     setMessages([]);
     setScoreReport(null);

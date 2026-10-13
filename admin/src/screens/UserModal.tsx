@@ -17,6 +17,7 @@
  * (set on document root by the consumer app, defaulted by the admin shell).
  */
 import { useMemo, useState } from 'react';
+import { pushbackLabel } from '../lib/labels';
 import {
   DriverChip,
   EmptyState,
@@ -34,6 +35,8 @@ import type { AdminSession, AdminUser, AnalyzerEvent, UserScenario } from '../da
 import { runUserAction } from '../data/queries';
 import { useRoles, type AdminRole } from '../data/access';
 import { SessionModal } from './SessionModal';
+import { useAccess } from '../primitives/access';
+import { TemporaryPassword, canSetTemporaryPassword } from './TemporaryPassword';
 
 type TabKey = 'overview' | 'sessions' | 'scenarios' | 'analyzer' | 'manage';
 
@@ -385,7 +388,7 @@ function SessionsTab({
         >
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>
-              {s.scenario_summary ?? s.pushback_id ?? '—'}
+              {s.scenario_summary ?? (s.pushback_id ? pushbackLabel(s.pushback_id) : '—')}
             </div>
             <div style={{ fontSize: 11, color: COLOR.inkMute }}>
               {s.driver ?? '—'} · {s.mode ?? '—'}
@@ -533,6 +536,13 @@ function ManageTab({
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const roles = useRoles();
+  const access = useAccess();
+  const showTemporaryPassword = canSetTemporaryPassword({
+    canTeamManage: access.can('team.manage'),
+    isSelf,
+    targetIsOwner: user.admin_role === 'owner',
+    actorIsOwner: access.isOwner,
+  });
 
   async function run(op: string, action: () => Promise<unknown>) {
     setBusy(op);
@@ -552,7 +562,9 @@ function ManageTab({
       {isSelf && (
         <div style={{ fontSize: 12.5, color: COLOR.inkMute, lineHeight: 1.5 }}>
           This is your own account — self-destructive actions (removing your admin
-          access, disabling, or deleting) are unavailable here to prevent lockout.
+          access, disabling, or deleting) are unavailable here to prevent lockout. To
+          change your password, use the key button next to your name at the bottom of
+          the menu.
         </div>
       )}
 
@@ -618,6 +630,15 @@ function ManageTab({
           </ActionButton>
         }
       />
+
+      {/* Temporary password */}
+      {showTemporaryPassword && (
+        <TemporaryPassword
+          userId={user.user_id}
+          name={user.display_name?.trim() || user.email || 'this person'}
+          disabled={busy !== null}
+        />
+      )}
 
       {/* Delete */}
       <ManageRow

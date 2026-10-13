@@ -27,6 +27,17 @@ import {
 } from '../../data/knowledge/pushbackTaxonomy';
 import { getDataOverlay } from '../dataRegistry';
 import { DEFAULT_LOCALE, type Locale } from '../locales';
+import {
+  isBuiltInObjectionId,
+  isTeamObjectionId,
+  objectionText,
+  type TeamObjection,
+} from '../../shared/scenarios/objections';
+import {
+  BUILT_IN_CATEGORIES,
+  categoryName,
+  type ObjectionCategory,
+} from '../../shared/scenarios/objectionCategories';
 
 /**
  * Canonical pushback ids. These are DB values (`scenario_overrides.pushback_id`,
@@ -68,11 +79,33 @@ export interface PushbackHintsL10n {
   takeActionPatterns: string[];
 }
 
+/**
+ * The BUILT-IN objection categories (the subject areas — "Everyday
+ * nutrition", "Weight management", "Prescription diets") — mirrors
+ * `BUILT_IN_CATEGORIES` in src/shared/scenarios/objectionCategories.ts, which
+ * is their canonical English. Typed so a new built-in category fails `tsc`
+ * until every overlay names it; `__tests__/pushbacks.test.ts` asserts the
+ * mirror never drifts. Team categories (`category:<slug>`) carry their own
+ * French (`nameFr`) instead.
+ */
+export const OBJECTION_CATEGORY_IDS = ['everyday-nutrition', 'weight', 'prescription-diets'] as const;
+
+export type BuiltInCategoryId = (typeof OBJECTION_CATEGORY_IDS)[number];
+
+/** Display fields of an objection category. */
+export interface ObjectionCategoryL10n {
+  name: string;
+  /** One plain sentence; '' when the category has none. */
+  description: string;
+}
+
 /** Shape a locale registers under the `pushbacks` domain. */
 export interface PushbackDataOverlay {
   categories: Record<PushbackId, PushbackCategoryL10n>;
   difficulties: Record<Difficulty, DifficultyL10n>;
   hints: Record<PushbackId, PushbackHintsL10n>;
+  /** Built-in objection categories (subject areas), keyed by category id. */
+  objectionCategories: Record<BuiltInCategoryId, ObjectionCategoryL10n>;
 }
 
 function overlayFor(locale: Locale): PushbackDataOverlay | undefined {
@@ -84,8 +117,21 @@ function canonicalCategory(id: string): PushbackCategory | undefined {
   return PUSHBACK_CATEGORIES.find((c) => c.id === id);
 }
 
-/** The pushback's display title — canonical English unless the locale overlays it. */
-export function localizedPushbackLabel(id: string, locale: Locale): string {
+/**
+ * The pushback's display title — canonical English unless the locale overlays
+ * it. A TEAM objection (`team:<slug>`, authored in the Scenario Studio) has no
+ * overlay: pass the snapshot's `team` list and its own French title is used
+ * (English when the team wrote none). An id nobody knows reads as itself.
+ */
+export function localizedPushbackLabel(
+  id: string,
+  locale: Locale,
+  team: readonly TeamObjection[] = [],
+): string {
+  if (isTeamObjectionId(id)) {
+    const objection = team.find((o) => o.id === id);
+    return objection ? objectionText(objection, locale).title : id;
+  }
   const canonical = canonicalCategory(id);
   const l10n = overlayFor(locale)?.categories[id as PushbackId];
   return l10n?.title ?? canonical?.title ?? id;
@@ -107,6 +153,22 @@ export function localizedPushbackCategory(
   category: PushbackCategory,
   locale: Locale,
 ): PushbackCategory {
+  if (!isBuiltInObjectionId(category.id)) {
+    // A team objection carries its own French (`titleFr` / `exampleFr`,
+    // stamped by `resolveObjection`); English stands in when there is none.
+    if (locale === DEFAULT_LOCALE) return category;
+    const text = objectionText(
+      {
+        title: category.title,
+        example: category.example,
+        titleFr: category.titleFr ?? null,
+        exampleFr: category.exampleFr ?? null,
+      },
+      locale,
+    );
+    if (text.title === category.title && text.example === category.example) return category;
+    return { ...category, title: text.title, example: text.example };
+  }
   const l10n = overlayFor(locale)?.categories[category.id as PushbackId];
   if (!l10n) return category;
   return { ...category, title: l10n.title, example: l10n.example };
@@ -152,4 +214,61 @@ export function localizedPushbackHints(
     clarifyQuestions: l10n.clarifyQuestions,
     takeActionPatterns: l10n.takeActionPatterns,
   };
+}
+
+/**
+ * A session's stored `scenarioSummary` is canonical English on purpose — it
+ * doubles as the RAG cache key — so localize it for DISPLAY only: swap the
+ * leading pushback title for the locale's label and leave the breed and the
+ * trainee's own notes verbatim. Works for built-ins (overlay) and team
+ * objections (their own French, from `team`); anything else — an objection
+ * renamed since, or one the snapshot no longer carries — stays as stored.
+ */
+export function localizedSessionSummary(
+  summary: string,
+  pushbackId: string,
+  locale: Locale,
+  team: readonly TeamObjection[] = [],
+): string {
+  let englishTitle: string | undefined;
+  if (isTeamObjectionId(pushbackId)) {
+    englishTitle = team.find((o) => o.id === pushbackId)?.title;
+  } else {
+    englishTitle = canonicalCategory(pushbackId)?.title;
+  }
+  if (!englishTitle || !summary.startsWith(englishTitle)) return summary;
+  return localizedPushbackLabel(pushbackId, locale, team) + summary.slice(englishTitle.length);
+}
+
+/**
+ * Display name + description of an objection CATEGORY (a merged entry from
+ * `mergeCategories`), in the locale.
+ *
+ *  • Team category (`category:<slug>`): its own French name when the team
+ *    wrote one, English otherwise (`categoryName`). The description has no
+ *    French field, so it reads as written.
+ *  • Built-in category: the locale overlay — UNLESS an admin edited it in the
+ *    Studio (stored as a row with the same id). An admin's French name always
+ *    wins; a renamed / re-described built-in shows the admin's text (English
+ *    when no French was given), never the stale translation of the old name.
+ */
+export function localizedObjectionCategory(
+  category: Pick<ObjectionCategory, 'id' | 'name' | 'nameFr' | 'description'>,
+  locale: Locale,
+): ObjectionCategoryL10n {
+  const canonical = BUILT_IN_CATEGORIES.find((c) => c.id === category.id);
+  if (!canonical) {
+    return { name: categoryName(category, locale), description: category.description };
+  }
+  const l10n = overlayFor(locale)?.objectionCategories[category.id as BuiltInCategoryId];
+  const renamed = category.name !== canonical.name;
+  const redescribed = category.description !== canonical.description;
+  const name =
+    locale !== DEFAULT_LOCALE && category.nameFr
+      ? categoryName(category, locale)
+      : renamed
+        ? category.name
+        : (l10n?.name ?? canonical.name);
+  const description = redescribed ? category.description : (l10n?.description ?? canonical.description);
+  return { name, description };
 }

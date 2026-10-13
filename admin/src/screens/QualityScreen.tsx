@@ -25,7 +25,7 @@ import { QueryBoundary } from '../primitives/QueryBoundary';
 import { ContextBar, ScreenShell, type Range } from '../primitives/Shell';
 import { useAdminSessions, useAiCalls } from '../data/queries';
 import { COLOR } from '../lib/tokens';
-import { CALL_TYPE_LABELS, PUSHBACK_LABELS, labelOf } from '../lib/labels';
+import { CALL_TYPE_LABELS, labelOf, pushbackLabel } from '../lib/labels';
 import { fmtAgo, fmtMoney } from '../lib/format';
 import { rangeToDays } from '../lib/api';
 import type { AiCall } from '../data/types';
@@ -775,10 +775,10 @@ export function QualityScreen({
                 }}
               >
                 <div style={{ fontSize: 13, color: COLOR.ink, fontWeight: 600 }}>
-                  {s.scenario_summary ?? labelOf(PUSHBACK_LABELS, s.pushback_id, 'Untitled scenario')}
+                  {s.scenario_summary ?? pushbackLabel(s.pushback_id, [], 'Untitled scenario')}
                 </div>
                 <StatusPill tone="neutral">
-                  {labelOf(PUSHBACK_LABELS, s.pushback_id, 'Pushback not recorded')}
+                  {pushbackLabel(s.pushback_id, [], 'Pushback not recorded')}
                 </StatusPill>
                 <div
                   style={{
