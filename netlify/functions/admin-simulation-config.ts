@@ -169,7 +169,7 @@ export default async (req: Request): Promise<Response> => {
     if (fetchErr) return errorResponse(500, fetchErr.message);
     if (!entry) return errorResponse(404, 'Version not found');
     if (entry.entity_type !== 'simulation_config' || entry.entity_id !== 'global') {
-      return errorResponse(400, 'Audit entry is not a simulation config version');
+      return errorResponse(400, 'That history entry is not an AI tuning version');
     }
 
     // Restoring a version means re-applying its "after" — the config as it
