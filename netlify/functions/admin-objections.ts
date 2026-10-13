@@ -100,7 +100,9 @@ import { PUSHBACK_LABELS } from '../../src/shared/scenarios/enums';
 import { SCENARIO_WIRE_MAX } from '../../src/shared/scenarios/limits';
 import {
   OBJECTION_LIMITS,
+  frenchCoachingOf,
   isTeamObjectionId,
+  mentionsCoachingFr,
   objectionIdFromTitle,
   rowToTeamObjection,
   sortTeamObjections,
@@ -149,6 +151,7 @@ type StoredRow = {
   id: string;
   title?: unknown;
   category_id?: unknown;
+  coaching?: unknown;
   deleted_at?: string | null;
   updated_at?: string | null;
 };
@@ -501,9 +504,18 @@ async function upsert(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
   const category = await checkCategory(ctx.sb, valid.value.categoryId);
   if (category instanceof Response) return category;
   if (category === 'unknown') return errorResponse(400, CATEGORY_GONE_MESSAGE);
-  const { id: _id, ...columns } = teamObjectionToRow(valid.value);
 
   const existing = rows.find((r) => r.id === id);
+  // French hint lists ride inside `coaching` (as `fr`), which a write
+  // replaces whole. A body that doesn't mention them at all (an editor
+  // opened before French hints existed) keeps the stored ones rather than
+  // wiping a colleague's translation; an explicit `coachingFr: {}` clears.
+  const toWrite =
+    existing && !mentionsCoachingFr(raw)
+      ? { ...valid.value, coachingFr: frenchCoachingOf(existing.coaching) }
+      : valid.value;
+  const { id: _id, ...columns } = teamObjectionToRow(toWrite);
+
   if (existing?.deleted_at) {
     return jsonResponse({ error: DELETED_OBJECTION_MESSAGE, code: 'deleted' }, { status: 409 });
   }

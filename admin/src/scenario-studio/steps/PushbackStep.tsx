@@ -46,6 +46,7 @@ import { useObjectionsContext } from '../objections/ObjectionsContext';
 import { ObjectionEditor } from '../objections/ObjectionEditor';
 import { CategoryEditor } from '../objections/CategoryEditor';
 import { BodyPortal } from '../objections/editorParts';
+import { lacksHiddenConcerns } from '../readinessWarnings';
 import { BuiltInHint, Caption, FitGrid, Group, StepBody, linkButton } from './stepParts';
 
 /** What each tile is called. `custom` reads as a choice, not a setting. */
@@ -125,6 +126,9 @@ export function PushbackStep({ draft, patch, canWrite, base, askAssistant, knowl
   const [categoryEditor, setCategoryEditor] = useState<'new' | 'edit' | null>(null);
   const canAddObjection = canWrite && objectionsApi.available;
   const teamExample = team.find((o) => o.id === pushbackId)?.example ?? null;
+  /** The chosen TEAM objection, when it carries nothing under the surface. */
+  const genericObjection = team.find((o) => o.id === pushbackId && lacksHiddenConcerns(o)) ?? null;
+  const [concernsEditorOpen, setConcernsEditorOpen] = useState(false);
 
   function choose(option: Pick<PushbackOption, 'id'>) {
     patch({ pushback_id: option.id });
@@ -280,6 +284,20 @@ export function PushbackStep({ draft, patch, canWrite, base, askAssistant, knowl
 
         <ObjectionNote check={check} species={species} />
 
+        {genericObjection && (
+          <InlineAlert tone="warn" title={`“${genericObjection.title}” has no hidden concerns`}>
+            The AI owner will have nothing under the surface to reveal, and the scoring can’t check
+            whether the trainee found the real worry.
+            {canAddObjection && (
+              <div style={{ marginTop: 8 }}>
+                <Button size="sm" tone="secondary" onClick={() => setConcernsEditorOpen(true)}>
+                  Add hidden concerns
+                </Button>
+              </div>
+            )}
+          </InlineAlert>
+        )}
+
         {(canAddObjection || (active?.hiddenForSpecies ?? 0) > 0) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {canAddObjection && active && (
@@ -338,6 +356,16 @@ export function PushbackStep({ draft, patch, canWrite, base, askAssistant, knowl
                 setPicked(saved.id);
               }}
             />
+            {genericObjection && (
+              <ObjectionEditor
+                open={concernsEditorOpen}
+                onClose={() => setConcernsEditorOpen(false)}
+                objection={genericObjection}
+                focus="coaching"
+                knowledge={knowledge}
+                canWrite={canWrite}
+              />
+            )}
           </BodyPortal>
         )}
       </StudioSection>

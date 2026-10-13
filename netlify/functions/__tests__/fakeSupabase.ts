@@ -29,6 +29,7 @@ const CHAIN_OPS = [
   'select',
   'eq',
   'neq',
+  'gte',
   'is',
   'in',
   'order',

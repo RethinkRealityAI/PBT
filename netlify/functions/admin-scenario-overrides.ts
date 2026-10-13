@@ -50,7 +50,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
-import { isMissingSpeciesColumn } from './_shared/speciesColumn';
+import { isMissingSpeciesColumn, isMissingSuccessCriteriaColumn } from './_shared/speciesColumn';
 import {
   checkTeamObjection,
   isMissingCopiedFromColumn,
@@ -84,6 +84,8 @@ export interface OverrideUpsert {
   persona_override?: string | null;
   prompt_prefix?: string | null;
   prompt_suffix?: string | null;
+  /** What a great answer includes — read by the scorer only. */
+  success_criteria?: string | null;
   // Card-level
   card_title_override?: string | null;
   card_subtitle_override?: string | null;
@@ -130,6 +132,7 @@ const WRITABLE_COLUMNS = [
   'persona_override',
   'prompt_prefix',
   'prompt_suffix',
+  'success_criteria',
   'card_title_override',
   'card_subtitle_override',
   'info_modal_title',
@@ -169,6 +172,7 @@ const DRIVERS = ['Activator', 'Energizer', 'Analyzer', 'Harmonizer'];
 const TEXT_CAPS: ReadonlyArray<readonly [keyof OverrideUpsert, number]> = [
   ['prompt_prefix', MAX_PROMPT_LEN],
   ['prompt_suffix', MAX_PROMPT_LEN],
+  ['success_criteria', SCENARIO_LIMITS.successCriteriaMax],
   ['card_title_override', SCENARIO_LIMITS.cardTitleMax],
   ['card_subtitle_override', SCENARIO_LIMITS.cardSubtitleMax],
   ['info_modal_title', SCENARIO_LIMITS.infoTitleMax],
@@ -293,6 +297,8 @@ export const SPECIES_NOTICE_KEY = '_notice';
 export const SPECIES_COLUMN_MISSING = 'species_column_missing';
 /** Same key, when a save had to drop `copied_from` (see the header). */
 export const COPIED_FROM_COLUMN_MISSING = 'copied_from_column_missing';
+/** Same key, when a save had to drop `success_criteria` (migration 20261013000000). */
+export const SUCCESS_CRITERIA_COLUMN_MISSING = 'success_criteria_column_missing';
 
 /** 400 for a `team:` pushback id that names no live objection. */
 export const UNKNOWN_OBJECTION_MESSAGE =
@@ -318,6 +324,8 @@ export { isMissingSpeciesColumn };
  *     nothing (null already means dog), so it saves silently.
  *   • `copied_from` (20261012000000_scenario_objections.sql). Display-only
  *     provenance; `copiedFromDropped` likewise only for a non-null value.
+ *   • `success_criteria` (20261013000000_scenario_success_criteria.sql).
+ *     `criteriaDropped` for a non-empty value (the scorer would not see it).
  */
 export async function upsertOverrideRow(
   sb: SupabaseClient,
@@ -328,6 +336,7 @@ export async function upsertOverrideRow(
   error: DbError;
   speciesDropped: boolean;
   copiedFromDropped: boolean;
+  criteriaDropped: boolean;
   conflict: boolean;
 }> {
   const write = (row: Record<string, unknown>) => {
@@ -347,8 +356,9 @@ export async function upsertOverrideRow(
   let row = payload;
   let speciesRequested = false;
   let copiedFromRequested = false;
+  let criteriaRequested = false;
   // Each `continue` removes a key that was present, so this ends after at
-  // most three writes.
+  // most four writes.
   for (;;) {
     const res = await write(row);
     if (res.error && 'species' in row && isMissingSpeciesColumn(res.error)) {
@@ -369,12 +379,22 @@ export async function upsertOverrideRow(
       row = rest;
       continue;
     }
+    if (res.error && 'success_criteria' in row && isMissingSuccessCriteriaColumn(res.error)) {
+      console.warn(
+        '[admin-scenario-overrides] success_criteria column missing — apply 20261013000000_scenario_success_criteria.sql; saving without it',
+      );
+      const { success_criteria: requested, ...rest } = row;
+      criteriaRequested = typeof requested === 'string' && requested.trim() !== '';
+      row = rest;
+      continue;
+    }
     const saved = !res.error && Boolean(res.data);
     return {
       data: res.data,
       error: res.error,
       speciesDropped: speciesRequested && saved,
       copiedFromDropped: copiedFromRequested && saved,
+      criteriaDropped: criteriaRequested && saved,
       conflict: Boolean(options.existing && !res.error && !res.data),
     };
   }
@@ -386,13 +406,15 @@ const DELETED_MESSAGE =
 /** The saved row, plus a notice when an optional column could not be stored. */
 function savedResponse(
   data: unknown,
-  dropped: { speciesDropped: boolean; copiedFromDropped: boolean },
+  dropped: { speciesDropped: boolean; copiedFromDropped: boolean; criteriaDropped?: boolean },
 ): Response {
   const notice = dropped.speciesDropped
     ? SPECIES_COLUMN_MISSING
-    : dropped.copiedFromDropped
-      ? COPIED_FROM_COLUMN_MISSING
-      : null;
+    : dropped.criteriaDropped
+      ? SUCCESS_CRITERIA_COLUMN_MISSING
+      : dropped.copiedFromDropped
+        ? COPIED_FROM_COLUMN_MISSING
+        : null;
   if (!notice) return jsonResponse(data);
   const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
   return jsonResponse({ ...row, [SPECIES_NOTICE_KEY]: notice });

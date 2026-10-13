@@ -44,6 +44,14 @@ import {
   type ObjectionCheck,
   type ObjectionRef,
 } from './objections/objectionsModel';
+import {
+  categoryScoringReach,
+  categoryScoringReadiness,
+  objectionConcernsFor,
+  objectionConcernsReadiness,
+  type CategoryScoringReach,
+  type ObjectionConcerns,
+} from './readinessWarnings';
 
 export type { StudioStepKey } from '../../../src/shared/ai/scenarioAgent';
 
@@ -123,7 +131,7 @@ export const STUDIO_STEPS: StudioStepDef[] = [
     label: 'AI brief',
     title: 'How is the AI customer briefed?',
     hint: 'Your notes are added to the standard briefing built from your answers.',
-    fields: ['prompt_prefix', 'prompt_suffix'],
+    fields: ['prompt_prefix', 'prompt_suffix', 'success_criteria'],
   },
   {
     key: 'test',
@@ -206,6 +214,19 @@ export interface StudioContext {
    * its own (null: no category, or the category has no knowledge attached).
    */
   categoryKnowledge?: { id: string; name: string } | null;
+  /**
+   * The draft's TEAM objection and how many hidden concerns (root concerns)
+   * it carries — none means the AI owner and the scorer go generic. Null for
+   * a built-in, "Something else", none, or an objection not in the list.
+   * See ./readinessWarnings.
+   */
+  objectionConcerns?: ObjectionConcerns | null;
+  /**
+   * Whether session scoring can read the documents this scenario INHERITS
+   * from its category, for its animal. Null when it doesn't inherit
+   * documents, or while the library isn't loaded. See ./readinessWarnings.
+   */
+  categoryScoring?: CategoryScoringReach | null;
 }
 
 export function hasText(v: unknown): boolean {
@@ -257,8 +278,13 @@ export function stepStatus(
         : { status: 'optional', detail: 'Using the whole knowledge library' };
     }
     case 'brief':
-      return hasText(draft.prompt_prefix) || hasText(draft.prompt_suffix)
-        ? { status: 'done' }
+      if (hasText(draft.prompt_prefix) || hasText(draft.prompt_suffix)) {
+        return hasText(draft.success_criteria)
+          ? { status: 'done', detail: 'Notes + scoring criteria' }
+          : { status: 'done' };
+      }
+      return hasText(draft.success_criteria)
+        ? { status: 'done', detail: 'Scoring criteria added' }
         : { status: 'optional', detail: 'Standard briefing only' };
     case 'test':
       return ctx.tested ? { status: 'done' } : { status: 'todo', detail: 'Not tested yet' };
@@ -324,6 +350,8 @@ export function readiness(draft: StudioDraft, ctx: StudioContext): ReadinessItem
         ]
       : []),
     ...objectionReadiness(draft, ctx.objection ?? null),
+    // Advisory: a team objection with nothing under the surface.
+    ...objectionConcernsReadiness(ctx),
     // A cat scenario can't go live while the species column is missing: the
     // save would drop `species` and trainees would get a DOG roleplay with a
     // cat's backstory. Saving it as a hidden draft is fine.
@@ -356,6 +384,8 @@ export function readiness(draft: StudioDraft, ctx: StudioContext): ReadinessItem
       detail: knowledgeIssues[0],
       step: 'knowledge',
     },
+    // Advisory: inherited category documents the scorer can't read.
+    ...categoryScoringReadiness(ctx),
     {
       key: 'tested',
       label: 'You have test-driven this version',
@@ -472,6 +502,7 @@ export const FIELD_LABELS: Partial<Record<keyof ScenarioOverrideRow, string>> = 
   knowledge_slugs: 'Attached documents',
   prompt_prefix: 'Opening notes for the AI',
   prompt_suffix: 'Final reminders for the AI',
+  success_criteria: 'What a great answer includes (scoring)',
   visible: 'Visible in app',
   sort_order: 'Sort order',
   card_driver_override: 'Card colour',
@@ -532,6 +563,7 @@ export function draftProblems(draft: StudioDraft): string[] {
   tooLong(draft.info_modal_body, L.infoBodyMax, 'Info text');
   tooLong(draft.prompt_prefix, L.promptMax, 'Opening notes');
   tooLong(draft.prompt_suffix, L.promptMax, 'Final reminders');
+  tooLong(draft.success_criteria, L.successCriteriaMax, 'What a great answer includes');
 
   const difficulty = draft.difficulty_override;
   if (difficulty != null && !L.difficultyLevels.includes(difficulty)) {
@@ -692,6 +724,7 @@ export function emptyAdminDraft(
     persona_override: 'Skeptical',
     prompt_prefix: null,
     prompt_suffix: null,
+    success_criteria: null,
     card_title_override: null,
     card_subtitle_override: null,
     info_modal_title: null,
@@ -933,6 +966,14 @@ export function buildStudioContext(args: {
     deleted: args.objections?.deleted ?? [],
     loaded: args.objections?.loaded ?? false,
   });
+  // Advisory checks (./readinessWarnings): present only when there is
+  // something to say, so a context with nothing to warn about stays as it was.
+  const objectionConcerns = objectionConcernsFor(draft.pushback_id, team);
+  const categoryScoring = categoryScoringReach({ draft, team, categories, docs });
+  const warnings = {
+    ...(objectionConcerns ? { objectionConcerns } : {}),
+    ...(categoryScoring ? { categoryScoring } : {}),
+  };
   const selected = draft.knowledge_slugs ?? [];
   if (!docs || selected.length === 0) {
     return {
@@ -945,6 +986,7 @@ export function buildStudioContext(args: {
       speciesUnsupported,
       objection,
       ...(categoryKnowledge ? { categoryKnowledge } : {}),
+      ...warnings,
     };
   }
   const scope = retrievalSpeciesFor(draft.species, draft.life_stage);
@@ -968,6 +1010,7 @@ export function buildStudioContext(args: {
     speciesUnsupported,
     objection,
     ...(categoryKnowledge ? { categoryKnowledge } : {}),
+    ...warnings,
   };
 }
 

@@ -5,6 +5,9 @@ import { PUSHBACK_KNOWLEDGE } from '../../../data/knowledge/pushbackTaxonomy';
 import type { FlagSnapshot } from '../../../services/flagsClient';
 import type { TeamObjection } from '../../../shared/scenarios/objections';
 import { adaptPetWords } from '../../../shared/scenarios/species';
+import { registerDataCatalog } from '../../../i18n/dataRegistry';
+import { frData } from '../../../i18n/fr';
+import { localizedPushbackHints } from '../../../i18n/dataL10n/pushbacks';
 
 let flagSnapshot: FlagSnapshot | null = null;
 
@@ -41,6 +44,7 @@ const PROBIOTICS: TeamObjection = {
     clarifyQuestions: ['What have you noticed about his stools lately?'],
     // takeActionPatterns left empty on purpose → generic fallback
   },
+  coachingFr: {},
   visible: true,
   sortOrder: null,
   updatedAt: null,
@@ -94,5 +98,42 @@ describe('ScenarioHints — team objections', () => {
     const pb = PUSHBACK_KNOWLEDGE[SEED_SCENARIOS[0].pushback.id];
     expect(cues?.acknowledge).toEqual(pb.acknowledgePatterns);
     expect(cues?.clarify).toEqual(pb.clarifyQuestions);
+  });
+});
+
+describe('ScenarioHints — team objections in French', () => {
+  registerDataCatalog('fr', frData);
+  const genericFr = localizedPushbackHints('custom', 'fr')!;
+  const translated: TeamObjection = {
+    ...PROBIOTICS,
+    // acknowledge translated; clarify left English-only; takeAction empty in both.
+    coachingFr: { acknowledgePatterns: ['C’est normal de se poser la question.', 'Deuxième', 'Troisième'] },
+  };
+
+  it('prefers the French list, then the English one, then the generic French cues — per group', () => {
+    // Sanity: the generic fallback really is the French overlay, not English.
+    expect(genericFr.takeActionPatterns).not.toEqual(PUSHBACK_KNOWLEDGE.custom.takeActionPatterns);
+    const cues = scenarioHintCues(teamScenario(), 'fr', [translated]);
+    expect(cues?.acknowledge).toEqual(['C’est normal de se poser la question.', 'Deuxième', 'Troisième']);
+    expect(cues?.clarify).toEqual(['What have you noticed about his stools lately?']);
+    expect(cues?.takeAction).toEqual(genericFr.takeActionPatterns);
+  });
+
+  it('an English trainee never sees the French lists', () => {
+    const cues = scenarioHintCues(teamScenario(), 'en', [translated]);
+    expect(cues?.acknowledge[0]).toBe('It makes sense to question adding something new.');
+    expect(cues?.takeAction).toEqual(PUSHBACK_KNOWLEDGE.custom.takeActionPatterns);
+  });
+
+  it('a French group fills even where the team wrote no English for it', () => {
+    const frOnly: TeamObjection = { ...translated, coachingFr: { takeActionPatterns: ['Proposer un essai de 4 semaines.'] } };
+    const cues = scenarioHintCues(teamScenario('cat'), 'fr', [frOnly]);
+    expect(cues?.takeAction).toEqual(['Proposer un essai de 4 semaines.']);
+    expect(cues?.acknowledge[0]).toBe('It makes sense to question adding something new.');
+  });
+
+  it('falls back to the generic French cues when the snapshot no longer carries the objection', () => {
+    const cues = scenarioHintCues(teamScenario(), 'fr', []);
+    expect(cues?.acknowledge).toEqual(genericFr.acknowledgePatterns);
   });
 });

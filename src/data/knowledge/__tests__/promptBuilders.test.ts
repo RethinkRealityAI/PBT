@@ -122,3 +122,61 @@ describe('promptBuilders', () => {
     });
   });
 });
+
+describe('scorer + coach answer key, and per-scenario success criteria', () => {
+  const teamScenario: Scenario = {
+    ...scenario,
+    pushback: { id: 'team:probiotics', title: 'Probiotics: "he doesn\'t need them"', example: 'He eats well already.' } as Scenario['pushback'],
+  };
+  const config = {
+    pushbacks: {
+      'team:probiotics': {
+        title: 'Probiotics',
+        rootConcerns: ['Thinks supplements are a money grab'],
+        clarifyQuestions: ['What have you heard about probiotics?'],
+        takeActionPatterns: ['A two-week trial with a follow-up call'],
+        watchOuts: ['Leading with the price'],
+      },
+    },
+  };
+
+  it("gives the scorer the objection's concerns, questions, next steps and mistakes", () => {
+    const p = buildScoringSystemPrompt({ scenario: teamScenario, config });
+    expect(p).toContain('# WHAT GOOD LOOKS LIKE FOR THIS OBJECTION');
+    expect(p).toContain('- Thinks supplements are a money grab');
+    expect(p).toContain('- What have you heard about probiotics?');
+    expect(p).toContain('- A two-week trial with a follow-up call');
+    expect(p).toContain('(mark them down):\n- Leading with the price');
+  });
+
+  it('gives the coach the same key, worded as background rather than grading', async () => {
+    const { buildCoachHintSystemPrompt } = await import('../promptBuilders');
+    const p = buildCoachHintSystemPrompt({ scenario: teamScenario, config });
+    expect(p).toContain('A two-week trial with a follow-up call');
+    expect(p).toContain('steer the trainee away from them');
+    expect(p).not.toContain('mark them down');
+  });
+
+  it('skips the key entirely for an objection without coaching', () => {
+    // A team objection whose coaching the server could not load / never had.
+    const p = buildScoringSystemPrompt({ scenario: teamScenario });
+    expect(p).not.toContain('WHAT GOOD LOOKS LIKE');
+  });
+
+  it('puts success criteria in the scorer only — never in the customer prompt', () => {
+    const overrides = { successCriteria: 'Offers a two-week trial and books a follow-up call.' };
+    const scoring = buildScoringSystemPrompt({ scenario: teamScenario, config, overrides });
+    expect(scoring).toContain("# THIS SCENARIO'S SUCCESS CRITERIA");
+    expect(scoring).toContain('Offers a two-week trial and books a follow-up call.');
+    const customer = buildCustomerSystemPrompt({ scenario: teamScenario, config, overrides });
+    expect(customer).not.toContain('books a follow-up call');
+    expect(customer).not.toContain('SUCCESS CRITERIA');
+  });
+
+  it('prints no "UNDER THE SURFACE" heading for coaching without root concerns', () => {
+    const hintsOnly = { pushbacks: { 'team:probiotics': { title: 'P', watchOuts: ['Pitching first'] } } };
+    const customer = buildCustomerSystemPrompt({ scenario: teamScenario, config: hintsOnly });
+    expect(customer).not.toContain('UNDER THE SURFACE');
+    expect(buildScoringSystemPrompt({ scenario: teamScenario, config: hintsOnly })).toContain('- Pitching first');
+  });
+});

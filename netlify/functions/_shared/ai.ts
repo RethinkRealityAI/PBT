@@ -18,6 +18,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient } from './admin';
 import { readCategories, readTeamObjections } from './objectionsStore';
+import { isMissingSuccessCriteriaColumn } from './speciesColumn';
 import { retrieveChunks } from './retrieval';
 import type { Difficulty, Scenario } from '../../../src/data/scenarios';
 import type { ChatMessage } from '../../../src/services/types';
@@ -352,10 +353,12 @@ export async function loadSimulationConfig(
  * hand wins), `pushbacks[id] = teamObjectionKnowledge(o)`, so the prompt
  * builders' `resolvePushbackKnowledge` treats it exactly like a built-in.
  * Retired objections are merged too — a scenario built on one still plays.
- * An objection without root concerns adds nothing: the prompts read only
- * that list, and an empty one would print its heading over nothing, while
- * leaving it out reads exactly as before team objections existed. Returns `config` itself (same
- * reference) when there is nothing to add.
+ * An objection with NO coaching at all adds nothing (its prompts read exactly
+ * as before team objections existed). One with any coaching merges whole:
+ * the customer reads its root concerns ("UNDER THE SURFACE", skipped when
+ * empty) and the scorer + coach read every list as their answer key for this
+ * objection ("WHAT GOOD LOOKS LIKE…", empty lists skipped). Returns `config`
+ * itself (same reference) when there is nothing to add.
  */
 export function withTeamObjections(
   config: SimulationConfig | undefined,
@@ -367,12 +370,13 @@ export function withTeamObjections(
     if (!isTeamObjectionId(o.id)) continue;
     if (Object.prototype.hasOwnProperty.call(existing, o.id)) continue;
     const knowledge = teamObjectionKnowledge(o);
-    // The prompts read only `rootConcerns` from the taxonomy (the customer's
-    // "UNDER THE SURFACE" block and the coach's root concerns); the other
-    // lists are trainee hints, served from the snapshot. Merging an objection
-    // with hints but no root concerns would print those headings over an
-    // empty list, so it adds nothing — exactly as if it had no coaching.
-    if (knowledge.rootConcerns.length === 0) continue;
+    const hasCoaching =
+      knowledge.rootConcerns.length > 0 ||
+      knowledge.acknowledgePatterns.length > 0 ||
+      knowledge.clarifyQuestions.length > 0 ||
+      knowledge.takeActionPatterns.length > 0 ||
+      knowledge.watchOuts.length > 0;
+    if (!hasCoaching) continue;
     additions[o.id] = knowledge;
   }
   if (Object.keys(additions).length === 0) return config;
@@ -483,7 +487,8 @@ function clampOverride(v: unknown): string | null {
 }
 
 /**
- * Per-scenario admin prompt prefix/suffix.
+ * Per-scenario admin prompt inputs: the customer's prefix/suffix and the
+ * scorer's success criteria.
  *
  * Accepted from the request ONLY when `preview === true` (the admin Scenario
  * Builder drives an unsaved draft), clamped to the same length the
@@ -499,6 +504,7 @@ export async function loadPromptOverrides(
     return {
       promptPrefix: clampOverride(body.promptOverrides.promptPrefix),
       promptSuffix: clampOverride(body.promptOverrides.promptSuffix),
+      successCriteria: clampOverride(body.promptOverrides.successCriteria),
     };
   }
   const id = scenario._overrideId;
@@ -508,19 +514,34 @@ export async function loadPromptOverrides(
   const hit = overrideCache.get(id);
   if (hit && hit.expiresAt > now) return hit.value;
   try {
-    const { data, error } = await sb
-      .from('scenario_overrides')
-      .select('prompt_prefix, prompt_suffix')
-      .eq('scenario_id', id)
-      .is('deleted_at', null)
-      .maybeSingle();
+    const read = (columns: string) =>
+      sb
+        .from('scenario_overrides')
+        .select(columns)
+        .eq('scenario_id', id)
+        .is('deleted_at', null)
+        .maybeSingle();
+    let { data, error } = await read('prompt_prefix, prompt_suffix, success_criteria');
+    // A project that has not run 20261013000000_scenario_success_criteria.sql:
+    // the AI notes alone, so the customer and scorer still work.
+    if (error && isMissingSuccessCriteriaColumn(error)) {
+      ({ data, error } = await read('prompt_prefix, prompt_suffix'));
+    }
     if (error) {
       console.warn('[ai] scenario_overrides fetch failed', error.message);
       return hit?.value;
     }
-    const row = data as { prompt_prefix?: string | null; prompt_suffix?: string | null } | null;
+    const row = data as {
+      prompt_prefix?: string | null;
+      prompt_suffix?: string | null;
+      success_criteria?: string | null;
+    } | null;
     const value: PromptOverrides | undefined = row
-      ? { promptPrefix: row.prompt_prefix ?? null, promptSuffix: row.prompt_suffix ?? null }
+      ? {
+          promptPrefix: row.prompt_prefix ?? null,
+          promptSuffix: row.prompt_suffix ?? null,
+          successCriteria: row.success_criteria ?? null,
+        }
       : undefined;
     if (overrideCache.size > 1000) overrideCache.clear();
     overrideCache.set(id, { value, expiresAt: now + CONFIG_TTL_MS });

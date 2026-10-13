@@ -13,6 +13,7 @@
  */
 import {
   COACHING_KEYS,
+  HINT_COACHING_KEYS,
   OBJECTION_LIMITS,
   builtInObjections,
   isBuiltInObjectionId,
@@ -24,7 +25,9 @@ import {
   validateObjectionInput,
   type AdminObjection,
   type CoachingKey,
+  type HintCoachingKey,
   type ObjectionCoaching,
+  type ObjectionCoachingFr,
   type TeamObjection,
 } from '../../../../src/shared/scenarios/objections';
 import { PUSHBACK_LABELS } from '../../../../src/shared/scenarios/enums';
@@ -329,12 +332,36 @@ export interface ObjectionForm {
   categoryId: string | null;
   /** One coaching line per text line, per list (the editor's textareas). */
   coaching: Record<CoachingKey, string>;
+  /** The French versions of the three trainee-hint lists, same one-per-line shape. */
+  coachingFr: Record<HintCoachingKey, string>;
   visible: boolean;
   sortOrder: number | null;
 }
 
 function emptyCoachingText(): Record<CoachingKey, string> {
   return Object.fromEntries(COACHING_KEYS.map((k) => [k, ''])) as Record<CoachingKey, string>;
+}
+
+function emptyCoachingFrText(): Record<HintCoachingKey, string> {
+  return Object.fromEntries(HINT_COACHING_KEYS.map((k) => [k, ''])) as Record<HintCoachingKey, string>;
+}
+
+/** The form field of a French hint box (`acknowledgePatternsFr`, …). */
+export type HintCoachingFrField = `${HintCoachingKey}Fr`;
+
+export function frenchHintField(key: HintCoachingKey): HintCoachingFrField {
+  return `${key}Fr`;
+}
+
+/**
+ * The hint groups that have English lines but no French ones — what a French
+ * trainee would see in English. Drives the editor's "French trainees will
+ * see these hints in English" note.
+ */
+export function untranslatedHintKeys(form: Pick<ObjectionForm, 'coaching' | 'coachingFr'>): HintCoachingKey[] {
+  return HINT_COACHING_KEYS.filter(
+    (k) => coachingLines(form.coaching[k]).length > 0 && coachingLines(form.coachingFr[k]).length === 0,
+  );
 }
 
 export function emptyObjectionForm(
@@ -351,6 +378,7 @@ export function emptyObjectionForm(
     species: animals,
     categoryId,
     coaching: emptyCoachingText(),
+    coachingFr: emptyCoachingFrText(),
     visible: true,
     sortOrder: null,
   };
@@ -359,6 +387,8 @@ export function emptyObjectionForm(
 export function formFromObjection(o: TeamObjection): ObjectionForm {
   const coaching = emptyCoachingText();
   for (const key of COACHING_KEYS) coaching[key] = (o.coaching[key] ?? []).join('\n');
+  const coachingFr = emptyCoachingFrText();
+  for (const key of HINT_COACHING_KEYS) coachingFr[key] = (o.coachingFr?.[key] ?? []).join('\n');
   return {
     id: o.id,
     title: o.title,
@@ -368,6 +398,7 @@ export function formFromObjection(o: TeamObjection): ObjectionForm {
     species: [...o.species],
     categoryId: o.categoryId,
     coaching,
+    coachingFr,
     visible: o.visible,
     sortOrder: o.sortOrder,
   };
@@ -388,6 +419,13 @@ export function formToWrite(form: ObjectionForm): Record<string, unknown> {
     const lines = coachingLines(form.coaching[key]);
     if (lines.length) coaching[key] = lines.slice(0, OBJECTION_LIMITS.coachingItems);
   }
+  // Always sent (even empty): the server keeps the stored French lists only
+  // for a body that doesn't mention them, so clearing them must be explicit.
+  const coachingFr: ObjectionCoachingFr = {};
+  for (const key of HINT_COACHING_KEYS) {
+    const lines = coachingLines(form.coachingFr?.[key] ?? '');
+    if (lines.length) coachingFr[key] = lines.slice(0, OBJECTION_LIMITS.coachingItems);
+  }
   return {
     ...(form.id ? { id: form.id } : {}),
     title: form.title.trim(),
@@ -397,6 +435,7 @@ export function formToWrite(form: ObjectionForm): Record<string, unknown> {
     species: SCENARIO_SPECIES.filter((s) => form.species.includes(s)),
     categoryId: form.categoryId,
     coaching,
+    coachingFr,
     visible: form.visible,
     sortOrder: form.sortOrder,
   };
@@ -409,7 +448,8 @@ export type ObjectionFormField =
   | 'categoryId'
   | 'titleFr'
   | 'exampleFr'
-  | CoachingKey;
+  | CoachingKey
+  | HintCoachingFrField;
 
 /**
  * Everything wrong with the form, per field, in words — checked before the
@@ -435,13 +475,19 @@ export function objectionFormErrors(
   if (form.exampleFr.trim().length > L.exampleMax) {
     out.exampleFr = `Keep the French line under ${L.exampleMax} characters.`;
   }
+  const listError = (text: string): string | undefined => {
+    const lines = coachingLines(text);
+    if (lines.length > L.coachingItems) return `Up to ${L.coachingItems} lines here (now ${lines.length}).`;
+    if (lines.some((l) => l.length > L.coachingItemMax)) return `Keep each line under ${L.coachingItemMax} characters.`;
+    return undefined;
+  };
   for (const key of COACHING_KEYS) {
-    const lines = coachingLines(form.coaching[key]);
-    if (lines.length > L.coachingItems) {
-      out[key] = `Up to ${L.coachingItems} lines here (now ${lines.length}).`;
-    } else if (lines.some((l) => l.length > L.coachingItemMax)) {
-      out[key] = `Keep each line under ${L.coachingItemMax} characters.`;
-    }
+    const err = listError(form.coaching[key]);
+    if (err) out[key] = err;
+  }
+  for (const key of HINT_COACHING_KEYS) {
+    const err = listError(form.coachingFr?.[key] ?? '');
+    if (err) out[frenchHintField(key)] = err;
   }
   if (Object.keys(out).length === 0) {
     // The same validator the server runs. A new objection has no id yet, so

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   OBJECTION_LIMITS,
+  hasCoachingFr,
   isKnownObjectionId,
+  mentionsCoachingFr,
   isTeamObjectionId,
   objectionAppliesTo,
   objectionCatalog,
@@ -26,6 +28,7 @@ const probiotics = (over: Partial<TeamObjection> = {}): TeamObjection => ({
   species: ['dog', 'cat'],
   categoryId: 'category:probiotics',
   coaching: { rootConcerns: ['Thinks supplements are an upsell'] },
+  coachingFr: {},
   visible: true,
   sortOrder: null,
   updatedAt: null,
@@ -93,10 +96,65 @@ describe('rowToTeamObjection', () => {
       species: ['dog', 'cat'],
       categoryId: 'category:probiotics',
       coaching: { rootConcerns: ['a', 'b'] },
+      coachingFr: {},
       visible: false,
       sortOrder: 4,
       updatedAt: '2026-10-12T00:00:00Z',
     });
+  });
+
+  it('reads the French hint lists nested in the stored coaching (`coaching.fr`)', () => {
+    const o = rowToTeamObjection({
+      id: 'team:probiotics',
+      title: 'Probiotics',
+      example: 'Yogurt is enough',
+      species: ['dog'],
+      category_id: 'category:probiotics',
+      coaching: {
+        acknowledgePatterns: ['That makes sense.'],
+        fr: {
+          acknowledgePatterns: ['  C’est logique.  ', 'C’est logique.', ''],
+          clarifyQuestions: ['Qu’avez-vous remarqué?'],
+          // AI-only lists have no French version: dropped, like unknown keys.
+          rootConcerns: ['Pense que c’est un coût de plus'],
+          bogus: ['x'],
+        },
+      },
+      visible: true,
+    });
+    // The English lists are untouched by the nested `fr` key.
+    expect(o?.coaching).toEqual({ acknowledgePatterns: ['That makes sense.'] });
+    expect(o?.coachingFr).toEqual({
+      acknowledgePatterns: ['C’est logique.'],
+      clarifyQuestions: ['Qu’avez-vous remarqué?'],
+    });
+  });
+
+  it('caps the French lists with the same limits as the English ones', () => {
+    const long = 'é'.repeat(OBJECTION_LIMITS.coachingItemMax + 50);
+    const o = rowToTeamObjection({
+      id: 'team:probiotics',
+      title: 'Probiotics',
+      species: ['dog'],
+      category_id: 'weight',
+      coaching: { fr: { takeActionPatterns: [long, ...Array.from({ length: 10 }, (_, i) => `étape ${i}`)] } },
+    });
+    expect(o?.coachingFr.takeActionPatterns).toHaveLength(OBJECTION_LIMITS.coachingItems);
+    expect(o?.coachingFr.takeActionPatterns?.[0]).toHaveLength(OBJECTION_LIMITS.coachingItemMax);
+  });
+
+  it('a malformed `fr` reads as no French at all', () => {
+    for (const fr of [null, 'oui', ['x'], 5]) {
+      const o = rowToTeamObjection({
+        id: 'team:probiotics',
+        title: 'P',
+        species: ['dog'],
+        category_id: 'weight',
+        coaching: { clarifyQuestions: ['Q?'], fr },
+      });
+      expect(o?.coachingFr).toEqual({});
+      expect(o?.coaching).toEqual({ clarifyQuestions: ['Q?'] });
+    }
   });
 
   it('drops what cannot be a usable objection', () => {
@@ -113,6 +171,102 @@ describe('rowToTeamObjection', () => {
   it('round-trips the camelCase snapshot shape', () => {
     const o = probiotics();
     expect(rowToTeamObjection(o)).toEqual(o);
+    const withFr = probiotics({ coachingFr: { clarifyQuestions: ['Qu’est-ce qui vous inquiète?'] } });
+    expect(rowToTeamObjection(withFr)).toEqual(withFr);
+  });
+});
+
+describe('French hint lists — row ⇄ objection', () => {
+  const input = (over: Record<string, unknown> = {}) => ({
+    id: 'team:probiotics',
+    title: 'Probiotics',
+    example: 'Yogurt is enough',
+    species: ['dog'],
+    categoryId: 'category:probiotics',
+    coaching: { acknowledgePatterns: ['Fair question.'], rootConcerns: ['Upsell'] },
+    ...over,
+  });
+
+  it('stores them inside coaching as `fr` and reads them back', () => {
+    const r = validateObjectionInput(
+      input({
+        coachingFr: {
+          acknowledgePatterns: ['Bonne question.'],
+          takeActionPatterns: ['Essai de 4 semaines, avec un suivi.'],
+        },
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const row = teamObjectionToRow(r.value);
+    expect(row.coaching).toEqual({
+      acknowledgePatterns: ['Fair question.'],
+      rootConcerns: ['Upsell'],
+      fr: {
+        acknowledgePatterns: ['Bonne question.'],
+        takeActionPatterns: ['Essai de 4 semaines, avec un suivi.'],
+      },
+    });
+    const back = rowToTeamObjection({ ...row, updated_at: null });
+    expect(back).toEqual({ ...r.value, updatedAt: null });
+  });
+
+  it('omits `fr` when there is no French, so the stored coaching is unchanged', () => {
+    for (const coachingFr of [undefined, null, {}, { clarifyQuestions: ['  ', ''] }]) {
+      const r = validateObjectionInput(input({ coachingFr }));
+      expect(r.ok).toBe(true);
+      if (!r.ok) continue;
+      expect(r.value.coachingFr).toEqual({});
+      expect(teamObjectionToRow(r.value).coaching).toEqual({
+        acknowledgePatterns: ['Fair question.'],
+        rootConcerns: ['Upsell'],
+      });
+    }
+  });
+
+  it('keeps only the three trainee-hint lists, with the English limits', () => {
+    const r = validateObjectionInput(
+      input({
+        coachingFr: {
+          clarifyQuestions: Array.from({ length: 9 }, (_, i) => `Question ${i}?`),
+          rootConcerns: ['Réservé à l’IA'],
+          watchOuts: ['Réservé à l’IA'],
+        },
+      }),
+    );
+    expect(r.ok && r.value.coachingFr).toEqual({
+      clarifyQuestions: Array.from({ length: OBJECTION_LIMITS.coachingItems }, (_, i) => `Question ${i}?`),
+    });
+  });
+
+  it('accepts the stored shape (`coaching.fr`) too, and never leaks it into the English lists', () => {
+    const r = validateObjectionInput(input({ coaching: { clarifyQuestions: ['Q?'], fr: { clarifyQuestions: ['Q ?'] } } }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.coaching).toEqual({ clarifyQuestions: ['Q?'] });
+    expect(r.value.coachingFr).toEqual({ clarifyQuestions: ['Q ?'] });
+  });
+
+  it('refuses a French coaching that is not an object of lists', () => {
+    for (const coachingFr of ['oui', ['a'], 3]) {
+      const r = validateObjectionInput(input({ coachingFr }));
+      expect(r.ok ? null : r.error).toMatch(/coachingFr/);
+    }
+  });
+
+  it('knows whether a write body mentions French coaching at all', () => {
+    expect(mentionsCoachingFr(input())).toBe(false);
+    expect(mentionsCoachingFr(input({ coachingFr: {} }))).toBe(true);
+    expect(mentionsCoachingFr(input({ coachingFr: null }))).toBe(true);
+    expect(mentionsCoachingFr(input({ coaching: { fr: {} } }))).toBe(true);
+    expect(mentionsCoachingFr(null)).toBe(false);
+  });
+
+  it('hasCoachingFr is true only for a non-empty list', () => {
+    expect(hasCoachingFr({})).toBe(false);
+    expect(hasCoachingFr(null)).toBe(false);
+    expect(hasCoachingFr({ acknowledgePatterns: [] })).toBe(false);
+    expect(hasCoachingFr({ takeActionPatterns: ['x'] })).toBe(true);
   });
 });
 

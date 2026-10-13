@@ -37,6 +37,8 @@ import { COLOR } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
 import { ENDED_REASON_LABELS, MODE_LABELS, labelOf, pushbackLabel } from '../lib/labels';
 import type { AdminSession, AdminUser } from '../data/types';
+import { difficultyLabel, sessionDifficulty } from '../lib/difficulty';
+import { AdminDifficultyMeter } from '../primitives/DifficultyMeter';
 
 type TabKey = 'overview' | 'transcript' | 'scoring';
 
@@ -235,6 +237,11 @@ function SessionHeader({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* The level beside the score it qualifies (same scoring standard
+              at every level). Not beside a scoring-failure placeholder. */}
+          {!session.score_unavailable && (
+            <AdminDifficultyMeter level={sessionDifficulty(session)} />
+          )}
           <ScoreBadge score={session.score_overall} size="lg" />
           <ModalCloseButton onClose={onClose} />
         </div>
@@ -300,9 +307,24 @@ function OverviewTab({
   session: AdminSession;
   scoring: ReturnType<typeof readScoreReport>;
 }) {
+  const level = sessionDifficulty(session);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Stat label="Overall score" value={session.score_overall ?? '—'} />
+      <Stat
+        label="Difficulty"
+        value={
+          level != null ? (
+            <AdminDifficultyMeter
+              level={level}
+              size="md"
+              style={{ fontSize: 16, fontWeight: 700, color: COLOR.ink }}
+            />
+          ) : (
+            'Not recorded'
+          )
+        }
+      />
       <Stat label="Turns" value={session.turns ?? session.transcript?.length ?? '—'} />
       <Stat label="How they trained" value={labelOf(MODE_LABELS, session.mode)} />
       <Stat
@@ -668,6 +690,7 @@ function SideRail({
   sparkData: number[];
   hasSentiment: boolean;
 }) {
+  const level = sessionDifficulty(session);
   return (
     <div
       style={{
@@ -698,6 +721,10 @@ function SideRail({
         <Eyebrow>Quick stats</Eyebrow>
         <RailRow label="Score" value={String(session.score_overall ?? '—')} />
         <RailRow label="Band" value={scoring?.band ?? '—'} />
+        <RailRow
+          label="Difficulty"
+          value={level != null ? `${difficultyLabel(level)} · ${level}/4` : '—'}
+        />
         <RailRow label="Turns" value={String(session.turns ?? session.transcript?.length ?? '—')} />
         <RailRow
           label="Duration"
@@ -714,7 +741,7 @@ function SideRail({
 }
 
 // ─── Reusable atoms ─────────────────────────────────────────
-function Stat({ label, value }: { label: string; value: string | number }) {
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div
       style={{

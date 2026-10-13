@@ -25,6 +25,7 @@ import {
   aiError,
   errorMessage,
   isUuid,
+  loadPromptOverrides,
   loadSimulationConfig,
   ok,
   parseJsonBody,
@@ -284,7 +285,16 @@ export default async (req: Request): Promise<Response> => {
 
   const config = await loadSimulationConfig(caller.sb);
   const retrieved = await retrieveForScenario(caller.sb, scenario, config, 'scoring');
-  const systemInstruction = buildScoringSystemPrompt({ scenario, config, retrieved, locale });
+  // Only `successCriteria` reaches the scorer — the customer's AI notes are
+  // not read here (they shape the role-play, never the grade).
+  const overrides = await loadPromptOverrides(caller.sb, scenario, body);
+  const systemInstruction = buildScoringSystemPrompt({
+    scenario,
+    config,
+    retrieved,
+    locale,
+    overrides: { successCriteria: overrides?.successCriteria ?? null },
+  });
 
   const formatted = transcript
     .map((m, i) => `${i + 1}. ${m.role === 'user' ? 'STAFF' : 'CUSTOMER'}: ${m.text}`)

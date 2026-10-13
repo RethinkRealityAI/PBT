@@ -8,6 +8,8 @@
 export const SCENARIO_LIMITS = {
   /** prompt_prefix / prompt_suffix, each. Also a DB CHECK. */
   promptMax: 1500,
+  /** success_criteria (scorer-only). Also a DB CHECK. */
+  successCriteriaMax: 1500,
   breedMax: 80,
   cardTitleMax: 120,
   cardSubtitleMax: 240,

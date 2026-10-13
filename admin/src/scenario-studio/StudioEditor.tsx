@@ -683,6 +683,16 @@ export function StudioEditor(props: StudioEditorProps) {
           duration: 10000,
         });
       }
+      if (notice === 'success_criteria_column_missing') {
+        // The scenario saved; only "What a great answer includes" couldn't
+        // be stored yet, so the scorecard won't use it.
+        toast({
+          message:
+            'Saved — but “What a great answer includes” couldn’t be stored yet (a database update is pending), so the scorecard won’t use it.',
+          tone: 'info',
+          duration: 10000,
+        });
+      }
       if (notice === 'species_column_missing') {
         setSpeciesPending(true);
         // Published before we knew the species couldn't be stored (the

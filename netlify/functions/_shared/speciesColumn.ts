@@ -20,3 +20,15 @@ export function isMissingSpeciesColumn(error: unknown): boolean {
   if (e.code !== 'PGRST204' && e.code !== '42703') return false;
   return /\bspecies\b/i.test(typeof e.message === 'string' ? e.message : '');
 }
+
+/**
+ * Same test for `scenario_overrides.success_criteria`
+ * (20261013000000_scenario_success_criteria.sql): the save endpoint retries
+ * without it, and the AI override loader reads the AI notes alone.
+ */
+export function isMissingSuccessCriteriaColumn(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { code?: unknown; message?: unknown };
+  if (e.code !== 'PGRST204' && e.code !== '42703') return false;
+  return /\bsuccess_criteria\b/i.test(typeof e.message === 'string' ? e.message : '');
+}

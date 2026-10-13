@@ -192,6 +192,7 @@ describe('team objections (Scenario Studio) — display localisation', () => {
     species: ['dog'],
     categoryId: 'category:gi',
     coaching: {},
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: null,

@@ -338,6 +338,7 @@ describe('scenarioOverrides — team objections', () => {
     species: ['dog', 'cat'],
     categoryId: 'category:gi',
     coaching: {},
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: null,

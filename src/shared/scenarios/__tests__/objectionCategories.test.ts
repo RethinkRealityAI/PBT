@@ -42,6 +42,7 @@ const yogurt: TeamObjection = {
   species: ['dog'],
   categoryId: 'category:probiotics',
   coaching: {},
+  coachingFr: {},
   visible: true,
   sortOrder: null,
   updatedAt: null,

@@ -34,6 +34,7 @@ const DRAFT: StudioDraft = {
   difficulty_override: 2,
   prompt_prefix: 'Mention the price twice.',
   prompt_suffix: '',
+  success_criteria: 'Offers a small-bag trial.',
 };
 
 function aiTurn(text: string, emotion: ChatMessage['emotion'] = 'red'): ChatMessage {
@@ -133,7 +134,13 @@ describe('Simulator', () => {
     expect(args.history).toEqual([]);
     expect(args.scenario).toMatchObject({ breed: 'Labrador Retriever', suggestedDriver: 'Analyzer' });
     // The draft's UNSAVED notes go with every turn; a blank one goes as null.
-    expect(args.notes).toEqual({ promptPrefix: 'Mention the price twice.', promptSuffix: null });
+    // (The success criteria ride along in the conversation, but `api.ts` sends
+    // them to the SCORER only — never the AI owner.)
+    expect(args.notes).toEqual({
+      promptPrefix: 'Mention the price twice.',
+      promptSuffix: null,
+      successCriteria: 'Offers a small-bag trial.',
+    });
 
     expect(screen.getByText('Turn 1 of 16')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /Owner’s mood: Defensive/ })).toBeInTheDocument();
@@ -193,6 +200,8 @@ describe('Simulator', () => {
 
     expect(onTested).toHaveBeenCalledTimes(1);
     expect(api.simulateScore).toHaveBeenCalledTimes(1);
+    // The scorer judges against the draft's UNSAVED criteria.
+    expect(api.simulateScore.mock.calls[0][0].successCriteria).toBe('Offers a small-bag trial.');
     const transcript = api.simulateScore.mock.calls[0][0].transcript as ChatMessage[];
     expect(transcript.map((m) => m.text)).toEqual([
       'It’s far too expensive for what it is.',

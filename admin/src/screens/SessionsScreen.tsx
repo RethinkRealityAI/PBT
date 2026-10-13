@@ -29,6 +29,8 @@ import {
   labelOf,
 } from '../lib/labels';
 import type { AdminSession } from '../data/types';
+import { difficultyLabel, sessionDifficulty } from '../lib/difficulty';
+import { AdminDifficultyMeter } from '../primitives/DifficultyMeter';
 import { SessionModal } from './SessionModal';
 
 const FILTERS = [
@@ -39,6 +41,13 @@ const FILTERS = [
 ] as const;
 
 type FilterKey = (typeof FILTERS)[number]['key'];
+
+/**
+ * Avatar · User · Scenario · Status · Turns · Length · Difficulty · Score ·
+ * Time. Difficulty sits beside the score it qualifies: every level is scored
+ * to the same standard, so a 75 at Combative is the harder result.
+ */
+const SESSION_GRID = '32px 1.4fr 1.6fr 0.8fr 60px 80px 112px 96px 80px';
 
 export function SessionsScreen({
   range,
@@ -69,9 +78,10 @@ export function SessionsScreen({
       const u = userById.get(s.user_id);
       // Search the label the row actually shows, not just the stored slug —
       // "obesity denial" has to find a `weight-denial` session.
+      const level = sessionDifficulty(s);
       const hay = `${u?.display_name ?? ''} ${s.scenario_summary ?? ''} ${s.pushback_id ?? ''} ${
         s.pushback_id ? pushbackLabel(s.pushback_id) : ''
-      }`.toLowerCase();
+      } ${level != null ? difficultyLabel(level) : ''}`.toLowerCase();
       if (!hay.includes(query.toLowerCase())) return false;
     }
     return true;
@@ -177,7 +187,7 @@ export function SessionsScreen({
                 style={{
                   display: 'grid',
                   gridTemplateColumns:
-                    '32px 1.4fr 1.6fr 0.8fr 60px 80px 96px 80px',
+                    SESSION_GRID,
                   padding: '14px 22px',
                   gap: 12,
                   background: 'rgba(255,255,255,0.5)',
@@ -185,7 +195,7 @@ export function SessionsScreen({
                 }}
               >
                 <span />
-                {['User', 'Scenario', 'Status', 'Turns', 'Length', 'Score', 'Time'].map(
+                {['User', 'Scenario', 'Status', 'Turns', 'Length', 'Difficulty', 'Score', 'Time'].map(
                   (h) => (
                     <div
                       key={h}
@@ -204,6 +214,7 @@ export function SessionsScreen({
               </div>
               {filtered.slice(0, 200).map((s) => {
                 const u = userById.get(s.user_id);
+                const level = sessionDifficulty(s);
                 return (
                   <div
                     key={s.id}
@@ -211,7 +222,7 @@ export function SessionsScreen({
                     style={{
                       display: 'grid',
                       gridTemplateColumns:
-                        '32px 1.4fr 1.6fr 0.8fr 60px 80px 96px 80px',
+                        SESSION_GRID,
                       padding: '12px 22px',
                       gap: 12,
                       alignItems: 'center',
@@ -284,6 +295,15 @@ export function SessionsScreen({
                       }}
                     >
                       {fmtDuration(s.duration_seconds ?? 0)}
+                    </div>
+                    <div>
+                      {level != null ? (
+                        <AdminDifficultyMeter level={level} />
+                      ) : (
+                        <span style={{ color: COLOR.inkMute, fontWeight: 600, fontSize: 13 }}>
+                          —
+                        </span>
+                      )}
                     </div>
                     {/* A failed score is stored as 0; showing that badge would
                         read as a genuinely terrible session. */}

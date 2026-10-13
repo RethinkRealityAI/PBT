@@ -173,6 +173,7 @@ describe('flags-resolve loadPublicObjections', () => {
     species: ['dog', 'cat'],
     categoryId: 'category:probiotics',
     coaching: {},
+    coachingFr: {},
     visible: true,
     sortOrder: null,
     updatedAt: null,

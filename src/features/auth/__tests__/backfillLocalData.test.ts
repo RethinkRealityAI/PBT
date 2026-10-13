@@ -129,6 +129,26 @@ describe('backfillLocalDataToCloud → training_sessions', () => {
     expect(row.completed).toBe(true);
   });
 
+  it('carries a valid stored difficulty into the scenario (the admin reads the level from it)', async () => {
+    writeStorage(SESSIONS_KEY, [
+      { ...sessionRecord('55555555-5555-4555-8555-555555555555', scoreReport(75)), difficulty: 4 },
+      sessionRecord('66666666-6666-4666-8666-666666666666', scoreReport(75)),
+      {
+        ...sessionRecord('77777777-7777-4777-8777-777777777777', scoreReport(75)),
+        difficulty: 9 as unknown as 4, // hand-edited localStorage
+      },
+    ]);
+
+    const { sb, upserts } = fakeSupabase();
+    await backfillLocalDataToCloud(sb as never, USER_ID);
+
+    const rows = (upserts['training_sessions'] ?? []).flat() as Record<string, unknown>[];
+    const scenarios = rows.map((r) => r.scenario as Record<string, unknown>);
+    expect(scenarios[0].difficulty).toBe(4);
+    expect(Object.keys(scenarios[1])).not.toContain('difficulty');
+    expect(Object.keys(scenarios[2])).not.toContain('difficulty');
+  });
+
   it('keeps the score in rag_documents metadata (that table is not guarded)', async () => {
     writeStorage(SESSIONS_KEY, [
       sessionRecord('44444444-4444-4444-8444-444444444444', scoreReport(88)),

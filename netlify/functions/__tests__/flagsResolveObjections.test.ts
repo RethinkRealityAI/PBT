@@ -93,6 +93,7 @@ describe('flags-resolve — objections in the public snapshot', () => {
         // Only the trainee hint lists are public; what the AI owner hides
         // until asked (rootConcerns) and the watch-outs stay server-side.
         coaching: { acknowledgePatterns: ['That is a fair question to ask.'] },
+        coachingFr: {},
         visible: false,
         sortOrder: 3,
         updatedAt: '2026-10-12T10:00:00+00:00',
@@ -105,6 +106,60 @@ describe('flags-resolve — objections in the public snapshot', () => {
     expect(JSON.stringify(body)).not.toContain('admin-uuid');
     expect(JSON.stringify(body)).not.toContain('cash grab');
     expect(JSON.stringify(body)).not.toContain('Pitching before asking');
+  });
+
+  it('publishes the French hint lists (stored as coaching.fr) as coachingFr — hints only', async () => {
+    sb.setHandler('scenario_objections', () => ({
+      data: [
+        {
+          ...ROW,
+          coaching: {
+            ...ROW.coaching,
+            fr: {
+              acknowledgePatterns: ['C’est une bonne question.'],
+              takeActionPatterns: ['Proposer un essai de 4 semaines.'],
+              // Never public, even if a row carries it under `fr`.
+              rootConcerns: ['Croit que c’est une arnaque'],
+              watchOuts: ['Vendre avant de demander'],
+            },
+          },
+        },
+      ],
+      error: null,
+    }));
+    const body = await resolve();
+    const [entry] = body.objections as Array<Record<string, unknown>>;
+    expect(entry.coaching).toEqual({ acknowledgePatterns: ['That is a fair question to ask.'] });
+    expect(entry.coachingFr).toEqual({
+      acknowledgePatterns: ['C’est une bonne question.'],
+      takeActionPatterns: ['Proposer un essai de 4 semaines.'],
+    });
+    const json = JSON.stringify(body);
+    expect(json).not.toContain('arnaque');
+    expect(json).not.toContain('Vendre avant');
+    expect(json).not.toContain('"fr"');
+  });
+
+  it('publicObjection keeps only the three hint lists in both languages', async () => {
+    vi.resetModules();
+    const { publicObjection } = await import('../flags-resolve');
+    const out = publicObjection({
+      id: 'team:probiotics',
+      title: 'Probiotics',
+      example: '',
+      titleFr: null,
+      exampleFr: null,
+      species: ['dog'],
+      categoryId: 'weight',
+      coaching: { rootConcerns: ['secret'], clarifyQuestions: ['Q?'], watchOuts: ['w'] },
+      // A hand-built objection could carry more than the type allows.
+      coachingFr: { clarifyQuestions: ['Q ?'], rootConcerns: ['secret fr'] } as never,
+      visible: true,
+      sortOrder: null,
+      updatedAt: null,
+    });
+    expect(out.coaching).toEqual({ clarifyQuestions: ['Q?'] });
+    expect(out.coachingFr).toEqual({ clarifyQuestions: ['Q ?'] });
   });
 
   it('does not cache a snapshot built on a failed cold objections read', async () => {

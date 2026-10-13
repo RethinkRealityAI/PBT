@@ -17,6 +17,7 @@ import {
   type SimulationConfig,
 } from './simulationConfig';
 import type { DriverKnowledge } from './driverProfiles';
+import type { PushbackKnowledge } from './pushbackTaxonomy';
 import type { RetrievedChunk } from '../../services/ragShared';
 import { DEFAULT_LOCALE, type Locale } from '../../i18n/locales';
 import { adaptPetWords, lifeStageLabel, speciesOf } from '../../shared/scenarios/species';
@@ -119,14 +120,19 @@ function formatRetrievedBlock(
 }
 
 /**
- * Bounded admin-side prompt overrides. The canonical customer prompt and
- * scoring rubric remain authoritative — these wrap the customer turn only.
- * Scoring is never overridden so clinical accuracy + 7-dim grading are
- * preserved regardless of admin tinkering.
+ * Bounded admin-side per-scenario prompt inputs. The canonical customer
+ * prompt and scoring rubric remain authoritative.
+ *
+ * - `promptPrefix` / `promptSuffix` wrap the CUSTOMER turn only.
+ * - `successCriteria` reaches the SCORER only ("what a great answer
+ *   includes" for this scenario): it sharpens how the five fixed dimensions
+ *   are judged and never adds, removes or re-weights one. The customer
+ *   never sees it — it is the answer key.
  */
 export interface PromptOverrides {
   promptPrefix?: string | null;
   promptSuffix?: string | null;
+  successCriteria?: string | null;
 }
 
 const MAX_OVERRIDE_LEN = 1500;
@@ -190,6 +196,44 @@ function formatScenarioFacts(scenario: Scenario): string {
     weightLine(scenario),
     `- Context: ${scenario.context?.trim() || '(none)'}`,
   ].join('\n');
+}
+
+/**
+ * The objection's coaching as an answer key for whoever JUDGES the trainee
+ * (the scorer, the in-chat coach): what "surfacing the real concern" and "a
+ * credible next step" mean for THIS objection. Empty lists are skipped, and
+ * an objection with no coaching at all yields '' (the prompt reads exactly
+ * as before). Built-ins carry the taxonomy; team objections carry what the
+ * team wrote — both merged into the server-loaded config.
+ */
+function formatObjectionAnswerKey(
+  pushback: PushbackKnowledge | undefined,
+  species: unknown,
+  heading: string,
+  audience: 'scorer' | 'coach',
+): string {
+  if (!pushback) return '';
+  const section = (label: string, items: string[]) =>
+    items.length > 0
+      ? `${label}\n${adaptAll(items, species).map((c) => `- ${c}`).join('\n')}`
+      : '';
+  const parts = [
+    section('The real concerns underneath (what genuine clarifying should surface):', pushback.rootConcerns),
+    section('Questions that tend to surface them:', pushback.clarifyQuestions),
+    section('Credible next steps for this objection (what a strong transform lands on):', pushback.takeActionPatterns),
+    section(
+      audience === 'scorer'
+        ? 'Common mistakes with this objection (mark them down):'
+        : 'Common mistakes with this objection (steer the trainee away from them):',
+      pushback.watchOuts,
+    ),
+  ].filter(Boolean);
+  if (parts.length === 0) return '';
+  const guidance =
+    audience === 'scorer'
+      ? 'Guidance, not a script: reward any wording that achieves the same thing, and never penalise a good move just because it is not listed.'
+      : 'Background for your nudge, not lines to hand over: point the trainee at the move, never give them a full sentence from this list.';
+  return `# ${heading}\n${guidance}\n${parts.join('\n')}\n\n`;
 }
 
 const VARIETY_NUDGE = `
@@ -373,6 +417,8 @@ export interface CustomerPromptOptions {
 export interface ScoringPromptOptions {
   scenario: Scenario;
   config?: SimulationConfig;
+  /** Per-scenario admin inputs; only `successCriteria` is read here. */
+  overrides?: PromptOverrides;
   retrieved?: RetrievedChunk[];
   /** Language the COACHING OUTPUT is written in. Defaults to English. */
   locale?: Locale;
@@ -478,7 +524,7 @@ ${driver.customerSamplePhrasings.map((s) => `- ${s}`).join('\n')}
 # DIFFICULTY
 ${difficultyLine[scenario.difficulty]}
 
-${pushback ? `# UNDER THE SURFACE
+${pushback && pushback.rootConcerns.length > 0 ? `# UNDER THE SURFACE
 Real concerns the staff needs to surface:
 ${adaptAll(pushback.rootConcerns, species).map((c) => `- ${c}`).join('\n')}` : ''}
 
@@ -522,11 +568,23 @@ ${lang.incorrectExamples}${suffixBlock}
 export function buildScoringSystemPrompt({
   scenario,
   config = {},
+  overrides = {},
   retrieved,
   locale = DEFAULT_LOCALE,
 }: ScoringPromptOptions): string {
   const species = scenario.species;
   const cat = speciesOf(species) === 'cat';
+  // "Other pushback" has no taxonomy entry; its notes ARE the brief.
+  const answerKey = formatObjectionAnswerKey(
+    resolvePushbackKnowledge(scenario.pushback.id, config),
+    species,
+    'WHAT GOOD LOOKS LIKE FOR THIS OBJECTION',
+    'scorer',
+  );
+  const successCriteria = trimOverride(overrides.successCriteria);
+  const successBlock = successCriteria
+    ? `# THIS SCENARIO'S SUCCESS CRITERIA (set by the training team)\nWeigh these heavily inside acknowledge / clarify / transform. They sharpen the existing dimensions; they never add a dimension or change a weight.\n${successCriteria}\n\n`
+    : '';
   const languageBlock = coachingLanguageBlock(locale, species);
   const evidenceBlock = formatRetrievedBlock(
     retrieved,
@@ -574,7 +632,7 @@ ${weightLine(scenario)}
 - Difficulty: ${scenario.difficulty}
 - Goal: help the staff make the client feel heard, surface the real concern, and guide them to a credible, specific next step. A recommendation only counts if it lands AFTER genuine acknowledge + clarify.
 
-# THE ACT METHOD (the spine of the rubric)
+${answerKey}${successBlock}# THE ACT METHOD (the spine of the rubric)
 ${actLines}
 
 # 5-DIMENSION ACT-FIRST RUBRIC (each scored 0–100)
@@ -640,11 +698,7 @@ ${formatScenarioFacts(scenario)}
 - Pushback: ${formatPushbackPromptSection(scenario).replace(/\n/g, ' | ')}
 - Customer's ECHO driver: ${scenario.suggestedDriver} — motivation: ${driver.motivation}; under stress: ${driver.stressSignature}
 
-${pushback ? `# WHAT'S REALLY GOING ON
-Root concerns the trainee needs to surface:
-${adaptAll(pushback.rootConcerns, species).map((c) => `- ${c}`).join('\n')}
-
-` : ''}# THE ACT METHOD (the skill being trained)
+${formatObjectionAnswerKey(pushback, species, "WHAT'S REALLY GOING ON", 'coach')}# THE ACT METHOD (the skill being trained)
 ${actLines}
 
 # YOUR JOB

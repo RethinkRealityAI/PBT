@@ -29,6 +29,7 @@ import {
 } from '../../lib/storage';
 import type { DriverKey } from '../../design-system/tokens';
 import { normalizeDimensions } from '../../data/knowledge/scoringRubric';
+import { parseDifficulty } from '../../shared/scenarios/difficulty';
 
 interface SavedPetLike {
   id: string;
@@ -158,10 +159,15 @@ export async function backfillLocalDataToCloud(
           // Best-effort scenario reconstruction from the local summary.
           // Server-side admin export uses scenario_summary / pushback_id /
           // driver columns directly, so the missing fields aren't fatal.
+          // `difficulty` (when the record carries a valid one) is what the
+          // admin's session views read the level from.
           scenario: {
             summary: s.scenarioSummary,
             pushbackId: s.pushbackId,
             driver: s.driver,
+            ...(parseDifficulty(s.difficulty) != null
+              ? { difficulty: parseDifficulty(s.difficulty) }
+              : {}),
           } as Record<string, unknown>,
           transcript: s.transcript as unknown as Record<string, unknown>[],
           // NO score_report / score_overall. Two reasons, and the second is

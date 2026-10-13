@@ -518,6 +518,8 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       scoreReport: effective,
       transcript: msgs,
       createdAt: new Date().toISOString(),
+      // Shown beside the score in History — never part of it.
+      difficulty: scenario.difficulty,
     };
     // Admin preview never writes to the trainee's own history either — the
     // scorecard still renders from in-memory state.
@@ -752,6 +754,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         scoreReport: effective,
         transcript: msgs,
         createdAt: new Date().toISOString(),
+        difficulty: scenario.difficulty,
       };
       if (!skipPersistence()) {
         const existing = readStorage(SESSIONS_KEY);

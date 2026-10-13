@@ -38,6 +38,12 @@ export const chrome = {
   'chrome.score.ringAriaLabelled': 'Score {score} out of 100 — {label}',
   /** `ScoreChip` accessible name. */
   'chrome.score.chipAria': 'Score {score}',
+  /**
+   * `DifficultyMeter` beside a score (History, scorecard). {label} is the
+   * level's word (Coachable … Combative — data overlay, not this catalog).
+   */
+  'chrome.difficulty.label': 'Difficulty',
+  'chrome.difficulty.aria': 'Difficulty: {label}, level {level} of 4',
 
   // ── Crash recovery (ErrorBoundary) ────────────────────────
   'chrome.error.eyebrow': 'Something went wrong',

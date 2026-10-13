@@ -88,6 +88,7 @@ describe('TrainerAppFrame', () => {
       species: ['cat'],
       categoryId: 'everyday-nutrition',
       coaching: {},
+      coachingFr: {},
       visible: true,
       sortOrder: null,
       updatedAt: '2026-10-12T10:00:00Z',
