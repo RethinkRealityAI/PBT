@@ -200,7 +200,7 @@ const TOOL_PHRASES: Record<string, string> = {
   roleplay: 'roleplay sessions',
   scoring: 'session scoring',
   coach: 'coach hints',
-  'scenario-builder': 'the scenario builder',
+  'scenario-builder': 'the Scenario Studio assistant',
   'fecal-scan': 'Fecal Scan',
 };
 
