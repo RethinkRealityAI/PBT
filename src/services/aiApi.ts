@@ -54,6 +54,7 @@ const ERROR_CODES: readonly AiErrorCode[] = [
   'payload_too_large',
   'upstream',
   'server',
+  'disabled',
 ];
 
 function isAiErrorCode(v: unknown): v is AiErrorCode {

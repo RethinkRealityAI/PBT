@@ -23,6 +23,7 @@ import { BCS_LEVELS } from '../data/bcsLevels';
 import { MCS_LEVELS } from '../data/mcsLevels';
 import { COLORS, RADII } from '../design-system/tokens';
 import { useNavigation } from '../app/providers/NavigationProvider';
+import { useScreenEnabled } from '../app/screenFlags';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useT, type TFunction } from '../i18n/useT';
@@ -93,6 +94,7 @@ export function PetAnalyzerScreen() {
   const { savedPets, savePet, deletePet } = useSavedPets();
   const vision = usePetVision();
   const { go } = useNavigation();
+  const fecalScanOn = useScreenEnabled()('fecalScan');
   const { setScenario } = useScenario();
   const t = useT();
   const { locale } = useLanguage();
@@ -184,24 +186,26 @@ export function PetAnalyzerScreen() {
          * the dog often has the litter tray / yard question next. One quiet
          * row, not a second hero card.
          */}
-        <Glass
-          radius={RADII.md}
-          padding="10px 14px"
-          glow={null}
-          onClick={() => go('fecalScan')}
-          ariaLabel={t('fecalScan.crossLink.fromAnalyzer')}
-          style={{ marginBottom: 14 }}
-        >
-          <div className="flex items-center gap-3">
-            <Icon.scan
-              aria-hidden
-              style={{ width: 17, height: 17, flexShrink: 0, color: 'var(--pbt-driver-primary)' }}
-            />
-            <span style={{ fontSize: 12.5, lineHeight: 1.4, color: 'var(--pbt-text)' }}>
-              {t('fecalScan.crossLink.fromAnalyzer')}
-            </span>
-          </div>
-        </Glass>
+        {fecalScanOn && (
+          <Glass
+            radius={RADII.md}
+            padding="10px 14px"
+            glow={null}
+            onClick={() => go('fecalScan')}
+            ariaLabel={t('fecalScan.crossLink.fromAnalyzer')}
+            style={{ marginBottom: 14 }}
+          >
+            <div className="flex items-center gap-3">
+              <Icon.scan
+                aria-hidden
+                style={{ width: 17, height: 17, flexShrink: 0, color: 'var(--pbt-driver-primary)' }}
+              />
+              <span style={{ fontSize: 12.5, lineHeight: 1.4, color: 'var(--pbt-text)' }}>
+                {t('fecalScan.crossLink.fromAnalyzer')}
+              </span>
+            </div>
+          </Glass>
+        )}
 
         {/* ── Card 1: Pet name + Breed ── */}
         <Glass

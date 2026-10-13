@@ -103,7 +103,7 @@ const TOOL_SHORT_LABELS: Record<string, string> = {
   roleplay: 'Roleplay',
   scoring: 'Scoring',
   coach: 'Coach',
-  'scenario-builder': 'Builder',
+  'scenario-builder': 'Studio',
   'fecal-scan': 'Fecal Scan',
 };
 

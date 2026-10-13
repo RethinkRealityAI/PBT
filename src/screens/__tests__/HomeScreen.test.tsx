@@ -8,6 +8,8 @@ import type { FlagSnapshot, ScenarioOverride } from '../../services/flagsClient'
 const { go, setScenario } = vi.hoisted(() => ({ go: vi.fn(), setScenario: vi.fn() }));
 
 let flagSnapshot: FlagSnapshot | null = null;
+/** Switch values a test sets; anything absent reads its fallback (on). */
+let flagValues: Record<string, unknown> = {};
 
 vi.mock('../../app/providers/NavigationProvider', () => ({
   useNavigation: () => ({ go, back: vi.fn(), replace: vi.fn(), current: 'home', history: [] }),
@@ -47,7 +49,7 @@ vi.mock('../../app/providers/FlagProvider', async () => {
       preview: null,
       ready: true,
       refresh: async () => {},
-      getFlag: <T,>(_key: string, fallback: T) => fallback,
+      getFlag: <T,>(key: string, fallback: T) => (key in flagValues ? (flagValues[key] as T) : fallback),
       getOverride: (id: string) => findOverride(flagSnapshot, id),
       getSimulationConfig: () => null,
     }),
@@ -86,6 +88,7 @@ const counter = () => screen.getByText(/^\d+\/\d+$/).textContent;
 beforeEach(() => {
   vi.clearAllMocks();
   flagSnapshot = null;
+  flagValues = {};
   // Skip the first-visit welcome overlay + Start-here beacon.
   localStorage.setItem('pbt:dashboard_welcomed', 'true');
   localStorage.setItem('pbt:seen_start_here', 'true');
@@ -150,5 +153,34 @@ describe("HomeScreen — Today's pick animal switch", () => {
     // The cat pick is a cost scenario → the built-in "Everyday nutrition".
     const title = screen.getByRole('heading', { level: 2, name: /Cost/ });
     expect(title.previousElementSibling).toHaveTextContent('Everyday nutrition');
+  });
+});
+
+describe('HomeScreen — screens switched off in Admin → Flags', () => {
+  it('shows all three quick actions while every screen is on', () => {
+    render(<HomeScreen />);
+    for (const name of ['Build a scenario', 'Pet Analyzer', 'Fecal Scan']) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+  });
+
+  it('hides the tile of a switched-off screen instead of leaving a dead link', () => {
+    flagValues = { 'screen.fecalScan.enabled': false, 'screen.analyzer.enabled': false };
+    render(<HomeScreen />);
+    expect(screen.getByRole('button', { name: 'Build a scenario' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Pet Analyzer' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Fecal Scan' })).toBeNull();
+  });
+
+  it('drops the quick-action row entirely when all three screens are off', () => {
+    flagValues = {
+      'screen.create.enabled': false,
+      'screen.analyzer.enabled': false,
+      'screen.fecalScan.enabled': false,
+    };
+    render(<HomeScreen />);
+    for (const name of ['Build a scenario', 'Pet Analyzer', 'Fecal Scan']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
   });
 });

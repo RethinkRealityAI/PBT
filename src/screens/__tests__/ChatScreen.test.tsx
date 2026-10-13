@@ -32,6 +32,8 @@ let voiceStatus:
   | 'ended'
   | 'error' = 'idle';
 let voiceError: string | null = null;
+/** Switch values a test sets; anything absent reads its fallback (on). */
+let flagValues: Record<string, unknown> = {};
 
 vi.mock('../../design-system/Orb', () => ({
   Orb: ({ size }: { size?: number }) => <div data-testid="orb">Orb {size}</div>,
@@ -84,10 +86,12 @@ vi.mock('../../app/providers/FlagProvider', async () => {
       preview: null,
       ready: true,
       refresh: async () => {},
-      getFlag: <T,>(_key: string, fallback: T) => fallback,
+      getFlag: <T,>(key: string, fallback: T) => (key in flagValues ? (flagValues[key] as T) : fallback),
       getOverride: (id: string) => findOverride(flagSnapshot, id),
       getSimulationConfig: () => null,
     }),
+    useFlag: (key: string, fallback = true) =>
+      key in flagValues ? (flagValues[key] as boolean) : fallback,
   };
 });
 
@@ -131,10 +135,38 @@ describe('ChatScreen voice-first flow', () => {
   beforeEach(() => {
     currentScenario = SEED_SCENARIOS[0];
     flagSnapshot = null;
+    flagValues = {};
+    __resetPreviewRuns();
     voiceStatus = 'idle';
     voiceError = null;
     vi.clearAllMocks();
     voiceEndSession.mockResolvedValue({ report: null, transcript: [] });
+  });
+
+  it('is text only when Voice mode in chat is switched off: no toggle, no voice start', () => {
+    flagValues = { 'screen.voice.enabled': false };
+    render(<ChatScreen />);
+    expect(screen.queryByRole('button', { name: 'Voice' })).toBeNull();
+    expect(screen.queryByText('Voice ready')).toBeNull();
+    expect(screen.queryByRole('button', { name: /begin simulation/i })).toBeNull();
+    expect(voiceStart).not.toHaveBeenCalled();
+    // The text conversation is on screen instead.
+    expect(screen.getByText('Opening text')).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
+  it('falls back to text when an admin preview asks for voice but voice is off', () => {
+    flagValues = { 'screen.voice.enabled': false };
+    startPreviewRun('voice');
+    render(<ChatScreen />);
+    expect(screen.queryByRole('button', { name: /begin simulation/i })).toBeNull();
+    expect(voiceStart).not.toHaveBeenCalled();
+  });
+
+  it('hides the coach hint button when coach hints are switched off', () => {
+    flagValues = { 'screen.voice.enabled': false, 'component.chat.coach_drawer': false };
+    render(<ChatScreen />);
+    expect(screen.queryByRole('button', { name: /coach/i })).toBeNull();
   });
 
   it('defaults to voice visually without starting the microphone until Begin simulation is clicked', async () => {
@@ -155,6 +187,9 @@ describe('ChatScreen voice-first flow', () => {
       // Per-scenario prompt wraps — voice now gets the same admin overrides
       // text mode does; this seed has no override row, hence the null pair.
       overrides: { promptPrefix: null, promptSuffix: null },
+      // The trainee's driver rides along so the server resolves the voice
+      // switch for the same audience (no profile in this test).
+      driver: null,
     });
   });
 
@@ -174,6 +209,9 @@ describe('ChatScreen voice-first flow', () => {
       // Per-scenario prompt wraps — voice now gets the same admin overrides
       // text mode does; this seed has no override row, hence the null pair.
       overrides: { promptPrefix: null, promptSuffix: null },
+      // The trainee's driver rides along so the server resolves the voice
+      // switch for the same audience (no profile in this test).
+      driver: null,
     });
   });
 

@@ -23,6 +23,7 @@ import { useObjectionCatalog } from '../features/scenarios/useObjectionCatalog';
 import { objectionCategoryId } from '../shared/scenarios/objectionCategories';
 import { speciesOf, type ScenarioSpecies } from '../shared/scenarios/species';
 import { useFlag, useFlagValue, useFlags, useSimulationConfig, IfFlag } from '../app/providers/FlagProvider';
+import { useScreenEnabled } from '../app/screenFlags';
 import { resolveDimensions, resolveWeights } from '../data/knowledge/simulationConfig';
 import type { DimensionKey } from '../data/knowledge/scoringRubric';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
@@ -334,6 +335,13 @@ const SEEN_START_HERE_KEY: StorageKeyDef<boolean> = {
   validate: (v): v is boolean => typeof v === 'boolean',
 };
 
+/** Desktop column count for the quick-action row (static class names for Tailwind). */
+const QUICK_ACTION_DESKTOP_COLS: Record<number, string> = {
+  1: 'lg:grid-cols-1',
+  2: 'lg:grid-cols-2',
+  3: 'lg:grid-cols-3',
+};
+
 export function HomeScreen() {
   const { go } = useNavigation();
   const { profile } = useProfile();
@@ -352,9 +360,41 @@ export function HomeScreen() {
   // Today's pick names its category (the subject area) above the title.
   const { teamObjections, categoryById } = useObjectionCatalog();
   const headlineOverride = useFlagValue<string>('field.home.headline', '');
-  const showActCard = useFlag('component.home.act_guide_card', true);
-  const showLibraryCard = useFlag('component.home.library_card', true);
+  // Admin override for the greeting above the headline ("Good day.").
+  const greetingRaw = useFlagValue<unknown>('field.home.welcome_eyebrow', '');
+  const greetingOverride = typeof greetingRaw === 'string' ? greetingRaw.trim() : '';
+  const screenEnabled = useScreenEnabled();
+  // A card or tile into a switched-off screen is hidden, not left to bounce
+  // the user back home (see screenFlags.ts).
+  const showActCard = useFlag('component.home.act_guide_card', true) && screenEnabled('actGuide');
+  const showLibraryCard = useFlag('component.home.library_card', true) && screenEnabled('resources');
   const showEchoCard = useFlag('component.home.echo_profile_card', true);
+  // Quick actions into switched-off screens are dropped. On the 2-column phone
+  // grid an odd last tile spans the row so it never ends in a hole.
+  const quickActions = (
+    [
+      {
+        label: t('home.actions.build.title'),
+        sub: t('home.actions.build.sub'),
+        icon: <Icon.plus />,
+        screen: 'create' as const,
+      },
+      {
+        label: t('home.actions.analyzer.title'),
+        sub: t('home.actions.analyzer.sub'),
+        icon: <Icon.paw />,
+        screen: 'analyzer' as const,
+      },
+      {
+        label: t('home.actions.fecalScan.title'),
+        sub: t('home.actions.fecalScan.sub'),
+        icon: <Icon.scan />,
+        screen: 'fecalScan' as const,
+      },
+    ]
+  )
+    .filter((a) => screenEnabled(a.screen))
+    .map((a, i, all) => ({ ...a, wide: all.length % 2 === 1 && i === all.length - 1 }));
   const [welcomeOpen, setWelcomeOpen] = useState(() => !readStorage(DASHBOARD_WELCOMED_KEY));
   const [beaconActive, setBeaconActive] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -566,9 +606,10 @@ export function HomeScreen() {
                 marginBottom: 3,
               }}
             >
-              {displayName
-                ? t('home.greeting.named', { name: displayName })
-                : t('home.greeting.anonymous')}
+              {greetingOverride ||
+                (displayName
+                  ? t('home.greeting.named', { name: displayName })
+                  : t('home.greeting.anonymous'))}
             </div>
             <div
               className="flex items-center gap-2"
@@ -641,9 +682,10 @@ export function HomeScreen() {
                 marginBottom: 6,
               }}
             >
-              {displayName
-                ? t('home.greeting.named', { name: displayName })
-                : t('home.greeting.anonymous')}
+              {greetingOverride ||
+                (displayName
+                  ? t('home.greeting.named', { name: displayName })
+                  : t('home.greeting.anonymous'))}
             </div>
             <h1
               style={{
@@ -1059,30 +1101,12 @@ export function HomeScreen() {
               </div>
             </IfFlag>
 
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3" style={{ marginBottom: 14 }}>
-              {([
-                {
-                  label: t('home.actions.build.title'),
-                  sub: t('home.actions.build.sub'),
-                  icon: <Icon.plus />,
-                  screen: 'create' as const,
-                },
-                {
-                  label: t('home.actions.analyzer.title'),
-                  sub: t('home.actions.analyzer.sub'),
-                  icon: <Icon.paw />,
-                  screen: 'analyzer' as const,
-                },
-                {
-                  label: t('home.actions.fecalScan.title'),
-                  sub: t('home.actions.fecalScan.sub'),
-                  icon: <Icon.scan />,
-                  screen: 'fecalScan' as const,
-                  // Third of three: full width on the 2-col mobile grid (so the
-                  // row never ends in a hole), one of three on desktop.
-                  wide: true,
-                },
-              ] as const).map(({ label, sub, icon, screen, ...rest }) => (
+            {quickActions.length > 0 && (
+            <div
+              className={`grid grid-cols-2 ${QUICK_ACTION_DESKTOP_COLS[quickActions.length] ?? 'lg:grid-cols-3'} gap-3`}
+              style={{ marginBottom: 14 }}
+            >
+              {quickActions.map(({ label, sub, icon, screen, wide }) => (
                 <Glass
                   key={screen}
                   radius={RADII.lg}
@@ -1090,9 +1114,7 @@ export function HomeScreen() {
                   {...dashTileGlass(dark)}
                   onClick={() => go(screen)}
                   ariaLabel={label}
-                  className={
-                    'wide' in rest && rest.wide ? 'col-span-2 lg:col-span-1' : undefined
-                  }
+                  className={wide ? 'col-span-2 lg:col-span-1' : undefined}
                 >
                   <div className="flex items-start gap-2" style={{ minWidth: 0 }}>
                     <div style={{ ...iconBadgeStyle(driverColors, dark), flexShrink: 0, marginTop: 1 }}>
@@ -1132,6 +1154,7 @@ export function HomeScreen() {
                 </Glass>
               ))}
             </div>
+            )}
 
             {showLibraryCard && (
             <Glass

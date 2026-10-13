@@ -170,7 +170,7 @@ export function App() {
             style={{ fontSize: 13, color: COLOR.inkMute, marginTop: 6, maxWidth: 360 }}
           >
             Your account is signed in but doesn't hold an admin role. Ask an
-            owner to invite you from Team &amp; roles — you'll get an email with
+            owner to invite you from People → Invites — you'll get an email with
             a link that grants access.
           </div>
           <button

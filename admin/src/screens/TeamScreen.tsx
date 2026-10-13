@@ -1,5 +1,5 @@
 /**
- * Team & roles.
+ * People → Admins · Roles · Invites.
  *
  * Three tabs over one idea — who can get in, and what they can do:
  *   Members  — accounts that currently hold a role
@@ -36,6 +36,25 @@ import {
 } from '../../../src/shared/access/permissions';
 
 export type TeamTab = 'members' | 'invites' | 'roles';
+
+/**
+ * Each tab is titled with its own name, like People → Users ("Users"), so
+ * the heading always matches the tab the admin clicked in the rail.
+ */
+const TAB_HEADINGS: Record<TeamTab, { title: string; subtitle: string }> = {
+  members: {
+    title: 'Admins',
+    subtitle: 'Everyone who can reach the admin portal, and the role they hold',
+  },
+  roles: {
+    title: 'Roles',
+    subtitle: 'What each role can do, and who holds it',
+  },
+  invites: {
+    title: 'Invites',
+    subtitle: 'Invitations to the admin portal, and where each one stands',
+  },
+};
 
 export function TeamScreen({
   query,
@@ -87,8 +106,8 @@ export function TeamScreen({
   return (
     <>
       <ContextBar
-        title="Team & roles"
-        subtitle="Who can reach the admin portal, and exactly what they can do there"
+        title={TAB_HEADINGS[tab].title}
+        subtitle={TAB_HEADINGS[tab].subtitle}
         query={query}
         onQuery={onQuery}
       />

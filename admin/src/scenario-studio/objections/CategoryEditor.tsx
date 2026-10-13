@@ -483,7 +483,7 @@ function EditorBody({
                 </Button>
               ) : (
                 <span style={{ fontSize: 12, color: COLOR.inkMute, maxWidth: 260, lineHeight: 1.45 }}>
-                  Uploading needs the knowledge.write permission — tick documents already in the library.
+                  Uploading needs the Edit knowledge base permission — tick documents already in the library.
                 </span>
               ))}
           </div>

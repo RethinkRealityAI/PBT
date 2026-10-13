@@ -153,20 +153,20 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
   {
     key: 'content',
-    label: 'Content & simulation',
+    label: 'Content & AI tuning',
     description: 'The scenarios, prompts, and knowledge the trainer runs on.',
     permissions: [
-      { key: 'scenarios.read', label: 'View scenarios', description: 'Browse the scenario library and overrides.' },
+      { key: 'scenarios.read', label: 'View scenarios', description: 'Open the Scenario Studio: every scenario, category and objection.' },
       {
         key: 'scenarios.write',
         label: 'Edit scenarios',
-        description: 'Create and publish scenario overrides.',
+        description: 'Build, test and publish scenarios; manage categories and objections.',
         requires: ['scenarios.read'],
       },
-      { key: 'simulation.read', label: 'View simulation config', description: 'Read prompt + scoring tuning.' },
+      { key: 'simulation.read', label: 'View AI tuning', description: 'Read the AI tuning screen: scoring rubric, personas and prompts.' },
       {
         key: 'simulation.write',
-        label: 'Tune simulation',
+        label: 'Edit AI tuning',
         description: 'Change scoring weights, rubric copy, personas, and prompts.',
         requires: ['simulation.read'],
       },
@@ -174,7 +174,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
       {
         key: 'knowledge.write',
         label: 'Edit knowledge base',
-        description: 'Add, edit, re-seed, and delete knowledge documents.',
+        description: 'Add, edit, re-index and delete knowledge documents.',
         requires: ['knowledge.read'],
       },
       { key: 'flags.read', label: 'View feature flags', description: 'Read flag values and rules.' },
@@ -234,7 +234,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
         description: 'Download the full session corpus as JSONL.',
         sensitive: true,
       },
-      { key: 'preview.read', label: 'Consumer preview', description: 'Open the embedded consumer app preview.' },
+      { key: 'preview.read', label: 'Trainee app preview', description: 'Open Platform → Preview, the embedded trainee app.' },
     ],
   },
 ];
@@ -293,7 +293,7 @@ export const SYSTEM_ROLES: RoleDefinition[] = [
     key: 'content_manager',
     name: 'Content Manager',
     description:
-      'Owns what the trainer says: scenarios, simulation tuning, knowledge base, and feature flags.',
+      'Owns what the trainer says: scenarios, AI tuning, knowledge base, and feature flags.',
     permissions: [
       'overview.read',
       'insights.read',

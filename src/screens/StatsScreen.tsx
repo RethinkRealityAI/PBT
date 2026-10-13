@@ -7,6 +7,8 @@ import { Icon } from '../design-system/Icon';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
+import { useScreenEnabled } from '../app/screenFlags';
+import { useFlag } from '../app/providers/FlagProvider';
 import { useChat } from '../app/providers/ChatProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { bandFor } from '../data/knowledge/scoringRubric';
@@ -69,6 +71,8 @@ function MonoLabel({
 
 export function StatsScreen() {
   const { go } = useNavigation();
+  const historyOn = useScreenEnabled()('historyDetail');
+  const showJourney = useFlag('component.stats.sentiment_chart', true);
   const t = useT();
   const { locale } = useLanguage();
   const chat = useChat();
@@ -297,7 +301,7 @@ export function StatsScreen() {
         </Glass>
         </motion.div>
 
-        {journey.length > 0 && (
+        {showJourney && journey.length > 0 && (
           <motion.div variants={itemVariants} style={{ marginTop: 14 }}>
             <ResolutionJourney journey={journey} />
           </motion.div>
@@ -480,7 +484,7 @@ export function StatsScreen() {
           >
             "{report.betterAlternative}"
           </p>
-          {chat.sessionId && (
+          {chat.sessionId && historyOn && (
             <div style={{ marginTop: 14 }}>
               <PillButton variant="glass" fullWidth onClick={openTranscript}>
                 {t('stats.reviewTranscript')}

@@ -1,6 +1,7 @@
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
 import { TABS } from '../app/routes';
+import { useScreenEnabled } from '../app/screenFlags';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
@@ -37,9 +38,11 @@ export function TabBar() {
   const { getFlag } = useFlags();
   const dark = resolvedTheme === 'dark';
   const dc = profile ? DRIVER_COLORS[profile.primary] : null;
+  const screenEnabled = useScreenEnabled();
+  // A tab needs its own switch AND its screen's switch (History, Library).
   const visibleTabs = TABS.filter((t) => {
     const flag = TAB_FLAG[t.screen];
-    return flag ? getFlag<boolean>(flag, true) : true;
+    return (flag ? getFlag<boolean>(flag, true) : true) && screenEnabled(t.screen);
   });
   const activeGradient = dc
     ? `linear-gradient(180deg, ${dc.primary}, ${dc.accent})`

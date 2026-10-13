@@ -14,13 +14,9 @@
  * caller (resolved values are not sensitive — they're effectively
  * public configuration the consumer would receive anyway).
  *
- * Audience matching for a rule (all keys AND-ed; arrays are OR within):
- *   drivers          — caller's primary driver matches
- *   user_ids         — caller's auth user id matches
- *   anon_session_ids — caller's pbt:session_id matches
- *   percentage       — sticky bucket (hash session id) < percentage
- *   clinic_ids       — reserved (Phase 5)
- *
+ * Audience matching and rule order live in `_shared/flagRules.ts`, shared
+ * with `ai-voice-token` (which refuses a voice session when *Voice mode in
+ * chat* resolves off) so the server never disagrees with this snapshot.
  * Highest-priority enabled rule whose audience matches wins. If none match,
  * the flag's default_value is returned.
  */
@@ -33,33 +29,16 @@ import {
   type TeamObjectionsRead,
 } from './_shared/objectionsStore';
 import { triggerKnowledgeSync, type NetlifyContextLike } from './_shared/knowledgeTrigger';
+import {
+  resolveFlags,
+  type AudienceInput,
+  type FlagRow,
+  type RuleRow,
+} from './_shared/flagRules';
 import type { TeamObjection } from '../../src/shared/scenarios/objections';
 import type { ObjectionCategory } from '../../src/shared/scenarios/objectionCategories';
 
 const CACHE_TTL_MS = 60_000;
-
-interface AudienceInput {
-  user_id?: string | null;
-  anon_session_id?: string | null;
-  driver?: string | null;
-  clinic_id?: string | null;
-  preview?: boolean;
-}
-
-interface FlagRow {
-  key: string;
-  default_value: unknown;
-  value_type: string;
-}
-
-interface RuleRow {
-  id: string;
-  flag_key: string;
-  priority: number;
-  audience: Record<string, unknown>;
-  value: unknown;
-  enabled: boolean;
-}
 
 interface OverrideRow {
   scenario_id: string;
@@ -424,71 +403,6 @@ export function publicSimulationConfig(
     return { ...rest, scoring: scoringRest };
   }
   return rest;
-}
-
-/**
- * Stable 0–99 bucket for percentage rollout. djb2 over a salt + identifier
- * keeps the same caller in the same bucket across requests (sticky).
- */
-function bucketFor(salt: string, id: string): number {
-  let h = 5381;
-  const s = `${salt}:${id}`;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h) % 100;
-}
-
-function audienceMatches(
-  audience: Record<string, unknown>,
-  flagKey: string,
-  who: AudienceInput,
-): boolean {
-  const a = audience ?? {};
-  const drivers = Array.isArray(a.drivers) ? (a.drivers as string[]) : null;
-  if (drivers && drivers.length > 0) {
-    if (!who.driver || !drivers.includes(who.driver)) return false;
-  }
-  const userIds = Array.isArray(a.user_ids) ? (a.user_ids as string[]) : null;
-  if (userIds && userIds.length > 0) {
-    if (!who.user_id || !userIds.includes(who.user_id)) return false;
-  }
-  const anonIds = Array.isArray(a.anon_session_ids)
-    ? (a.anon_session_ids as string[])
-    : null;
-  if (anonIds && anonIds.length > 0) {
-    if (!who.anon_session_id || !anonIds.includes(who.anon_session_id)) return false;
-  }
-  const clinicIds = Array.isArray(a.clinic_ids) ? (a.clinic_ids as string[]) : null;
-  if (clinicIds && clinicIds.length > 0) {
-    if (!who.clinic_id || !clinicIds.includes(who.clinic_id)) return false;
-  }
-  if (typeof a.percentage === 'number') {
-    const pct = Math.max(0, Math.min(100, a.percentage));
-    const id = who.user_id ?? who.anon_session_id ?? '';
-    if (!id) return false;
-    if (bucketFor(flagKey, id) >= pct) return false;
-  }
-  return true;
-}
-
-function resolveFlags(
-  flags: FlagRow[],
-  rules: RuleRow[],
-  who: AudienceInput,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const f of flags) out[f.key] = f.default_value;
-  // Rules already sorted by priority desc — first matching rule per key wins.
-  const claimed = new Set<string>();
-  for (const r of rules) {
-    if (claimed.has(r.flag_key)) continue;
-    if (audienceMatches(r.audience, r.flag_key, who)) {
-      out[r.flag_key] = r.value;
-      claimed.add(r.flag_key);
-    }
-  }
-  return out;
 }
 
 export default async (req: Request, context?: NetlifyContextLike): Promise<Response> => {

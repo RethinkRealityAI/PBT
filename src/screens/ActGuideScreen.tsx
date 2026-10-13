@@ -7,6 +7,7 @@ import { Icon } from '../design-system/Icon';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
+import { useScreenEnabled } from '../app/screenFlags';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { RADII } from '../design-system/tokens';
 import { ACT_STEPS } from '../data/knowledge/actGuide';
@@ -318,6 +319,7 @@ const EXAMPLE_STEPS: {
 
 export function ActGuideScreen() {
   const { go } = useNavigation();
+  const createOn = useScreenEnabled()('create');
   const { profile } = useProfile();
   const t = useT();
 
@@ -480,9 +482,11 @@ export function ActGuideScreen() {
                 >
                   {t(DRIVER_ACT_TIP_KEY[profile.primary])}
                 </p>
-                <PillButton onClick={() => go('create')} icon={<Icon.arrow />}>
-                  {t('actGuide.practiceCta')}
-                </PillButton>
+                {createOn && (
+                  <PillButton onClick={() => go('create')} icon={<Icon.arrow />}>
+                    {t('actGuide.practiceCta')}
+                  </PillButton>
+                )}
               </div>
             </Glass>
           </motion.div>
@@ -603,7 +607,7 @@ export function ActGuideScreen() {
         </motion.div>
 
         {/* CTA if no profile */}
-        {!profile && (
+        {!profile && createOn && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

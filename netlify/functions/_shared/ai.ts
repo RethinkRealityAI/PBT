@@ -20,6 +20,7 @@ import { getServiceClient } from './admin';
 import { readCategories, readTeamObjections } from './objectionsStore';
 import { isMissingSuccessCriteriaColumn } from './speciesColumn';
 import { retrieveChunks } from './retrieval';
+import { resetSwitchCache } from './flagRules';
 import type { Difficulty, Scenario } from '../../../src/data/scenarios';
 import type { ChatMessage } from '../../../src/services/types';
 import type { PromptOverrides } from '../../../src/data/knowledge/promptBuilders';
@@ -559,6 +560,7 @@ export function __resetAiCaches(): void {
   categoriesCache = null;
   mergeMemo = null;
   overrideCache.clear();
+  resetSwitchCache();
 }
 
 /**

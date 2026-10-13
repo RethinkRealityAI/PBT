@@ -786,7 +786,7 @@ export function SimulationScreen() {
     if (!draft) return;
     const current = buildMinimalConfig(draft) as unknown as Record<string, unknown>;
     const ok = await confirm({
-      title: 'Reset every simulation setting to its default?',
+      title: 'Reset every AI tuning setting to its default?',
       body: 'This clears the whole draft — scoring, drivers, pushbacks and prompt notes all go back to what the app ships with.',
       consequences: resetConsequences(current),
       confirmLabel: 'Reset everything',
@@ -1627,10 +1627,16 @@ function PushbacksTab({
     <div style={{ display: 'grid', gap: 12 }}>
       <Glass padding={18} radius={16}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-          <SectionTitle title="Pushback categories" subtitle={`${ids.length} categories — what the AI customer pushes back on`} />
-          <button onClick={onStartAdd} style={{ ...btnPrimary, fontSize: 12 }}>+ New category</button>
+          <SectionTitle title="Pushbacks" subtitle={`${ids.length} pushbacks — the coaching behind each objection the AI customer raises`} />
+          <button onClick={onStartAdd} style={{ ...btnPrimary, fontSize: 12 }}>+ New pushback</button>
         </div>
-        <div style={{ fontSize: 11.5, color: COLOR.inkMute, lineHeight: 1.5, marginBottom: 12 }}>{LOCALE_NOTE}</div>
+        <div style={{ fontSize: 11.5, color: COLOR.inkMute, lineHeight: 1.5, marginBottom: 6 }}>{LOCALE_NOTE}</div>
+        <div style={{ fontSize: 11.5, color: COLOR.inkMute, lineHeight: 1.5, marginBottom: 12 }}>
+          To give trainees and scenarios a new objection, add it in{' '}
+          <strong>Scenario Studio → Categories</strong>; the AI reads its coaching from there. A
+          pushback added here only tunes the AI's coaching for that id, and an entry here for one of
+          your team's objections takes priority over the coaching written in the Studio.
+        </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {ids.map((id) => (
             <PillButton key={id} active={selected === id} onClick={() => onSelect(id)} size="sm">
@@ -1658,7 +1664,7 @@ function PushbacksTab({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10 }}>
             <SectionTitle
               title={`Edit: ${selected}`}
-              subtitle={DEFAULT_PUSHBACK_IDS.has(selected) ? 'Built-in category' : 'Admin-added category'}
+              subtitle={DEFAULT_PUSHBACK_IDS.has(selected) ? 'Built-in pushback' : 'Added here'}
             />
             {DEFAULT_PUSHBACK_IDS.has(selected) ? (
               <button onClick={() => onResetOne(selected)} style={{ ...btnSecondary, fontSize: 12 }}>
@@ -1666,7 +1672,7 @@ function PushbacksTab({
               </button>
             ) : (
               <button onClick={() => onDelete(selected)} style={{ ...btnSecondary, color: COLOR.danger, fontSize: 12 }}>
-                Delete category
+                Delete pushback
               </button>
             )}
           </div>
@@ -1683,7 +1689,7 @@ function PushbacksTab({
         </Glass>
       ) : (
         <div style={{ padding: '40px 20px', textAlign: 'center', color: COLOR.inkMute, fontSize: 13 }}>
-          Select a pushback category to edit it, or add a new one.
+          Select a pushback to edit it, or add a new one.
         </div>
       )}
     </div>
@@ -1836,7 +1842,7 @@ function HistoryModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} width={880} ariaLabel="Simulation config history">
+    <Modal open={open} onClose={onClose} width={880} ariaLabel="AI tuning history">
       <div style={{ padding: '24px 26px 8px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Eyebrow>Last 30 days</Eyebrow>

@@ -608,7 +608,7 @@ const ROUTES: Record<string, unknown> = {
     roleKey: 'content_manager',
     roleName: 'Content Manager',
     roleDescription:
-      'Owns what the trainer says: scenarios, simulation tuning, knowledge base, and feature flags.',
+      'Owns what the trainer says: scenarios, AI tuning, knowledge base, and feature flags.',
     expiresAt: ahead(5 * DAY),
     needsPassword: true,
   },
