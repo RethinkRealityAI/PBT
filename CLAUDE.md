@@ -765,7 +765,10 @@ becomes a drawer under 900px. Location is in the URL hash (`#/people/roles`) —
 still no router library, just a parsed hash. Screens stay unaware of tabs: a
 destination publishes them via `SectionTabsProvider` and `ContextBar` renders
 the strip. **Adding a screen means adding it to `NAV_SECTIONS` with its
-`requires` permission**, not to a flat list.
+`requires` permission**, not to a flat list. The foot of the rail carries a
+**Documentation** link (every admin, new tab) to the Notion admin handbook —
+`DOCUMENTATION_URL` in `nav.ts`; the Notion page must stay shared with the
+client's admins for it to open.
 
 July admin screens (§3.2): **User & admin management** — the Users screen +
 User modal "Manage" tab do account write-ops via `admin-user-actions`

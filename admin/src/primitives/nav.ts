@@ -66,6 +66,13 @@ export interface NavSection {
   items: NavItem[];
 }
 
+/**
+ * The admin handbook (Notion) — linked from the foot of the rail for every
+ * signed-in admin, whatever their role. Opens in a new tab; the page must be
+ * shared with the people who use the portal for the link to open for them.
+ */
+export const DOCUMENTATION_URL = 'https://www.notion.so/3d0dd85c630c8151bb66dcfb92257fae';
+
 export const NAV_SECTIONS: NavSection[] = [
   {
     key: 'monitor',
