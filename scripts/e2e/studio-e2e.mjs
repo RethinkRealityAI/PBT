@@ -379,7 +379,8 @@ async function waitOwnerIdle(page) {
 }
 async function isEnded(page) {
   const t = await main(page).getByRole('log', { name: 'Conversation with the owner' }).innerText().catch(() => '');
-  return /owner ended the conversation|16-turn limit|You ended the conversation/.test(t);
+  // The divider is styled uppercase, and innerText reports the rendered case.
+  return /owner ended the conversation|16-turn limit|you ended the conversation/i.test(t);
 }
 function appendTranscript(a, transcript, scoreName, skills) {
   const file = join(OUT, 'transcripts.md');

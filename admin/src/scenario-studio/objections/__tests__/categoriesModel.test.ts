@@ -218,7 +218,7 @@ describe('categoryDocReach — documents a category attaches that some of its sc
 
   it('names the animals a dog-only document misses (cat scenarios widen to the library)', () => {
     expect(categoryDocReach(doc(['dog', 'puppy'], ['roleplay', 'scoring']), ['dog', 'cat'])).toEqual([
-      'Not filed for cats, so those scenarios read the whole library instead.',
+      'Not filed for cats, so those scenarios skip it (with nothing else here for them, they read the whole library).',
     ]);
     expect(categoryDocReach(doc(['dog'], ['roleplay', 'scoring']), ['dog'])[0]).toMatch(/^Not filed for puppies/);
   });

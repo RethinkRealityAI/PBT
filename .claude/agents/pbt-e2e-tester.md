@@ -88,13 +88,22 @@ Never `rm` with an unquoted variable; just use a new folder per run.
    study (e.g. the scorer's "A stronger line to try" citing "37% less
    tartar") — that is retrieval reaching the model, beyond the briefing.
 
-7. **Cleanup — ALWAYS, pass or fail.** Run `scripts/e2e/cleanup.sql` with
-   `:uid` replaced by the account's `userId`, through the Supabase MCP
-   `execute_sql`. It hard-deletes the QA documents + chunks, scenarios,
-   objections, categories, the account's audit rows and telemetry, and the
-   account itself; the final `select` must show **0 for every row**. The
-   connector asks the user to confirm destructive SQL — say so before you
-   run it. If any count is not 0, find out why and finish the job.
+7. **Cleanup — ALWAYS, pass or fail, in two steps.**
+   a. `node scripts/e2e/soft-cleanup.mjs <out>` (same env vars as the run):
+      soft-deletes the run's scenarios → objections → categories →
+      documents through the admin's own endpoints. Soft-deleted rows are
+      invisible to every reader, including AI retrieval, so this takes the
+      fictional documents out of production at once — no SQL, no
+      confirmation. It must end "Nothing from the run is live any more".
+   b. Run `scripts/e2e/cleanup.sql` with `:uid` replaced by the account's
+      `userId`, through the Supabase MCP `execute_sql`. It hard-deletes the
+      QA documents + chunks, scenarios, objections, categories, the
+      account's audit rows and telemetry, and the account itself; the final
+      `select` must show **0 for every row**. The connector asks the user to
+      confirm destructive SQL and times out after ~60 s with no answer
+      (nothing runs) — tell the user before you send it, and retry when they
+      are there. Until then step (a) has already made the data inert; say
+      so. If any count is not 0, find out why and finish the job.
 
 8. **Report** (to the user, plainly): what was proved (each check, with the
    screenshot that shows it), the Test drive scores, any defects found and
@@ -110,3 +119,7 @@ Never `rm` with an unquoted variable; just use a new folder per run.
 - The preview shares the PRODUCTION database. Keep runs short: production
   trainees' AI retrieval can see the QA documents until cleanup runs.
 - Rate limits: AI endpoints are rate-limited per IP; don't loop runs.
+- Deploy previews show Netlify's "Collaborate on this Deploy Preview"
+  toolbar (a fixed max-z-index bar) — the script hides it; keep that.
+- `apply_migration` / destructive `execute_sql` calls wait for the user's
+  confirmation; a timeout means NOTHING ran — check before retrying.

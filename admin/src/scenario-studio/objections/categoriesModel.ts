@@ -370,7 +370,7 @@ export function categoryDocReach(
   const out: string[] = [];
   if (missing.length) {
     out.push(
-      `Not filed for ${missing.map((s) => REACH_SPECIES_LABEL[s]).join(' or ')}, so those scenarios read the whole library instead.`,
+      `Not filed for ${missing.map((s) => REACH_SPECIES_LABEL[s]).join(' or ')}, so those scenarios skip it (with nothing else here for them, they read the whole library).`,
     );
   }
   if (!scope.tools.includes('roleplay')) out.push('The AI customer doesn’t read it.');

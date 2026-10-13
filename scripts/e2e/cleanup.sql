@@ -16,7 +16,8 @@ delete from public.knowledge_documents where title like 'QA E2E ·%';
 -- 2. Scenarios the run saved (admin:<uuid> rows only — never a library row).
 delete from public.scenario_overrides
  where scenario_id like 'admin:%'
-   and (created_by = ':uid' or title_override like 'QA E2E%' or card_title_override like 'QA E2E%');
+   and (created_by = ':uid' or pushback_id like 'team:qa-e2e%'
+        or title_override like 'QA E2E%' or card_title_override like 'QA E2E%');
 
 -- 3. Objections, then the categories they were filed under.
 delete from public.scenario_objections where id like 'team:qa-e2e%';
@@ -37,7 +38,7 @@ commit;
 -- Proof: every count must be 0.
 select 'knowledge_documents' as what, count(*) from public.knowledge_documents where title like 'QA E2E ·%'
 union all select 'knowledge_chunks (orphans)', count(*) from public.knowledge_chunks c where not exists (select 1 from public.knowledge_documents d where d.id = c.doc_id)
-union all select 'scenario_overrides', count(*) from public.scenario_overrides where title_override like 'QA E2E%' or card_title_override like 'QA E2E%' or created_by = ':uid'
+union all select 'scenario_overrides', count(*) from public.scenario_overrides where pushback_id like 'team:qa-e2e%' or title_override like 'QA E2E%' or card_title_override like 'QA E2E%' or created_by = ':uid'
 union all select 'scenario_objections', count(*) from public.scenario_objections where id like 'team:qa-e2e%'
 union all select 'scenario_objection_categories', count(*) from public.scenario_objection_categories where id like 'category:qa-e2e%'
 union all select 'admin_audit_log', count(*) from public.admin_audit_log where actor_id = ':uid'
