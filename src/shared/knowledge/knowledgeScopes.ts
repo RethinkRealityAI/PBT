@@ -42,8 +42,8 @@ export const KNOWLEDGE_TOOLS: KnowledgeTool[] = [
   },
   {
     key: 'scenario-builder',
-    label: 'Scenario builder AI',
-    description: 'Admin-side suggestions while building a scenario.',
+    label: 'Scenario Studio assistant',
+    description: 'The Scenario Studio assistant, when it suggests documents and wording for a scenario.',
   },
   {
     key: 'fecal-scan',

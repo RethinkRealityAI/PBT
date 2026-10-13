@@ -134,7 +134,7 @@ export default async (req: Request): Promise<Response> => {
           return errorResponse(
             check === 'unknown' ? 409 : 500,
             check === 'unknown'
-              ? 'This scenario was built on an objection that has since been deleted. Restore the objection first (Scenario Studio → Objections → Recently deleted), then revert.'
+              ? 'This scenario was built on an objection that has since been deleted. Restore the objection first (Scenario Studio → Categories → Recently deleted), then revert.'
               : check.error,
           );
         }

@@ -365,7 +365,7 @@ describe('CategoriesScreen', () => {
     fireEvent.click(within(card('GI')).getByRole('button', { name: 'Edit the category “GI”' }));
     const dialog = await screen.findByRole('dialog', { name: 'Edit category' });
     expect(within(dialog).queryByRole('button', { name: /Upload a document/ })).not.toBeInTheDocument();
-    expect(within(dialog).getByText(/Uploading needs the knowledge.write permission/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Uploading needs the Edit knowledge base permission/)).toBeInTheDocument();
   });
 
   it('is read-only without scenarios.write', async () => {

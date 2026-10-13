@@ -293,7 +293,7 @@ function AuditRow({
               ? `Put this ${entity.toLowerCase()} back to how it was before this change`
               : row.action === 'revert'
                 ? 'This entry is itself a rollback — roll back the original change instead.'
-                : `Rollback isn’t available for a ${entity.toLowerCase()}. Only feature switches, their targeting rules, scenario edits, simulation settings, and knowledge documents can be rolled back.`
+                : `Rollback isn’t available for a ${entity.toLowerCase()}. Only feature switches, their targeting rules, scenario edits, AI tuning settings, and knowledge documents can be rolled back.`
           }
           style={{
             padding: '4px 10px',

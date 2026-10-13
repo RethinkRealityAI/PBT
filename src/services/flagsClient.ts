@@ -22,6 +22,7 @@ export type FlagKey =
   | 'screen.history.enabled'
   | 'screen.create.enabled'
   | 'screen.voice.enabled'
+  | 'screen.fecalScan.enabled'
   | 'nav.tab.home.enabled'
   | 'nav.tab.history.enabled'
   | 'nav.tab.resources.enabled'
@@ -48,6 +49,7 @@ export const FLAG_DEFAULTS: Record<FlagKey, unknown> = {
   'screen.history.enabled': true,
   'screen.create.enabled': true,
   'screen.voice.enabled': true,
+  'screen.fecalScan.enabled': true,
   'nav.tab.home.enabled': true,
   'nav.tab.history.enabled': true,
   'nav.tab.resources.enabled': true,
@@ -61,7 +63,9 @@ export const FLAG_DEFAULTS: Record<FlagKey, unknown> = {
   'component.home.act_guide_card': true,
   'component.home.echo_profile_card': true,
   'component.home.library_card': true,
-  'component.chat.coach_drawer': false,
+  // In-chat coach hints (the Coach button). The key predates the feature and
+  // its old `false` default switched nothing; it is now the hints' off switch.
+  'component.chat.coach_drawer': true,
   'component.stats.sentiment_chart': true,
   'field.home.headline': '',
   'field.home.welcome_eyebrow': '',

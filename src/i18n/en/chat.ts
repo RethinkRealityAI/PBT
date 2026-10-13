@@ -91,6 +91,8 @@ export const chat = {
     'Microphone access denied or unavailable. Please allow microphone access and try again.',
   'chat.voice.error.connection':
     'Voice connection error. Check your microphone and network, then try again.',
+  /** The admin switched voice off (Flags → Voice mode in chat) after the screen loaded. */
+  'chat.voice.error.disabled': 'Voice practice is switched off right now. Switch to text to keep going.',
   'chat.voice.error.lost':
     'Voice connection lost. Check your network and tap Begin simulation to restart.',
   /** {reason} is the raw transport error — never translated. */

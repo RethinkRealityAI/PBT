@@ -603,6 +603,58 @@ describe('ai-vision', () => {
 });
 
 describe('ai-voice-token', () => {
+  it('refuses a voice session with 403 disabled when Voice mode in chat is off', async () => {
+    sb.setHandler('flags', () => ({
+      data: { key: 'screen.voice.enabled', default_value: false, value_type: 'boolean' },
+      error: null,
+    }));
+    sb.setHandler('flag_rules', () => ({ data: [], error: null }));
+    const res = await voiceToken(jsonRequest('ai-voice-token', { scenario }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'disabled' });
+    // Refused before any token was minted.
+    expect(mocks.authTokensCreate).not.toHaveBeenCalled();
+    // Only the one switch was read, by key.
+    const flagRead = sb.callsFor('flags')[0];
+    expect(flagRead.ops).toContainEqual({ op: 'eq', args: ['key', 'screen.voice.enabled'] });
+  });
+
+  it('honours a targeting rule that turns voice back on for the caller (same rules as flags-resolve)', async () => {
+    mocks.authTokensCreate.mockResolvedValueOnce({ name: 'auth_tokens/ruled' });
+    sb.setHandler('flags', () => ({
+      data: { key: 'screen.voice.enabled', default_value: false, value_type: 'boolean' },
+      error: null,
+    }));
+    sb.setHandler('flag_rules', () => ({
+      data: [
+        {
+          id: 'r1',
+          flag_key: 'screen.voice.enabled',
+          priority: 10,
+          audience: { drivers: ['Analyzer'] },
+          value: true,
+          enabled: true,
+        },
+      ],
+      error: null,
+    }));
+    const off = await voiceToken(
+      jsonRequest('ai-voice-token', { scenario, audience: { driver: 'Harmonizer' } }),
+    );
+    expect(off.status).toBe(403);
+    const on = await voiceToken(
+      jsonRequest('ai-voice-token', { scenario, audience: { driver: 'Analyzer' } }, { ip: '198.51.100.9' }),
+    );
+    expect(on.status).toBe(200);
+  });
+
+  it('fails open: a flags read error never switches voice off', async () => {
+    mocks.authTokensCreate.mockResolvedValueOnce({ name: 'auth_tokens/open' });
+    sb.setHandler('flags', () => ({ data: null, error: { message: 'boom' } }));
+    const res = await voiceToken(jsonRequest('ai-voice-token', { scenario }));
+    expect(res.status).toBe(200);
+  });
+
   it('mints a single-use token with the model, prompt, tools and audio config locked', async () => {
     mocks.authTokensCreate.mockResolvedValueOnce({ name: 'auth_tokens/abc123' });
     const before = Date.now();

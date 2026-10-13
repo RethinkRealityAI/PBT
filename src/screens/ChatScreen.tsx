@@ -37,7 +37,7 @@ import {
   CoachHintPanel,
   useCoachHint,
 } from '../features/chat/CoachHint';
-import { useScenarioOverride } from '../app/providers/FlagProvider';
+import { useFlag, useScenarioOverride } from '../app/providers/FlagProvider';
 import type { PromptOverrides } from '../data/knowledge/promptBuilders';
 import { getPreviewRun, subscribePreviewRun } from '../lib/previewMode';
 import { useDialog } from '../lib/useDialog';
@@ -474,11 +474,14 @@ function ScenarioSessionControls({
   mode,
   onModeChange,
   onEnd,
+  voiceEnabled,
 }: {
   scenario: Scenario;
   mode: 'text' | 'voice';
   onModeChange: (mode: 'text' | 'voice') => void;
   onEnd: () => void;
+  /** Admin → Flags → Voice mode in chat. Off = text only, no toggle. */
+  voiceEnabled: boolean;
 }) {
   // Show the USER'S locked ECHO driver here — this surface represents the player's
   // identity, not the customer's persona (the customer's driver is implicit in the
@@ -514,15 +517,17 @@ function ScenarioSessionControls({
             />
           </div>
         </div>
-        <Segmented
-          value={mode}
-          onChange={onModeChange}
-          ariaLabel={t('chat.controls.modeAria')}
-          options={[
-            { value: 'text', label: <Icon.chat /> },
-            { value: 'voice', label: <Icon.voice /> },
-          ]}
-        />
+        {voiceEnabled && (
+          <Segmented
+            value={mode}
+            onChange={onModeChange}
+            ariaLabel={t('chat.controls.modeAria')}
+            options={[
+              { value: 'text', label: <Icon.chat /> },
+              { value: 'voice', label: <Icon.voice /> },
+            ]}
+          />
+        )}
         <button
           type="button"
           onClick={onEnd}
@@ -757,9 +762,18 @@ export function ChatScreen() {
     () => null,
   );
   const previewRunId = previewRun?.runId ?? null;
-  const [mode, setMode] = useState<'text' | 'voice'>(
-    () => getPreviewRun()?.mode ?? 'voice',
+  // Admin → Flags → *Voice mode in chat*. Off = text only: no toggle, text
+  // by default, and the server refuses voice tokens too (ai-voice-token).
+  const voiceEnabled = useFlag('screen.voice.enabled', true);
+  // Admin → Flags → coach hints (`component.chat.coach_drawer`).
+  const coachEnabled = useFlag('component.chat.coach_drawer', true);
+  const [mode, setMode] = useState<'text' | 'voice'>(() =>
+    voiceEnabled ? (getPreviewRun()?.mode ?? 'voice') : 'text',
   );
+  // The trainee's driver rides along with the voice token request so the
+  // server resolves the voice switch for the same audience as the app.
+  const driverRef = useRef<string | null>(profile?.primary ?? null);
+  driverRef.current = profile?.primary ?? null;
   const [draft, setDraft] = useState('');
   const [voiceAnalyzing, setVoiceAnalyzing] = useState(false);
   const [voiceReady, setVoiceReady] = useState(false);
@@ -885,7 +899,7 @@ export function ChatScreen() {
   }, [go, t]);
 
   const beginVoice = useCallback(() => {
-    if (!scenario) return;
+    if (!scenario || !voiceEnabled) return;
     voiceFinalizeBusyRef.current = false;
     setVoiceAnalyzing(false);
     setVoiceAnalysisError(null);
@@ -894,8 +908,9 @@ export function ChatScreen() {
       locale: localeRef.current,
       openingLine: getLocalizedOpeningLine(scenario, localeRef.current) || null,
       overrides: voiceOverridesRef.current,
+      driver: driverRef.current,
     });
-  }, [scenario]);
+  }, [scenario, voiceEnabled]);
 
   const cycleScenario = useCallback(
     (delta: number) => {
@@ -955,9 +970,19 @@ export function ChatScreen() {
         locale: localeRef.current,
         openingLine: getLocalizedOpeningLine(scenario, localeRef.current) || null,
         overrides: voiceOverridesRef.current,
+        driver: driverRef.current,
       });
     }
   }, [scenario]);
+
+  // Voice switched off — or the flag snapshot arrived after this screen
+  // mounted in voice mode, or an admin preview asked for voice: fall back to
+  // text. A voice session already live is left to finish (and score); only an
+  // idle or failed voice state is switched.
+  useEffect(() => {
+    if (voiceEnabled || mode !== 'voice') return;
+    if (voice.status === 'idle' || voice.status === 'error') handleModeChange('text');
+  }, [voiceEnabled, mode, voice.status, handleModeChange]);
 
 useThinkingSound(
     (mode === 'text' && chat.status === 'aiTyping') ||
@@ -1354,10 +1379,10 @@ useThinkingSound(
           scenarioIndex={scenarioIndex}
           scenarioTotal={scenarioTotal}
         />
-        {mode === 'text' && <CoachHintPanel coach={coach} />}
+        {mode === 'text' && coachEnabled && <CoachHintPanel coach={coach} />}
         <div style={{ position: 'relative' }}>
           {/* Coach nudge trigger — mirrors the Scenario-info affordance on the left */}
-          {mode === 'text' && (
+          {mode === 'text' && coachEnabled && (
             <div
               className="absolute z-[2]"
               style={{ left: 0, bottom: '100%', marginBottom: 16 }}
@@ -1406,6 +1431,7 @@ useThinkingSound(
           <ScenarioSessionControls
             scenario={scenario}
             mode={mode}
+            voiceEnabled={voiceEnabled}
             onModeChange={handleModeChange}
             onEnd={() => {
               // Voice with no active session yet → just leave.

@@ -180,6 +180,17 @@ export interface VoiceTokenRequest extends AiRequestMeta {
   openingLine?: string | null;
   /** Honoured ONLY when `preview === true`; otherwise loaded server-side. */
   promptOverrides?: PromptOverrides;
+  /**
+   * The same audience the app sends `flags-resolve` (device id + the
+   * trainee's ECHO driver), so the server resolves the *Voice mode in chat*
+   * switch with the same targeting rules the app used. Hints only: the
+   * signed-in user id always comes from the verified token, and flags are
+   * configuration, not an access control.
+   */
+  audience?: {
+    anonSessionId?: string | null;
+    driver?: string | null;
+  };
 }
 
 export interface VoiceTokenResponse {
@@ -321,7 +332,9 @@ export type AiErrorCode =
   | 'rate_limited'
   | 'payload_too_large'
   | 'upstream'
-  | 'server';
+  | 'server'
+  /** An admin has switched the feature off (e.g. *Voice mode in chat*). */
+  | 'disabled';
 
 export interface AiErrorResponse {
   error: string;

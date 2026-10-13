@@ -73,6 +73,8 @@ export const chat: Record<keyof typeof enChat, string> = {
     'Accès au microphone refusé ou indisponible. Autorisez l’accès au microphone et réessayez.',
   'chat.voice.error.connection':
     'Erreur de connexion vocale. Vérifiez votre microphone et votre réseau, puis réessayez.',
+  'chat.voice.error.disabled':
+    'La pratique vocale est désactivée pour le moment. Passez au mode écrit pour continuer.',
   'chat.voice.error.lost':
     'Connexion vocale perdue. Vérifiez votre réseau et touchez « Commencer la simulation » pour redémarrer.',
   'chat.voice.error.startFailed':

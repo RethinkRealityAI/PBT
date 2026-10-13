@@ -51,6 +51,7 @@ import {
   retrieveForScenario,
   sanitizeScenario,
 } from './_shared/ai';
+import { isSwitchOn } from './_shared/flagRules';
 import { buildVoiceSystemPrompt } from '../../src/data/knowledge/promptBuilders';
 import { MODEL_LIVE } from '../../src/shared/ai/models';
 import type { VoiceTokenRequest, VoiceTokenResponse } from '../../src/shared/ai/contract';
@@ -61,6 +62,14 @@ const MAX_BODY_BYTES = 256 * 1024;
 export const TOKEN_TTL_MS = 15 * 60_000;
 /** Window in which the token may OPEN a session. */
 export const NEW_SESSION_WINDOW_MS = 2 * 60_000;
+
+/** The feature switch that turns voice off (Admin → Flags → *Voice mode in chat*). */
+export const VOICE_SWITCH = 'screen.voice.enabled';
+
+/** A short, plain audience hint from the body, or null. */
+function audienceHint(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 && v.length <= 100 ? v : null;
+}
 
 /** The two tools the voice customer can call — identical to the browser's. */
 export const VOICE_TOOLS = [
@@ -107,6 +116,17 @@ export default async (req: Request): Promise<Response> => {
 
   const scenario = sanitizeScenario(body.scenario);
   if (!scenario) return aiError(400, 'bad_request', 'scenario is missing required fields');
+
+  // *Voice mode in chat* (Flags). The app hides voice when the switch is off;
+  // refusing here too makes it a real off switch for voice cost: a tab that
+  // loaded before the switch flipped cannot start a new session either.
+  // Resolved with the same rules as `flags-resolve`; fail-open on a read error.
+  const voiceOn = await isSwitchOn(caller.sb, VOICE_SWITCH, {
+    user_id: caller.userId,
+    anon_session_id: audienceHint(body.audience?.anonSessionId),
+    driver: audienceHint(body.audience?.driver),
+  });
+  if (!voiceOn) return aiError(403, 'disabled', 'Voice mode is switched off');
 
   const locale = readLocale(body.locale);
   const preview = body.preview === true;

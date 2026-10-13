@@ -6,6 +6,7 @@ import { Segmented } from '../design-system/Segmented';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
+import { useFlag } from '../app/providers/FlagProvider';
 import { bandFor } from '../data/knowledge/scoringRubric';
 import { localizedDimensions } from '../i18n/dataL10n/rubric';
 import { COLORS } from '../design-system/tokens';
@@ -137,6 +138,8 @@ function ScorecardView({ session }: { session: SessionRecord }) {
   // the card) can't yank the card's "thanks" state. Evaluated before the
   // not-scored early return purely because hooks must run unconditionally.
   const offerFeedback = useMemo(() => !isSessionRated(session.id), [session.id]);
+  // Admin → Flags: the journey strip's switch (read before the early return).
+  const showJourney = useFlag('component.stats.sentiment_chart', true);
 
   // A scoring-outage placeholder is not a real evaluation — don't render
   // it as a wall of zeros. The transcript tab still works.
@@ -206,7 +209,7 @@ function ScorecardView({ session }: { session: SessionRecord }) {
             </div>
           </div>
         </Glass>
-        {journey.length > 0 && (
+        {showJourney && journey.length > 0 && (
           <div style={{ marginTop: 14 }}>
             <ResolutionJourney journey={journey} />
           </div>

@@ -301,6 +301,18 @@ describe('voiceSession — ephemeral token', () => {
     expect(body.sessionId).toHaveLength(36);
   });
 
+  it('says voice is switched off when the server refuses with code "disabled"', async () => {
+    postAi.mockRejectedValueOnce(Object.assign(new Error('Voice mode is switched off'), { code: 'disabled', status: 403 }));
+    const { result } = await startSession({ driver: 'Analyzer' });
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe(translate('en', 'chat.voice.error.disabled'));
+    expect(connect).not.toHaveBeenCalled();
+    // The token request carried the flag audience (device id + driver).
+    const body = tokenRequest();
+    expect(body.audience).toMatchObject({ driver: 'Analyzer' });
+    expect(typeof body.audience.anonSessionId).toBe('string');
+  });
+
   it('surfaces a token failure as the connection error and never opens a socket', async () => {
     postAi.mockRejectedValueOnce(new Error('503 upstream'));
     const { result } = await startSession();

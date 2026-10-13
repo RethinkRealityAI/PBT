@@ -9,7 +9,7 @@ import {
 import { ScenarioProvider } from './providers/ScenarioProvider';
 import { ChatProvider, useChat } from './providers/ChatProvider';
 import { SessionProvider } from './providers/SessionProvider';
-import { FlagProvider, useFlag, useFlags } from './providers/FlagProvider';
+import { FlagProvider, useFlags } from './providers/FlagProvider';
 import { useScenario } from './providers/ScenarioProvider';
 import {
   adminOverrideToScenario,
@@ -24,6 +24,7 @@ import type { ScenarioOverride } from '../services/flagsClient';
 import { isPreviewMode, startPreviewRun } from '../lib/previewMode';
 import type { Screen } from './routes';
 import { SCREENS_WITH_TAB_BAR } from './routes';
+import { useScreenEnabled } from './screenFlags';
 
 import { mountKeyframes } from '../design-system/keyframes';
 import { AppFrame } from '../shell/AppFrame';
@@ -233,25 +234,14 @@ function TabBarHost() {
 /**
  * Each gated screen redirects to home when its flag is off. We check before
  * rendering so admins can disable a screen without breaking the back stack
- * or leaving the user on a now-empty page.
+ * or leaving the user on a now-empty page. The screen → switch map lives in
+ * `screenFlags.ts`, shared with the sidebar, tab bar and in-app links so a
+ * switched-off screen has no way in at all.
  */
 function useScreenGate(current: Screen): boolean {
   const { go } = useNavigation();
-  const analyzer = useFlag('screen.analyzer.enabled', true);
-  const actGuide = useFlag('screen.act_guide.enabled', true);
-  const resources = useFlag('screen.resources.enabled', true);
-  const stats = useFlag('screen.stats.enabled', true);
-  const history = useFlag('screen.history.enabled', true);
-  const create = useFlag('screen.create.enabled', true);
-
-  const blocked =
-    (current === 'analyzer' && !analyzer) ||
-    (current === 'actGuide' && !actGuide) ||
-    (current === 'resources' && !resources) ||
-    (current === 'stats' && !stats) ||
-    (current === 'history' && !history) ||
-    (current === 'historyDetail' && !history) ||
-    (current === 'create' && !create);
+  const screenEnabled = useScreenEnabled();
+  const blocked = !screenEnabled(current);
 
   useEffect(() => {
     if (blocked) go('home');

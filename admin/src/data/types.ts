@@ -282,7 +282,10 @@ export type AuditEntityType =
   | 'invite'
   | 'email_settings'
   | 'email_template'
-  | 'knowledge_document';
+  | 'knowledge_document'
+  | 'report'
+  | 'scenario_objection'
+  | 'scenario_objection_category';
 
 /**
  * Entity kinds the revert endpoint can actually roll back.

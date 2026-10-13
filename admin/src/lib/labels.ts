@@ -41,6 +41,7 @@ export const SCREEN_LABELS: Record<string, string> = {
   history: 'Past sessions',
   historyDetail: 'Past session detail',
   analyzer: 'Pet analyzer',
+  fecalScan: 'Fecal scan',
   resources: 'Resources',
   settings: 'Settings',
   actGuide: 'ACT method guide',
@@ -166,7 +167,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   flag: 'Feature switch',
   flag_rule: 'Feature switch targeting rule',
   scenario_override: 'Scenario edit',
-  simulation_config: 'Simulation settings',
+  simulation_config: 'AI tuning settings',
   user: 'Person',
   role: 'Role',
   invite: 'Invitation',
@@ -174,6 +175,8 @@ export const ENTITY_LABELS: Record<string, string> = {
   email_template: 'Email template',
   knowledge_document: 'Knowledge document',
   report: 'Problem report',
+  scenario_objection: 'Scenario objection',
+  scenario_objection_category: 'Objection category',
 };
 
 /** What was done to it. */

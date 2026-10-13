@@ -226,7 +226,7 @@ export function PreviewScreen() {
               <iframe
                 ref={iframeRef}
                 src={PREVIEW_URL}
-                title="Consumer preview"
+                title="Trainee app preview"
                 style={{
                   width: FRAME_WIDTH[frame],
                   maxWidth: '100%',

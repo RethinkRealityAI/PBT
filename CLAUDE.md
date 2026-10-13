@@ -53,6 +53,25 @@ Initial screen logic in `App.tsx::getInitialScreen()`:
 2. No `pbt:profile` → quiz (RouteResolver effect handles redirect)
 3. Else → home
 
+**Feature switches (Admin → Flags).** `src/app/screenFlags.ts` is the ONE
+screen → switch map (`SCREEN_FLAGS`, `useScreenEnabled()`): the route guard
+(`useScreenGate`), the sidebar, the tab bar and every in-app link into a
+screen (Home tiles/cards, ACT Guide's build buttons, Pet Analyzer → Fecal
+Scan, scorecard → History) read it, so a switched-off screen has no way in —
+not just a bounce home. A nav entry needs its own `nav.*` switch AND its
+screen's. `screen.fecalScan.enabled` is the Fecal Scan kill switch.
+`screen.voice.enabled` hides the voice toggle (text by default) AND
+`ai-voice-token` refuses with 403 `disabled` when it resolves off for the
+caller (`netlify/functions/_shared/flagRules.ts` — the same resolver
+`flags-resolve` uses; fail-open on a read error).
+`component.chat.coach_drawer` is the coach-hints switch (default ON),
+`component.stats.sentiment_chart` the scorecard/history journey strip,
+`field.home.welcome_eyebrow` the greeting override. **Guard:**
+`src/tests/flag-parity.test.ts` fails if a seeded switch has no `FlagKey`,
+a `FlagKey` is unseeded, or a declared switch is never read — a switch that
+does nothing must not reach the admin screen again (four did, including the
+voice switch the handbook sold as the AI-cost kill switch).
+
 ## Responsive layout
 
 - **Mobile / tablet** (`< lg`): Single centered content rail (`--pbt-layout-max`, typically 440px), bottom tab bar, sticky `TopBar`.
@@ -166,7 +185,7 @@ System prompts are composed in `src/data/knowledge/promptBuilders.ts` from:
 
 Model strings live in `src/shared/ai/models.ts` (`MODEL_TEXT`, `MODEL_LIVE`, embedding model); `geminiService.ts` re-exports them for older imports.
 
-**Voice pipeline:** `src/services/voiceSession.ts` — the ordering is load-bearing: mic **permission first** (`acquireMic()` is the first await in `start()`, inside the Begin tap — nothing connects or plays until granted), then playback `AudioContext`, then **`POST ai-voice-token`** (the server builds the voice system prompt with server-loaded config/overrides/RAG and mints a single-use token whose model + system prompt + tools are locked — `uses: 1`, new-session window 2 min, session life 15 min > the 5-min cap), then `ai.live.connect` on a client created with that token and `httpOptions: { apiVersion: 'v1alpha' }`; the capture processor is wired inside `onopen`. The browser never builds or sees the voice system prompt. Re-entrancy guard runs synchronously before any await (double-Begin must not open two sockets). A playback-end watchdog force-exits `aiSpeaking` if `source.onended` is missed — a stuck `aiSpeaking` mutes the mic for the rest of the session. Avoid calling `session.close()` twice (guarded).
+**Voice pipeline:** `src/services/voiceSession.ts` — the ordering is load-bearing (and `ai-voice-token` refuses a token with 403 `disabled` while *Voice mode in chat* is off — see Routing → Feature switches): mic **permission first** (`acquireMic()` is the first await in `start()`, inside the Begin tap — nothing connects or plays until granted), then playback `AudioContext`, then **`POST ai-voice-token`** (the server builds the voice system prompt with server-loaded config/overrides/RAG and mints a single-use token whose model + system prompt + tools are locked — `uses: 1`, new-session window 2 min, session life 15 min > the 5-min cap), then `ai.live.connect` on a client created with that token and `httpOptions: { apiVersion: 'v1alpha' }`; the capture processor is wired inside `onopen`. The browser never builds or sees the voice system prompt. Re-entrancy guard runs synchronously before any await (double-Begin must not open two sockets). A playback-end watchdog force-exits `aiSpeaking` if `source.onended` is missed — a stuck `aiSpeaking` mutes the mic for the rest of the session. Avoid calling `session.close()` twice (guarded).
 
 ### Knowledge scopes (RAG isolation)
 
@@ -703,7 +722,7 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations (26 files, all hand-run; all applied to production —
+Migrations (27 files, all hand-run; all applied to production —
 `npm run verify:db` proves the live project has every relation AND column
 the code uses). Each
 file's header explains it in full:
@@ -788,6 +807,11 @@ file's header explains it in full:
   CHECK, comment). Degrade path: `admin-scenario-overrides` retries the save
   without it (`_notice: 'success_criteria_column_missing'`, toasted by the
   Studio) and `loadPromptOverrides` falls back to the notes alone.
+- `20261014000000_flag_switches.sql` — seeds `screen.fecalScan.enabled`;
+  turns `component.chat.coach_drawer` into the coach-hints switch (default
+  ON, guarded on its old "(planned)" description); refreshes the voice /
+  journey-strip / greeting-override descriptions and the Content Manager
+  role's "simulation tuning" description (each guarded on the old text).
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -1080,9 +1104,8 @@ The static test catches "migration file missing"; `verify:db` catches
    chart photos and synthetic cases, not against a vet's blind scoring of
    real clinic photos. Run a small agreement study before promoting it
    beyond "supportive aid".
-7. **Fecal Scan off switch**: `nav.sidebar.fecalScan.enabled` hides the
-   desktop sidebar entry only; the Home tile and the Pet Analyzer cross-link
-   stay visible. Add a feature-level flag if product needs a real kill switch.
+7. *(Done 2026-10-14: `screen.fecalScan.enabled` is a real Fecal Scan off
+   switch — screen, Home tile, Pet Analyzer link and sidebar.)*
 8. **Legacy preview deploy**: delete PR #23's Deploy Preview for commit
    `eccee53` in Netlify (or rotate the service-role key) — see "Knowledge
    base seeding".

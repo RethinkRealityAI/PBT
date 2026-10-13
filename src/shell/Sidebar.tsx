@@ -8,6 +8,7 @@ import { LocaleToggle } from './LocaleToggle';
 import { useFlags } from '../app/providers/FlagProvider';
 import type { FlagKey } from '../services/flagsClient';
 import { PRE_ONBOARDING_SCREENS, type Screen } from '../app/routes';
+import { useScreenEnabled } from '../app/screenFlags';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
 
@@ -41,7 +42,12 @@ export function Sidebar() {
   const { resolvedTheme, toggle } = useTheme();
   const { getFlag } = useFlags();
   const t = useT();
-  const visibleNav = NAV_ITEMS.filter((n) => !n.flag || getFlag<boolean>(n.flag, true));
+  const screenEnabled = useScreenEnabled();
+  // An entry needs its own nav switch AND its screen's switch: a link into a
+  // switched-off screen would only bounce the user back home.
+  const visibleNav = NAV_ITEMS.filter(
+    (n) => (!n.flag || getFlag<boolean>(n.flag, true)) && screenEnabled(n.screen),
+  );
 
   // Hide the desktop sidebar until the user has completed onboarding: a locked
   // ECHO profile must exist AND we must be past the pre-onboarding flow

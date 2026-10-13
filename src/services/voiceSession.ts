@@ -11,6 +11,7 @@ import {
   type VoiceTokenResponse,
 } from '../shared/ai/contract';
 import { uuid } from '../lib/id';
+import { getOrCreateSessionId } from '../lib/storage';
 import { DEFAULT_LOCALE, LOCALE_BCP47, type Locale } from '../i18n/locales';
 import { translate } from '../i18n/translate';
 
@@ -62,6 +63,12 @@ export interface VoiceStartOptions {
    * `scenario._overrideId`) and hands them over here.
    */
   overrides?: PromptOverrides;
+  /**
+   * The trainee's ECHO driver. Sent with the token request so the server
+   * resolves the *Voice mode in chat* switch with the same targeting rules
+   * the app's flag snapshot used.
+   */
+  driver?: string | null;
 }
 
 export interface UseVoiceSessionReturn {
@@ -622,11 +629,19 @@ export function useVoiceSession(): UseVoiceSessionReturn {
           // Per-scenario prompt wraps — same source text mode uses. Honoured
           // by the server only in admin preview; otherwise loaded there.
           promptOverrides: options.overrides,
+          // Same audience the flag snapshot was resolved for.
+          audience: { anonSessionId: getOrCreateSessionId(), driver: options.driver ?? null },
         };
         voiceToken = await postAi<VoiceTokenResponse>(AI_ENDPOINTS.voiceToken, tokenRequest);
       } catch (tokenErr) {
         console.error('[voiceSession] voice token error', tokenErr);
-        setError(translate(localeRef.current, 'chat.voice.error.connection'));
+        // An admin switched voice off after this screen loaded: say so plainly
+        // instead of blaming the connection.
+        // (`AiApiError.code` — read structurally so any error carrying it counts.)
+        const disabled = (tokenErr as { code?: unknown } | null)?.code === 'disabled';
+        setError(
+          translate(localeRef.current, disabled ? 'chat.voice.error.disabled' : 'chat.voice.error.connection'),
+        );
         setStatusSync('error');
         cleanup();
         return;

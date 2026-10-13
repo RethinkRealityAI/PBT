@@ -57,7 +57,7 @@ export function FeedbackScreen({
     <>
       <ContextBar
         title="Session Feedback"
-        subtitle="Rate-the-simulation responses"
+        subtitle="How trainees rated their sessions"
         range={range}
         onRange={onRange}
         query={query}
