@@ -865,6 +865,10 @@ file's header explains it in full:
   leave / scorecard moments within 6 h of the open, durations clamped before
   the cast. Must be applied BEFORE deploying the release — signed-in saves,
   scores, the backfill and `session-save` all write the new columns.
+  **Applied to prod 2026-10-15** (just before PR #30 deployed; verified:
+  `user_id` nullable, the three columns, four CHECKs, the partial index, RLS
+  unchanged; 114 sessions rebuilt — 60 on 1 Oct from 30 devices — and the
+  one id already present skipped).
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
