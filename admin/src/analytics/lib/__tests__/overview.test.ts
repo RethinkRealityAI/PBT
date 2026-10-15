@@ -74,14 +74,17 @@ describe('leaders', () => {
     const seq = (user: string, scores: number[], startDaysAgo: number) =>
       scores.map((score, i) => session({ user_id: user, score_overall: score, created_at: ago(startDaysAgo - i) }));
     const sessions = [
-      ...seq('up', [50, 52, 70, 72], 4),
-      ...seq('down', [80, 82, 60, 62], 4),
-      ...seq('old', [40, 40, 80, 80], 60),
-      ...seq('busy', [70, 70, 70, 70, 70, 70], 6),
+      // Momentum = mean of the latest 5 scores minus the 5 before (needs 2 + 2 beyond the latest 5).
+      ...seq('up', [50, 52, 50, 70, 72, 70, 74, 76], 8),
+      ...seq('down', [80, 82, 80, 60, 62, 60, 60, 60], 8),
+      ...seq('old', [40, 40, 40, 80, 80, 80, 80, 80], 60),
+      ...seq('busy', Array.from({ length: 10 }, () => 70), 10),
     ];
     const rows = rollupTrainees(directory, sessions, { windowStart: NOW - 28 * DAY_MS, now: NOW });
     const l = leaders(rows);
     expect(l.improved.map((r) => r.name)).toEqual(['Up']);
-    expect(l.active.map((r) => r.name)).toEqual(['Busy', 'Up', 'Down']);
+    // A tie on sessions goes to the higher average.
+    expect(l.active.map((r) => r.name)).toEqual(['Busy', 'Down', 'Up']);
+    expect(l.active.map((r) => r.sessions)).toEqual([10, 8, 8]);
   });
 });

@@ -28,10 +28,10 @@ src/
   data/        — echoDrivers, quizQuestions, scenarios, BCS/MCS, calorieTable
   data/knowledge/ — driverProfiles, pushbackTaxonomy, actGuide, clinicalReference, scoringRubric, promptBuilders
   lib/         — storage (namespaced localStorage), privacy, analytics, imagePrep, classNames, id
-  shared/      — code shared with netlify/functions: ai (contract, models, fecalScan, imageHash), access (RBAC), email, knowledge (scopes, analyze), scenarios
+  shared/      — code shared with netlify/functions: ai (contract, models, fecalScan, imageHash), access (RBAC), analytics (contract, sessionSummary, engagement), email, knowledge (scopes, analyze), scenarios
   i18n/        — en + fr catalogs, translate.ts, format.ts
   tests/       — setup
-admin/        — admin dashboard (second Vite entry, served at /admin); admin/src/scenario-studio = Scenario Studio
+admin/        — admin dashboard (second Vite entry, served at /admin); admin/src/scenario-studio = Scenario Studio; admin/src/analytics = the Analytics destination
 public/        — static assets (audio/pcm-capture-processor.js, studies/*.pdf, fecal-scan/<species>/<score>.jpg)
 netlify/functions/ — every AI + admin endpoint (`_shared/` = server helpers)
 netlify/plugins/ — build plugins (knowledge-sync: auto-seeds the RAG corpus)
@@ -824,14 +824,18 @@ branded transactional templates with a live preview, provider settings
 (Resend or SMTP), and a delivery log.
 
 **Admin navigation** (`admin/src/primitives/nav.ts` + `Sidebar.tsx`): a left
-rail of 4 sections over 12 destinations, replacing the old 18-link wrapping
+rail of 4 sections over 10 destinations, replacing the old 18-link wrapping
 pill bar. Related screens are tabs of one destination (Analytics =
-insights/traffic/quality, People = users/admins/roles/invites, Scenario
-Studio = studio/objections/trainee-built, …); Knowledge and AI tuning (the old
-"Simulation" screen) are destinations of their own. Old `#/library/…` hashes
-are rewritten by `legacyRoute()`. The rail collapses to icons and
-becomes a drawer under 900px. Location is in the URL hash (`#/people/roles`) —
-still no router library, just a parsed hash. Screens stay unaware of tabs: a
+overview/trainees/sessions/skills/engagement/quality/analyzer, People =
+users/admins/roles/invites, Scenario Studio = studio/categories/trainee-built,
+…); Knowledge and AI tuning (the old "Simulation" screen) are destinations of
+their own. Old `#/library/…`, `#/overview`, `#/activity/…`,
+`#/analytics/insights` and `#/analytics/traffic` hashes are rewritten by
+`legacyRoute()`. The rail collapses to icons and becomes a drawer under
+900px. Location is in the URL hash (`#/people/roles`; an optional third
+segment names a record — `#/analytics/trainees/<user id>`,
+`#/analytics/sessions/<session id>`, see `admin/src/lib/route.ts`) — still no
+router library, just a parsed hash. Screens stay unaware of tabs: a
 destination publishes them via `SectionTabsProvider` and `ContextBar` renders
 the strip. **Adding a screen means adding it to `NAV_SECTIONS` with its
 `requires` permission**, not to a flat list. The foot of the rail carries a
@@ -842,14 +846,71 @@ client's admins for it to open.
 July admin screens (§3.2): **User & admin management** — the Users screen +
 User modal "Manage" tab do account write-ops via `admin-user-actions`
 (promote/demote admin, disable/enable, create, delete) with self-lockout +
-last-admin guards; `admin-users` now returns `disabled` + `email`. **Insights**
-dashboard surfaces scoring trends, ACT-dimension averages, sentiment, and
-feedback summaries. **Analytics** — nav_events traffic/engagement + dwell-time
-"where users spend time" heatmap. **AI Quality** doubles as the observability
-layer: alert-threshold banner (`ALERT_THRESHOLDS`), failure-rate/latency/cost
-trends, per-model breakdown. **RAG foundation** — `admin-knowledge` function
+last-admin guards; `admin-users` now returns `disabled` + `email`; the user
+modal links to the person's Analytics profile ("Full analytics →"). The
+Insights and Traffic screens became the Skills and Engagement tabs of
+**Analytics** (see "Admin Analytics" below). **AI Quality** doubles as the
+observability layer: alert-threshold banner (`ALERT_THRESHOLDS`),
+failure-rate/latency/cost trends, per-model breakdown, and scoring failures
+(low *training* scores moved to the Sessions tab and the Overview). **RAG foundation** — `admin-knowledge` function
 (list/upsert/update/delete; the corpus now seeds itself — see "Knowledge base seeding") and per-session
 `rag_chunks` written alongside `rag_documents`.
+
+## Admin Analytics (`admin/src/analytics/`)
+
+Spec: `docs/superpowers/specs/2026-10-15-analytics-redesign-design.md`. ONE
+destination (Monitor → **Analytics**) replaces Overview, Analytics
+[Insights · Traffic · AI quality] and Activity [Sessions · Pet Analyzer],
+which repeated each other. Tabs (`AnalyticsDestination.tsx`):
+
+| Tab | Permission | What it answers |
+|---|---|---|
+| Overview (`OverviewTab`) | `overview.read` | the team at a glance: narrative headline, KPIs vs previous period, activity, skills, "Needs your attention", leaders, getting-started funnel |
+| Trainees (`TraineesTab`, `trainee/`) | `sessions.read` | roster with status / momentum / streaks → **profile** at `#/analytics/trainees/<id>`: coaching notes, score progression vs team, skills vs team, objections, practice calendar & habits, sessions, feedback, app activity |
+| Sessions (`SessionsTab`) | `sessions.read` | every conversation, filterable / sortable / exportable; `#/analytics/sessions/<id>` opens one (transcript fetched on open) |
+| Skills (`SkillsTab`) | `insights.read` | outcomes: score trend, skills, objection × skill heat table, difficulty, ECHO driver matchups, distribution, owner mood, trainee feedback |
+| Engagement (`EngagementTab`) | `analytics.read` | app usage: visitors, when (weekday × hour), feature adoption, onboarding path, time per screen, return frequency, devices |
+| AI quality | `quality.read` | `screens/QualityScreen.tsx` |
+| Pet Analyzer | `analyzer.read` | `screens/AnalyzerScreen.tsx` |
+
+A panel that needs ANOTHER permission (Overview's AI health needs
+`quality.read`, open reports `reports.read`, …) checks `useAccess().can()`
+and never fires a request that would 403.
+
+**Data** — contract `src/shared/analytics/contract.ts` (types only):
+- `admin-sessions?view=summary` → `SessionSummary` (no transcript; derived in
+  `src/shared/analytics/sessionSummary.ts`: skills, start time, scenario
+  source/title/species, owner's final mood from `transcript[].emotion`, owner
+  sentiment start/end, words per reply, median reply time, coach hints from
+  `coach_hint_request` events, key wins/misses). `?id=` = one full row.
+- `admin-analytics` (GET): `op=directory` (`sessions.read`; names for every
+  analytics screen — email only with `team.read`, so an Analyst sees names
+  without people-management rights), `op=engagement` (`analytics.read`;
+  nav_events aggregated server-side by `src/shared/analytics/engagement.ts`
+  in the admin's timezone), `op=trainee&id=` (`sessions.read`; each optional
+  section only with its own permission, the rest named in `withheld`).
+- **Paging**: Supabase answers ≤ 1,000 rows per request whatever `.limit()`
+  says. Every admin list read pages with `.range()` through
+  `netlify/functions/_shared/paging.ts` (`selectAll`, `truncated` when the
+  hard cap stops it) — never add a list read that doesn't.
+- Client: `admin/src/data/cache.ts` (keyed cache, 60 s stale-while-revalidate,
+  shared by all tabs) behind the hooks in `admin/src/analytics/data.ts`.
+  Sessions are fetched for twice the window so every headline compares with
+  the previous window of the same length.
+
+**Metrics** live in `admin/src/analytics/lib/` (pure, unit-tested) — the ONE
+definition of each number: `period.ts` (windows, deltas, buckets),
+`metrics.ts` (`isScored`, `sessionStats`, skills, trend, breakdowns),
+`trainees.ts` (roster rollup, status, streaks, momentum, `coachingNotes`),
+`csv.ts` (formula-injection-safe export), plus each tab's own lib.
+A score counts only when the session finished, was scored and the scoring
+didn't fail (`isScored`) — never average a missing or failed score as 0.
+Trainee status: Active ≤ 7 days since the last session, At risk 8–21,
+Dormant > 21, Not started = never; "New" = joined ≤ 14 days.
+
+Offline review: `npm run dev:admin-mock` serves a seeded team
+(`admin/src/dev/mockAnalytics.ts`) whose summaries, engagement and profiles
+are computed with the same shared functions the server runs.
 
 ## Access control (RBAC)
 
@@ -920,8 +981,18 @@ keeps the config-weighted `overall` authoritative for current records and only
 recomputes for legacy ones.
 
 Telemetry capture in the consumer app:
-- `src/lib/analytics.ts` — `logEvent()` writes to `nav_events` (anonymous-safe)
-- `src/services/aiTelemetry.ts` — `recordCall()` / `recordTurns()` write per-call + per-turn signals
+- `src/lib/analytics.ts` — `logEvent()` writes to `nav_events` (anonymous-safe;
+  privacy opt-out + preview gated). `startAnalytics()` logs one `app_open`
+  per visit (again after ≥ 30 min hidden) with COARSE context from
+  `src/lib/deviceContext.ts` — device class, OS family, installed vs browser,
+  app language, theme, IANA timezone; never versions/models (not a
+  fingerprint). Voice logs its `session_open` (`meta.mode: 'voice'`) in the
+  Live socket's `onopen` (`voiceSession.ts`); text in `useTextChat.open()`.
+  Every `target` passed to `logEvent` needs an `ACTION_LABELS` entry
+  (`admin/src/lib/__tests__/labels.test.ts` enforces it).
+- `src/services/aiTelemetry.ts` — `recordTurns()` writes per-turn signals
+  (`recordCall()` / `withTelemetry` are unused: AI calls are recorded
+  server-side by `recordCallServer` in `netlify/functions/_shared/ai.ts`)
 - `src/services/geminiService.ts` — wraps `generateRoleplayMessage` / `evaluateConversation` with timing + tokens + refusal heuristics; takes a `{ sessionId }` option so rows attribute to a `training_sessions` id
 - `src/features/chat/useTextChat.ts` — allocates session id at `open()`, persists `completed`/`abandoned` + `rag_documents` row to Supabase, exposes `abandon()` (called by `ChatAbandonWatcher` in `App.tsx` when user leaves chat mid-flight)
 - `src/features/scenarios/persistScenario.ts` — writes `user_scenarios` on Save
@@ -973,6 +1044,7 @@ Active keys:
 | New screen               | Add a `Screen` value in `src/app/routes.ts` and a case in `ScreenSwitch` in `App.tsx`              |
 | New admin permission     | `src/shared/access/permissions.ts` (catalog + presets), then gate the endpoint with `requireAdmin(req, '<key>')` |
 | New admin screen         | `NAV_SECTIONS` in `admin/src/primitives/nav.ts` (destination or tab, with its `requires`) + a case in `admin/src/App.tsx` |
+| New analytics metric / panel | a pure function in `admin/src/analytics/lib/` (+ unit test) — never re-derive a number inline — then the tab; server-side aggregates go in `src/shared/analytics/` behind `admin-analytics` |
 | New transactional email  | `src/shared/email/defaults.ts` (template + declared variables), then call `sendTemplateEmail` |
 
 
@@ -1086,6 +1158,19 @@ The static test catches "migration file missing"; `verify:db` catches
 "migration not applied". Both must pass before a schema-dependent feature ships.
 
 ## Outstanding work (v1.x polish)
+
+0. **Analytics data gaps** (found 2026-10-15; the Analytics tabs work around
+   each): (a) `ai_call_telemetry.session_id` has a FK to `training_sessions`,
+   whose row is only written when a session ends, so in-session calls are
+   re-saved with `session_id = null` — per-session AI cost is unattributable
+   (per-user cost works via `user_id`); dropping the FK is a migration
+   decision. (b) The trainee app ships no web manifest, so `app_open`
+   reports `installed: false` for everyone. (c) `training_sessions.flagged`
+   / `flag_reason` and `user_scenarios.plays` / `avg_score` / `is_public` are
+   never written (no UI shows them any more). (d) `ai_turn_telemetry` gets a
+   duplicate set of rows on every rescore (plain insert). (e) A trainee's own
+   scenario build isn't linked to the sessions played from it (no
+   `_overrideId`).
 
 1. **a11y deep sweep**: aria labels/aria-live/keyboard basics are in; still
    owed: modal focus traps + Escape + `aria-modal` everywhere, CreateScreen

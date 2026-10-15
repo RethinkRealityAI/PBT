@@ -1,19 +1,27 @@
 /**
  * SessionModal — tabbed admin view of a single training session.
  *
- * Replaces SessionDrawer (right-side slide-in panel). Per design:
- *   - Centered modal that fills ~70% of the viewport at fixed dimensions.
- *   - Tabs (Overview / Transcript / AI signals / Scoring) so the long
- *     drawer-scroll is broken into discrete views.
- *   - Sparkline of sentiment in the side rail (every tab).
- *   - Full Recharts chart on the Transcript tab (per-turn sentiment with
- *     speaker-coloured dots and hover tooltips).
+ *   - Centered modal at fixed dimensions; tabs (Overview / Transcript /
+ *     Scoring) break the long read into discrete views.
+ *   - Side rail (every tab): the owner's sentiment sparkline + quick stats.
+ *   - Overview groups the session's facts the way a manager asks about them:
+ *     how it went, how the trainee practised, and what the scenario was —
+ *     including the derived facts (coach hints, reply time, words per reply,
+ *     how the owner ended, where the scenario came from).
+ *
+ * Callers:
+ *   - Analytics → Sessions opens it on `#/analytics/sessions/<id>`, passing a
+ *     directory entry as `user`, the list's `summary` row (the only place
+ *     coach hints come from), `loading` / `error` while the full session is
+ *     fetched, and `onViewTrainee` for the profile link.
+ *   - People → user modal stacks it over a user, passing a full `AdminUser`.
+ *     Every new prop is optional, so that call site is unchanged.
  *
  * Sentiment is read from `score_report.turnSentiment` populated by the
  * scorer model. Older sessions saved before that field was added show a
- * neutral fallback chart.
+ * neutral fallback chart. A failed scoring attempt is NEVER shown as a 0.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -25,20 +33,25 @@ import {
   YAxis,
 } from 'recharts';
 import {
+  Avatar,
   EmptyState,
   Eyebrow,
+  LoadingShimmer,
   Modal,
   ModalCloseButton,
   ScoreBadge,
   Sparkline,
   StatusPill,
 } from '../primitives';
-import { COLOR } from '../lib/tokens';
+import { ErrorState } from '../primitives/QueryBoundary';
+import { COLOR, DRIVER_KEYS, type DriverKey } from '../lib/tokens';
 import { fmtAgo } from '../lib/format';
-import { ENDED_REASON_LABELS, MODE_LABELS, labelOf, pushbackLabel } from '../lib/labels';
-import type { AdminSession, AdminUser } from '../data/types';
+import { ENDED_REASON_LABELS, MODE_LABELS, humanize, labelOf, pushbackLabel } from '../lib/labels';
+import type { AdminSession } from '../data/types';
 import { difficultyLabel, sessionDifficulty } from '../lib/difficulty';
 import { AdminDifficultyMeter } from '../primitives/DifficultyMeter';
+import type { SessionSummary } from '../../../src/shared/analytics/contract';
+import { toSessionSummary, type SessionRowLike } from '../../../src/shared/analytics/sessionSummary';
 
 type TabKey = 'overview' | 'transcript' | 'scoring';
 
@@ -47,6 +60,18 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'transcript', label: 'Transcript' },
   { key: 'scoring', label: 'Scoring' },
 ];
+
+/**
+ * Who the session belongs to. A full `AdminUser` satisfies it, and so does a
+ * trainee-directory entry (Analytics reads names with `sessions.read`, not
+ * `team.read`).
+ */
+export interface SessionModalUser {
+  user_id: string;
+  display_name: string | null;
+  echo_primary?: string | null;
+  email?: string | null;
+}
 
 interface TurnSentimentEntry {
   idx: number;
@@ -65,8 +90,7 @@ function readTurnSentiment(report: AdminSession['score_report']): TurnSentimentE
       const r = row as Record<string, unknown>;
       const idx = typeof r.idx === 'number' ? r.idx : null;
       const sentiment = typeof r.sentiment === 'number' ? r.sentiment : null;
-      const speaker =
-        r.speaker === 'staff' || r.speaker === 'customer' ? r.speaker : null;
+      const speaker = r.speaker === 'staff' || r.speaker === 'customer' ? r.speaker : null;
       if (idx == null || sentiment == null || speaker == null) return null;
       return {
         idx,
@@ -103,32 +127,159 @@ function readScoreReport(report: AdminSession['score_report']) {
   };
 }
 
+type Scoring = ReturnType<typeof readScoreReport>;
+
+// ─── Words ──────────────────────────────────────────────────
+
+const OWNER_ENDING: Record<string, { word: string; color: string; help: string }> = {
+  green: { word: 'Won over', color: COLOR.success, help: 'The owner ended the conversation convinced' },
+  yellow: { word: 'Undecided', color: COLOR.warn, help: 'The owner ended receptive but not yet convinced' },
+  red: { word: 'Still upset', color: COLOR.danger, help: 'The owner ended the conversation defensive' },
+};
+
+const SOURCE_WORDS: Record<string, string> = {
+  library: 'Built-in library',
+  studio: 'Scenario Studio',
+  'self-built': 'Built by the trainee',
+  unknown: 'Not recorded',
+};
+
+function scoreWord(score: number): string {
+  return score >= 85 ? 'Strong' : score >= 70 ? 'Solid' : score >= 55 ? 'Developing' : 'Needs work';
+}
+
+function scoreTone(score: number): 'success' | 'info' | 'warn' | 'danger' {
+  return score >= 85 ? 'success' : score >= 70 ? 'info' : score >= 55 ? 'warn' : 'danger';
+}
+
+function fmtLen(seconds: number | null | undefined): string {
+  if (seconds == null || !(seconds > 0)) return '—';
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  return s % 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 60)}m`;
+}
+
+function asDriver(v: string | null | undefined): DriverKey | null {
+  return v && (DRIVER_KEYS as string[]).includes(v) ? (v as DriverKey) : null;
+}
+
+/** A real score: finished, scored, not a scoring-failure placeholder. */
+function realScore(session: AdminSession): number | null {
+  if (!session.completed || session.score_unavailable) return null;
+  return typeof session.score_overall === 'number' && Number.isFinite(session.score_overall)
+    ? session.score_overall
+    : null;
+}
+
+function outcomeOf(session: AdminSession): { word: string; tone: 'success' | 'neutral' | 'warn' | 'danger' } {
+  if (session.completed) return { word: 'Finished', tone: 'success' };
+  const reason = session.ended_reason && session.ended_reason !== 'completed' ? session.ended_reason : null;
+  return {
+    word: labelOf(ENDED_REASON_LABELS, reason, 'Left early'),
+    tone: reason === 'error' ? 'danger' : 'neutral',
+  };
+}
+
 export function SessionModal({
   session,
   user,
   onClose,
+  summary,
+  loading = false,
+  error = null,
+  onRetry,
+  onViewTrainee,
 }: {
   session: AdminSession | null;
-  user: AdminUser | null;
+  user: SessionModalUser | null;
   onClose: () => void;
+  /**
+   * The session's summary row from a list, when the caller has one — the only
+   * source of coach-hint counts. Without it the derived facts are read from
+   * the session itself (hints then show as not available).
+   */
+  summary?: SessionSummary | null;
+  /** Open the modal on a skeleton while the session is fetched. */
+  loading?: boolean;
+  /** A load failure to show inside the modal (with `onRetry`). */
+  error?: string | null;
+  onRetry?: () => void;
+  /** Adds "View trainee profile →" to the header. */
+  onViewTrainee?: (userId: string) => void;
 }) {
   const [tab, setTab] = useState<TabKey>('overview');
+  const facts = useMemo<SessionSummary | null>(() => {
+    if (summary && (!session || summary.id === session.id)) return summary;
+    if (!session) return null;
+    try {
+      return toSessionSummary(session as unknown as SessionRowLike);
+    } catch {
+      return null;
+    }
+  }, [summary, session]);
 
-  if (!session) return null;
+  if (!session) {
+    if (!loading && !error) return null;
+    return (
+      <Modal open={true} onClose={onClose} width={1080} ariaLabel={loading ? 'Loading session' : 'Session could not load'}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '82vh', maxHeight: 760 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '20px 24px 16px', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {loading ? (
+                <>
+                  <div style={{ width: 160 }}>
+                    <LoadingShimmer height={12} />
+                  </div>
+                  <div style={{ width: '55%' }}>
+                    <LoadingShimmer height={26} />
+                  </div>
+                  <div style={{ width: '35%' }}>
+                    <LoadingShimmer height={14} />
+                  </div>
+                </>
+              ) : (
+                <Eyebrow>Session</Eyebrow>
+              )}
+            </div>
+            <ModalCloseButton onClose={onClose} />
+          </div>
+          <div style={{ flex: 1, minHeight: 0, padding: '8px 24px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {loading ? (
+              <>
+                <span role="status" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }}>
+                  Loading the session…
+                </span>
+                <LoadingShimmer height={40} />
+                <LoadingShimmer height={180} />
+                <LoadingShimmer height={180} />
+              </>
+            ) : (
+              <ErrorState title="Couldn't load this session" detail={error} onRetry={onRetry} />
+            )}
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
   const scoring = readScoreReport(session.score_report);
   const turnSentiment = readTurnSentiment(session.score_report);
 
   // ── Sparkline data: -1..1 → 0..100 so Sparkline can render it. ──
-  const sparkData = turnSentiment.length
-    ? turnSentiment.map((t) => Math.round((t.sentiment + 1) * 50))
-    : [];
+  const sparkData = turnSentiment.length ? turnSentiment.map((t) => Math.round((t.sentiment + 1) * 50)) : [];
 
   return (
-    <Modal open={true} onClose={onClose} width={1080} ariaLabel={`Session ${session.id}`}>
+    <Modal open={true} onClose={onClose} width={1080} ariaLabel={`Session ${session.id.slice(0, 8)}`}>
       {/* Fixed-dimension shell — header + tabs + body. Body is the only
           scrollable area when needed. */}
       <div style={{ display: 'flex', flexDirection: 'column', height: '82vh', maxHeight: 760 }}>
-        <SessionHeader session={session} user={user} scoring={scoring} onClose={onClose} />
+        <SessionHeader
+          session={session}
+          facts={facts}
+          user={user}
+          onClose={onClose}
+          onViewTrainee={onViewTrainee}
+        />
         <TabBar value={tab} onChange={setTab} />
         <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
           <div
@@ -139,18 +290,11 @@ export function SessionModal({
               padding: 24,
             }}
           >
-            {tab === 'overview' && <OverviewTab session={session} scoring={scoring} />}
-            {tab === 'transcript' && (
-              <TranscriptTab session={session} turnSentiment={turnSentiment} />
-            )}
-            {tab === 'scoring' && <ScoringTab scoring={scoring} />}
+            {tab === 'overview' && <OverviewTab session={session} facts={facts} scoring={scoring} />}
+            {tab === 'transcript' && <TranscriptTab session={session} turnSentiment={turnSentiment} />}
+            {tab === 'scoring' && <ScoringTab session={session} scoring={scoring} />}
           </div>
-          <SideRail
-            session={session}
-            scoring={scoring}
-            sparkData={sparkData}
-            hasSentiment={turnSentiment.length > 0}
-          />
+          <SideRail session={session} sparkData={sparkData} hasSentiment={turnSentiment.length > 0} />
         </div>
       </div>
     </Modal>
@@ -160,15 +304,30 @@ export function SessionModal({
 // ─── Header ─────────────────────────────────────────────────
 function SessionHeader({
   session,
+  facts,
   user,
-  scoring,
   onClose,
+  onViewTrainee,
 }: {
   session: AdminSession;
-  user: AdminUser | null;
-  scoring: ReturnType<typeof readScoreReport>;
+  facts: SessionSummary | null;
+  user: SessionModalUser | null;
   onClose: () => void;
+  onViewTrainee?: (userId: string) => void;
 }) {
+  const score = realScore(session);
+  const outcome = outcomeOf(session);
+  const name = user?.display_name?.trim() || (user ? 'Unnamed trainee' : 'Unknown trainee');
+  const title =
+    facts?.scenario_title?.trim() ||
+    session.scenario_summary ||
+    (session.pushback_id ? pushbackLabel(session.pushback_id) : 'Practice session');
+  const when = new Date(session.created_at);
+  const meta = [
+    session.driver ? `${humanize(session.driver)} owner` : null,
+    session.mode ? labelOf(MODE_LABELS, session.mode) : null,
+    session.duration_seconds ? fmtLen(session.duration_seconds) : null,
+  ].filter(Boolean);
   return (
     <div
       style={{
@@ -181,6 +340,7 @@ function SessionHeader({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
+            title={when.toLocaleString()}
             style={{
               fontFamily: 'var(--pbt-mono)',
               fontSize: 11,
@@ -190,48 +350,43 @@ function SessionHeader({
               color: COLOR.inkMute,
             }}
           >
-            {session.id.slice(0, 8)} · {fmtAgo(new Date(session.created_at).getTime())}
+            {session.id.slice(0, 8)} · {fmtAgo(when.getTime())}
           </div>
           <h2
             style={{
-              margin: '4px 0 2px',
+              margin: '4px 0 6px',
               fontSize: 24,
               fontWeight: 800,
               letterSpacing: '-0.025em',
               color: COLOR.ink,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
             }}
           >
-            {session.scenario_summary ?? (session.pushback_id ? pushbackLabel(session.pushback_id) : 'Session')}
+            {title}
           </h2>
-          <div style={{ fontSize: 12, color: COLOR.inkSoft }}>
-            {user?.display_name ?? 'Anonymous'}
-            {session.driver ? ` · ${session.driver}` : ''}
-            {session.mode ? ` · ${session.mode}` : ''}
-            {session.duration_seconds
-              ? ` · ${Math.floor(session.duration_seconds / 60)}m ${session.duration_seconds % 60}s`
-              : ''}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: COLOR.inkSoft }}>
+            <Avatar name={user?.display_name ?? null} driver={asDriver(user?.echo_primary)} size={22} />
+            <span style={{ fontWeight: 700, color: COLOR.ink }}>{name}</span>
+            {meta.length > 0 && <span style={{ color: COLOR.inkMute }}>· {meta.join(' · ')}</span>}
+            {onViewTrainee && user && (
+              <button
+                type="button"
+                className="pbt-link"
+                onClick={() => onViewTrainee(user.user_id)}
+                style={{ fontSize: 12.5, marginLeft: 4 }}
+              >
+                View trainee profile →
+              </button>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-            {session.completed ? (
-              <StatusPill tone="success">Completed</StatusPill>
-            ) : (
-              <StatusPill tone="neutral">Abandoned</StatusPill>
-            )}
-            {session.flagged && (
-              <StatusPill tone="warn">{session.flag_reason ?? 'Flagged'}</StatusPill>
-            )}
-            {scoring?.band && (
-              <StatusPill
-                tone={
-                  scoring.band === 'good'
-                    ? 'success'
-                    : scoring.band === 'ok'
-                      ? 'info'
-                      : 'warn'
-                }
-                dot={false}
-              >
-                {scoring.band}
+            <StatusPill tone={outcome.tone}>{outcome.word}</StatusPill>
+            {session.completed && session.score_unavailable && <StatusPill tone="warn">Scoring failed</StatusPill>}
+            {score != null && (
+              <StatusPill tone={scoreTone(score)} dot={false}>
+                {scoreWord(score)}
               </StatusPill>
             )}
           </div>
@@ -239,10 +394,8 @@ function SessionHeader({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {/* The level beside the score it qualifies (same scoring standard
               at every level). Not beside a scoring-failure placeholder. */}
-          {!session.score_unavailable && (
-            <AdminDifficultyMeter level={sessionDifficulty(session)} />
-          )}
-          <ScoreBadge score={session.score_overall} size="lg" />
+          {!session.score_unavailable && <AdminDifficultyMeter level={sessionDifficulty(session)} />}
+          <ScoreBadge score={score} size="lg" />
           <ModalCloseButton onClose={onClose} />
         </div>
       </div>
@@ -251,15 +404,11 @@ function SessionHeader({
 }
 
 // ─── Tab bar ────────────────────────────────────────────────
-function TabBar({
-  value,
-  onChange,
-}: {
-  value: TabKey;
-  onChange: (v: TabKey) => void;
-}) {
+function TabBar({ value, onChange }: { value: TabKey; onChange: (v: TabKey) => void }) {
   return (
     <div
+      role="tablist"
+      aria-label="Session views"
       style={{
         display: 'flex',
         gap: 2,
@@ -273,6 +422,10 @@ function TabBar({
         return (
           <button
             key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            className="pbt-focusable"
             onClick={() => onChange(t.key)}
             style={{
               padding: '10px 14px',
@@ -284,9 +437,7 @@ function TabBar({
               fontSize: 13,
               fontWeight: 700,
               fontFamily: 'var(--pbt-font)',
-              borderBottom: active
-                ? `2px solid ${COLOR.brand}`
-                : '2px solid transparent',
+              borderBottom: active ? `2px solid ${COLOR.brand}` : '2px solid transparent',
               marginBottom: -1,
               transition: 'all 0.12s ease',
             }}
@@ -302,44 +453,123 @@ function TabBar({
 // ─── Overview tab ───────────────────────────────────────────
 function OverviewTab({
   session,
+  facts,
   scoring,
 }: {
   session: AdminSession;
-  scoring: ReturnType<typeof readScoreReport>;
+  facts: SessionSummary | null;
+  scoring: Scoring;
 }) {
   const level = sessionDifficulty(session);
+  const score = realScore(session);
+  const outcome = outcomeOf(session);
+  const ending = facts?.owner_mood_end ? OWNER_ENDING[facts.owner_mood_end] : null;
+  const messages = session.turns ?? session.transcript?.length ?? null;
+  const voice = session.mode === 'voice';
+
+  const hints =
+    facts?.hints_used == null
+      ? { value: 'Not available', sub: 'Counted on the Sessions list' }
+      : facts.hints_used === 0
+        ? { value: 'None', sub: voice ? 'Hints are for typed sessions' : 'Practised without help' }
+        : { value: `${facts.hints_used} ${facts.hints_used === 1 ? 'hint' : 'hints'}`, sub: 'Asked the coach' };
+  const reply =
+    facts?.reply_seconds_median != null
+      ? { value: fmtLen(facts.reply_seconds_median), sub: 'Median time to answer the owner' }
+      : { value: '—', sub: voice ? 'Not measured in spoken sessions' : 'Not enough replies to measure' };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <Stat label="Overall score" value={session.score_overall ?? '—'} />
-      <Stat
-        label="Difficulty"
-        value={
-          level != null ? (
-            <AdminDifficultyMeter
-              level={level}
-              size="md"
-              style={{ fontSize: 16, fontWeight: 700, color: COLOR.ink }}
-            />
-          ) : (
-            'Not recorded'
-          )
-        }
-      />
-      <Stat label="Turns" value={session.turns ?? session.transcript?.length ?? '—'} />
-      <Stat label="How they trained" value={labelOf(MODE_LABELS, session.mode)} />
-      <Stat
-        label="How it ended"
-        value={
-          session.completed
-            ? 'Finished the conversation'
-            : labelOf(ENDED_REASON_LABELS, session.ended_reason, 'Left early')
-        }
-      />
-      <Stat label="AI model used" value={session.model_id ?? '—'} />
-      {scoring?.critique && (
-        <Block label="Coach critique">{scoring.critique}</Block>
-      )}
-      {scoring?.betterAlternative && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <FactGroup title="How it went">
+        <FactCell label="Outcome" value={outcome.word} sub={session.completed ? 'Reached the end of the conversation' : 'Before the scorer ran'} />
+        <FactCell
+          label="Score"
+          value={
+            score != null ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <ScoreBadge score={score} /> {scoreWord(score)}
+              </span>
+            ) : session.completed && session.score_unavailable ? (
+              'Scoring failed'
+            ) : (
+              'Not scored'
+            )
+          }
+          sub={
+            session.score_unavailable
+              ? 'Left out of every average'
+              : score == null
+                ? 'Only finished sessions are scored'
+                : undefined
+          }
+        />
+        <FactCell
+          label="Owner by the end"
+          value={
+            ending ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: ending.color }} />
+                {ending.word}
+              </span>
+            ) : (
+              'Not recorded'
+            )
+          }
+          sub={ending?.help}
+        />
+        {facts && (facts.key_wins > 0 || facts.key_misses > 0) && (
+          <FactCell
+            label="Key moments"
+            value={`${facts.key_wins} ${facts.key_wins === 1 ? 'win' : 'wins'} · ${facts.key_misses} ${facts.key_misses === 1 ? 'miss' : 'misses'}`}
+            sub="Called out by the scorer"
+          />
+        )}
+      </FactGroup>
+
+      <FactGroup title="How they practised">
+        <FactCell label="Mode" value={labelOf(MODE_LABELS, session.mode, 'Not recorded')} />
+        <FactCell label="Length" value={fmtLen(session.duration_seconds)} />
+        <FactCell
+          label="Messages"
+          value={messages ?? '—'}
+          sub={facts && facts.staff_messages > 0 ? `${facts.staff_messages} from the trainee` : undefined}
+        />
+        <FactCell
+          label="Words per reply"
+          value={facts?.staff_words_avg != null ? Math.round(facts.staff_words_avg) : '—'}
+          sub={facts?.staff_words_avg != null ? 'Average trainee message' : 'No trainee messages'}
+        />
+        <FactCell label="Reply time" value={reply.value} sub={reply.sub} />
+        <FactCell label="Coach hints" value={hints.value} sub={hints.sub} />
+      </FactGroup>
+
+      <FactGroup title="The scenario">
+        <FactCell label="Objection" value={session.pushback_id ? pushbackLabel(session.pushback_id) : 'Not recorded'} />
+        <FactCell
+          label="Animal"
+          value={[facts?.species === 'cat' ? 'Cat' : 'Dog', facts?.breed].filter(Boolean).join(' · ')}
+        />
+        <FactCell
+          label="Owner"
+          value={facts?.persona ? `${facts.persona} owner` : 'Not recorded'}
+          sub={session.driver ? `${humanize(session.driver)} communication style` : undefined}
+        />
+        <FactCell
+          label="Difficulty"
+          value={
+            level != null ? (
+              <AdminDifficultyMeter level={level} size="md" style={{ fontSize: 15, fontWeight: 700, color: COLOR.ink }} />
+            ) : (
+              'Not recorded'
+            )
+          }
+          sub={level != null ? 'Scored to the same standard at every level' : undefined}
+        />
+        <FactCell label="Source" value={SOURCE_WORDS[facts?.scenario_source ?? 'unknown']} />
+      </FactGroup>
+
+      {scoring?.critique && !session.score_unavailable && <Block label="Coach critique">{scoring.critique}</Block>}
+      {scoring?.betterAlternative && !session.score_unavailable && (
         <Block label="Better alternative" italic>
           {scoring.betterAlternative}
         </Block>
@@ -348,14 +578,40 @@ function OverviewTab({
   );
 }
 
+function FactGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <Eyebrow>{title}</Eyebrow>
+      <div
+        style={{
+          marginTop: 8,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
+          gap: 1,
+          borderRadius: 14,
+          overflow: 'hidden',
+          background: 'rgba(60,20,15,0.07)',
+          border: '0.5px solid rgba(60,20,15,0.07)',
+        }}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function FactCell({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+  return (
+    <div style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.88)', minWidth: 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 650, color: COLOR.inkMute }}>{label}</div>
+      <div style={{ marginTop: 4, fontSize: 15, fontWeight: 750, color: COLOR.ink, letterSpacing: '-0.01em' }}>{value}</div>
+      {sub && <div style={{ marginTop: 3, fontSize: 11, color: COLOR.inkMute, lineHeight: 1.4 }}>{sub}</div>}
+    </div>
+  );
+}
+
 // ─── Transcript tab — bubbles + Recharts sentiment chart ────
-function TranscriptTab({
-  session,
-  turnSentiment,
-}: {
-  session: AdminSession;
-  turnSentiment: TurnSentimentEntry[];
-}) {
+function TranscriptTab({ session, turnSentiment }: { session: AdminSession; turnSentiment: TurnSentimentEntry[] }) {
   const transcript = session.transcript ?? [];
   // Build one row per transcript entry; align sentiment by idx.
   const sentimentByIdx = useMemo(() => {
@@ -386,10 +642,10 @@ function TranscriptTab({
               fontSize: 12,
               color: COLOR.inkMute,
               textAlign: 'center',
+              marginTop: 6,
             }}
           >
-            Sentiment data wasn't captured for this session. New sessions will
-            include per-turn sentiment from the scorer.
+            Sentiment wasn’t captured for this session. Sessions scored from now on include it, turn by turn.
           </div>
         ) : (
           <div
@@ -406,21 +662,14 @@ function TranscriptTab({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke="rgba(60,20,15,0.06)" vertical={false} />
-                <XAxis
-                  dataKey="turn"
-                  stroke={COLOR.inkMute}
-                  fontSize={10}
-                  tickLine={false}
-                />
+                <XAxis dataKey="turn" stroke={COLOR.inkMute} fontSize={10} tickLine={false} />
                 <YAxis
                   domain={[-1, 1]}
                   ticks={[-1, -0.5, 0, 0.5, 1]}
                   stroke={COLOR.inkMute}
                   fontSize={10}
                   tickLine={false}
-                  tickFormatter={(v: number) =>
-                    v === 1 ? 'warm' : v === -1 ? 'hostile' : v === 0 ? 'neutral' : ''
-                  }
+                  tickFormatter={(v: number) => (v === 1 ? 'warm' : v === -1 ? 'hostile' : v === 0 ? 'neutral' : '')}
                   width={56}
                 />
                 <ReferenceLine y={0} stroke="rgba(60,20,15,0.18)" strokeDasharray="3 3" />
@@ -434,13 +683,9 @@ function TranscriptTab({
                     boxShadow: '0 8px 20px -8px rgba(60,20,15,0.18)',
                   }}
                   formatter={(value: number, _name, ctx) => {
-                    const payload = ctx?.payload as
-                      | { speaker: string; text: string }
-                      | undefined;
-                    return [
-                      `${value.toFixed(2)} (${payload?.speaker ?? '?'})`,
-                      `“${payload?.text ?? ''}”`,
-                    ];
+                    const payload = ctx?.payload as { speaker: string; text: string } | undefined;
+                    const who = payload?.speaker === 'staff' ? 'Trainee' : 'Owner';
+                    return [`${value.toFixed(2)} (${who})`, `“${payload?.text ?? ''}”`];
                   }}
                   labelFormatter={(v) => `Turn ${v}`}
                 />
@@ -455,18 +700,9 @@ function TranscriptTab({
                       cy: number;
                       payload: { speaker: string; turn: number };
                     };
-                    const fill =
-                      payload.speaker === 'staff' ? COLOR.brand : COLOR.warn;
+                    const fill = payload.speaker === 'staff' ? COLOR.brand : COLOR.warn;
                     return (
-                      <circle
-                        key={`dot-${payload.turn}`}
-                        cx={cx}
-                        cy={cy}
-                        r={3.5}
-                        fill={fill}
-                        stroke="white"
-                        strokeWidth={1.5}
-                      />
+                      <circle key={`dot-${payload.turn}`} cx={cx} cy={cy} r={3.5} fill={fill} stroke="white" strokeWidth={1.5} />
                     );
                   }}
                   activeDot={{ r: 5 }}
@@ -480,9 +716,9 @@ function TranscriptTab({
 
       {/* Transcript bubbles */}
       <div>
-        <Eyebrow>Transcript ({transcript.length} turns)</Eyebrow>
+        <Eyebrow>Transcript ({transcript.length} messages)</Eyebrow>
         {transcript.length === 0 ? (
-          <EmptyState title="No transcript" subtitle="Session abandoned before any turns" />
+          <EmptyState title="No transcript" subtitle="The session ended before anyone spoke." />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
             {transcript.map((t, i) => {
@@ -499,6 +735,7 @@ function TranscriptTab({
                   }}
                 >
                   <div
+                    aria-hidden="true"
                     style={{
                       width: 32,
                       height: 32,
@@ -543,7 +780,7 @@ function TranscriptTab({
                       }}
                     >
                       <span>
-                        Turn {i + 1} · {isStaff ? 'Staff' : 'Pet owner'}
+                        {i + 1} · {isStaff ? 'Trainee' : 'Pet owner'}
                       </span>
                       {sent !== 0 && (
                         <span
@@ -570,9 +807,22 @@ function TranscriptTab({
 }
 
 // ─── Scoring tab — dimension breakdown + key moments ────────
-function ScoringTab({ scoring }: { scoring: ReturnType<typeof readScoreReport> }) {
+function ScoringTab({ session, scoring }: { session: AdminSession; scoring: Scoring }) {
+  if (session.completed && session.score_unavailable) {
+    return (
+      <EmptyState
+        title="Scoring failed for this session"
+        subtitle="The scorer didn’t return a result, so there are no skill scores. The trainee can retry scoring from their scorecard; until then the session is left out of every average."
+      />
+    );
+  }
   if (!scoring) {
-    return <EmptyState title="No scorecard" subtitle="This session wasn't scored." />;
+    return (
+      <EmptyState
+        title="No scorecard"
+        subtitle={session.completed ? 'This session wasn’t scored.' : 'The trainee left before the end, so the session wasn’t scored.'}
+      />
+    );
   }
   const dims: Array<[string, number | null]> = [
     ['Acknowledge', scoring.acknowledge],
@@ -615,11 +865,10 @@ function ScoringTab({ scoring }: { scoring: ReturnType<typeof readScoreReport> }
                       marginBottom: 4,
                     }}
                   >
-                    {String(m.ts ?? '')} · {String(m.label ?? '')}
+                    {win ? 'Win' : 'Miss'}
+                    {m.label ? ` · ${String(m.label)}` : ''}
                   </div>
-                  <div style={{ fontStyle: 'italic', color: COLOR.ink }}>
-                    “{String(m.quote ?? '')}”
-                  </div>
+                  <div style={{ fontStyle: 'italic', color: COLOR.ink }}>“{String(m.quote ?? '')}”</div>
                 </div>
               );
             })}
@@ -632,8 +881,7 @@ function ScoringTab({ scoring }: { scoring: ReturnType<typeof readScoreReport> }
 
 function DimensionBar({ label, score }: { label: string; score: number | null }) {
   const value = score ?? 0;
-  const color =
-    value >= 85 ? COLOR.success : value >= 70 ? COLOR.info : value >= 55 ? COLOR.warn : COLOR.danger;
+  const color = value >= 85 ? COLOR.success : value >= 70 ? COLOR.info : value >= 55 ? COLOR.warn : COLOR.danger;
   return (
     <div
       style={{
@@ -645,16 +893,7 @@ function DimensionBar({ label, score }: { label: string; score: number | null })
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: COLOR.ink }}>{label}</span>
-        <span
-          style={{
-            fontFamily: 'var(--pbt-mono)',
-            fontSize: 14,
-            fontWeight: 700,
-            color,
-          }}
-        >
-          {score ?? '—'}
-        </span>
+        <span style={{ fontFamily: 'var(--pbt-mono)', fontSize: 14, fontWeight: 700, color: COLOR.ink }}>{score ?? '—'}</span>
       </div>
       <div
         style={{
@@ -681,16 +920,15 @@ function DimensionBar({ label, score }: { label: string; score: number | null })
 // ─── Side rail (always visible) ─────────────────────────────
 function SideRail({
   session,
-  scoring,
   sparkData,
   hasSentiment,
 }: {
   session: AdminSession;
-  scoring: ReturnType<typeof readScoreReport>;
   sparkData: number[];
   hasSentiment: boolean;
 }) {
   const level = sessionDifficulty(session);
+  const score = realScore(session);
   return (
     <div
       style={{
@@ -706,69 +944,34 @@ function SideRail({
       }}
     >
       <div>
-        <Eyebrow>Sentiment</Eyebrow>
+        <Eyebrow>Owner sentiment</Eyebrow>
         {hasSentiment ? (
           <div style={{ marginTop: 6, height: 44 }}>
             <Sparkline data={sparkData} width={220} height={44} color={COLOR.brand} />
           </div>
         ) : (
-          <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 6 }}>
-            Not captured
-          </div>
+          <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 6 }}>Not captured</div>
         )}
       </div>
       <div>
         <Eyebrow>Quick stats</Eyebrow>
-        <RailRow label="Score" value={String(session.score_overall ?? '—')} />
-        <RailRow label="Band" value={scoring?.band ?? '—'} />
         <RailRow
-          label="Difficulty"
-          value={level != null ? `${difficultyLabel(level)} · ${level}/4` : '—'}
+          label="Score"
+          value={score != null ? String(score) : session.completed && session.score_unavailable ? 'Failed' : '—'}
         />
-        <RailRow label="Turns" value={String(session.turns ?? session.transcript?.length ?? '—')} />
-        <RailRow
-          label="Duration"
-          value={
-            session.duration_seconds
-              ? `${Math.floor(session.duration_seconds / 60)}m ${session.duration_seconds % 60}s`
-              : '—'
-          }
-        />
-        <RailRow label="Mode" value={session.mode ?? '—'} />
+        <RailRow label="Outcome" value={outcomeOf(session).word} />
+        <RailRow label="Difficulty" value={level != null ? `${difficultyLabel(level)} · ${level}/4` : '—'} />
+        <RailRow label="Messages" value={String(session.turns ?? session.transcript?.length ?? '—')} />
+        <RailRow label="Length" value={fmtLen(session.duration_seconds)} />
+        <RailRow label="Mode" value={labelOf(MODE_LABELS, session.mode, '—')} />
+        {session.model_id && <RailRow label="AI model" value={session.model_id} small />}
       </div>
     </div>
   );
 }
 
 // ─── Reusable atoms ─────────────────────────────────────────
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        padding: 14,
-        borderRadius: 14,
-        background: 'rgba(255,255,255,0.6)',
-        border: '0.5px solid rgba(255,255,255,0.9)',
-        boxShadow: '0 1px 0 rgba(255,255,255,0.95) inset',
-      }}
-    >
-      <Eyebrow>{label}</Eyebrow>
-      <div
-        style={{
-          marginTop: 4,
-          fontSize: 16,
-          fontWeight: 700,
-          color: COLOR.ink,
-          letterSpacing: '-0.01em',
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function Block({ label, children, italic }: { label: string; children: React.ReactNode; italic?: boolean }) {
+function Block({ label, children, italic }: { label: string; children: ReactNode; italic?: boolean }) {
   return (
     <div>
       <Eyebrow>{label}</Eyebrow>
@@ -793,19 +996,35 @@ function Block({ label, children, italic }: { label: string; children: React.Rea
   );
 }
 
-function RailRow({ label, value }: { label: string; value: string }) {
+function RailRow({ label, value, small }: { label: string; value: string; small?: boolean }) {
   return (
     <div
       style={{
         display: 'flex',
         justifyContent: 'space-between',
+        gap: 10,
         fontSize: 12,
         padding: '5px 0',
         color: COLOR.inkSoft,
       }}
     >
-      <span>{label}</span>
-      <span style={{ fontWeight: 700, color: COLOR.ink, fontFamily: 'var(--pbt-mono)' }}>{value}</span>
+      <span style={{ flexShrink: 0 }}>{label}</span>
+      <span
+        title={value}
+        style={{
+          fontWeight: 700,
+          color: COLOR.ink,
+          fontFamily: 'var(--pbt-mono)',
+          fontSize: small ? 10.5 : 12,
+          textAlign: 'right',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0,
+        }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
