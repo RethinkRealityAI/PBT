@@ -237,3 +237,38 @@ describe('admin-sessions — ?id=', () => {
     expect((await getPath('admin-sessions?view=summary')).status).toBe(403);
   });
 });
+
+describe('admin-sessions — scenario titles', () => {
+  it('names a session by the title the team gave its scenario, else keeps the objection', async () => {
+    signInAdmin();
+    sb.setHandler(
+      'training_sessions',
+      table([
+        sessionRow(0, { scenario: { pushback: { id: 'cost', title: 'Cost' }, _overrideId: 'admin:abc', age: 'Adult (3-7)' } }),
+        sessionRow(1, { scenario: { pushback: { id: 'cost', title: 'Cost' }, _overrideId: 'seed:1', age: 'Adult (3-7)' } }),
+      ]),
+    );
+    sb.setHandler('nav_events', table([]));
+    sb.setHandler('scenario_overrides', (call) => {
+      const inOp = call.ops.find((o) => o.op === 'in');
+      expect(inOp?.args).toEqual(['scenario_id', ['admin:abc', 'seed:1']]);
+      return {
+        data: [{ scenario_id: 'admin:abc', card_title_override: 'Senior lab, cost-sensitive owner', title_override: null }],
+        error: null,
+      };
+    });
+    const body = (await (await getPath('admin-sessions?view=summary')).json()) as SessionSummaryResponse;
+    expect(body.rows.map((r) => r.scenario_title)).toEqual(['Senior lab, cost-sensitive owner', 'Cost']);
+  });
+
+  it('keeps the objection title when the lookup fails', async () => {
+    signInAdmin();
+    sb.setHandler('training_sessions', table([sessionRow(0, { scenario: { pushback: { id: 'cost', title: 'Cost' }, _overrideId: 'admin:abc' } })]));
+    sb.setHandler('nav_events', table([]));
+    sb.setHandler('scenario_overrides', () => ({ data: null, error: { message: 'boom' } }));
+    const res = await getPath('admin-sessions?view=summary');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionSummaryResponse;
+    expect(body.rows[0].scenario_title).toBe('Cost');
+  });
+});

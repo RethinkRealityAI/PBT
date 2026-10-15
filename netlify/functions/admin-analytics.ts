@@ -50,6 +50,7 @@ import {
 } from './_shared/admin';
 import { selectAll, type PageResult, type SelectAllOptions, type SelectAllResult } from './_shared/paging';
 import { authInfoByUserId, type AuthUserInfo } from './_shared/users';
+import { applyScenarioTitles } from './_shared/scenarioTitles';
 import type { Permission } from '../../src/shared/access/permissions';
 import type {
   EngagementReport,
@@ -472,9 +473,11 @@ async function trainee(ctx: AdminCtx, params: URLSearchParams): Promise<Response
   if (hints.error) console.warn('[admin-analytics] trainee hint events read failed', hints.error.message);
   const hintsBySession = hints.error ? undefined : countHintsBySession(hints.rows);
 
+  const summaries = sessions.rows.map((row) => toSessionSummary(row, { hintsBySession }));
+  await applyScenarioTitles(ctx.sb, summaries);
   const body: TraineeDetail = {
     profile: toDirectoryEntry(profileRead.row, auth, can(ctx, 'team.read')),
-    sessions: sessions.rows.map((row) => toSessionSummary(row, { hintsBySession })),
+    sessions: summaries,
     activity,
     feedback,
     scenarios,

@@ -27,6 +27,7 @@ import {
   type AdminCtx,
 } from './_shared/admin';
 import { selectAll } from './_shared/paging';
+import { applyScenarioTitles } from './_shared/scenarioTitles';
 import { difficultyFromScenario } from '../../src/shared/scenarios/difficulty';
 import {
   SESSION_SUMMARY_COLUMNS,
@@ -135,10 +136,9 @@ async function listSummary(ctx: AdminCtx, req: Request): Promise<Response> {
   if (hints.error) console.warn('[admin-sessions] hint events read failed', hints.error.message);
   const hintsBySession = hints.error ? undefined : countHintsBySession(hints.rows);
 
-  const body: SessionSummaryResponse = {
-    rows: sessions.rows.map((row) => toSessionSummary(row, { hintsBySession })),
-    truncated: sessions.truncated,
-  };
+  const summaries = sessions.rows.map((row) => toSessionSummary(row, { hintsBySession }));
+  await applyScenarioTitles(ctx.sb, summaries);
+  const body: SessionSummaryResponse = { rows: summaries, truncated: sessions.truncated };
   return largeJsonResponse(body);
 }
 
