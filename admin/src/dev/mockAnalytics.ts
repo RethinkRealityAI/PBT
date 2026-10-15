@@ -214,11 +214,14 @@ for (const person of MOCK_PEOPLE) {
     const id = sid(sessionN);
     const pushback = pick(OBJECTIONS);
     const species = rand() < 0.22 ? 'cat' : 'dog';
-    const difficulty = (Math.min(4, 1 + Math.floor(rand() * (1.5 + k / 6))) as 1 | 2 | 3 | 4);
+    // Most practice is at the easier levels; harder owners appear as a trainee progresses.
+    const difficulty = (Math.min(4, 1 + Math.floor(rand() * Math.min(4, 1.6 + k / 12))) as 1 | 2 | 3 | 4);
     const mode: 'text' | 'voice' = rand() < h.voice ? 'voice' : 'text';
     const completed = rand() < h.finish;
     const ownerDriver = pick(DRIVERS);
-    const skillLevel = clamp(h.base + h.slope * k + OBJECTION_DIFFICULTY[pushback] - (difficulty - 2) * 3 + between(-7, 7));
+    // Learning curve that levels off (≈ slope × 14 points at most), not a straight line to 100.
+    const learned = h.slope * 14 * (1 - Math.exp(-k / 14));
+    const skillLevel = clamp(h.base + learned + OBJECTION_DIFFICULTY[pushback] - (difficulty - 2) * 4 + between(-8, 8));
     const skills = {
       acknowledge: Math.round(clamp(skillLevel + h.shape[0] + between(-5, 5))),
       clarify: Math.round(clamp(skillLevel + h.shape[1] + between(-5, 5))),
@@ -319,6 +322,9 @@ const hintsBySession = new Map<string, number>();
 for (const e of hintEvents) hintsBySession.set(e.sessionId, (hintsBySession.get(e.sessionId) ?? 0) + 1);
 
 const SUMMARIES: SessionSummary[] = rawRows.map((r) => toSessionSummary(r as never, { hintsBySession }));
+// What `applyScenarioTitles` does on the server: a Studio scenario is named by
+// its card title, not its objection.
+for (const s of SUMMARIES) if (s.scenario_id === 'admin:7c1d') s.scenario_title = 'Senior lab, cost-sensitive owner';
 
 // ── app-usage events (nav_events rows) ────────────────────────────────────
 interface NavRow {
