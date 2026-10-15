@@ -278,7 +278,10 @@ export function readRange(req: Request): { since: string; limit: number } {
   const since =
     params.get('since') ??
     new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const limit = Math.min(5000, Number(params.get('limit') ?? 1000));
+  // A non-numeric or non-positive `limit` falls back to the default instead
+  // of becoming NaN — a NaN cap would read as "no cap" to the pager.
+  const raw = Number(params.get('limit') ?? 1000);
+  const limit = Number.isFinite(raw) && raw >= 1 ? Math.min(5000, Math.floor(raw)) : 1000;
   return { since, limit };
 }
 

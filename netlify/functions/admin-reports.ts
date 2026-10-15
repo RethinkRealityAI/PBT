@@ -22,6 +22,7 @@ import {
   requireAdmin,
   writeAuditLog,
 } from './_shared/admin';
+import { selectAll } from './_shared/paging';
 
 /** Triage states, mirroring the CHECK on platform_reports.status. */
 const STATUSES = ['open', 'triaged', 'resolved', 'dismissed'] as const;
@@ -82,12 +83,18 @@ export default async (req: Request) => {
   if (req.method !== 'GET') return errorResponse(405, 'Method not allowed');
 
   const { since, limit } = readRange(req);
-  const { data, error } = await ctx.sb
-    .from('platform_reports')
-    .select('*')
-    .gte('created_at', since)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  // Paged past PostgREST's 1,000-row cap, like every admin list.
+  const { rows, error } = await selectAll<Record<string, unknown>>(
+    (from, to) =>
+      ctx.sb
+        .from('platform_reports')
+        .select('*')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to),
+    { max: limit, dedupeBy: (r) => r.id },
+  );
   if (error) return errorResponse(500, error.message);
-  return jsonResponse(data ?? []);
+  return jsonResponse(rows);
 };
