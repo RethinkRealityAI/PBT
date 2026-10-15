@@ -10,6 +10,9 @@ import {
   countHintsBySession,
   scenarioSourceOf,
   scoreUnavailableOf,
+  scoringFailedOf,
+  fromLiteRow,
+  SESSION_SUMMARY_LITE_COLUMNS,
   toSessionSummary,
 } from '../sessionSummary';
 
@@ -94,6 +97,7 @@ describe('toSessionSummary — a full modern row', () => {
       owner_driver: 'Analyzer',
       scenario_summary: 'Lab · cost',
       scenario_title: 'Cost concerns',
+      objection_title: 'Cost concerns',
       scenario_source: 'library',
       scenario_id: 'seed:1',
       difficulty: 3,
@@ -361,5 +365,69 @@ describe('tolerance', () => {
     const s = toSessionSummary(fullRow({ pushback_id: null, driver: null }));
     expect(s.pushback_id).toBe('cost');
     expect(s.owner_driver).toBe('Analyzer');
+  });
+});
+
+describe('scoringFailedOf — one definition of a failed scoring', () => {
+  it('flags a finished session the app saved with no report (the scorer failed; ai-evaluate persisted nothing)', () => {
+    const row = fullRow({ score_report: null, score_overall: null, model_id: 'gemini-3-flash-preview' });
+    expect(scoringFailedOf(row)).toBe(true);
+    const s = toSessionSummary(row);
+    expect(s.score_unavailable).toBe(true);
+    expect(s.score_overall).toBeNull();
+  });
+
+  it('flags the old placeholder report', () => {
+    expect(scoringFailedOf(fullRow({ score_report: report({ overall: 0, scoreUnavailable: true }) }))).toBe(true);
+  });
+
+  it('does not flag a device backfill — completed, no report, no model, a three-field scenario', () => {
+    const backfill = fullRow({
+      score_report: null,
+      score_overall: null,
+      model_id: undefined,
+      scenario: { summary: 'Lab · cost', pushbackId: 'cost', driver: 'Analyzer' },
+    });
+    expect(scoringFailedOf(backfill)).toBe(false);
+    expect(toSessionSummary(backfill).score_unavailable).toBe(false);
+  });
+
+  it('does not flag a session left early, or a real score', () => {
+    expect(scoringFailedOf(fullRow({ completed: false, score_report: null, model_id: 'm' }))).toBe(false);
+    expect(scoringFailedOf(fullRow({ model_id: 'm' }))).toBe(false);
+  });
+});
+
+describe('lite summaries (all-time figures, no transcripts)', () => {
+  it('never selects the transcript or the whole report', () => {
+    expect(SESSION_SUMMARY_LITE_COLUMNS).not.toMatch(/(^|[ ,])transcript([ ,]|$)/);
+    expect(SESSION_SUMMARY_LITE_COLUMNS).not.toMatch(/(^|[ ,])score_report([ ,]|$)/);
+  });
+
+  it('rebuilds a row that summarises with the same scores, level, animal and source', () => {
+    const full = fullRow({ model_id: 'm' });
+    const r = full.score_report as Record<string, unknown>;
+    const sc = full.scenario as Record<string, unknown>;
+    const lite = fromLiteRow({
+      id: full.id, user_id: full.user_id, created_at: full.created_at, completed: true, ended_reason: 'completed',
+      mode: 'text', duration_seconds: 300, turns: 5, pushback_id: 'cost', driver: 'Analyzer', model_id: 'm',
+      scenario_summary: full.scenario_summary, score_overall: 74,
+      sr_acknowledge: r.acknowledge, sr_clarify: r.clarify, sr_transform: r.transform, sr_empathy: r.empathy,
+      sr_rapport: r.rapport, sr_overall: r.overall, sr_band: r.band, sr_unavailable: null, sr_critique: r.critique,
+      sc_difficulty: sc.difficulty, sc_species: null, sc_override: sc._overrideId, sc_pushback: sc.pushback,
+      sc_breed: sc.breed, sc_persona: sc.persona, sc_age: sc.age,
+    });
+    const a = toSessionSummary(full);
+    const b = toSessionSummary(lite);
+    for (const k of ['score_overall', 'skills', 'score_unavailable', 'difficulty', 'species', 'scenario_source', 'band'] as const) {
+      expect(b[k]).toEqual(a[k]);
+    }
+    expect(b.staff_messages).toBe(0); // transcript-derived: empty in lite
+  });
+
+  it('treats an all-null report path set as no report (so a live failure still reads as failed)', () => {
+    const lite = fromLiteRow({ id: 'x', completed: true, model_id: 'm', sc_pushback: { id: 'cost' }, sr_overall: null });
+    expect(lite.score_report).toBeNull();
+    expect(toSessionSummary(lite).score_unavailable).toBe(true);
   });
 });

@@ -56,14 +56,16 @@ describe('objectionSkillTable', () => {
 });
 
 describe('teamObjectionTitles', () => {
-  it('takes the title most sessions on a team objection share, never a one-off scenario title', () => {
+  it('takes the objection’s own title most sessions share, never a scenario title', () => {
     const rows = [
-      session({ pushback_id: 'team:probiotic-doubt', scenario_title: 'Doubts probiotics work' }),
-      session({ pushback_id: 'team:probiotic-doubt', scenario_title: 'Doubts probiotics work' }),
-      session({ pushback_id: 'team:probiotic-doubt', scenario_title: 'Bella’s tummy' }),
-      session({ pushback_id: 'team:split', scenario_title: 'One' }),
-      session({ pushback_id: 'team:split', scenario_title: 'Two' }),
-      session({ pushback_id: 'cost', scenario_title: 'Cost / price pushback' }),
+      // A Studio scenario on this objection is named by its card title — that
+      // must never become the objection's name.
+      session({ pushback_id: 'team:probiotic-doubt', objection_title: 'Doubts probiotics work', scenario_title: 'Senior lab, cost-sensitive owner' }),
+      session({ pushback_id: 'team:probiotic-doubt', objection_title: 'Doubts probiotics work' }),
+      session({ pushback_id: 'team:probiotic-doubt', objection_title: 'Old wording' }),
+      session({ pushback_id: 'team:split', objection_title: 'One' }),
+      session({ pushback_id: 'team:split', objection_title: 'Two' }),
+      session({ pushback_id: 'cost', objection_title: 'Cost / price pushback' }),
     ];
     expect(teamObjectionTitles(rows)).toEqual([{ id: 'team:probiotic-doubt', title: 'Doubts probiotics work' }]);
   });

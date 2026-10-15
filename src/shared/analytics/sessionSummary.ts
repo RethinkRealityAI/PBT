@@ -27,7 +27,68 @@ export type SessionRowLike = Record<string, unknown>;
 
 /** Columns to select for `toSessionSummary` (the transcript is read, never returned). */
 export const SESSION_SUMMARY_COLUMNS =
-  'id, user_id, scenario, scenario_summary, pushback_id, driver, transcript, score_report, score_overall, duration_seconds, mode, completed, ended_reason, turns, created_at';
+  'id, user_id, scenario, scenario_summary, pushback_id, driver, model_id, transcript, score_report, score_overall, duration_seconds, mode, completed, ended_reason, turns, created_at';
+
+/**
+ * The LITE summary read (`admin-sessions?view=summary&lite=1`): scalar columns
+ * plus only the jsonb paths the lifetime figures need — skills, overall,
+ * failure markers, and the scenario's level / animal / source / objection.
+ * No transcript and no full score report, which are most of a row's weight;
+ * `fromLiteRow` rebuilds a row `toSessionSummary` can read. Transcript-derived
+ * fields (owner mood, words, reply time) and sentiment / key moments come back
+ * empty — the all-time roster and funnel never use them.
+ */
+export const SESSION_SUMMARY_LITE_COLUMNS = [
+  'id, user_id, created_at, completed, ended_reason, mode, duration_seconds, turns',
+  'pushback_id, driver, model_id, scenario_summary, score_overall',
+  'sr_acknowledge:score_report->acknowledge, sr_clarify:score_report->clarify',
+  'sr_transform:score_report->transform, sr_empathy:score_report->empathy',
+  'sr_rapport:score_report->rapport, sr_overall:score_report->overall, sr_band:score_report->band',
+  'sr_unavailable:score_report->scoreUnavailable, sr_critique:score_report->critique',
+  'sc_difficulty:scenario->difficulty, sc_species:scenario->species, sc_override:scenario->_overrideId',
+  'sc_pushback:scenario->pushback, sc_breed:scenario->breed, sc_persona:scenario->persona, sc_age:scenario->age',
+].join(', ');
+
+const LITE_REPORT_KEYS: Array<[string, string]> = [
+  ['sr_acknowledge', 'acknowledge'],
+  ['sr_clarify', 'clarify'],
+  ['sr_transform', 'transform'],
+  ['sr_empathy', 'empathy'],
+  ['sr_rapport', 'rapport'],
+  ['sr_overall', 'overall'],
+  ['sr_band', 'band'],
+  ['sr_unavailable', 'scoreUnavailable'],
+  ['sr_critique', 'critique'],
+];
+const LITE_SCENARIO_KEYS: Array<[string, string]> = [
+  ['sc_difficulty', 'difficulty'],
+  ['sc_species', 'species'],
+  ['sc_override', '_overrideId'],
+  ['sc_pushback', 'pushback'],
+  ['sc_breed', 'breed'],
+  ['sc_persona', 'persona'],
+  ['sc_age', 'age'],
+];
+
+/** Rebuild a `training_sessions`-shaped row from a lite read. */
+export function fromLiteRow(row: unknown): Record<string, unknown> {
+  const r: Record<string, unknown> = isObj(row) ? { ...row } : {};
+  const report: Record<string, unknown> = {};
+  for (const [alias, key] of LITE_REPORT_KEYS) {
+    if (r[alias] !== undefined && r[alias] !== null) report[key] = r[alias];
+    delete r[alias];
+  }
+  const scenario: Record<string, unknown> = {};
+  for (const [alias, key] of LITE_SCENARIO_KEYS) {
+    if (r[alias] !== undefined && r[alias] !== null) scenario[key] = r[alias];
+    delete r[alias];
+  }
+  // Every path is null exactly when the column itself is null.
+  r.score_report = Object.keys(report).length > 0 ? report : null;
+  r.scenario = Object.keys(scenario).length > 0 ? scenario : null;
+  r.transcript = [];
+  return r;
+}
 
 /** A reply slower than this is a pause (phone call, coffee), not a reply time. */
 export const MAX_REPLY_GAP_SECONDS = 600;
@@ -89,6 +150,29 @@ function safeUnavailable(report: Obj): boolean {
  */
 export function scoreUnavailableOf(report: unknown): boolean {
   return isObj(report) && safeUnavailable(report);
+}
+
+/**
+ * Did a scoring attempt FAIL for this session? Two shapes:
+ *  - the old placeholder report (every dimension 0 / `scoreUnavailable`);
+ *  - since scores became server-authoritative, NO report at all on a session
+ *    the app finished and saved itself: `ai-evaluate` persists nothing when
+ *    the scorer fails, and the app then saves the session as completed
+ *    without one. Such a row has a `model_id` and the full scenario.
+ * A session backfilled from the device at sign-up is ALSO completed with no
+ * report — its local score is dropped on purpose (unverifiable) — but it has
+ * no `model_id` and only a three-field scenario. That is not a failure.
+ * One definition for every view (`admin-sessions` list / `?id=`, summaries).
+ */
+export function scoringFailedOf(row: unknown): boolean {
+  if (!isObj(row)) return false;
+  if (isObj(row.score_report)) return safeUnavailable(row.score_report);
+  return (
+    row.completed === true &&
+    str(row.model_id) !== null &&
+    isObj(row.scenario) &&
+    isObj(row.scenario.pushback)
+  );
 }
 
 /** Where the scenario came from, from its `_overrideId`. */
@@ -208,7 +292,7 @@ export function toSessionSummary(row: SessionRowLike, options: SessionSummaryOpt
   const mode: SessionSummary['mode'] = r.mode === 'text' || r.mode === 'voice' ? r.mode : null;
 
   const report = isObj(r.score_report) ? r.score_report : null;
-  const unavailable = report !== null && safeUnavailable(report);
+  const unavailable = scoringFailedOf(r);
   const scored = report !== null && !unavailable ? report : null;
 
   let score_overall: number | null = null;
@@ -234,6 +318,7 @@ export function toSessionSummary(row: SessionRowLike, options: SessionSummaryOpt
     owner_driver: str(r.driver) ?? (scenario ? str(scenario.suggestedDriver) : null),
     scenario_summary: str(r.scenario_summary),
     scenario_title: (scenario ? str(scenario.title) : null) ?? (pushback ? str(pushback.title) : null),
+    objection_title: pushback ? str(pushback.title) : null,
     scenario_source: source,
     scenario_id: scenarioId,
     difficulty: difficultyFromScenario(scenario),

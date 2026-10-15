@@ -23,6 +23,7 @@ import { ContextBar, ScreenShell, type Range } from '../primitives/Shell';
 import { useAiCallsWindow, useSessionSummaries } from '../analytics/data';
 import { compareWords, pointsDelta, splitByPeriod } from '../analytics/lib/period';
 import { AutoGrid, StatTile } from '../analytics/ui';
+import { useAccess } from '../primitives/access';
 import { COLOR } from '../lib/tokens';
 import { CALL_TYPE_LABELS, labelOf } from '../lib/labels';
 import { fmtMoney } from '../lib/format';
@@ -162,7 +163,10 @@ export function QualityScreen({
   // be listed here too, but they're a coaching question, not an AI one (the
   // Sessions tab filters them and the Overview flags them) — and the list
   // counted failed scorings, stored as a stand-in 0, as the worst sessions.
-  const sessions = useSessionSummaries(range);
+  // Only with `sessions.read` — a role with AI quality alone must not fire a
+  // request that would be refused (and turn the whole tab into an error).
+  const canSessions = useAccess().can('sessions.read');
+  const sessions = useSessionSummaries(range, { enabled: canSessions });
   // Twice the window, shared with the Overview's AI health strip (one fetch):
   // the current window drives every chart, the previous one the deltas.
   const callsWindow = useAiCallsWindow(range);
@@ -422,6 +426,7 @@ export function QualityScreen({
                   compareLabel={compareWords(range)}
                   hint={`${fmtCount(stats.cur.slow)} replies; scoring is naturally slower than a reply`}
                 />
+                {canSessions && (
                 <StatTile
                   label="Sessions the scorer couldn’t grade"
                   value={fmtCount(stats.scoring.failed)}
@@ -438,6 +443,7 @@ export function QualityScreen({
                   compareLabel={compareWords(range)}
                   hint="Finished, but the score couldn’t be produced; the trainee can retry"
                 />
+                )}
               </>
             )}
           </AutoGrid>

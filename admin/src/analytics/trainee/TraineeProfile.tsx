@@ -96,7 +96,7 @@ export function TraineeProfile({ userId, range, onRange, onOpen, onNav }: Props)
   const detail = useTraineeDetail(userId);
   const team = useSessionSummaries(range);
   // Team objections by their real titles in every table below.
-  useObjectionTitles(team.data.rows);
+  const objectionTitles = useObjectionTitles(team.data.rows);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -181,6 +181,7 @@ export function TraineeProfile({ userId, range, onRange, onOpen, onNav }: Props)
               <ProfileBody
                 detail={d}
                 teamRows={team.data.rows}
+                objectionTitles={objectionTitles}
                 range={range}
                 updatedAt={detail.updatedAt}
                 onRange={onRange}
@@ -199,6 +200,7 @@ export function TraineeProfile({ userId, range, onRange, onOpen, onNav }: Props)
 function ProfileBody({
   detail,
   teamRows,
+  objectionTitles,
   range,
   updatedAt,
   onRange,
@@ -206,13 +208,19 @@ function ProfileBody({
 }: {
   detail: TraineeDetail;
   teamRows: SessionSummary[];
+  /** Re-labels team objections (coaching notes, tables) when real titles arrive. */
+  objectionTitles: ReadonlyArray<{ id: string; title: string }>;
   range: Range;
   updatedAt: number | null;
   onRange: (r: Range) => void;
   onOpenSession: (id: string) => void;
 }) {
   const now = useMemo(() => Date.now(), [updatedAt, range]); // eslint-disable-line react-hooks/exhaustive-deps
-  const m = useMemo(() => buildModel(detail, teamRows, range, now), [detail, teamRows, range, now]);
+  const m = useMemo(
+    () => buildModel(detail, teamRows, range, now),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [detail, teamRows, range, now, objectionTitles],
+  );
   const [chartView, setChartView] = useState<'chart' | 'table'>('chart');
   const [allSessions, setAllSessions] = useState(false);
 
@@ -1112,8 +1120,12 @@ function SessionRow({ s, now, onOpen }: { s: SessionSummary; now: number; onOpen
       <span style={{ textAlign: 'right' }}>
         {isScored(s) ? (
           <ScoreBadge score={Math.round(s.score_overall as number)} />
-        ) : s.completed ? (
+        ) : s.score_unavailable ? (
           <span style={{ fontSize: 11.5, fontWeight: 700, color: 'oklch(0.47 0.14 65)' }}>Scoring failed</span>
+        ) : s.completed ? (
+          // Finished but never scored here — e.g. imported from the device
+          // at sign-up, where the local score is dropped as unverifiable.
+          <span style={{ fontSize: 11.5, fontWeight: 650, color: COLOR.inkMute }}>Not scored</span>
         ) : (
           <span style={{ fontSize: 11.5, fontWeight: 650, color: COLOR.inkMute }}>Left early</span>
         )}
@@ -1492,7 +1504,7 @@ function sessionsCsv(sessions: readonly SessionSummary[]) {
     ...SKILL_KEYS.map((k) => (isScored(s) && s.skills ? s.skills[k] : null)),
     mood(s.owner_mood_end),
     s.hints_used,
-    s.completed && !isScored(s) ? 'Yes' : 'No',
+    s.score_unavailable ? 'Yes' : 'No',
   ]);
   return { header, rows };
 }

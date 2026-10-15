@@ -878,14 +878,16 @@ A panel that needs ANOTHER permission (Overview's AI health needs
 and never fires a request that would 403.
 
 **Data** — contract `src/shared/analytics/contract.ts` (types only):
-- `admin-sessions?view=summary` → `SessionSummary` (no transcript; derived in
+- `admin-sessions?view=summary` → `SessionSummary` (`&lite=1` for all-time
+  lifetime figures: jsonb paths only, no transcript or full report; derived in
   `src/shared/analytics/sessionSummary.ts`: skills, start time, scenario
   source/title/species, owner's final mood from `transcript[].emotion`, owner
   sentiment start/end, words per reply, median reply time, coach hints from
   `coach_hint_request` events, key wins/misses). `?id=` = one full row.
 - `admin-analytics` (GET): `op=directory` (`sessions.read`; names for every
   analytics screen — email only with `team.read`, so an Analyst sees names
-  without people-management rights), `op=engagement` (`analytics.read`;
+  without people-management rights; role + disabled flags are included so
+  staff and disabled accounts stay out of trainee nudges), `op=engagement` (`analytics.read`;
   nav_events aggregated server-side by `src/shared/analytics/engagement.ts`
   in the admin's timezone), `op=trainee&id=` (`sessions.read`; each optional
   section only with its own permission, the rest named in `withheld`).
@@ -894,7 +896,10 @@ and never fires a request that would 403.
   `netlify/functions/_shared/paging.ts` (`selectAll`, `truncated` when the
   hard cap stops it) — never add a list read that doesn't.
 - Client: `admin/src/data/cache.ts` (keyed cache, 60 s stale-while-revalidate,
-  shared by all tabs) behind the hooks in `admin/src/analytics/data.ts`.
+  shared by all tabs; keeps a failed read's HTTP status — decide "not found"
+  on 404, never on wording; `App` resets it whenever the signed-in admin
+  changes, since sign-out doesn't reload) behind the hooks in
+  `admin/src/analytics/data.ts`.
   Sessions are fetched for twice the window so every headline compares with
   the previous window of the same length.
 
@@ -905,6 +910,11 @@ definition of each number: `period.ts` (windows, deltas, buckets),
 `csv.ts` (formula-injection-safe export), plus each tab's own lib.
 A score counts only when the session finished, was scored and the scoring
 didn't fail (`isScored`) — never average a missing or failed score as 0.
+"Scoring failed" has ONE definition (`scoringFailedOf` in
+`src/shared/analytics/sessionSummary.ts`): the old placeholder report, OR a
+finished session the app saved with no report at all (since scores became
+server-authoritative, a failed scorer persists nothing) — but not a device
+backfill, whose score was dropped on purpose (no `model_id`).
 Trainee status: Active ≤ 7 days since the last session, At risk 8–21,
 Dormant > 21, Not started = never; "New" = joined ≤ 14 days.
 
@@ -1170,7 +1180,13 @@ The static test catches "migration file missing"; `verify:db` catches
    never written (no UI shows them any more). (d) `ai_turn_telemetry` gets a
    duplicate set of rows on every rescore (plain insert). (e) A trainee's own
    scenario build isn't linked to the sessions played from it (no
-   `_overrideId`).
+   `_overrideId`). (f) `nav_events` has no plain `created_at` index — the
+   engagement read pages by `created_at` over the whole window; add one
+   (`create index if not exists … on nav_events (created_at desc)`) before
+   volume reaches the hundreds of thousands. (g) `nav_events.created_at` is
+   client-stamped and anonymous visitors can insert: reads and aggregates
+   ignore anything beyond `FUTURE_SKEW_MS` ahead of now, but a server-side
+   default/trigger would be the real fix.
 
 1. **a11y deep sweep**: aria labels/aria-live/keyboard basics are in; still
    owed: modal focus traps + Escape + `aria-modal` everywhere, CreateScreen

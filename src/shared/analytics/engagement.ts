@@ -39,6 +39,12 @@ export function isEngagementRange(v: unknown): v is EngagementRange {
 
 export const HOUR_MS = 60 * 60 * 1000;
 export const DAY_MS = 24 * HOUR_MS;
+/**
+ * How far ahead of "now" a client-stamped event may be and still count
+ * (phones with a fast clock). Anything later is ignored, and the server reads
+ * stop there, so junk dated in 2099 can never crowd real events out of a cap.
+ */
+export const FUTURE_SKEW_MS = 10 * 60 * 1000;
 
 /** Window length in days; `all` is charted as a year (its totals count every row). */
 export function engagementRangeDays(range: EngagementRange): number {
@@ -422,10 +428,14 @@ export function aggregateEngagement(
 
   const current: CompactNavRow[] = [];
   const previous: CompactNavRow[] = [];
+  const latest = now + FUTURE_SKEW_MS;
   for (const row of rows) {
     if (!visitorOf(row)) continue;
     const t = ts(row);
     if (t === null) continue;
+    // Events are stamped by the client and anonymous visitors can write them:
+    // a row from beyond clock skew in the future is not real and is ignored.
+    if (t > latest) continue;
     // A row stamped slightly in the future (clock skew) counts as current.
     if (t >= currentStart) current.push(row);
     else if (range !== 'all' && t >= previousStart) previous.push(row);
@@ -459,9 +469,11 @@ export function aggregateTraineeActivity(
   rows: readonly CompactNavRow[],
   { now, tzOffsetMinutes }: TraineeActivityOptions,
 ): TraineeActivity {
+  const latest = now + FUTURE_SKEW_MS;
   const dated = rows
     .map((row) => ({ row, t: ts(row) }))
-    .filter((x): x is { row: CompactNavRow; t: number } => x.t !== null)
+    // Future-dated rows (client-stamped) are not real activity.
+    .filter((x): x is { row: CompactNavRow; t: number } => x.t !== null && x.t <= latest)
     .sort((a, b) => b.t - a.t);
   const list = dated.map((x) => x.row);
 

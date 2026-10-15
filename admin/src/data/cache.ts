@@ -83,9 +83,15 @@ export function invalidate(prefix = ''): void {
   }
 }
 
-/** Test seam — forget everything. */
+/**
+ * Forget everything — called when the signed-in admin changes, so one
+ * admin's answers never reach the next. Mounted consumers refetch as
+ * themselves.
+ */
 export function resetCache(): void {
+  const keys = [...store.keys()];
   store.clear();
+  for (const key of keys) notify(key);
 }
 
 export interface CachedQueryState<T> {
@@ -119,7 +125,16 @@ export function useCachedQuery<T>(
 
   useEffect(() => {
     if (key == null) return;
-    const unsubscribe = subscribe(key, rerender);
+    // A notify with no entry left means it was invalidated or the cache was
+    // reset: a consumer still on screen fetches it again.
+    const unsubscribe = subscribe(key, () => {
+      if (!store.has(key)) {
+        fetchCached(key, () => fnRef.current()).catch(() => {
+          /* surfaced through the entry's error */
+        });
+      }
+      rerender();
+    });
     const entry = store.get(key);
     const fresh = entry && entry.data !== undefined && Date.now() - entry.at < staleMs;
     if (!fresh && !entry?.inflight) {

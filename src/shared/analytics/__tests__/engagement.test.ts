@@ -413,3 +413,25 @@ describe('aggregateTraineeActivity', () => {
     });
   });
 });
+
+describe('future-dated events (client-stamped, writable by anyone)', () => {
+  it('ignores rows dated beyond clock skew, keeps a slightly-fast clock', () => {
+    const rows = [
+      ev({ at: ago(HOUR_MS) }),
+      ev({ at: NOW + 2 * 60_000 }), // a phone two minutes fast: real
+      ev({ at: Date.parse('2099-01-01T00:00:00.000Z') }), // junk
+    ];
+    const r = aggregateEngagement(rows, { range: '7d', now: NOW, tzOffsetMinutes: 0 });
+    expect(r.current.screen_views).toBe(2);
+    expect(r.current.visitors).toBe(2);
+  });
+
+  it('keeps junk out of a trainee’s activity too', () => {
+    const a = aggregateTraineeActivity(
+      [ev({ at: ago(DAY_MS), user_id: 'u' }), ev({ at: Date.parse('2099-01-01T00:00:00.000Z'), user_id: 'u' })],
+      { now: NOW, tzOffsetMinutes: 0 },
+    );
+    expect(a.screen_views).toBe(1);
+    expect(a.last_seen).toBe(new Date(ago(DAY_MS)).toISOString());
+  });
+});

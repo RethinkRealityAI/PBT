@@ -162,7 +162,7 @@ export function scoreProgression(
   return {
     points,
     leftEarly: inWindow.filter((s) => !s.completed).length,
-    failed: inWindow.filter((s) => s.completed && !isScored(s)).length,
+    failed: inWindow.filter((s) => s.score_unavailable).length,
   };
 }
 

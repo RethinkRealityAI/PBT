@@ -42,8 +42,12 @@ export interface AnalyticsTabProps {
   onQuery: (q: string) => void;
   /** The record the tab is open on (a trainee's user id, a session id), from the URL. */
   recordId: string | null;
-  /** Go to an Analytics tab, optionally opened on one record. */
-  onOpen: (tab: AnalyticsTab, id?: string | null) => void;
+  /**
+   * Go to an Analytics tab, optionally opened on one record. `replace` swaps
+   * the current history entry instead of adding one — for a programmatic
+   * redirect (a missing record closing itself), so Back doesn't return to it.
+   */
+  onOpen: (tab: AnalyticsTab, id?: string | null, opts?: { replace?: boolean }) => void;
   /** Go anywhere else in the portal. */
   onNav: (screen: AdminScreen, tab?: string, id?: string | null) => void;
 }

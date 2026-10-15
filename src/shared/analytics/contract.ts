@@ -55,7 +55,17 @@ export interface SessionSummary {
   /** The AI owner's ECHO driver for this session (`training_sessions.driver`). */
   owner_driver: string | null;
   scenario_summary: string | null;
+  /**
+   * What to call the scenario: the team's Studio card / scenario title when it
+   * has one (looked up server-side), else the objection's title.
+   */
   scenario_title: string | null;
+  /**
+   * The objection's OWN title as the session stored it (`scenario.pushback
+   * .title`) — never a scenario title. How a team objection is named for a
+   * role that can't read the Studio's objections.
+   */
+  objection_title: string | null;
   scenario_source: ScenarioSource;
   /** `scenario._overrideId` when present (`seed:0`, `admin:<uuid>`). */
   scenario_id: string | null;
@@ -98,6 +108,12 @@ export interface SessionSummaryResponse {
   rows: SessionSummary[];
   /** True when the window held more rows than the hard cap returned. */
   truncated: boolean;
+  /**
+   * `?lite=1`: read without transcripts or full score reports (the all-time
+   * lifetime figures). Transcript-derived fields (owner mood, staff words,
+   * reply time), owner sentiment and key moments are empty in this mode.
+   */
+  lite?: boolean;
 }
 
 // ─── Trainee directory ─────────────────────────────────────────────────
@@ -116,6 +132,12 @@ export interface TraineeDirectoryEntry {
   echo_secondary: string | null;
   created_at: string;
   locale: string | null;
+  /**
+   * `disabled` and `admin_role` reach every caller with `sessions.read` on
+   * purpose: the analytics screens keep disabled accounts and portal staff out
+   * of "hasn't started" nudges and label staff in the roster. They grant no
+   * people-management rights (those stay behind `team.read` / `team.manage`).
+   */
   disabled: boolean;
   /** Admin role key, or null for a trainee-only account. */
   admin_role: string | null;

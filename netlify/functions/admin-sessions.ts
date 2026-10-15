@@ -27,12 +27,15 @@ import {
   type AdminCtx,
 } from './_shared/admin';
 import { selectAll } from './_shared/paging';
+import { FUTURE_SKEW_MS } from '../../src/shared/analytics/engagement';
 import { applyScenarioTitles } from './_shared/scenarioTitles';
 import { difficultyFromScenario } from '../../src/shared/scenarios/difficulty';
 import {
   SESSION_SUMMARY_COLUMNS,
+  SESSION_SUMMARY_LITE_COLUMNS,
+  fromLiteRow,
   countHintsBySession,
-  scoreUnavailableOf,
+  scoringFailedOf,
   toSessionSummary,
 } from '../../src/shared/analytics/sessionSummary';
 import type { SessionSummaryResponse } from '../../src/shared/analytics/contract';
@@ -51,11 +54,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 type Row = Record<string, unknown>;
 
 /**
- * A scoring failure is persisted as a placeholder report with every dimension
- * at 0, so downstream aggregates would read it as a genuine 0/100 and drag
- * every average down. Derive the distinction once, here, rather than in each
- * of the screens that consume these rows. A row with no report at all was
- * never scored (abandoned mid-session) — a missing score, not a failed one.
+ * `score_unavailable` — did a scoring attempt FAIL? Older failures were
+ * persisted as a placeholder report (every dimension 0) that aggregates would
+ * read as a genuine 0/100; since scores became server-authoritative a failure
+ * leaves NO report on a session the app saved as finished. `scoringFailedOf`
+ * recognises both (and not a device backfill, whose score was dropped on
+ * purpose), once, here, for every screen. A session left early has no report
+ * either — a missing score, not a failed one.
  *
  * `difficulty` (1–4, or null) is read the same way, from the scenario the
  * session stored — the app writes the full Scenario, so no column or
@@ -66,7 +71,7 @@ type Row = Record<string, unknown>;
 function withDerived(row: Row): Row {
   return {
     ...row,
-    score_unavailable: scoreUnavailableOf(row.score_report),
+    score_unavailable: scoringFailedOf(row),
     difficulty: difficultyFromScenario(row.scenario),
   };
 }
@@ -99,18 +104,24 @@ async function listSummary(ctx: AdminCtx, req: Request): Promise<Response> {
   const { since } = readRange(req);
   const sinceMs = Date.parse(since);
   if (!Number.isFinite(sinceMs)) return errorResponse(400, 'since must be an ISO date');
-  const limit = clampLimit(new URL(req.url).searchParams.get('limit'), SUMMARY_MAX, SUMMARY_MAX);
+  const params = new URL(req.url).searchParams;
+  const limit = clampLimit(params.get('limit'), SUMMARY_MAX, SUMMARY_MAX);
+  // `lite=1`: no transcript / full report — for the all-time lifetime figures.
+  const lite = params.get('lite') === '1';
 
   // A session's row is written when it ENDS; its hints were requested while
-  // it ran, so the hint window opens a day earlier.
+  // it ran, so the hint window opens a day earlier. Events are stamped by the
+  // client (and anonymous visitors can write them), so anything dated in the
+  // future is ignored rather than allowed to fill the read cap.
   const hintsSince = new Date(sinceMs - DAY_MS).toISOString();
+  const hintsUntil = new Date(Date.now() + FUTURE_SKEW_MS).toISOString();
 
   const [sessions, hints] = await Promise.all([
     selectAll<Row>(
       (from, to) =>
         ctx.sb
           .from('training_sessions')
-          .select(SESSION_SUMMARY_COLUMNS)
+          .select(lite ? SESSION_SUMMARY_LITE_COLUMNS : SESSION_SUMMARY_COLUMNS)
           .gte('created_at', since)
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
@@ -124,6 +135,7 @@ async function listSummary(ctx: AdminCtx, req: Request): Promise<Response> {
           .select('id, meta, created_at')
           .eq('target', 'coach_hint_request')
           .gte('created_at', hintsSince)
+          .lte('created_at', hintsUntil)
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
           .range(from, to),
@@ -136,9 +148,9 @@ async function listSummary(ctx: AdminCtx, req: Request): Promise<Response> {
   if (hints.error) console.warn('[admin-sessions] hint events read failed', hints.error.message);
   const hintsBySession = hints.error ? undefined : countHintsBySession(hints.rows);
 
-  const summaries = sessions.rows.map((row) => toSessionSummary(row, { hintsBySession }));
+  const summaries = sessions.rows.map((row) => toSessionSummary(lite ? fromLiteRow(row) : row, { hintsBySession }));
   await applyScenarioTitles(ctx.sb, summaries);
-  const body: SessionSummaryResponse = { rows: summaries, truncated: sessions.truncated };
+  const body: SessionSummaryResponse = { rows: summaries, truncated: sessions.truncated, ...(lite ? { lite: true } : {}) };
   return largeJsonResponse(body);
 }
 

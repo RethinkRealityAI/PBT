@@ -19,6 +19,7 @@ export function session(over: Partial<SessionSummary> = {}): SessionSummary {
     owner_driver: 'Analyzer',
     scenario_summary: null,
     scenario_title: null,
+    objection_title: null,
     scenario_source: 'library',
     scenario_id: 'seed:0',
     difficulty: 2,

@@ -80,3 +80,12 @@ describe('admin list endpoints page past 1,000 rows', () => {
     expect(rows).toHaveLength(1000);
   });
 });
+
+describe('admin-ai-calls reads twice the window', () => {
+  it('allows more than the generic 5,000 (two periods of small rows)', async () => {
+    signInAdmin();
+    serveRows('ai_call_telemetry', 7000);
+    const rows = (await (await get(aiCalls, 'admin-ai-calls', 'days=56&limit=20000')).json()) as unknown[];
+    expect(rows).toHaveLength(7000);
+  });
+});

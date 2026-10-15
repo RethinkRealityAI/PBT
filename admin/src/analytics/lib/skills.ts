@@ -103,7 +103,9 @@ export function teamObjectionTitles(rows: readonly SessionSummary[]): Array<{ id
     const id = s.pushback_id;
     if (!id || !id.startsWith('team:')) continue;
     totals.set(id, (totals.get(id) ?? 0) + 1);
-    const t = s.scenario_title?.trim();
+    // The objection's own title — never `scenario_title`, which may be a
+    // Studio scenario's card title ("Senior lab, cost-sensitive owner").
+    const t = s.objection_title?.trim();
     if (!t) continue;
     let m = byId.get(id);
     if (!m) byId.set(id, (m = new Map()));

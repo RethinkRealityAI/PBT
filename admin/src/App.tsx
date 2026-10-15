@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { getSupabase } from './lib/supabase';
 import { apiFetch } from './lib/api';
+import { resetCache } from './data/cache';
+import { resetObjectionTitles } from './analytics/lib/objectionNames';
 import { COLOR } from './lib/tokens';
 import { Glass } from './primitives/Glass';
 import { SectionTabsProvider, type AdminScreen, type Range } from './primitives/Shell';
@@ -79,12 +81,24 @@ export function App() {
   const sidebar = useSidebarState();
   const route = publicRoute();
 
+  // Whose data the shared analytics cache holds. Sign-out doesn't reload the
+  // page, so without this the next admin to sign in on the same tab would be
+  // shown the previous one's cached answers — emails, profiles, sections their
+  // own role can't read — until each entry went stale.
+  const cacheOwner = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     if (route) return;
     let cancelled = false;
     const sb = getSupabase();
     async function check(session: Session | null) {
       if (cancelled) return;
+      const uid = session?.user.id ?? null;
+      if (cacheOwner.current !== undefined && cacheOwner.current !== uid) {
+        resetCache();
+        resetObjectionTitles();
+      }
+      cacheOwner.current = uid;
       if (!session) {
         setAuth({ status: 'signed_out' });
         return;
@@ -267,17 +281,20 @@ export function App() {
 
   const { item, tabs, tab } = resolved;
 
-  const go = (screen: AdminScreen, nextTab?: string, id?: string | null) => {
+  const go = (screen: AdminScreen, nextTab?: string, id?: string | null, replace = false) => {
     // Clear the shared search on destination change — a filter typed on one
     // screen silently constraining every other one is a bug people report as
     // "the list is empty".
     if (screen !== item.key) setQuery('');
     const target = findNavItem(screen);
-    navigate({
-      screen,
-      tab: nextTab ?? (target ? defaultTab(target, perms) : null),
-      id: id ?? null,
-    });
+    navigate(
+      {
+        screen,
+        tab: nextTab ?? (target ? defaultTab(target, perms) : null),
+        id: id ?? null,
+      },
+      replace,
+    );
     sidebar.setDrawerOpen(false);
   };
 
@@ -355,7 +372,7 @@ export function App() {
               onRange={setRange}
               query={query}
               onQuery={setQuery}
-              onOpen={(nextTab, id) => go('analytics', nextTab, id)}
+              onOpen={(nextTab, id, opts) => go('analytics', nextTab, id, opts?.replace)}
               onNav={go}
             />
           )}

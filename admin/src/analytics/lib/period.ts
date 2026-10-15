@@ -159,16 +159,21 @@ export function buckets(range: Range, now = Date.now()): { granularity: 'hour' |
     return { granularity: 'hour', list };
   }
   const granularity = days > 35 ? 'week' : 'day';
-  const size = (granularity === 'week' ? 7 : 1) * DAY_MS;
-  const count = Math.ceil((days * DAY_MS) / size);
-  // Anchor on the end of today (local) so a day bucket is a calendar day.
-  const endOfToday = new Date(now);
-  endOfToday.setHours(24, 0, 0, 0);
-  const anchor = endOfToday.getTime();
+  const stepDays = granularity === 'week' ? 7 : 1;
+  const count = Math.ceil(days / stepDays);
+  // Step in CALENDAR days from local midnight (end of today), never in fixed
+  // 24-hour blocks: across a daylight-saving change a 24-hour step lands at
+  // 23:00 or 01:00 and every earlier bucket is labelled a day off.
+  const midnightAfter = (offsetDays: number) => {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 1 - offsetDays);
+    return d.getTime();
+  };
   const list: Bucket[] = [];
   for (let i = count - 1; i >= 0; i--) {
-    const end = anchor - i * size;
-    const start = end - size;
+    const end = midnightAfter(i * stepDays);
+    const start = midnightAfter((i + 1) * stepDays);
     list.push({
       start,
       end,

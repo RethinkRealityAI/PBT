@@ -83,10 +83,13 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
 
   const current = useMemo(() => splitByPeriod(summaries.data.rows, range).current, [summaries.data.rows, range]);
   // Team objections by their real titles in the table, filters and CSV.
-  useObjectionTitles(summaries.data.rows);
+  const objectionTitles = useObjectionTitles(summaries.data.rows);
+  // `objectionTitles` is a dependency on purpose: labels (and so search
+  // matches) change when the real team titles arrive.
   const { rows: filtered, chipBase } = useMemo(
     () => filterSessions(current, filters, query, nameOf),
-    [current, filters, query, nameOf],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [current, filters, query, nameOf, objectionTitles],
   );
   const sorted = useMemo(() => sortSessions(filtered, sort.key, sort.dir), [filtered, sort]);
   const stats = useMemo(() => sessionStats(filtered), [filtered]);
@@ -316,7 +319,7 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
             id={recordId}
             summary={openSummary}
             personOf={(userId) => people.get(userId) ?? null}
-            onClose={() => onOpen('sessions')}
+            onClose={(opts) => onOpen('sessions', null, opts)}
             onViewTrainee={(userId) => onOpen('trainees', userId)}
           />
         )}

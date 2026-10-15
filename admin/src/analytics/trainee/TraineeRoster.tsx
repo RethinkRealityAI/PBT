@@ -60,7 +60,8 @@ const SEGMENTS: Array<{ key: RosterSegment; label: string; help?: string }> = [
 export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }: AnalyticsTabProps) {
   const { can } = useAccess();
   const directory = useTraineeDirectory();
-  const sessions = useSessionSummaries('all');
+  // Status, streaks and momentum are lifetime facts — read lite (no transcripts).
+  const sessions = useSessionSummaries('all', { lite: true });
   const engagement = useEngagement(range, can('analytics.read'));
 
   const [segment, setSegment] = useState<RosterSegment>('all');

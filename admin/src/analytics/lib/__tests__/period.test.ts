@@ -80,3 +80,22 @@ describe('buckets', () => {
     expect(dayKey(new Date('2026-03-05T23:30:00').getTime())).toBe('2026-03-05');
   });
 });
+
+describe('buckets across a daylight-saving change', () => {
+  it('keeps every day bucket on local midnight with its own label', () => {
+    // 15 March 2026: the week before includes the US spring-forward (8 March)
+    // when run in a DST zone; in a fixed zone it is simply 28 calendar days.
+    const now = new Date(2026, 2, 15, 12, 0, 0).getTime();
+    const { list } = buckets('28d', now);
+    for (const b of list) {
+      const s = new Date(b.start);
+      expect([s.getHours(), s.getMinutes()]).toEqual([0, 0]);
+    }
+    const labels = list.map((b) => b.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    expect(labels).toContain('Mar 8');
+    // A noon session on 7 March lands in the "Mar 7" bucket.
+    const i = bucketIndex(list, new Date(2026, 2, 7, 12).getTime());
+    expect(list[i].label).toBe('Mar 7');
+  });
+});

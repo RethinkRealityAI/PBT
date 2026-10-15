@@ -34,7 +34,7 @@ export function SessionDetail({
   summary: SessionSummary | null;
   /** Directory lookup — the session may be outside the window, so the summary can't name its trainee. */
   personOf: (userId: string) => TraineeDirectoryEntry | null;
-  onClose: () => void;
+  onClose: (opts?: { replace?: boolean }) => void;
   onViewTrainee: (userId: string) => void;
 }) {
   const detail = useSessionDetail(id);
@@ -48,7 +48,9 @@ export function SessionDetail({
     if (!missing || handled.current === id) return;
     handled.current = id;
     toast({ message: 'That session couldn’t be found — it may have been deleted.', tone: 'error' });
-    onClose();
+    // Replace, don't push: Back must not land on the missing id again (which
+    // would close straight away and trap the reader on this page).
+    onClose({ replace: true });
   }, [missing, id, toast, onClose]);
 
   if (missing) return null;

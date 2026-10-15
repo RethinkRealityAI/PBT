@@ -100,7 +100,8 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
   const canSkills = can('insights.read');
 
   const sessions = useSessionSummaries(range);
-  const all = useSessionSummaries('all');
+  // Lifetime figures (status, funnel, momentum) — no transcripts needed.
+  const all = useSessionSummaries('all', { lite: true });
   const directory = useTraineeDirectory();
   const aiCalls = useAiCallsWindow(range, canQuality);
   const reports = useOpenReports(canReports);

@@ -65,6 +65,7 @@ import type {
 } from '../../src/shared/analytics/contract';
 import {
   DAY_MS,
+  FUTURE_SKEW_MS,
   NAV_EVENT_COLUMNS,
   aggregateEngagement,
   aggregateTraineeActivity,
@@ -227,10 +228,13 @@ async function engagement(ctx: AdminCtx, params: URLSearchParams): Promise<Respo
   const now = Date.now();
   const since =
     rawRange === 'all' ? null : new Date(now - 2 * engagementRangeDays(rawRange) * DAY_MS).toISOString();
+  const until = new Date(now + FUTURE_SKEW_MS).toISOString();
 
   const { rows, truncated, error } = await selectAll<Row>(
     (from, to) => {
-      let q = ctx.sb.from('nav_events').select(NAV_EVENT_COLUMNS);
+      // Bounded above too: client-stamped junk from the future would otherwise
+      // sort first and fill the read cap (`FUTURE_SKEW_MS`).
+      let q = ctx.sb.from('nav_events').select(NAV_EVENT_COLUMNS).lte('created_at', until);
       if (since) q = q.gte('created_at', since);
       return q.order('created_at', { ascending: false }).order('id', { ascending: false }).range(from, to);
     },
@@ -310,6 +314,7 @@ async function trainee(ctx: AdminCtx, params: URLSearchParams): Promise<Response
           .select('id, meta, created_at')
           .eq('user_id', id)
           .eq('target', 'coach_hint_request')
+          .lte('created_at', new Date(Date.now() + FUTURE_SKEW_MS).toISOString())
           .order('created_at', byNewest)
           .order('id', byNewest)
           .range(from, to),
@@ -326,6 +331,7 @@ async function trainee(ctx: AdminCtx, params: URLSearchParams): Promise<Response
                   .select(NAV_EVENT_COLUMNS)
                   .eq('user_id', id)
                   .gte('created_at', since)
+                  .lte('created_at', new Date(now + FUTURE_SKEW_MS).toISOString())
                   .order('created_at', byNewest)
                   .order('id', byNewest)
                   .range(from, to),

@@ -24,15 +24,22 @@ export function tzOffsetMinutes(): number {
   return new Date().getTimezoneOffset();
 }
 
-/** Session summaries for twice the window (current + previous period). */
-export function useSessionSummaries(range: Range) {
+/**
+ * Session summaries for twice the window (current + previous period).
+ * `lite` skips transcripts and full score reports — for all-time lifetime
+ * figures (status, streaks, funnel) that never read them; `enabled: false`
+ * when the admin can't read sessions (the request would be refused).
+ */
+export function useSessionSummaries(range: Range, opts: { lite?: boolean; enabled?: boolean } = {}) {
+  const { lite = false, enabled = true } = opts;
   return useCachedQuery<SessionSummaryResponse>(
-    `sessions:summary:${range}`,
+    enabled ? `sessions:summary:${range}${lite ? ':lite' : ''}` : null,
     () =>
       apiFetch<SessionSummaryResponse>('admin-sessions', {
         view: 'summary',
         since: fetchSince(range),
         limit: 10000,
+        lite: lite ? 1 : undefined,
       }),
     { rows: [], truncated: false },
   );
@@ -90,7 +97,7 @@ export function useTraineeDetail(userId: string | null) {
 export function useAiCallsWindow(range: Range, enabled = true) {
   return useCachedQuery<AiCall[]>(
     enabled ? `aicalls:${range}` : null,
-    () => apiFetch<AiCall[]>('admin-ai-calls', { since: fetchSince(range), limit: 5000 }),
+    () => apiFetch<AiCall[]>('admin-ai-calls', { since: fetchSince(range), limit: 20000 }),
     [],
   );
 }
