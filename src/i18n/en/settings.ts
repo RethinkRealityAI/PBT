@@ -40,7 +40,7 @@ export const settings = {
   // ── Privacy & data (spec §8.3) ────────────────────────────
   'settings.privacy.label': 'Allow training data use',
   'settings.privacy.help':
-    'Lets us use your anonymised practice activity to improve the simulations and scoring. Your own sessions, ratings and reports are always kept either way.',
+    "Lets us use your anonymised practice activity to improve the simulations and scoring. Turning it off stops that recording. Your own history stays on this device (and in your account when you're signed in), and any rating or report you send still reaches the team.",
   'settings.privacy.on': 'On',
   'settings.privacy.off': 'Off',
   'settings.privacy.ariaLabel': 'Allow training data use',
