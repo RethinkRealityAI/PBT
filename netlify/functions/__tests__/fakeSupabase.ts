@@ -30,10 +30,13 @@ const CHAIN_OPS = [
   'eq',
   'neq',
   'gte',
+  'lt',
+  'lte',
   'is',
   'in',
   'order',
   'limit',
+  'range',
   'maybeSingle',
   'single',
   'insert',
@@ -47,9 +50,13 @@ export function makeFakeSupabase(initial: Record<string, TableHandler> = {}) {
   const calls: SbCall[] = [];
   const getUser = vi.fn();
   const rpc = vi.fn();
+  // Auth admin API — default: no users, no error.
+  type AuthResult = { data: unknown; error: unknown };
+  const listUsers = vi.fn(async (..._args: unknown[]): Promise<AuthResult> => ({ data: { users: [] }, error: null }));
+  const getUserById = vi.fn(async (..._args: unknown[]): Promise<AuthResult> => ({ data: { user: null }, error: null }));
 
   const client = {
-    auth: { getUser },
+    auth: { getUser, admin: { listUsers, getUserById } },
     rpc,
     from(table: string) {
       const call: SbCall = { table, ops: [] };
@@ -79,6 +86,8 @@ export function makeFakeSupabase(initial: Record<string, TableHandler> = {}) {
     calls,
     getUser,
     rpc,
+    listUsers,
+    getUserById,
     setHandler(table: string, handler: TableHandler) {
       handlers[table] = handler;
     },

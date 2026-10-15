@@ -95,11 +95,34 @@ describe('visibleItems by role', () => {
     ]);
   });
 
-  it('shows the analyst the Studio alongside their Monitor screens', () => {
-    const items = visibleItems(rolePermissions('analyst'));
+  it('shows the analyst the Studio alongside Analytics, landing on its Overview', () => {
+    const perms = rolePermissions('analyst');
+    const items = visibleItems(perms);
     expect(items.map((i) => i.key)).toContain('scenarios');
     expect(items.map((i) => i.key)).not.toContain('tuning');
-    expect(items[0].key).toBe('overview');
+    expect(items[0].key).toBe('analytics');
+    expect(defaultTab(items[0], perms)).toBe('overview');
+    // An analyst reads sessions, so per-trainee analytics is theirs too.
+    expect(visibleTabs(items[0], perms).map((t) => t.key)).toEqual([
+      'overview',
+      'trainees',
+      'sessions',
+      'skills',
+      'engagement',
+      'quality',
+      'analyzer',
+    ]);
+  });
+
+  it('gives Support the trainee and session tabs, but not skills, engagement or AI quality', () => {
+    const perms = rolePermissions('support');
+    const analytics = visibleItems(perms).find((i) => i.key === 'analytics')!;
+    expect(visibleTabs(analytics, perms).map((t) => t.key)).toEqual([
+      'overview',
+      'trainees',
+      'sessions',
+      'analyzer',
+    ]);
   });
 
   it('hides Knowledge and AI tuning without their permissions', () => {
@@ -110,6 +133,55 @@ describe('visibleItems by role', () => {
 
   it('gives an owner every destination', () => {
     expect(visibleItems([...ALL_PERMISSIONS]).length).toBe(ALL_NAV_ITEMS.length);
+  });
+});
+
+describe('Monitor is one Analytics destination', () => {
+  it('has a single Monitor destination with seven tabs, Overview first', () => {
+    const monitor = NAV_SECTIONS.find((s) => s.key === 'monitor')!;
+    expect(monitor.items.map((i) => i.key)).toEqual(['analytics']);
+    expect(findNavItem('analytics')!.tabs?.map((t) => [t.key, t.label, t.requires])).toEqual([
+      ['overview', 'Overview', 'overview.read'],
+      ['trainees', 'Trainees', 'sessions.read'],
+      ['sessions', 'Sessions', 'sessions.read'],
+      ['skills', 'Skills', 'insights.read'],
+      ['engagement', 'Engagement', 'analytics.read'],
+      ['quality', 'AI quality', 'quality.read'],
+      ['analyzer', 'Pet Analyzer', 'analyzer.read'],
+    ]);
+    expect(findNavItem('overview')).toBeUndefined();
+    expect(findNavItem('activity')).toBeUndefined();
+  });
+
+  it.each([
+    [{ screen: 'overview', tab: null }, { screen: 'analytics', tab: 'overview' }],
+    [{ screen: 'activity', tab: 'sessions' }, { screen: 'analytics', tab: 'sessions', id: null }],
+    [{ screen: 'activity', tab: 'analyzer' }, { screen: 'analytics', tab: 'analyzer', id: null }],
+    [{ screen: 'activity', tab: null }, { screen: 'analytics', tab: 'sessions', id: null }],
+    [{ screen: 'analytics', tab: 'insights' }, { screen: 'analytics', tab: 'skills' }],
+    [{ screen: 'analytics', tab: 'traffic' }, { screen: 'analytics', tab: 'engagement' }],
+  ])('rewrites the old Monitor link %o to %o', (from, to) => {
+    expect(legacyRoute(from)).toEqual(to);
+  });
+
+  it('keeps a record id when an old Activity link carried one', () => {
+    expect(legacyRoute({ screen: 'activity', tab: 'sessions', id: 'abc' })).toEqual({
+      screen: 'analytics',
+      tab: 'sessions',
+      id: 'abc',
+    });
+  });
+
+  it('only rewrites onto tabs that exist', () => {
+    for (const from of [
+      { screen: 'overview', tab: null },
+      { screen: 'activity', tab: 'analyzer' },
+      { screen: 'analytics', tab: 'insights' },
+      { screen: 'analytics', tab: 'traffic' },
+    ]) {
+      const to = legacyRoute(from);
+      expect(findNavItem(to.screen)!.tabs!.map((t) => t.key)).toContain(to.tab);
+    }
   });
 });
 
@@ -137,7 +209,8 @@ describe('legacyRoute', () => {
 
   it('returns every other route unchanged — the same object', () => {
     for (const route of [
-      { screen: 'overview', tab: null },
+      { screen: 'analytics', tab: 'overview' },
+      { screen: 'analytics', tab: 'trainees', id: 'u1' },
       { screen: 'scenarios', tab: 'studio' },
       { screen: 'knowledge', tab: null },
       { screen: 'people', tab: 'roles' },

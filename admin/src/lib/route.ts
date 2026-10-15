@@ -1,7 +1,9 @@
 /**
  * Hash routing for the admin portal.
  *
- * `#/analytics/traffic` — destination, then tab. Deliberately not a router
+ * `#/analytics/sessions` — destination, then tab, then (optionally) the one
+ * record the tab is open on: `#/analytics/trainees/<user id>` is a trainee's
+ * profile, `#/analytics/sessions/<session id>` a session. Deliberately not a router
  * library (the consumer app's state machine is intentional and this follows
  * suit), but a URL is worth having here: admins share links to a screen,
  * bookmark the one they live in, and expect the browser's back button to undo a
@@ -12,6 +14,12 @@ import { useCallback, useEffect, useState } from 'react';
 export interface AdminRoute {
   screen: string;
   tab: string | null;
+  /**
+   * The record a tab is open on (a trainee's user id, a session id). Optional
+   * so every existing `{ screen, tab }` literal stays a valid route; absent
+   * and `null` both mean "the tab itself".
+   */
+  id?: string | null;
 }
 
 const SEGMENT = /^[a-z0-9_-]+$/i;
@@ -19,13 +27,17 @@ const SEGMENT = /^[a-z0-9_-]+$/i;
 export function parseRoute(hash: string): AdminRoute | null {
   const raw = hash.replace(/^#\/?/, '').split('?')[0];
   if (!raw) return null;
-  const [screen, tab] = raw.split('/');
+  const [screen, tab, id] = raw.split('/');
   if (!screen || !SEGMENT.test(screen)) return null;
-  return { screen, tab: tab && SEGMENT.test(tab) ? tab : null };
+  const validTab = tab && SEGMENT.test(tab) ? tab : null;
+  // An id only means something under a tab — `#/analytics//x` is not a route.
+  const validId = validTab && id && SEGMENT.test(id) ? id : null;
+  return validId ? { screen, tab: validTab, id: validId } : { screen, tab: validTab };
 }
 
 export function formatRoute(route: AdminRoute): string {
-  return route.tab ? `#/${route.screen}/${route.tab}` : `#/${route.screen}`;
+  if (!route.tab) return `#/${route.screen}`;
+  return route.id ? `#/${route.screen}/${route.tab}/${route.id}` : `#/${route.screen}/${route.tab}`;
 }
 
 export function useHashRoute(): [AdminRoute | null, (route: AdminRoute, replace?: boolean) => void] {

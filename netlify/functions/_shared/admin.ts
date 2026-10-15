@@ -35,6 +35,33 @@ export function jsonResponse(data: unknown, init: ResponseInit = {}): Response {
   });
 }
 
+/**
+ * A buffered function response is capped at 6 MB; a STREAMED one may reach
+ * 20 MB. Lists that page past PostgREST's 1,000-row cap (sessions with their
+ * transcripts, a year of summaries) can cross the first limit, so above this
+ * size the body is sent as a stream instead of failing at the platform.
+ */
+const STREAM_OVER_BYTES = 4 * 1024 * 1024;
+const STREAM_CHUNK_BYTES = 256 * 1024;
+
+export function largeJsonResponse(data: unknown, init: ResponseInit = {}): Response {
+  const bytes = new TextEncoder().encode(JSON.stringify(data));
+  const headers = { ...JSON_HEADERS, ...(init.headers ?? {}) };
+  if (bytes.byteLength < STREAM_OVER_BYTES) return new Response(bytes, { ...init, headers });
+  let offset = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= bytes.byteLength) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(bytes.subarray(offset, offset + STREAM_CHUNK_BYTES));
+      offset += STREAM_CHUNK_BYTES;
+    },
+  });
+  return new Response(stream, { ...init, headers });
+}
+
 export function errorResponse(status: number, message: string): Response {
   return jsonResponse({ error: message }, { status });
 }
@@ -237,6 +264,12 @@ export async function requireUser(req: Request): Promise<AdminCtx | Response> {
   // is correct: nothing here should ever pass a permission check by accident.
   return { user: userData.user, sb, access: resolveAccess({ role: null }) };
 }
+
+/**
+ * A row id / user id shaped like a uuid (any version — test fixtures and
+ * Supabase both produce them). Validate a `?id=` before it reaches a filter.
+ */
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Helper to parse `?since=&limit=&completed=` from a Netlify Request. */
 export function readRange(req: Request): { since: string; limit: number } {
