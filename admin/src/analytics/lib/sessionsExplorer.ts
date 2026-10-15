@@ -110,6 +110,24 @@ export function sessionTitle(s: SessionSummary): string {
   );
 }
 
+/**
+ * The objection, when the title doesn't already say it. A Studio scenario is
+ * titled by its card ("Senior lab, cost-sensitive owner"), so its objection
+ * is worth a second line; a library or self-built scenario's title IS the
+ * objection, and repeating it is noise.
+ */
+export function objectionIfDifferent(s: SessionSummary): string | null {
+  if (!s.pushback_id) return null;
+  const label = pushbackLabel(s.pushback_id);
+  const title = sessionTitle(s).trim().toLowerCase();
+  const l = label.trim().toLowerCase();
+  if (!l || title === l || title.includes(l)) return null;
+  // The stored objection title can differ from the portal's label for the same id.
+  const stored = s.scenario_title?.trim().toLowerCase();
+  if (stored && s.scenario_source !== 'studio' && stored === title) return null;
+  return label;
+}
+
 /** "Dog · Labrador Retriever · Skeptical owner · Built-in". */
 export function scenarioContext(s: SessionSummary): string {
   return [

@@ -5,6 +5,7 @@ import {
   filterSessions,
   fmtLength,
   matchesQuery,
+  objectionIfDifferent,
   objectionOptions,
   outcomeCounts,
   outcomeWords,
@@ -55,6 +56,17 @@ describe('sessionsExplorer words', () => {
     expect(sessionTitle(session({ scenario_title: null, scenario_summary: null, pushback_id: 'weight-denial' }))).toBe(
       'Weight / obesity denial',
     );
+  });
+
+  it('names the objection only when the title does not already say it', () => {
+    const studio = session({ scenario_title: 'Senior lab, cost-sensitive owner', scenario_source: 'studio', pushback_id: 'cost' });
+    expect(objectionIfDifferent(studio)).toBe('Cost / price pushback');
+    const library = session({ scenario_title: 'Cost / price pushback', scenario_source: 'library', pushback_id: 'cost' });
+    expect(objectionIfDifferent(library)).toBeNull();
+    // The stored objection title wording can differ from the portal label — still the same thing.
+    const selfBuilt = session({ scenario_title: 'Price objection', scenario_source: 'self-built', pushback_id: 'cost' });
+    expect(objectionIfDifferent(selfBuilt)).toBeNull();
+    expect(objectionIfDifferent(session({ pushback_id: null }))).toBeNull();
   });
 
   it('builds the muted context line without empty parts', () => {

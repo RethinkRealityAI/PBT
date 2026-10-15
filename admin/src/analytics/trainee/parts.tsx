@@ -39,7 +39,11 @@ if (typeof document !== 'undefined' && !document.getElementById('pbt-trainee-css
     @container tq (max-width: 440px) { .pbt-tq-hide-xs { display: none !important; } }
     .pbt-roster-row { cursor: pointer; transition: background 0.14s ease; }
     .pbt-roster-row:hover { background: rgba(60,20,15,0.035); }
-    .pbt-roster-row:hover .pbt-roster-sticky { background: rgb(250,246,244); }
+    .pbt-rq { container: rq / inline-size; }
+    @container rq (max-width: 960px) {
+      .pbt-roster-sticky { position: sticky; left: 0; z-index: 1; background: rgb(252,250,249); box-shadow: 1px 0 0 ${COLOR.border}; }
+      .pbt-roster-row:hover .pbt-roster-sticky { background: rgb(249,245,243); }
+    }
     .pbt-name-btn { all: unset; cursor: pointer; font-weight: 750; color: ${COLOR.ink}; border-radius: 4px; }
     .pbt-name-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
     .pbt-name-btn:focus-visible { outline: 2px solid ${COLOR.brand}; outline-offset: 2px; }
@@ -188,6 +192,7 @@ export function SortHeader<K extends string>({
   align = 'left',
   title,
   style,
+  className,
 }: {
   label: string;
   sortKey: K;
@@ -197,10 +202,12 @@ export function SortHeader<K extends string>({
   align?: 'left' | 'right';
   title?: string;
   style?: CSSProperties;
+  className?: string;
 }) {
   const on = sortKey === active;
   return (
     <th
+      className={className}
       scope="col"
       aria-sort={on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
       style={{ ...thStyle, textAlign: align, ...style }}

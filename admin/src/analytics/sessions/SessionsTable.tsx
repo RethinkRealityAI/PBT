@@ -18,6 +18,7 @@ import { isScored } from '../lib/metrics';
 import {
   OWNER_ENDING_LABELS,
   fmtLength,
+  objectionIfDifferent,
   outcomeWords,
   scenarioContext,
   sessionTitle,
@@ -137,16 +138,16 @@ export function SessionsTable({
           Practice sessions. Select a scenario to open the session.
         </caption>
         <colgroup>
-          <col style={{ width: 186 }} />
+          <col style={{ width: 168 }} />
           <col />
-          <col style={{ width: 116 }} />
-          <col style={{ width: 122 }} />
-          <col style={{ width: 68 }} />
-          <col style={{ width: 82 }} />
-          <col style={{ width: 56 }} />
+          <col style={{ width: 110 }} />
+          <col style={{ width: 118 }} />
+          <col style={{ width: 66 }} />
+          <col style={{ width: 80 }} />
+          <col style={{ width: 54 }} />
           <col style={{ width: 112 }} />
-          <col style={{ width: 92 }} />
-          <col style={{ width: 82 }} />
+          <col style={{ width: 84 }} />
+          <col style={{ width: 80 }} />
         </colgroup>
         <thead>
           <tr>
@@ -166,6 +167,7 @@ export function SessionsTable({
           {rows.map((s) => {
             const p = personOf(s.user_id);
             const title = sessionTitle(s);
+            const objection = objectionIfDifferent(s);
             const at = new Date(s.created_at);
             const scored = isScored(s);
             return (
@@ -238,6 +240,7 @@ export function SessionsTable({
                       whiteSpace: 'nowrap',
                     }}
                   >
+                    {objection && <span style={{ color: COLOR.inkSoft, fontWeight: 650 }}>{objection} · </span>}
                     {scenarioContext(s)}
                   </div>
                 </td>

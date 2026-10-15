@@ -144,15 +144,19 @@ export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }:
                   unit={summary.atRisk === 1 ? 'person' : 'people'}
                   hint={
                     `Last practised 8–21 days ago — a nudge still works.` +
-                    (summary.atRiskPrev != null ? ` ${summary.atRiskPrev} at the start of this window.` : '')
+                    (summary.atRiskPrev != null ? ` ${summary.atRiskPrev} at the start of this window.` : '') +
+                    ' Select to see who.'
                   }
                   onClick={() => setSegment('at_risk')}
                 />
                 <StatTile
                   label="Improving"
                   value={summary.improving}
-                  unit={summary.slipping > 0 ? `· ${summary.slipping} slipping` : '· none slipping'}
-                  hint={`Last 5 scores vs the 5 before, ${MOMENTUM_THRESHOLD}+ points up (or down)`}
+                  unit={summary.improving === 1 ? 'person' : 'people'}
+                  hint={
+                    `${summary.slipping === 0 ? 'Nobody' : summary.slipping} slipping. ` +
+                    `Their last 5 scores vs the 5 before, ${MOMENTUM_THRESHOLD}+ points up or down.`
+                  }
                 />
                 <StatTile
                   label="Sessions per active trainee"
@@ -263,7 +267,7 @@ function RosterTable({
 }) {
   const h = { active: sort.key, dir: sort.dir, onSort };
   return (
-    <div style={{ overflowX: 'auto', borderTop: `1px solid ${COLOR.border}` }}>
+    <div className="pbt-rq" style={{ overflowX: 'auto', borderTop: `1px solid ${COLOR.border}` }}>
       <table style={{ width: '100%', minWidth: 960, borderCollapse: 'separate', borderSpacing: 0 }}>
         <caption style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
           Trainees — select a name to open their profile
@@ -274,7 +278,8 @@ function RosterTable({
               label="Trainee"
               sortKey="name"
               {...h}
-              style={{ paddingLeft: 18, position: 'sticky', left: 0, zIndex: 1, background: 'rgb(250,247,245)' }}
+              style={{ paddingLeft: 18 }}
+              className="pbt-roster-sticky"
             />
             <SortHeader label="Status" sortKey="status" {...h} title="Sorted by who needs a nudge first" />
             <SortHeader label={`Sessions · ${range === 'all' ? 'all time' : range}`} sortKey="sessions" {...h} title="Sessions in the selected range; the line is the last 8 weeks" />
@@ -294,16 +299,7 @@ function RosterTable({
             >
               <td
                 className="pbt-roster-sticky"
-                style={{
-                  ...tdStyle,
-                  paddingLeft: 18,
-                  position: 'sticky',
-                  left: 0,
-                  background: 'rgb(252,250,249)',
-                  zIndex: 1,
-                  minWidth: 240,
-                  maxWidth: 300,
-                }}
+                style={{ ...tdStyle, paddingLeft: 18, minWidth: 240, maxWidth: 300 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
                   <Avatar name={r.name} driver={asDriver(r.driver)} size={34} />
@@ -362,7 +358,7 @@ function RosterTable({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <ScoreBadge score={r.avgScore == null ? null : Math.round(r.avgScore)} />
                   <DeltaChip
-                    delta={r.momentum == null ? null : { kind: 'points', value: r.momentum }}
+                    delta={r.momentum == null || r.avgScore == null ? null : { kind: 'points', value: r.momentum }}
                     size="xs"
                     compareLabel="— last 5 scores vs the 5 before"
                   />

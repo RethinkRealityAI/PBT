@@ -469,7 +469,7 @@ function OverviewTab({
 
   const hints =
     facts?.hints_used == null
-      ? { value: 'Not available', sub: 'Counted on the Sessions list' }
+      ? { value: '—', sub: 'Not available in this view' }
       : facts.hints_used === 0
         ? { value: 'None', sub: voice ? 'Hints are for typed sessions' : 'Practised without help' }
         : { value: `${facts.hints_used} ${facts.hints_used === 1 ? 'hint' : 'hints'}`, sub: 'Asked the coach' };
@@ -586,12 +586,11 @@ function FactGroup({ title, children }: { title: string; children: ReactNode }) 
         style={{
           marginTop: 8,
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
-          gap: 1,
+          gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
           borderRadius: 14,
           overflow: 'hidden',
-          background: 'rgba(60,20,15,0.07)',
-          border: '0.5px solid rgba(60,20,15,0.07)',
+          background: 'rgba(255,255,255,0.88)',
+          border: '0.5px solid rgba(60,20,15,0.09)',
         }}
       >
         {children}
@@ -602,7 +601,15 @@ function FactGroup({ title, children }: { title: string; children: ReactNode }) 
 
 function FactCell({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
-    <div style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.88)', minWidth: 0 }}>
+    <div
+      style={{
+        padding: '12px 14px',
+        minWidth: 0,
+        // Hairlines to the right and below every cell; the container clips the
+        // outer ones, so a part-filled last row reads as white space, not a gap.
+        boxShadow: '1px 0 0 rgba(60,20,15,0.07), 0 1px 0 rgba(60,20,15,0.07)',
+      }}
+    >
       <div style={{ fontSize: 11, fontWeight: 650, color: COLOR.inkMute }}>{label}</div>
       <div style={{ marginTop: 4, fontSize: 15, fontWeight: 750, color: COLOR.ink, letterSpacing: '-0.01em' }}>{value}</div>
       {sub && <div style={{ marginTop: 3, fontSize: 11, color: COLOR.inkMute, lineHeight: 1.4 }}>{sub}</div>}

@@ -21,13 +21,15 @@ export function isMissingSession(error: string | null): boolean {
 export function SessionDetail({
   id,
   summary,
-  person,
+  personOf,
   onClose,
   onViewTrainee,
 }: {
   id: string;
+  /** The session's row from the list, when it is in the window (the only source of hint counts). */
   summary: SessionSummary | null;
-  person: TraineeDirectoryEntry | null;
+  /** Directory lookup — the session may be outside the window, so the summary can't name its trainee. */
+  personOf: (userId: string) => TraineeDirectoryEntry | null;
   onClose: () => void;
   onViewTrainee: (userId: string) => void;
 }) {
@@ -48,6 +50,8 @@ export function SessionDetail({
   if (missing) return null;
 
   const session = detail.data && detail.data.id === id ? detail.data : null;
+  const userId = session?.user_id ?? summary?.user_id ?? null;
+  const person = userId ? personOf(userId) : null;
   return (
     <SessionModal
       session={session}

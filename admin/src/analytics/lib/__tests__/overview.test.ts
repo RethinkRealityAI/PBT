@@ -21,6 +21,7 @@ describe('trendExtras', () => {
     // Only finished sessions count towards "won over": 1 of 2.
     expect(t.resolvedRate[last]).toBe(50);
     expect(t.finishRate[last]).toBeCloseTo(66.67, 1);
+    expect(t.scored[last]).toBe(2);
     expect(t.resolvedRate[0]).toBeNull();
     expect(t.finishRate[0]).toBeNull();
   });

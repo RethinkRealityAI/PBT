@@ -7,7 +7,7 @@
  */
 import type { SessionSummary, TraineeDirectoryEntry } from '../../../../src/shared/analytics/contract';
 import { bucketIndex, buckets, pct, type Range } from './period';
-import { sessionTime } from './metrics';
+import { isScored, sessionTime } from './metrics';
 import type { TraineeRow } from './trainees';
 
 /**
@@ -20,15 +20,22 @@ export function trendExtras(
   rows: readonly SessionSummary[],
   range: Range,
   now = Date.now(),
-): { practiceHours: number[]; resolvedRate: Array<number | null>; finishRate: Array<number | null> } {
+): {
+  practiceHours: number[];
+  resolvedRate: Array<number | null>;
+  finishRate: Array<number | null>;
+  /** Scored sessions per bucket (what each average-score point rests on). */
+  scored: number[];
+} {
   const { list } = buckets(range, now);
-  const acc = list.map(() => ({ seconds: 0, sessions: 0, finished: 0, mood: 0, green: 0 }));
+  const acc = list.map(() => ({ seconds: 0, sessions: 0, finished: 0, mood: 0, green: 0, scored: 0 }));
   for (const s of rows) {
     const i = bucketIndex(list, sessionTime(s));
     if (i < 0) continue;
     const a = acc[i];
     a.sessions++;
     if (s.duration_seconds != null && s.duration_seconds > 0) a.seconds += s.duration_seconds;
+    if (isScored(s)) a.scored++;
     if (s.completed) {
       a.finished++;
       if (s.owner_mood_end != null) {
@@ -41,6 +48,7 @@ export function trendExtras(
     practiceHours: acc.map((a) => a.seconds / 3600),
     resolvedRate: acc.map((a) => pct(a.green, a.mood)),
     finishRate: acc.map((a) => pct(a.finished, a.sessions)),
+    scored: acc.map((a) => a.scored),
   };
 }
 
@@ -105,7 +113,11 @@ export function practiceFunnel(
 // ─── Leaders ───────────────────────────────────────────────────────────
 
 export interface Leaders {
-  /** Biggest positive score momentum (needs 4+ scored sessions), who practised in the window. */
+  /**
+   * Biggest positive score momentum, among people who practised in the window.
+   * Momentum is the shared `scoreMomentum` (latest 5 scored vs the 5 before),
+   * so it needs 7+ scored sessions and matches the trainee profile.
+   */
   improved: TraineeRow[];
   /** Most sessions in the window. */
   active: TraineeRow[];
