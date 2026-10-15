@@ -63,7 +63,12 @@ describe('sortRoster', () => {
   });
 
   it('sorts status by urgency', () => {
-    expect(sortRoster(rows, 'status', 'asc').map((r) => r.status)).toEqual(['at_risk', 'dormant', 'not_started', 'active']);
+    expect(sortRoster(rows, 'status', 'asc').map((r) => r.status)).toEqual([
+      'at_risk',
+      'dormant',
+      'not_started',
+      'active',
+    ]);
   });
 });
 

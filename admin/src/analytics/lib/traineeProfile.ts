@@ -17,7 +17,20 @@ import { isScored, sessionTime } from './metrics';
 
 export const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 export const WEEKDAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
-export const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+export const MONTH_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
 
 /** "3 Sep" — with the year when it isn't this year ("3 Sep 2025"). */
 export function shortDate(t: number, now = Date.now()): string {
@@ -123,7 +136,10 @@ export function scoreProgression(
   opts: { from?: number; n?: number } = {},
 ): { points: ProgressPoint[]; leftEarly: number; failed: number } {
   const from = opts.from ?? 0;
-  const scored = sessions.filter(isScored).slice().sort((a, b) => sessionTime(a) - sessionTime(b));
+  const scored = sessions
+    .filter(isScored)
+    .slice()
+    .sort((a, b) => sessionTime(a) - sessionTime(b));
   const rolling = rollingAverage(
     scored.map((s) => s.score_overall as number),
     opts.n ?? 5,
@@ -219,7 +235,7 @@ export function practiceCalendar(
       d.setHours(12, 0, 0, 0);
       const key = dayKey(d.getTime());
       const future = key > todayKey;
-      const sessions = future ? 0 : counts.get(key) ?? 0;
+      const sessions = future ? 0 : (counts.get(key) ?? 0);
       const appActive = !future && app.has(key);
       if (!future) {
         max = Math.max(max, sessions);
@@ -315,7 +331,14 @@ export function peakPracticeSentence(p: PeakPractice | null): string | null {
 // ─── Objections ────────────────────────────────────────────────────────
 
 /** The built-in objections every trainee can practise (PUSHBACK_CATEGORIES minus "custom"). */
-export const BUILT_IN_OBJECTIONS = ['cost', 'breeder-advice', 'raw-food', 'rx-diet', 'brand-switch', 'weight-denial'] as const;
+export const BUILT_IN_OBJECTIONS = [
+  'cost',
+  'breeder-advice',
+  'raw-food',
+  'rx-diet',
+  'brand-switch',
+  'weight-denial',
+] as const;
 
 export interface ObjectionRow {
   key: string;
@@ -425,7 +448,9 @@ export function practiceStyle(sessions: readonly SessionSummary[]): PracticeStyl
     spoken: sessions.length - text.length,
     medianSeconds: median(lengths),
     wordsPerReply: messages > 0 ? words / messages : null,
-    replySeconds: median(text.map((s) => s.reply_seconds_median).filter((v): v is number => v != null && Number.isFinite(v))),
+    replySeconds: median(
+      text.map((s) => s.reply_seconds_median).filter((v): v is number => v != null && Number.isFinite(v)),
+    ),
     hintsPerTextSession: withHints.length
       ? withHints.reduce((a, s) => a + (s.hints_used as number), 0) / withHints.length
       : null,

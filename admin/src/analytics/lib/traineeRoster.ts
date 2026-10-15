@@ -35,7 +35,9 @@ export function inSegment(row: TraineeRow, segment: RosterSegment): boolean {
 export function matchesQuery(row: TraineeRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  const hay = [row.name, row.email ?? '', row.admin_role ?? '', roleLabel(row.admin_role) ?? ''].join(' ').toLowerCase();
+  const hay = [row.name, row.email ?? '', row.admin_role ?? '', roleLabel(row.admin_role) ?? '']
+    .join(' ')
+    .toLowerCase();
   return q.split(/\s+/).every((part) => hay.includes(part));
 }
 
@@ -134,7 +136,9 @@ export function rosterSummary(
       if (t >= previous.end) continue;
       if (t > (lastBefore.get(s.user_id) ?? -Infinity)) lastBefore.set(s.user_id, t);
     }
-    atRiskPrev = rows.filter((r) => traineeStatus(lastBefore.get(r.user_id) ?? null, previous.end) === 'at_risk').length;
+    atRiskPrev = rows.filter(
+      (r) => traineeStatus(lastBefore.get(r.user_id) ?? null, previous.end) === 'at_risk',
+    ).length;
   }
 
   return {

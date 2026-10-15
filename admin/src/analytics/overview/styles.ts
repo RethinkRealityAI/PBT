@@ -31,6 +31,15 @@ const CSS = `
     .pbt-ov-inbox-row .pbt-ov-go { grid-column: 2; }
   }
   .pbt-sk-table th, .pbt-sk-table td { white-space: nowrap; }
+  .pbt-sk-short { display: none; }
+  .pbt-sk-labelcol { width: 25%; }
+  .pbt-sk-head { overflow: hidden; text-overflow: ellipsis; }
+  @container (max-width: 700px) {
+    .pbt-sk-full { display: none; }
+    .pbt-sk-short { display: inline; }
+    .pbt-sk-labelcol { width: 23%; }
+  }
+  abbr.pbt-sk-short { text-decoration: none; }
 `;
 
 export function ensureOverviewStyles(): void {

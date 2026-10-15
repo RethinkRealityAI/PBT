@@ -34,15 +34,7 @@ import {
 } from '../../lib/labels';
 import { useSessionSummaries, useTraineeDetail } from '../data';
 import { BarList, CHART, GhostButton, Legend, Panel, ShareBar, StatTile } from '../ui';
-import {
-  compareWords,
-  pctDelta,
-  pointsDelta,
-  rangeWords,
-  splitByPeriod,
-  windows,
-  type Range,
-} from '../lib/period';
+import { compareWords, pctDelta, pointsDelta, rangeWords, splitByPeriod, windows, type Range } from '../lib/period';
 import {
   SKILL_HINTS,
   SKILL_KEYS,
@@ -129,7 +121,11 @@ export function TraineeProfile({ userId, range, onRange, onOpen, onNav }: Props)
   const exportSessions = () => {
     if (!d) return;
     const csv = sessionsCsv(d.sessions);
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'trainee';
+    const slug =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || 'trainee';
     downloadCsv(`${slug}-sessions-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(csv.header, csv.rows));
   };
 
@@ -156,7 +152,10 @@ export function TraineeProfile({ userId, range, onRange, onOpen, onNav }: Props)
               </GhostButton>
             )}
             {d && can('team.read') && (
-              <GhostButton onClick={() => onNav('people', 'users')} title="Roles, access and account settings live in People">
+              <GhostButton
+                onClick={() => onNav('people', 'users')}
+                title="Roles, access and account settings live in People"
+              >
                 Manage account
               </GhostButton>
             )}
@@ -245,8 +244,9 @@ function ProfileBody({
           }}
         >
           <span>
-            <strong>No sessions in the {words}.</strong> Their last was {relativeDay(m.lastSessionAt, now).toLowerCase()}, on{' '}
-            {dayLabel(m.lastSessionAt, now)} — the score chart and skill profile below show all time instead.
+            <strong>No sessions in the {words}.</strong> Their last was{' '}
+            {relativeDay(m.lastSessionAt, now).toLowerCase()}, on {dayLabel(m.lastSessionAt, now)} — the score chart and
+            skill profile below show all time instead.
           </span>
           <GhostButton onClick={() => onRange('all')}>Show all time</GhostButton>
         </div>
@@ -294,7 +294,9 @@ function ProfileBody({
             label="Finish rate"
             value={m.cur.finishRate == null ? '—' : Math.round(m.cur.finishRate)}
             unit={m.cur.finishRate == null ? undefined : '%'}
-            delta={cmp && m.cur.finishRate != null ? pointsDelta(m.cur.finishRate, m.prev?.finishRate ?? null) : undefined}
+            delta={
+              cmp && m.cur.finishRate != null ? pointsDelta(m.cur.finishRate, m.prev?.finishRate ?? null) : undefined
+            }
             compareLabel={compare}
             hint="Sessions finished rather than left early"
           />
@@ -314,9 +316,7 @@ function ProfileBody({
                     : `Every scored session in the ${words}`
               }
               actions={
-                m.progression.points.length > 0 ? (
-                  <ViewToggle value={chartView} onChange={setChartView} />
-                ) : undefined
+                m.progression.points.length > 0 ? <ViewToggle value={chartView} onChange={setChartView} /> : undefined
               }
               footnote={progressionFootnote(m, words)}
             >
@@ -373,7 +373,9 @@ function ProfileBody({
                 subtitle={`Joined ${relativeDay(new Date(detail.profile.created_at).getTime(), now).toLowerCase()}. Scores, skills and their practice habit appear here after the first session.`}
               />
             </Glass>
-            {detail.activity && detail.activity.active_days.length > 0 && <CalendarPanel model={m} now={now} showAppDays />}
+            {detail.activity && detail.activity.active_days.length > 0 && (
+              <CalendarPanel model={m} now={now} showAppDays />
+            )}
           </div>
           {hasOptionalSections(detail) && (
             <div className="pbt-tp-stack">
@@ -536,8 +538,21 @@ function IdentityCard({ detail, model, now }: { detail: TraineeDetail; model: Mo
             {initialsOf(name)}
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 21, fontWeight: 800, color: COLOR.ink, letterSpacing: '-0.025em', lineHeight: 1.15 }}>{name}</div>
-            <div style={{ fontSize: 13, color: COLOR.inkMute, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div
+              style={{ fontSize: 21, fontWeight: 800, color: COLOR.ink, letterSpacing: '-0.025em', lineHeight: 1.15 }}
+            >
+              {name}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: COLOR.inkMute,
+                marginTop: 3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {p.email ?? 'Email hidden for your role'}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
@@ -565,7 +580,9 @@ function IdentityCard({ detail, model, now }: { detail: TraineeDetail; model: Mo
           </MiniFact>
           <MiniFact
             label="Last active"
-            sub={model.lastActiveAt ? `${dayLabel(model.lastActiveAt, now)}, ${clockTime(model.lastActiveAt)}` : undefined}
+            sub={
+              model.lastActiveAt ? `${dayLabel(model.lastActiveAt, now)}, ${clockTime(model.lastActiveAt)}` : undefined
+            }
           >
             {relativeDay(model.lastActiveAt, now)}
           </MiniFact>
@@ -588,7 +605,9 @@ function MiniFact({ label, sub, children }: { label: string; sub?: ReactNode; ch
   return (
     <div style={{ minWidth: 0 }}>
       <Eyebrow>{label}</Eyebrow>
-      <div style={{ fontSize: 14, fontWeight: 700, color: COLOR.ink, marginTop: 6, letterSpacing: '-0.01em' }}>{children}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: COLOR.ink, marginTop: 6, letterSpacing: '-0.01em' }}>
+        {children}
+      </div>
       {sub && <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 2 }}>{sub}</div>}
     </div>
   );
@@ -681,7 +700,13 @@ function SkillProfilePanel({ model: m, words }: { model: Model; words: string })
       display: Math.round(v),
       benchmark: team,
       sub:
-        gap == null ? undefined : gap === 0 ? 'level with team' : gap > 0 ? `+${gap} vs team` : `−${Math.abs(gap)} vs team`,
+        gap == null
+          ? undefined
+          : gap === 0
+            ? 'level with team'
+            : gap > 0
+              ? `+${gap} vs team`
+              : `−${Math.abs(gap)} vs team`,
     };
   });
   return (
@@ -720,7 +745,8 @@ function SkillProfilePanel({ model: m, words }: { model: Model; words: string })
                 background: 'rgba(60,20,15,0.035)',
               }}
             >
-              <strong style={{ color: COLOR.ink }}>Weakest: {SKILL_LABELS[m.weakest]}</strong> — {SKILL_HINTS[m.weakest]}.
+              <strong style={{ color: COLOR.ink }}>Weakest: {SKILL_LABELS[m.weakest]}</strong> —{' '}
+              {SKILL_HINTS[m.weakest]}.
             </div>
           )}
         </div>
@@ -739,7 +765,8 @@ function ObjectionsPanel({ model: m, now }: { model: Model; now: number }) {
       footnote={
         m.untried.length > 0 ? (
           <>
-            <strong style={{ color: COLOR.inkSoft }}>Not tried yet:</strong> {m.untried.map((id) => pushbackLabel(id)).join(' · ')}
+            <strong style={{ color: COLOR.inkSoft }}>Not tried yet:</strong>{' '}
+            {m.untried.map((id) => pushbackLabel(id)).join(' · ')}
           </>
         ) : (
           'They’ve practised every built-in objection.'
@@ -756,8 +783,12 @@ function ObjectionsPanel({ model: m, now }: { model: Model; now: number }) {
                 <th style={{ ...thStyle, textAlign: 'left', paddingLeft: 4 }}>Objection</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>Sessions</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>Avg</th>
-                <th className="pbt-tq-hide-xs" style={{ ...thStyle, textAlign: 'right' }}>Best</th>
-                <th className="pbt-tq-hide" style={{ ...thStyle, textAlign: 'right' }}>Finished</th>
+                <th className="pbt-tq-hide-xs" style={{ ...thStyle, textAlign: 'right' }}>
+                  Best
+                </th>
+                <th className="pbt-tq-hide" style={{ ...thStyle, textAlign: 'right' }}>
+                  Finished
+                </th>
                 <th className="pbt-tq-hide" style={{ ...thStyle, textAlign: 'right', paddingRight: 4 }}>
                   Last practised
                 </th>
@@ -766,15 +797,23 @@ function ObjectionsPanel({ model: m, now }: { model: Model; now: number }) {
             <tbody>
               {m.objections.map((o) => (
                 <tr key={o.key}>
-                  <td style={{ ...tdStyle, paddingLeft: 4, fontWeight: 650, color: COLOR.ink }}>{pushbackLabel(o.key)}</td>
+                  <td style={{ ...tdStyle, paddingLeft: 4, fontWeight: 650, color: COLOR.ink }}>
+                    {pushbackLabel(o.key)}
+                  </td>
                   <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{o.sessions}</td>
                   <td style={{ ...tdStyle, textAlign: 'right' }}>
                     <ScoreBadge score={o.avgScore == null ? null : Math.round(o.avgScore)} />
                   </td>
-                  <td className="pbt-tq-hide-xs" style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  <td
+                    className="pbt-tq-hide-xs"
+                    style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                  >
                     {o.best ?? '—'}
                   </td>
-                  <td className="pbt-tq-hide" style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  <td
+                    className="pbt-tq-hide"
+                    style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                  >
                     {o.finishRate == null ? '—' : `${Math.round(o.finishRate)}%`}
                   </td>
                   <td
@@ -806,7 +845,10 @@ function DifficultyPanel({ model: m }: { model: Model }) {
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {m.difficulty.levels.map((l) => (
-          <div key={l.level} style={{ display: 'grid', gridTemplateColumns: '128px minmax(0,1fr) 44px', alignItems: 'center', gap: 12 }}>
+          <div
+            key={l.level}
+            style={{ display: 'grid', gridTemplateColumns: '128px minmax(0,1fr) 44px', alignItems: 'center', gap: 12 }}
+          >
             <AdminDifficultyMeter level={l.level} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <div style={{ flex: 1, height: 6, borderRadius: 3, background: CHART.track, minWidth: 30 }}>
@@ -820,7 +862,15 @@ function DifficultyPanel({ model: m }: { model: Model }) {
                   }}
                 />
               </div>
-              <span style={{ fontSize: 12, color: COLOR.inkMute, fontVariantNumeric: 'tabular-nums', minWidth: 62, textAlign: 'right' }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  color: COLOR.inkMute,
+                  fontVariantNumeric: 'tabular-nums',
+                  minWidth: 62,
+                  textAlign: 'right',
+                }}
+              >
                 {l.sessions} session{l.sessions === 1 ? '' : 's'}
               </span>
             </div>
@@ -852,10 +902,19 @@ function CalendarPanel({ model: m, now, showAppDays }: { model: Model; now: numb
           borderTop: `1px solid ${COLOR.borderSoft}`,
         }}
       >
-        <SmallStat label="Sessions" value={m.calendar.sessions} />
-        <SmallStat label="Practice days" value={m.calendar.practiceDays} />
-        <SmallStat label="Best streak" value={`${m.streak.best} day${m.streak.best === 1 ? '' : 's'}`} />
-        {showAppDays && <SmallStat label="App-only days" value={m.calendar.appOnlyDays} />}
+        {m.sessions.length > 0 && (
+          <>
+            <SmallStat label="Sessions" value={m.calendar.sessions} />
+            <SmallStat label="Practice days" value={m.calendar.practiceDays} />
+            <SmallStat label="Best streak" value={`${m.streak.best} day${m.streak.best === 1 ? '' : 's'}`} />
+          </>
+        )}
+        {showAppDays && (
+          <SmallStat
+            label={m.sessions.length > 0 ? 'App-only days' : 'Days they opened the app'}
+            value={m.calendar.appOnlyDays}
+          />
+        )}
       </div>
     </Panel>
   );
@@ -865,7 +924,9 @@ function SmallStat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <Eyebrow>{label}</Eyebrow>
-      <div style={{ fontSize: 18, fontWeight: 750, color: COLOR.ink, marginTop: 4, letterSpacing: '-0.02em' }}>{value}</div>
+      <div style={{ fontSize: 18, fontWeight: 750, color: COLOR.ink, marginTop: 4, letterSpacing: '-0.02em' }}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -906,7 +967,9 @@ function PracticeStylePanel({ model: m }: { model: Model }) {
           {moodTotal === 0 ? (
             <Muted>No finished sessions recorded the owner’s mood.</Muted>
           ) : (
-            <ShareBar parts={MOOD_PARTS.map((p) => ({ key: p.key, label: p.label, value: s.moods[p.key], color: p.color }))} />
+            <ShareBar
+              parts={MOOD_PARTS.map((p) => ({ key: p.key, label: p.label, value: s.moods[p.key], color: p.color }))}
+            />
           )}
         </div>
       </div>
@@ -918,7 +981,9 @@ function SmallFact({ label, value, sub }: { label: string; value: ReactNode; sub
   return (
     <div style={{ minWidth: 0 }}>
       <Eyebrow>{label}</Eyebrow>
-      <div style={{ fontSize: 18, fontWeight: 750, color: COLOR.ink, marginTop: 4, letterSpacing: '-0.02em' }}>{value}</div>
+      <div style={{ fontSize: 18, fontWeight: 750, color: COLOR.ink, marginTop: 4, letterSpacing: '-0.02em' }}>
+        {value}
+      </div>
       {sub && <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 1 }}>{sub}</div>}
     </div>
   );
@@ -998,7 +1063,9 @@ function SessionRow({ s, now, onOpen }: { s: SessionSummary; now: number; onOpen
       aria-label={`${dayLabel(t, now)}: ${title}`}
     >
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: COLOR.inkSoft, whiteSpace: 'nowrap' }}>{dayLabel(t, now)}</span>
+        <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: COLOR.inkSoft, whiteSpace: 'nowrap' }}>
+          {dayLabel(t, now)}
+        </span>
         <span style={{ display: 'block', fontSize: 11, color: COLOR.inkMute, marginTop: 1 }}>{clockTime(t)}</span>
       </span>
       <span style={{ minWidth: 0 }}>
@@ -1015,7 +1082,17 @@ function SessionRow({ s, now, onOpen }: { s: SessionSummary; now: number; onOpen
         >
           {title}
         </span>
-        <span style={{ display: 'block', fontSize: 11.5, color: COLOR.inkMute, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span
+          style={{
+            display: 'block',
+            fontSize: 11.5,
+            color: COLOR.inkMute,
+            marginTop: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {sub}
         </span>
       </span>
@@ -1089,7 +1166,10 @@ function FeedbackPanel({ rows, now }: { rows: NonNullable<TraineeDetail['feedbac
     .slice(0, 3);
   const fmt = (v: number | null) => (v == null ? '—' : v.toFixed(1));
   return (
-    <Panel title="Feedback they gave" subtitle={`${rows.length} session rating${rows.length === 1 ? '' : 's'} · out of 5`}>
+    <Panel
+      title="Feedback they gave"
+      subtitle={`${rows.length} session rating${rows.length === 1 ? '' : 's'} · out of 5`}
+    >
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
         <SmallFact label="Realism" value={fmt(avgOf(rows.map((r) => r.realism)))} />
         <SmallFact label="AI quality" value={fmt(avgOf(rows.map((r) => r.ai_quality)))} />
@@ -1098,8 +1178,13 @@ function FeedbackPanel({ rows, now }: { rows: NonNullable<TraineeDetail['feedbac
       {comments.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
           {comments.map((c) => (
-            <figure key={c.id} style={{ margin: 0, padding: '10px 12px', borderRadius: 12, background: 'rgba(60,20,15,0.035)' }}>
-              <blockquote style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: COLOR.inkSoft }}>“{c.comment}”</blockquote>
+            <figure
+              key={c.id}
+              style={{ margin: 0, padding: '10px 12px', borderRadius: 12, background: 'rgba(60,20,15,0.035)' }}
+            >
+              <blockquote style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: COLOR.inkSoft }}>
+                “{c.comment}”
+              </blockquote>
               <figcaption style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 4 }}>
                 {relativeDay(new Date(c.created_at).getTime(), now)}
               </figcaption>
@@ -1118,11 +1203,24 @@ function ScenariosPanel({ rows, now }: { rows: NonNullable<TraineeDetail['scenar
         {rows.slice(0, 6).map((r) => (
           <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 650, color: COLOR.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 650,
+                  color: COLOR.ink,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {r.title}
               </div>
               <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 1 }}>
-                {[pushbackLabel(r.pushback_id, [], ''), r.species ? humanize(r.species) : null, shortDate(new Date(r.created_at).getTime(), now)]
+                {[
+                  pushbackLabel(r.pushback_id, [], ''),
+                  r.species ? humanize(r.species) : null,
+                  shortDate(new Date(r.created_at).getTime(), now),
+                ]
                   .filter(Boolean)
                   .join(' · ')}
               </div>
@@ -1152,9 +1250,20 @@ function PetToolsPanel({ detail, now }: { detail: TraineeDetail; now: number }) 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
           {saved.slice(0, 4).map((a) => (
             <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5 }}>
-              <span style={{ color: COLOR.inkSoft, fontWeight: 650, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span
+                style={{
+                  color: COLOR.inkSoft,
+                  fontWeight: 650,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {a.breed ?? 'Unknown breed'}
-                {a.bcs != null && <span style={{ color: COLOR.inkMute, fontWeight: 500 }}> · body condition {a.bcs}/9</span>}
+                {a.bcs != null && (
+                  <span style={{ color: COLOR.inkMute, fontWeight: 500 }}> · body condition {a.bcs}/9</span>
+                )}
               </span>
               <Muted>{shortDate(new Date(a.created_at).getTime(), now)}</Muted>
             </div>
@@ -1197,10 +1306,26 @@ function ActivityPanel({ activity, now }: { activity: NonNullable<TraineeDetail[
               <Eyebrow style={{ marginBottom: 10 }}>Latest activity</Eyebrow>
               <ol style={{ listStyle: 'none', margin: 0, padding: 0, position: 'relative' }}>
                 {timeline.map((e, i) => (
-                  <li key={i} style={{ display: 'grid', gridTemplateColumns: '14px minmax(0,1fr) auto', gap: 10, alignItems: 'baseline', padding: '5px 0' }}>
+                  <li
+                    key={i}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '14px minmax(0,1fr) auto',
+                      gap: 10,
+                      alignItems: 'baseline',
+                      padding: '5px 0',
+                    }}
+                  >
                     <span
                       aria-hidden="true"
-                      style={{ width: 7, height: 7, borderRadius: '50%', background: i === 0 ? CHART.primary : CHART.muted, alignSelf: 'center', marginLeft: 3 }}
+                      style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: '50%',
+                        background: i === 0 ? CHART.primary : CHART.muted,
+                        alignSelf: 'center',
+                        marginLeft: 3,
+                      }}
                     />
                     <span style={{ fontSize: 12.5, color: COLOR.inkSoft, minWidth: 0 }}>
                       {e.text}
@@ -1230,9 +1355,20 @@ function ReportsPanel({ rows, now }: { rows: NonNullable<TraineeDetail['reports'
         {rows.slice(0, 4).map((r) => (
           <div key={r.id} style={{ fontSize: 12.5, lineHeight: 1.5, color: COLOR.inkSoft }}>
             <div style={{ fontWeight: 650, color: COLOR.ink }}>
-              {humanize(r.kind)} <Muted>· {humanize(r.status)} · {shortDate(new Date(r.created_at).getTime(), now)}</Muted>
+              {humanize(r.kind)}{' '}
+              <Muted>
+                · {humanize(r.status)} · {shortDate(new Date(r.created_at).getTime(), now)}
+              </Muted>
             </div>
-            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+            <div
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+              }}
+            >
               {r.message}
             </div>
           </div>
@@ -1254,7 +1390,10 @@ function AiUsagePanel({ usage }: { usage: NonNullable<TraineeDetail['ai_usage']>
       sub: `${r.calls.toLocaleString('en-US')} call${r.calls === 1 ? '' : 's'}`,
     }));
   return (
-    <Panel title="AI usage" subtitle={`${usage.calls.toLocaleString('en-US')} AI calls · ${fmtMoney(usage.cost_usd)} all time`}>
+    <Panel
+      title="AI usage"
+      subtitle={`${usage.calls.toLocaleString('en-US')} AI calls · ${fmtMoney(usage.cost_usd)} all time`}
+    >
       <BarList rows={rows} color={CHART.muted} barHeight={7} />
     </Panel>
   );
@@ -1264,7 +1403,11 @@ function AiUsagePanel({ usage }: { usage: NonNullable<TraineeDetail['ai_usage']>
 
 function ViewToggle({ value, onChange }: { value: 'chart' | 'table'; onChange: (v: 'chart' | 'table') => void }) {
   return (
-    <div role="radiogroup" aria-label="Show as" style={{ display: 'inline-flex', padding: 2, borderRadius: 9, background: 'rgba(60,20,15,0.05)' }}>
+    <div
+      role="radiogroup"
+      aria-label="Show as"
+      style={{ display: 'inline-flex', padding: 2, borderRadius: 9, background: 'rgba(60,20,15,0.05)' }}
+    >
       {(['chart', 'table'] as const).map((v) => (
         <button
           key={v}

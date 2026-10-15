@@ -13,7 +13,15 @@ const GAP = 3;
 const ROW_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''];
 const APP_RING = 'oklch(0.72 0.07 255)';
 
-export function PracticeCalendar({ model, now, showAppDays }: { model: CalendarModel; now: number; showAppDays: boolean }) {
+export function PracticeCalendar({
+  model,
+  now,
+  showAppDays,
+}: {
+  model: CalendarModel;
+  now: number;
+  showAppDays: boolean;
+}) {
   // A one-session day should still read clearly, so the scale tops out at 2+.
   const top = Math.max(model.max, 2);
   const weeks = model.columns.length;
@@ -38,7 +46,14 @@ export function PracticeCalendar({ model, now, showAppDays }: { model: CalendarM
             return (
               <span
                 key={`m-${c}`}
-                style={{ fontSize: 10, fontWeight: 700, color: COLOR.inkMute, whiteSpace: 'nowrap', overflow: 'visible', lineHeight: '12px' }}
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: COLOR.inkMute,
+                  whiteSpace: 'nowrap',
+                  overflow: 'visible',
+                  lineHeight: '12px',
+                }}
               >
                 {label?.label ?? ''}
               </span>
@@ -55,7 +70,13 @@ export function PracticeCalendar({ model, now, showAppDays }: { model: CalendarM
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: COLOR.inkMute }}>
             <span
               aria-hidden="true"
-              style={{ width: 11, height: 11, borderRadius: 3, background: CHART.track, boxShadow: `inset 0 0 0 1.5px ${APP_RING}` }}
+              style={{
+                width: 11,
+                height: 11,
+                borderRadius: 3,
+                background: CHART.track,
+                boxShadow: `inset 0 0 0 1.5px ${APP_RING}`,
+              }}
             />
             Opened the app, no session
           </span>
@@ -82,7 +103,9 @@ function RowCells({
 }) {
   return (
     <>
-      <span style={{ fontSize: 10, fontWeight: 650, color: COLOR.inkMute, display: 'flex', alignItems: 'center' }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 650, color: COLOR.inkMute, display: 'flex', alignItems: 'center' }}>
+        {label}
+      </span>
       {model.columns.map((col, c) => {
         const d = col[r];
         if (d.future) return <span key={`${c}-${r}`} />;

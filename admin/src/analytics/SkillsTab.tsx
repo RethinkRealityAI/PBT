@@ -147,8 +147,8 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
       return d && (DRIVER_KEYS as readonly string[]).includes(d) ? d : null;
     };
     const matchup = driverMatchup(current, traineeDriver);
-    // The sentence needs a firmer base than a grid cell does.
-    const pairing = hardestPairing(matchup, 3);
+    // Same bar as the grid's cells (2+), so the sentence names a cell the reader can see.
+    const pairing = hardestPairing(matchup, 2);
     const noStyle = scored.filter((s) => s.owner_driver && !traineeDriver(s.user_id)).length;
 
     const moodCur = moodSplit(current);

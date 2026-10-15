@@ -47,8 +47,17 @@ export function BandLegend() {
   );
 }
 
+/** Column heads for a narrow table — only "Acknowledge" is too long to fit. */
+const SHORT_SKILL: Record<SkillKey, string> = {
+  acknowledge: 'Ackn.',
+  clarify: 'Clarify',
+  transform: 'Transform',
+  empathy: 'Empathy',
+  rapport: 'Rapport',
+};
+
 const TH: CSSProperties = {
-  fontSize: 11,
+  fontSize: 10.5,
   fontWeight: 750,
   color: COLOR.inkMute,
   padding: '0 4px 8px',
@@ -101,25 +110,36 @@ export function ObjectionSkillTable({
   hardest?: { key: string; skill: SkillKey } | null;
 }) {
   return (
-    <div style={{ overflowX: 'auto', margin: '0 -4px', padding: '0 4px' }}>
-      <table style={{ borderCollapse: 'separate', borderSpacing: 4, width: '100%', minWidth: 560 }}>
+    <div className="pbt-ov-cq" style={{ overflowX: 'auto', margin: '0 -4px', padding: '0 4px' }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 4, width: '100%', minWidth: 520, tableLayout: 'fixed' }}>
         <caption style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
           Average skill scores per objection
         </caption>
+        <colgroup>
+          <col className="pbt-sk-labelcol" />
+          {SKILL_KEYS.map((k) => (
+            <col key={k} />
+          ))}
+          <col />
+          <col style={{ width: 58 }} />
+        </colgroup>
         <thead>
           <tr>
             <th scope="col" style={{ ...TH, textAlign: 'left', paddingLeft: 0, whiteSpace: 'nowrap' }}>
               Objection
             </th>
             {SKILL_KEYS.map((k) => (
-              <th key={k} scope="col" style={TH}>
-                {SKILL_LABELS[k]}
+              <th key={k} scope="col" className="pbt-sk-head" style={TH} title={SKILL_LABELS[k]}>
+                <span className="pbt-sk-full">{SKILL_LABELS[k]}</span>
+                <abbr className="pbt-sk-short" title={SKILL_LABELS[k]}>
+                  {SHORT_SKILL[k]}
+                </abbr>
               </th>
             ))}
-            <th scope="col" style={{ ...TH, color: COLOR.inkSoft }}>
+            <th scope="col" className="pbt-sk-head" style={{ ...TH, color: COLOR.inkSoft }}>
               Overall
             </th>
-            <th scope="col" style={{ ...TH, textAlign: 'right' }}>
+            <th scope="col" className="pbt-sk-head" style={{ ...TH, textAlign: 'right' }}>
               Sessions
             </th>
           </tr>
@@ -135,8 +155,6 @@ export function ObjectionSkillTable({
                   fontWeight: 650,
                   color: COLOR.inkSoft,
                   paddingRight: 10,
-                  minWidth: 120,
-                  maxWidth: 220,
                   lineHeight: 1.3,
                 }}
                 title={r.label}

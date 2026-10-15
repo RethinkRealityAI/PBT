@@ -106,7 +106,15 @@ const tagStyle: CSSProperties = {
   lineHeight: '16px',
 };
 
-export function Tag({ children, tone = 'neutral', title }: { children: ReactNode; tone?: 'neutral' | 'info' | 'muted'; title?: string }) {
+export function Tag({
+  children,
+  tone = 'neutral',
+  title,
+}: {
+  children: ReactNode;
+  tone?: 'neutral' | 'info' | 'muted';
+  title?: string;
+}) {
   const colors =
     tone === 'info'
       ? { background: COLOR.infoSoft, color: 'oklch(0.42 0.14 245)' }
@@ -158,10 +166,16 @@ export function SkillMiniBars({
 }) {
   const known = SKILL_KEYS.filter((k) => skills[k] != null);
   if (known.length === 0) return <span style={{ color: COLOR.inkMute, fontSize: 12.5 }}>—</span>;
-  const summary = SKILL_KEYS.map((k) => `${SKILL_LABELS[k]} ${skills[k] == null ? '—' : Math.round(skills[k] as number)}`).join(' · ');
+  const summary = SKILL_KEYS.map(
+    (k) => `${SKILL_LABELS[k]} ${skills[k] == null ? '—' : Math.round(skills[k] as number)}`,
+  ).join(' · ');
   const H = 22;
   return (
-    <span title={summary} aria-label={`Skills: ${summary}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+    <span
+      title={summary}
+      aria-label={`Skills: ${summary}`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}
+    >
       <svg width={5 * 5 + 4 * 3} height={H} aria-hidden="true" style={{ flexShrink: 0, overflow: 'visible' }}>
         {SKILL_KEYS.map((k, i) => {
           const v = skills[k];
@@ -170,7 +184,14 @@ export function SkillMiniBars({
             <g key={k}>
               <rect x={i * 8} y={0} width={5} height={H} rx={2} fill={CHART.track} />
               {v != null && (
-                <rect x={i * 8} y={H - h} width={5} height={h} rx={2} fill={k === weakest ? COLOR.warn : 'oklch(0.68 0.09 250)'} />
+                <rect
+                  x={i * 8}
+                  y={H - h}
+                  width={5}
+                  height={h}
+                  rx={2}
+                  fill={k === weakest ? COLOR.warn : 'oklch(0.68 0.09 250)'}
+                />
               )}
             </g>
           );
@@ -217,7 +238,13 @@ export function SortHeader<K extends string>({
       aria-sort={on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
       style={{ ...thStyle, textAlign: align, ...style }}
     >
-      <button type="button" className="pbt-sort-btn" onClick={() => onSort(sortKey)} title={title} style={{ color: on ? COLOR.ink : COLOR.inkMute }}>
+      <button
+        type="button"
+        className="pbt-sort-btn"
+        onClick={() => onSort(sortKey)}
+        title={title}
+        style={{ color: on ? COLOR.ink : COLOR.inkMute }}
+      >
         {label}
         <span aria-hidden="true" style={{ fontSize: 8, opacity: on ? 1 : 0.35, width: 8 }}>
           {on ? (dir === 'asc' ? '▲' : '▼') : '▼'}

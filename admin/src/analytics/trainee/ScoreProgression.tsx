@@ -61,7 +61,11 @@ export function ScoreProgression({
   // Keep the line's end label clear of the team label when they sit close.
   const lastRolling = points[lastIndex]?.rolling ?? null;
   const labelDy =
-    teamAvg != null && lastRolling != null && Math.abs(lastRolling - teamAvg) < 7 ? (lastRolling >= teamAvg ? -11 : 15) : 4;
+    teamAvg != null && lastRolling != null && Math.abs(lastRolling - teamAvg) < 7
+      ? lastRolling >= teamAvg
+        ? -11
+        : 15
+      : 4;
   return (
     <div style={{ height: 268, marginLeft: -6 }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -114,7 +118,9 @@ export function ScoreProgression({
               return (
                 <div style={{ ...tooltipStyle, minWidth: 190 }}>
                   <div style={{ fontWeight: 800, color: COLOR.ink }}>{dayLabel(p.t, now)}</div>
-                  <div style={{ color: COLOR.inkSoft, marginTop: 2 }}>{pushbackLabel(p.pushback_id, [], p.title ?? 'Session')}</div>
+                  <div style={{ color: COLOR.inkSoft, marginTop: 2 }}>
+                    {pushbackLabel(p.pushback_id, [], p.title ?? 'Session')}
+                  </div>
                   {p.difficulty != null && (
                     <div style={{ color: COLOR.inkMute, marginTop: 1 }}>{difficultyLabel(p.difficulty)} owner</div>
                   )}
@@ -126,7 +132,9 @@ export function ScoreProgression({
                       Rolling <strong style={{ color: COLOR.inkSoft }}>{Math.round(p.rolling)}</strong>
                     </span>
                   </div>
-                  <div style={{ color: COLOR.inkMute, fontSize: 11, marginTop: 4 }}>Click the dot to open the session</div>
+                  <div style={{ color: COLOR.inkMute, fontSize: 11, marginTop: 4 }}>
+                    Click the dot to open the session
+                  </div>
                 </div>
               );
             }}
@@ -236,14 +244,28 @@ function ProgressTable({
                   {dayLabel(p.t, now)}
                 </button>
               </td>
-              <td style={{ ...tdStyle, padding: '8px 12px' }}>{pushbackLabel(p.pushback_id, [], p.title ?? 'Session')}</td>
               <td style={{ ...tdStyle, padding: '8px 12px' }}>
-                {p.difficulty != null ? <AdminDifficultyMeter level={p.difficulty} /> : <span style={{ color: COLOR.inkMute }}>—</span>}
+                {pushbackLabel(p.pushback_id, [], p.title ?? 'Session')}
+              </td>
+              <td style={{ ...tdStyle, padding: '8px 12px' }}>
+                {p.difficulty != null ? (
+                  <AdminDifficultyMeter level={p.difficulty} />
+                ) : (
+                  <span style={{ color: COLOR.inkMute }}>—</span>
+                )}
               </td>
               <td style={{ ...tdStyle, padding: '8px 12px', textAlign: 'right' }}>
                 <ScoreBadge score={p.score} />
               </td>
-              <td style={{ ...tdStyle, padding: '8px 0 8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
+              <td
+                style={{
+                  ...tdStyle,
+                  padding: '8px 0 8px 12px',
+                  textAlign: 'right',
+                  fontVariantNumeric: 'tabular-nums',
+                  fontWeight: 700,
+                }}
+              >
                 {Math.round(p.rolling)}
               </td>
             </tr>
@@ -251,7 +273,12 @@ function ProgressTable({
         </tbody>
       </table>
       {rows.length > 8 && (
-        <button type="button" className="pbt-link" onClick={() => setAll((a) => !a)} style={{ fontSize: 12, marginTop: 10 }}>
+        <button
+          type="button"
+          className="pbt-link"
+          onClick={() => setAll((a) => !a)}
+          style={{ fontSize: 12, marginTop: 10 }}
+        >
           {all ? 'Show fewer' : `Show all ${rows.length}`}
         </button>
       )}

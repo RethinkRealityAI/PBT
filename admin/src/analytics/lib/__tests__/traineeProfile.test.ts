@@ -181,9 +181,33 @@ describe('difficultyBreakdown', () => {
 describe('practiceStyle', () => {
   it('summarises how they practise', () => {
     const out = practiceStyle([
-      session({ mode: 'text', duration_seconds: 200, staff_messages: 4, staff_words_avg: 10, reply_seconds_median: 20, hints_used: 2, owner_mood_end: 'green' }),
-      session({ mode: 'text', duration_seconds: 400, staff_messages: 1, staff_words_avg: 40, reply_seconds_median: 30, hints_used: null, owner_mood_end: 'red' }),
-      session({ mode: 'voice', duration_seconds: 300, staff_messages: 0, staff_words_avg: null, reply_seconds_median: null, hints_used: null, owner_mood_end: 'yellow' }),
+      session({
+        mode: 'text',
+        duration_seconds: 200,
+        staff_messages: 4,
+        staff_words_avg: 10,
+        reply_seconds_median: 20,
+        hints_used: 2,
+        owner_mood_end: 'green',
+      }),
+      session({
+        mode: 'text',
+        duration_seconds: 400,
+        staff_messages: 1,
+        staff_words_avg: 40,
+        reply_seconds_median: 30,
+        hints_used: null,
+        owner_mood_end: 'red',
+      }),
+      session({
+        mode: 'voice',
+        duration_seconds: 300,
+        staff_messages: 0,
+        staff_words_avg: null,
+        reply_seconds_median: null,
+        hints_used: null,
+        owner_mood_end: 'yellow',
+      }),
       session({ mode: 'text', completed: false, duration_seconds: 60, owner_mood_end: 'red', hints_used: 0 }),
     ]);
     expect(out.typed).toBe(3);
@@ -227,16 +251,23 @@ describe('activity in words', () => {
 describe('gettingStartedNote', () => {
   const joinedAt = NOW - 40 * DAY_MS;
   it('tells "never opened the app" apart from "opens it but never starts"', () => {
-    expect(gettingStartedNote({ sessions: 0, activity: { active_days: [], last_seen: null }, joinedAt, now: NOW })?.text).toMatch(
-      /^Hasn’t opened the app since joining 1 month ago/,
-    );
-    const stuck = gettingStartedNote({ sessions: 0, activity: { active_days: ['2026-10-01', '2026-10-03'], last_seen: null }, joinedAt, now: NOW });
+    expect(
+      gettingStartedNote({ sessions: 0, activity: { active_days: [], last_seen: null }, joinedAt, now: NOW })?.text,
+    ).toMatch(/^Hasn’t opened the app since joining 1 month ago/);
+    const stuck = gettingStartedNote({
+      sessions: 0,
+      activity: { active_days: ['2026-10-01', '2026-10-03'], last_seen: null },
+      joinedAt,
+      now: NOW,
+    });
     expect(stuck).toMatchObject({ tone: 'focus' });
     expect(stuck?.text).toMatch(/on 2 days but never started a session/);
   });
 
   it('says nothing once they practise, or when activity is hidden', () => {
-    expect(gettingStartedNote({ sessions: 3, activity: { active_days: [], last_seen: null }, joinedAt, now: NOW })).toBeNull();
+    expect(
+      gettingStartedNote({ sessions: 3, activity: { active_days: [], last_seen: null }, joinedAt, now: NOW }),
+    ).toBeNull();
     expect(gettingStartedNote({ sessions: 0, activity: null, joinedAt, now: NOW })).toBeNull();
   });
 });
