@@ -27,10 +27,13 @@ export function UsersScreen({
   query,
   onQuery,
   meUserId,
+  onOpenAnalytics,
 }: {
   query: string;
   onQuery: (q: string) => void;
   meUserId?: string;
+  /** Open a person's profile in Analytics → Trainees (when this admin can read sessions). */
+  onOpenAnalytics?: (userId: string) => void;
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const users = useAdminUsers(refreshKey);
@@ -55,11 +58,10 @@ export function UsersScreen({
     return users.data.map((u) => {
       const list = byUser.get(u.user_id) ?? [];
       const completed = list.filter((s) => s.completed);
-      const avg = completed.length
-        ? Math.round(
-            completed.reduce((a, s) => a + (s.score_overall ?? 0), 0) /
-              completed.length,
-          )
+      // Real scores only — a failed scoring is a stand-in 0.
+      const scored = completed.filter((s) => !s.score_unavailable && s.score_overall != null);
+      const avg = scored.length
+        ? Math.round(scored.reduce((a, s) => a + (s.score_overall as number), 0) / scored.length)
         : null;
       const lastTs = list[0]
         ? new Date(list[0].created_at).getTime()
@@ -294,6 +296,7 @@ export function UsersScreen({
         onClose={() => setOpenUserId(null)}
         meUserId={meUserId}
         onChanged={refresh}
+        onOpenAnalytics={onOpenAnalytics}
       />
 
       <CreateUserModal

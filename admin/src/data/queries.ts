@@ -19,7 +19,6 @@ import type {
   FlagDef,
   FlagRule,
   KnowledgeDocument,
-  NavEvent,
   PlatformReportRow,
   ScenarioOverrideRow,
   SessionFeedbackRow,
@@ -164,18 +163,6 @@ export function setReportStatus(
   status: 'open' | 'triaged' | 'resolved' | 'dismissed',
 ): Promise<PlatformReportRow> {
   return postJson<PlatformReportRow>('admin-reports?op=status', { id, status });
-}
-
-export function useNavEvents(range = '7d', limit = 5000) {
-  return useQuery<NavEvent[]>(
-    () =>
-      apiFetch<NavEvent[]>('admin-nav-events', {
-        since: rangeToSince(range),
-        limit,
-      }),
-    [range, limit],
-    [],
-  );
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -21,7 +21,16 @@ const child = spawn(
   {
     stdio: 'inherit',
     shell: true,
-    env: { ...process.env, VITE_ADMIN_MOCK: '1' },
+    env: {
+      ...process.env,
+      VITE_ADMIN_MOCK: '1',
+      // The Supabase client is created before the mock intercepts anything,
+      // and it refuses to start without these. Nothing is ever sent to them —
+      // every call is answered by the mock — so placeholders are enough on a
+      // machine with no .env (a fresh clone, CI, a review container).
+      VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'http://localhost:54321',
+      VITE_SUPABASE_PUBLISHABLE_KEY: process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'mock-publishable-key',
+    },
   },
 );
 

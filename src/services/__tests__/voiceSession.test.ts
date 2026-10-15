@@ -14,17 +14,20 @@ import { renderHook, act } from '@testing-library/react';
  *     natural-end path) instead of killing the socket, and
  *  3. the Live socket opens with the EPHEMERAL token minted server-side
  *     (never a long-lived key), after the mic grant, with no client-side
- *     system prompt.
+ *     system prompt, and
+ *  4. a voice session logs exactly one `session_open` (voice never calls
+ *     useTextChat.open(), which logs text's), once the socket is open.
  *
  * Audio decode/playback is not exercised — that would need a real WebAudio
  * mock and buys nothing these assertions don't already cover.
  */
 
-const { evaluateConversation, connect, postAi, genaiCtor } = vi.hoisted(() => ({
+const { evaluateConversation, connect, postAi, genaiCtor, logEvent } = vi.hoisted(() => ({
   evaluateConversation: vi.fn(),
   connect: vi.fn(),
   postAi: vi.fn(),
   genaiCtor: vi.fn(),
+  logEvent: vi.fn(),
 }));
 
 vi.mock('@google/genai', () => {
@@ -42,6 +45,7 @@ vi.mock('@google/genai', () => {
 });
 vi.mock('../geminiService', () => ({ evaluateConversation }));
 vi.mock('../aiApi', () => ({ postAi }));
+vi.mock('../../lib/analytics', () => ({ logEvent }));
 
 import { sanitizeAiText, useVoiceSession, VOICE_SESSION_CAPS } from '../voiceSession';
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
@@ -98,6 +102,7 @@ beforeEach(() => {
   connect.mockReset();
   postAi.mockReset();
   genaiCtor.mockReset();
+  logEvent.mockReset();
   postAi.mockResolvedValue(TOKEN_RESPONSE);
 
   (globalThis as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext;
@@ -250,6 +255,55 @@ describe('sanitizeAiText — tool-call narration never reaches the transcript', 
     expect(sanitizeAiText("On va l'essayer. [fin de simulation]")).toBe(
       "On va l'essayer.",
     );
+  });
+});
+
+describe('voiceSession — session_open analytics', () => {
+  const sessionOpens = () =>
+    logEvent.mock.calls.map((c) => c[0]).filter((e) => e.target === 'session_open');
+
+  it('logs one session_open, shaped like text mode\'s, once the socket opens', async () => {
+    evaluateConversation.mockResolvedValue(null);
+    const { result } = await startSession();
+    expect(sessionOpens()).toEqual([
+      {
+        type: 'custom',
+        screen: 'chat',
+        target: 'session_open',
+        meta: {
+          sessionId: expect.any(String),
+          scenario: SCENARIO.pushback.id,
+          driver: SCENARIO.suggestedDriver,
+          mode: 'voice',
+        },
+      },
+    ]);
+    // Attributed to the same id the scorer and the saved record use.
+    deliverAiTurn('That price feels steep to me.');
+    let outcome: Awaited<ReturnType<typeof result.current.endSession>> | undefined;
+    await act(async () => {
+      outcome = await result.current.endSession();
+    });
+    expect(sessionOpens()).toHaveLength(1);
+    expect(sessionOpens()[0].meta.sessionId).toBe(outcome?.sessionId);
+  });
+
+  it('a double Begin still logs a single session_open', async () => {
+    const { result } = await startSession();
+    await act(async () => {
+      await result.current.start(SCENARIO);
+    });
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(sessionOpens()).toHaveLength(1);
+  });
+
+  it('logs nothing when the session never starts (mic denied, token refused)', async () => {
+    getUserMedia.mockRejectedValueOnce(new Error('NotAllowedError'));
+    await startSession();
+    postAi.mockRejectedValueOnce(new Error('503 upstream'));
+    await startSession();
+    expect(connect).not.toHaveBeenCalled();
+    expect(sessionOpens()).toHaveLength(0);
   });
 });
 

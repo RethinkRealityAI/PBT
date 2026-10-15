@@ -12,6 +12,7 @@ import {
 } from '../shared/ai/contract';
 import { uuid } from '../lib/id';
 import { getOrCreateSessionId } from '../lib/storage';
+import { logEvent } from '../lib/analytics';
 import { DEFAULT_LOCALE, LOCALE_BCP47, type Locale } from '../i18n/locales';
 import { translate } from '../i18n/translate';
 
@@ -567,7 +568,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       setCapWarning(false);
       // One id for this session: telemetry rows written by the scorer, the
       // local SessionRecord and the Supabase row all key off it.
-      sessionIdRef.current = uuid();
+      const sessionId = uuid();
+      sessionIdRef.current = sessionId;
       micUnmuteAtRef.current = 0;
       setError(null);
       emotionRef.current = 'red';
@@ -729,6 +731,23 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             startRecording(sessionPromise);
             // Billing starts here — so does the duration cap.
             startCapTimers();
+            // …and the session counts as started: mic granted, token minted,
+            // socket open. Voice never calls useTextChat.open(), so this is
+            // voice's one `session_open` (same meta shape as text's). Last in
+            // the handler and synchronous/fire-and-forget — it adds no await
+            // and cannot delay the capture wiring above. logEvent applies the
+            // privacy opt-out and the admin preview gate.
+            logEvent({
+              type: 'custom',
+              screen: 'chat',
+              target: 'session_open',
+              meta: {
+                sessionId,
+                scenario: scenario.pushback.id,
+                driver: scenario.suggestedDriver,
+                mode: 'voice',
+              },
+            });
           },
           onmessage: (msg: Record<string, unknown>) => {
             // Tool calls

@@ -10,7 +10,7 @@ import { DOCUMENTATION_URL } from '../nav';
 function renderRail({ collapsed = false, permissions = [] as string[] } = {}) {
   return render(
     <Sidebar
-      active="overview"
+      active="analytics"
       onNav={() => {}}
       permissions={permissions}
       identity={{ name: 'Test Admin', email: 'admin@example.com', role: 'support' }}

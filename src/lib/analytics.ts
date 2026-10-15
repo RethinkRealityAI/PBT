@@ -10,11 +10,16 @@
  *
  * Anonymous use is the default for PBT, so events still attribute via
  * `pbt:session_id` even when no user is signed in.
+ *
+ * Every event — including the `app_open` visit marker below — goes through
+ * `logEvent`, so the privacy opt-out (`isTrainingUseAllowed`) and the admin
+ * preview gate drop it before it is buffered, queued or dispatched.
  */
 import { getSupabase } from '../features/auth/supabaseClient';
-import { getOrCreateSessionId } from './storage';
+import { getOrCreateSessionId, readStorage, STORAGE_KEYS } from './storage';
 import { isTrainingUseAllowed } from './privacy';
 import { isPreviewMode } from './previewMode';
+import { getDeviceContext } from './deviceContext';
 
 export type NavEventType =
   | 'screen_view'
@@ -61,6 +66,15 @@ let started = false;
 // emitted).
 let dwellScreen: string | null = null;
 let dwellAnchor = 0;
+
+/**
+ * A tab that comes back after at least this long in the background is a new
+ * visit and logs another `app_open`. Shorter absences (a text, a phone call)
+ * are the same visit.
+ */
+export const NEW_VISIT_AFTER_MS = 30 * 60 * 1000;
+// When the tab was last hidden; 0 while it is visible.
+let hiddenSince = 0;
 
 function loadPersistedQueue(): QueuedEvent[] {
   if (typeof localStorage === 'undefined') return [];
@@ -155,7 +169,37 @@ function closeDwell(): void {
   logEvent({ type: 'dwell', screen: dwellScreen, dwellMs: elapsed });
 }
 
-/** Initialise the emitter: load persisted queue + register flush handlers. */
+/**
+ * Log the `app_open` visit marker: coarse device context (see
+ * ./deviceContext.ts — class, OS family, installed-or-browser, time zone) plus
+ * the app's language and theme preference as the providers read them
+ * (`pbt:locale` / `pbt:theme`). Product analytics like any other event: it
+ * goes through `logEvent`, so an opted-out user or the admin preview frame
+ * sends nothing.
+ */
+function logAppOpen(): void {
+  const { device, os, installed, tz } = getDeviceContext();
+  logEvent({
+    type: 'custom',
+    // The screen the user is on, when the emitter already knows it.
+    ...(dwellScreen ? { screen: dwellScreen } : {}),
+    target: 'app_open',
+    meta: {
+      device,
+      os,
+      installed,
+      locale: readStorage(STORAGE_KEYS.locale),
+      theme: readStorage(STORAGE_KEYS.theme),
+      ...(tz ? { tz } : {}),
+    },
+  });
+}
+
+/**
+ * Initialise the emitter: load persisted queue + register flush handlers, and
+ * log one `app_open`. Another `app_open` is logged only when the tab becomes
+ * visible again after {@link NEW_VISIT_AFTER_MS} or more in the background.
+ */
 export function startAnalytics(): void {
   if (started) return;
   started = true;
@@ -168,14 +212,21 @@ export function startAnalytics(): void {
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
+      if (hiddenSince === 0) hiddenSince = Date.now();
       closeDwell();
       void flush();
-    } else if (dwellScreen) {
+      return;
+    }
+    const away = hiddenSince === 0 ? 0 : Date.now() - hiddenSince;
+    hiddenSince = 0;
+    if (dwellScreen) {
       // Restart the clock rather than resuming it: a backgrounded tab is not
       // time the user spent on the screen.
       dwellAnchor = Date.now();
     }
+    if (away >= NEW_VISIT_AFTER_MS) logAppOpen();
   });
+  logAppOpen();
   if (buffer.length > 0) scheduleFlush();
 }
 

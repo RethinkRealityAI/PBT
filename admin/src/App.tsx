@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { getSupabase } from './lib/supabase';
 import { apiFetch } from './lib/api';
+import { resetCache } from './data/cache';
+import { resetObjectionTitles } from './analytics/lib/objectionNames';
 import { COLOR } from './lib/tokens';
 import { Glass } from './primitives/Glass';
 import { SectionTabsProvider, type AdminScreen, type Range } from './primitives/Shell';
@@ -11,14 +13,9 @@ import { ConfirmProvider } from './primitives/Confirm';
 import { ToastProvider } from './primitives/Toast';
 import { defaultTab, findNavItem, legacyRoute, visibleItems, visibleTabs } from './primitives/nav';
 import { useHashRoute } from './lib/route';
-import { OverviewScreen } from './screens/OverviewScreen';
-import { InsightsScreen } from './screens/InsightsScreen';
-import { AnalyticsScreen } from './screens/AnalyticsScreen';
 import { UsersScreen } from './screens/UsersScreen';
-import { SessionsScreen } from './screens/SessionsScreen';
 import { ScenariosScreen } from './screens/ScenariosScreen';
-import { AnalyzerScreen } from './screens/AnalyzerScreen';
-import { QualityScreen } from './screens/QualityScreen';
+import { AnalyticsDestination, type AnalyticsTab } from './analytics/AnalyticsDestination';
 import { FeedbackScreen } from './screens/FeedbackScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { FlagsScreen } from './screens/FlagsScreen';
@@ -84,12 +81,24 @@ export function App() {
   const sidebar = useSidebarState();
   const route = publicRoute();
 
+  // Whose data the shared analytics cache holds. Sign-out doesn't reload the
+  // page, so without this the next admin to sign in on the same tab would be
+  // shown the previous one's cached answers — emails, profiles, sections their
+  // own role can't read — until each entry went stale.
+  const cacheOwner = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     if (route) return;
     let cancelled = false;
     const sb = getSupabase();
     async function check(session: Session | null) {
       if (cancelled) return;
+      const uid = session?.user.id ?? null;
+      if (cacheOwner.current !== undefined && cacheOwner.current !== uid) {
+        resetCache();
+        resetObjectionTitles();
+      }
+      cacheOwner.current = uid;
       if (!session) {
         setAuth({ status: 'signed_out' });
         return;
@@ -142,13 +151,18 @@ export function App() {
   // be what Back and a copied link return to.
   const resolvedKey = resolved?.item.key ?? null;
   const resolvedTab = resolved?.tab ?? '';
+  const resolvedId = resolved?.id ?? null;
   useEffect(() => {
     if (!hashRoute || resolvedKey === null) return;
     const wantTab = resolvedTab || null;
-    if (hashRoute.screen !== resolvedKey || (hashRoute.tab ?? null) !== wantTab) {
-      navigate({ screen: resolvedKey, tab: wantTab }, true);
+    if (
+      hashRoute.screen !== resolvedKey ||
+      (hashRoute.tab ?? null) !== wantTab ||
+      (hashRoute.id ?? null) !== resolvedId
+    ) {
+      navigate({ screen: resolvedKey, tab: wantTab, id: resolvedId }, true);
     }
-  }, [hashRoute, resolvedKey, resolvedTab, navigate]);
+  }, [hashRoute, resolvedKey, resolvedTab, resolvedId, navigate]);
 
   if (route === 'invite') return <InviteAcceptPage />;
   if (route === 'reset') return <ResetPasswordPage />;
@@ -267,16 +281,20 @@ export function App() {
 
   const { item, tabs, tab } = resolved;
 
-  const go = (screen: AdminScreen, nextTab?: string) => {
+  const go = (screen: AdminScreen, nextTab?: string, id?: string | null, replace = false) => {
     // Clear the shared search on destination change — a filter typed on one
     // screen silently constraining every other one is a bug people report as
     // "the list is empty".
     if (screen !== item.key) setQuery('');
     const target = findNavItem(screen);
-    navigate({
-      screen,
-      tab: nextTab ?? (target ? defaultTab(target, perms) : null),
-    });
+    navigate(
+      {
+        screen,
+        tab: nextTab ?? (target ? defaultTab(target, perms) : null),
+        id: id ?? null,
+      },
+      replace,
+    );
     sidebar.setDrawerOpen(false);
   };
 
@@ -346,29 +364,30 @@ export function App() {
             </div>
           )}
 
-          {item.key === 'overview' && (
-            <OverviewScreen range={range} onRange={setRange} onNav={go} />
-          )}
-
-          {item.key === 'analytics' && tab === 'insights' && (
-            <InsightsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
-          )}
-          {item.key === 'analytics' && tab === 'traffic' && (
-            <AnalyticsScreen range={range} onRange={setRange} />
-          )}
-          {item.key === 'analytics' && tab === 'quality' && (
-            <QualityScreen range={range} onRange={setRange} />
-          )}
-
-          {item.key === 'activity' && tab === 'sessions' && (
-            <SessionsScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
-          )}
-          {item.key === 'activity' && tab === 'analyzer' && (
-            <AnalyzerScreen range={range} onRange={setRange} query={query} onQuery={setQuery} />
+          {item.key === 'analytics' && (
+            <AnalyticsDestination
+              tab={tab as AnalyticsTab}
+              recordId={resolved.id}
+              range={range}
+              onRange={setRange}
+              query={query}
+              onQuery={setQuery}
+              onOpen={(nextTab, id, opts) => go('analytics', nextTab, id, opts?.replace)}
+              onNav={go}
+            />
           )}
 
           {item.key === 'people' && tab === 'users' && (
-            <UsersScreen query={query} onQuery={setQuery} meUserId={me.user_id} />
+            <UsersScreen
+              query={query}
+              onQuery={setQuery}
+              meUserId={me.user_id}
+              onOpenAnalytics={
+                perms.includes('sessions.read') || me.is_owner
+                  ? (userId) => go('analytics', 'trainees', userId)
+                  : undefined
+              }
+            />
           )}
           {item.key === 'people' && tab !== 'users' && (
             <TeamScreen
@@ -421,17 +440,29 @@ export function App() {
   );
 }
 
-/** The destination + tab this role lands on for a hash (null = none it may open). */
+/**
+ * The destination + tab this role lands on for a hash (null = none it may
+ * open). A record id (`#/analytics/trainees/<id>`) survives only when the
+ * destination AND tab it was written for are the ones that resolved — a
+ * forbidden tab must not leave its id hanging off the fallback.
+ */
 function resolveDestination(
   perms: readonly string[],
-  hashRoute: { screen: string; tab?: string | null } | null,
-): { item: ReturnType<typeof visibleItems>[number]; tabs: ReturnType<typeof visibleTabs>; tab: string } | null {
+  hashRoute: { screen: string; tab?: string | null; id?: string | null } | null,
+): {
+  item: ReturnType<typeof visibleItems>[number];
+  tabs: ReturnType<typeof visibleTabs>;
+  tab: string;
+  id: string | null;
+} | null {
   const allowed = visibleItems(perms);
   if (allowed.length === 0) return null;
   const item = (hashRoute && allowed.find((i) => i.key === hashRoute.screen)) ?? allowed[0];
   const tabs = visibleTabs(item, perms);
   const tab = tabs.find((t) => t.key === hashRoute?.tab)?.key ?? defaultTab(item, perms) ?? '';
-  return { item, tabs, tab };
+  const id =
+    hashRoute && hashRoute.screen === item.key && hashRoute.tab === tab ? hashRoute.id ?? null : null;
+  return { item, tabs, tab, id };
 }
 
 function BackgroundHalos() {

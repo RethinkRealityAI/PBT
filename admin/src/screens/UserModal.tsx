@@ -17,7 +17,7 @@
  * (set on document root by the consumer app, defaulted by the admin shell).
  */
 import { useMemo, useState } from 'react';
-import { pushbackLabel } from '../lib/labels';
+import { ENDED_REASON_LABELS, MODE_LABELS, labelOf, pushbackLabel } from '../lib/labels';
 import {
   DriverChip,
   EmptyState,
@@ -56,6 +56,7 @@ export function UserModal({
   onClose,
   meUserId,
   onChanged,
+  onOpenAnalytics,
 }: {
   user: AdminUser | null;
   /** Sessions belonging to THIS user. Filter at the call site. */
@@ -69,6 +70,11 @@ export function UserModal({
   meUserId?: string;
   /** Fired after a successful management action so the list can refetch. */
   onChanged?: () => void;
+  /**
+   * Open this person's full profile in Analytics → Trainees. Omitted when the
+   * admin can't read sessions (the profile would refuse them).
+   */
+  onOpenAnalytics?: (userId: string) => void;
 }) {
   const [tab, setTab] = useState<TabKey>('overview');
   // Drilldown: clicking a session inside the user modal opens a session
@@ -89,7 +95,13 @@ export function UserModal({
         ariaLabel={user.display_name ?? user.user_id}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '82vh', maxHeight: 760 }}>
-          <UserHeader user={user} onClose={onClose} driverColor={driverColor} sessions={sessions} />
+          <UserHeader
+            user={user}
+            onClose={onClose}
+            driverColor={driverColor}
+            sessions={sessions}
+            onOpenAnalytics={onOpenAnalytics ? () => onOpenAnalytics(user.user_id) : undefined}
+          />
           <TabBar value={tab} onChange={setTab} />
           <div
             style={{
@@ -141,11 +153,13 @@ function UserHeader({
   onClose,
   driverColor,
   sessions,
+  onOpenAnalytics,
 }: {
   user: AdminUser;
   onClose: () => void;
   driverColor: string;
   sessions: AdminSession[];
+  onOpenAnalytics?: () => void;
 }) {
   const lastSession = sessions[0];
   return (
@@ -225,7 +239,31 @@ function UserHeader({
           )}
         </div>
       </div>
-      <ModalCloseButton onClose={onClose} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        {onOpenAnalytics && (
+          <button
+            type="button"
+            className="pbt-btn"
+            onClick={onOpenAnalytics}
+            title="Score progression, skills, coaching notes and practice habits"
+            style={{
+              height: 34,
+              padding: '0 12px',
+              borderRadius: 10,
+              border: '0.5px solid rgba(60,20,15,0.12)',
+              background: 'rgba(255,255,255,0.85)',
+              color: COLOR.brand,
+              fontSize: 12.5,
+              fontWeight: 750,
+              cursor: 'pointer',
+              fontFamily: 'var(--pbt-font)',
+            }}
+          >
+            Full analytics →
+          </button>
+        )}
+        <ModalCloseButton onClose={onClose} />
+      </div>
     </div>
   );
 }
@@ -286,11 +324,11 @@ function OverviewTab({
   sessions: AdminSession[];
 }) {
   const completed = sessions.filter((s) => s.completed);
-  const avg = completed.length
-    ? Math.round(
-        completed.reduce((a, s) => a + (s.score_overall ?? 0), 0) /
-          completed.length,
-      )
+  // Only real scores: a failed scoring is a stand-in 0 and an unscored
+  // session has none — neither may pull the average down.
+  const scored = completed.filter((s) => !s.score_unavailable && s.score_overall != null);
+  const avg = scored.length
+    ? Math.round(scored.reduce((a, s) => a + (s.score_overall as number), 0) / scored.length)
     : null;
   // 28-day activity buckets
   const buckets = useMemo(() => {
@@ -391,22 +429,25 @@ function SessionsTab({
               {s.scenario_summary ?? (s.pushback_id ? pushbackLabel(s.pushback_id) : '—')}
             </div>
             <div style={{ fontSize: 11, color: COLOR.inkMute }}>
-              {s.driver ?? '—'} · {s.mode ?? '—'}
+              {s.driver ? `${s.driver} owner` : '—'} · {labelOf(MODE_LABELS, s.mode, '—')}
             </div>
           </div>
           <div>
-            {s.flagged ? (
-              <StatusPill tone="warn">{s.flag_reason ?? 'Flagged'}</StatusPill>
-            ) : s.completed ? (
-              <StatusPill tone="success">Completed</StatusPill>
+            {s.completed ? (
+              <StatusPill tone="success">Finished</StatusPill>
             ) : (
-              <StatusPill tone="neutral">{s.ended_reason ?? 'Abandoned'}</StatusPill>
+              <StatusPill tone="neutral">{labelOf(ENDED_REASON_LABELS, s.ended_reason, 'Left early')}</StatusPill>
             )}
           </div>
           <div style={{ fontSize: 12, color: COLOR.inkSoft, fontFamily: 'var(--pbt-mono)' }}>
             {s.turns ?? '—'} turns
           </div>
-          <ScoreBadge score={s.score_overall} />
+          {/* A failed scoring is stored as 0 — never show it as a real score. */}
+          {s.score_unavailable ? (
+            <span style={{ fontSize: 11, fontWeight: 700, color: COLOR.warn }}>Scoring failed</span>
+          ) : (
+            <ScoreBadge score={s.score_overall} />
+          )}
           <div style={{ fontSize: 11, color: COLOR.inkMute, textAlign: 'right' }}>
             {fmtAgo(new Date(s.created_at).getTime())}
           </div>
@@ -436,18 +477,17 @@ function ScenariosTab({ scenarios }: { scenarios: UserScenario[] }) {
             <div style={{ fontSize: 14, fontWeight: 700, color: COLOR.ink, minWidth: 0 }}>
               {s.title}
             </div>
-            <ScoreBadge score={s.avg_score} />
           </div>
           <div style={{ fontSize: 12, color: COLOR.inkSoft, marginTop: 2 }}>
             {s.breed ?? '—'} · {s.life_stage ?? '—'}
           </div>
+          {/* `plays`, `avg_score` and `is_public` are never written by the app
+              (a played build isn't linked back to its row), so they are not
+              shown — "0 plays" on every card read as a fact. */}
           <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-            <StatusPill tone="info" dot={false}>
-              {s.plays} plays
-            </StatusPill>
-            {s.is_public && (
-              <StatusPill tone="success" dot={false}>
-                Public
+            {s.pushback_id && (
+              <StatusPill tone="info" dot={false}>
+                {pushbackLabel(s.pushback_id)}
               </StatusPill>
             )}
             <StatusPill tone="neutral" dot={false}>

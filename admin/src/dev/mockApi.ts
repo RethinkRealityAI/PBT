@@ -21,6 +21,7 @@ import {
   SYSTEM_ROLES,
 } from '../../../src/shared/access/permissions';
 import { MockHttpError, STUDIO_POST_HANDLERS, STUDIO_ROUTES } from './mockStudio';
+import { analyticsMock } from './mockAnalytics';
 import {
   ALL_KNOWLEDGE_SPECIES,
   DEFAULT_KNOWLEDGE_TOOLS,
@@ -773,6 +774,15 @@ export function installAdminMocks(): void {
     // so it must not answer with the live library.
     if (name === 'admin-knowledge' && /[?&]trash=/.test(url)) {
       return json({ documents: [] });
+    }
+    // Analytics reads are computed from a seeded team (./mockAnalytics.ts)
+    // with the same shared functions the server runs.
+    const analytics = analyticsMock(name, url);
+    if (analytics !== undefined) {
+      const missing =
+        analytics === null ||
+        (typeof analytics === 'object' && analytics !== null && 'error' in analytics && !Array.isArray(analytics));
+      return missing ? json(analytics ?? { error: 'Not found' }, 404) : json(analytics);
     }
     const body = name in STUDIO_ROUTES ? STUDIO_ROUTES[name] : ROUTES[name];
     if (body === undefined) return json({ error: `No mock for ${name}` }, 404);

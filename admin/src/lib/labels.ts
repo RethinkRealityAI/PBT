@@ -17,7 +17,16 @@
  *   CALL_TYPE_LABELS   ← `CallType`, src/services/aiTelemetry.ts
  *   PUSHBACK_LABELS    ← PUSHBACK_CATEGORIES[].title, src/data/scenarios.ts
  *   FOCUS_AREA_LABELS  ← FOCUS_AREAS[].label, src/shared/knowledge/focusAreas.ts
+ *   ENDED_REASON_LABELS ← `endedReason` union, src/features/chat/useTextChat.ts
  *   ENTITY_LABELS      ← admin_audit_log.entity_type CHECK
+ *   DEVICE_LABELS      ← DEVICE_CLASSES, src/lib/deviceContext.ts   (app_open meta.device)
+ *   OS_LABELS          ← OS_FAMILIES,    src/lib/deviceContext.ts   (app_open meta.os)
+ *   INSTALL_LABELS     ← app_open meta.installed (boolean, + its words)
+ *   THEME_LABELS       ← STORAGE_KEYS.theme values, src/lib/storage.ts (app_open meta.theme)
+ *   LOCALE_LABELS      ← `Locale` union, src/i18n/locales.ts           (app_open meta.locale)
+ *
+ * __tests__/labels.test.ts pins ACTION, ENDED_REASON, DEVICE, OS, THEME and
+ * LOCALE against those sources.
  *
  * Use `labelOf()` rather than indexing directly: an unrecognised value (a new
  * screen shipped by the consumer app before this map is updated) degrades to a
@@ -73,7 +82,9 @@ export const ACTION_LABELS: Record<string, string> = {
   scenario_save: 'Saved their own scenario',
   analyzer_save: 'Saved a pet',
   vision_analyze: 'Analysed a pet photo',
+  fecal_scan: 'Scanned a stool photo',
   platform_report: 'Reported a problem',
+  app_open: 'Opened the app',
 };
 
 /** What the AI was doing when it was called. */
@@ -153,6 +164,8 @@ export const KNOWLEDGE_CATEGORY_LABELS: Record<string, string> = {
 export const ENDED_REASON_LABELS: Record<string, string> = {
   completed: 'Finished',
   abandoned: 'Left early',
+  user_exit: 'Left early',
+  timeout: 'Timed out',
   error: 'Ended by an error',
 };
 
@@ -160,6 +173,51 @@ export const ENDED_REASON_LABELS: Record<string, string> = {
 export const MODE_LABELS: Record<string, string> = {
   text: 'Typed',
   voice: 'Spoken',
+};
+
+// ─── Trainee device context (the trainee app's `app_open` event) ─────────
+
+/** What kind of device — `app_open` meta.device. */
+export const DEVICE_LABELS: Record<string, string> = {
+  mobile: 'Phone',
+  tablet: 'Tablet',
+  desktop: 'Computer',
+};
+
+/** Operating system family — `app_open` meta.os. */
+export const OS_LABELS: Record<string, string> = {
+  ios: 'iPhone / iPad',
+  android: 'Android',
+  macos: 'Mac',
+  windows: 'Windows',
+  linux: 'Linux',
+  chromeos: 'Chromebook',
+  other: 'Other',
+};
+
+/**
+ * Installed app or browser tab — `app_open` meta.installed is a boolean;
+ * keyed by its string form too (`String(true)`), and by words for a
+ * pre-bucketed breakdown.
+ */
+export const INSTALL_LABELS: Record<string, string> = {
+  installed: 'Installed app',
+  browser: 'In the browser',
+  true: 'Installed app',
+  false: 'In the browser',
+};
+
+/** The trainee's theme preference — `app_open` meta.theme. */
+export const THEME_LABELS: Record<string, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  system: 'Follows device',
+};
+
+/** The trainee app's language — `app_open` meta.locale. */
+export const LOCALE_LABELS: Record<string, string> = {
+  en: 'English',
+  fr: 'Français',
 };
 
 /** What kind of thing an audit-log entry changed. */

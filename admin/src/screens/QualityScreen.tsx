@@ -14,19 +14,19 @@ import {
 import { Glass } from '../primitives/Glass';
 import {
   EmptyState,
-  Eyebrow,
-  Kpi,
   LoadingShimmer,
-  ScoreBadge,
   SectionTitle,
   StatusPill,
 } from '../primitives';
 import { QueryBoundary } from '../primitives/QueryBoundary';
 import { ContextBar, ScreenShell, type Range } from '../primitives/Shell';
-import { useAdminSessions, useAiCalls } from '../data/queries';
+import { useAiCallsWindow, useSessionSummaries } from '../analytics/data';
+import { compareWords, pointsDelta, splitByPeriod } from '../analytics/lib/period';
+import { AutoGrid, StatTile } from '../analytics/ui';
+import { useAccess } from '../primitives/access';
 import { COLOR } from '../lib/tokens';
-import { CALL_TYPE_LABELS, labelOf, pushbackLabel } from '../lib/labels';
-import { fmtAgo, fmtMoney } from '../lib/format';
+import { CALL_TYPE_LABELS, labelOf } from '../lib/labels';
+import { fmtMoney } from '../lib/format';
 import { rangeToDays } from '../lib/api';
 import type { AiCall } from '../data/types';
 
@@ -34,9 +34,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** A reply slower than this feels like a stall to the person waiting on it. */
 const SLOW_REPLY_MS = 2200;
-
-/** A session below this is worth watching back with the trainee. */
-const LOW_SCORE = 60;
 
 // ─── Enhanced Observability Layer ──────────────────────────────────────
 // Ops-tunable alert thresholds. These are the trip points for the banner
@@ -113,7 +110,7 @@ const CHART_TOOLTIP_STYLE = {
   boxShadow: '0 8px 20px -8px rgba(60,20,15,0.18)',
 } as const;
 
-// ─── time bucketing (mirrors InsightsScreen's day/week granularity) ────
+// ─── time bucketing (day / week, like the Analytics tabs) ────
 
 interface BucketSet {
   labels: string[];
@@ -137,7 +134,7 @@ function bucketizeCalls(calls: AiCall[], range: Range): BucketSet {
 
   for (const call of calls) {
     // Clamp to 0 so clock-skewed created_at values land in the newest
-    // bucket instead of vanishing from the trend (mirrors InsightsScreen).
+    // bucket instead of vanishing from the trend (like the Analytics tabs).
     const ageDays = Math.max(0, Math.floor((now - new Date(call.created_at).getTime()) / DAY_MS));
     const ageBuckets = Math.floor(ageDays / bucketSizeDays);
     if (ageBuckets >= bucketCount) continue;
@@ -160,23 +157,46 @@ export function QualityScreen({
   range: Range;
   onRange: (r: Range) => void;
 }) {
-  const sessions = useAdminSessions(range, 1000);
-  const aiCalls = useAiCalls(range, 5000);
+  // Shared, cached session summaries (the other Analytics tabs read the same
+  // ones) — only used for scoring failures, which ARE an AI-quality signal: a
+  // finished session the scorer couldn't grade. Low *training* scores used to
+  // be listed here too, but they're a coaching question, not an AI one (the
+  // Sessions tab filters them and the Overview flags them) — and the list
+  // counted failed scorings, stored as a stand-in 0, as the worst sessions.
+  // Only with `sessions.read` — a role with AI quality alone must not fire a
+  // request that would be refused (and turn the whole tab into an error).
+  const canSessions = useAccess().can('sessions.read');
+  const sessions = useSessionSummaries(range, { enabled: canSessions });
+  // Twice the window, shared with the Overview's AI health strip (one fetch):
+  // the current window drives every chart, the previous one the deltas.
+  const callsWindow = useAiCallsWindow(range);
+  const callSplit = useMemo(() => splitByPeriod(callsWindow.data, range), [callsWindow.data, range]);
+  const aiCalls = { ...callsWindow, data: callSplit.current };
 
   const stats = useMemo(() => {
-    const s = sessions.data;
-    const c = aiCalls.data;
-    // Lowest first: the point of the list is which conversation to review next.
-    const lowScore = s
-      .filter((x) => x.score_overall != null && x.score_overall < LOW_SCORE)
-      .sort((a, b) => (a.score_overall ?? 0) - (b.score_overall ?? 0));
-    return {
-      lowScore,
-      slow: c.filter((x) => x.latency_ms > SLOW_REPLY_MS),
-      refused: c.filter((x) => x.refusal),
-      errored: c.filter((x) => x.error != null),
+    const rates = (c: AiCall[]) => ({
+      calls: c.length,
+      errored: c.filter((x) => x.error != null).length,
+      refused: c.filter((x) => x.refusal).length,
+      slow: c.filter((x) => x.latency_ms > SLOW_REPLY_MS).length,
+    });
+    const split = splitByPeriod(sessions.data.rows, range);
+    const failedScoring = (rows: typeof split.current) => {
+      const finished = rows.filter((x) => x.completed);
+      return { finished: finished.length, failed: finished.filter((x) => x.score_unavailable).length };
     };
-  }, [sessions.data, aiCalls.data]);
+    return {
+      cur: rates(callSplit.current),
+      prev: range === 'all' ? null : rates(callSplit.previous),
+      scoring: failedScoring(split.current),
+      scoringPrev: range === 'all' ? null : failedScoring(split.previous),
+    };
+  }, [sessions.data, callSplit, range]);
+  const share = (n: number, d: number) => (d > 0 ? (n / d) * 100 : null);
+  const shareDelta = (key: 'errored' | 'refused' | 'slow') =>
+    stats.prev && stats.prev.calls > 0
+      ? pointsDelta(share(stats.cur[key], stats.cur.calls), share(stats.prev[key], stats.prev.calls))
+      : null;
 
   // ── Alert threshold banner ──────────────────────────────────────────
   const alertStats = useMemo(() => {
@@ -375,50 +395,58 @@ export function QualityScreen({
             </Glass>
           )}
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: 16,
-            }}
-          >
+          <AutoGrid min={220}>
             {sessions.loading || aiCalls.loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <LoadingShimmer key={i} height={140} />
               ))
             ) : (
               <>
-                <Kpi
+                <StatTile
                   label="Replies that failed"
-                  value={fmtCount(stats.errored.length)}
-                  icon="✕"
-                  accent={COLOR.dangerSoft}
-                  sparkColor={COLOR.danger}
+                  value={fmtPct1(share(stats.cur.errored, stats.cur.calls))}
+                  delta={range === 'all' ? undefined : shareDelta('errored')}
+                  goodWhen="down"
+                  compareLabel={compareWords(range)}
+                  hint={`${fmtCount(stats.cur.errored)} of ${fmtCount(stats.cur.calls)} AI replies errored out`}
                 />
-                <Kpi
+                <StatTile
                   label="Replies the AI declined"
-                  value={fmtCount(stats.refused.length)}
-                  icon="⊘"
-                  accent={COLOR.warnSoft}
-                  sparkColor={COLOR.warn}
+                  value={fmtPct1(share(stats.cur.refused, stats.cur.calls))}
+                  delta={range === 'all' ? undefined : shareDelta('refused')}
+                  goodWhen="down"
+                  compareLabel={compareWords(range)}
+                  hint={`${fmtCount(stats.cur.refused)} refusals — usually prompt wording, see AI tuning`}
                 />
-                <Kpi
+                <StatTile
                   label="Replies slower than 2 seconds"
-                  value={fmtCount(stats.slow.length)}
-                  icon="◷"
-                  accent="oklch(0.94 0.06 70)"
-                  sparkColor={COLOR.warn}
+                  value={fmtPct1(share(stats.cur.slow, stats.cur.calls))}
+                  delta={range === 'all' ? undefined : shareDelta('slow')}
+                  goodWhen="down"
+                  compareLabel={compareWords(range)}
+                  hint={`${fmtCount(stats.cur.slow)} replies; scoring is naturally slower than a reply`}
                 />
-                <Kpi
-                  label="Sessions scored under 60"
-                  value={fmtCount(stats.lowScore.length)}
-                  icon="↓"
-                  accent={COLOR.warnSoft}
-                  sparkColor={COLOR.warn}
+                {canSessions && (
+                <StatTile
+                  label="Sessions the scorer couldn’t grade"
+                  value={fmtCount(stats.scoring.failed)}
+                  unit={stats.scoring.finished ? `of ${fmtCount(stats.scoring.finished)}` : undefined}
+                  delta={
+                    range === 'all' || !stats.scoringPrev || stats.scoringPrev.finished === 0
+                      ? range === 'all' ? undefined : null
+                      : pointsDelta(
+                          share(stats.scoring.failed, stats.scoring.finished),
+                          share(stats.scoringPrev.failed, stats.scoringPrev.finished),
+                        )
+                  }
+                  goodWhen="down"
+                  compareLabel={compareWords(range)}
+                  hint="Finished, but the score couldn’t be produced; the trainee can retry"
                 />
+                )}
               </>
             )}
-          </div>
+          </AutoGrid>
 
           {/* ── Failure-rate trend ── */}
           <Glass padding={24} radius={20}>
@@ -593,7 +621,7 @@ export function QualityScreen({
                       fontSize={11}
                       tickLine={false}
                       width={56}
-                      tickFormatter={(v: number) => fmtMoney(v)}
+                      tickFormatter={(v: number) => (v === 0 ? '$0' : v < 0.01 ? `$${v.toFixed(3)}` : fmtMoney(v))}
                     />
                     <Tooltip
                       cursor={{ fill: 'rgba(60,20,15,0.04)' }}
@@ -745,74 +773,6 @@ export function QualityScreen({
             )}
           </Glass>
 
-          {/* ── Sessions worth reviewing ── */}
-          <Glass padding={0} radius={20}>
-            <div
-              style={{
-                padding: '16px 24px',
-                borderBottom: '0.5px solid rgba(60,20,15,0.06)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <SectionTitle
-                title="Sessions worth reviewing"
-                subtitle="Scored under 60 — lowest first. These are the conversations to watch back with the team."
-              />
-              <Eyebrow>{stats.lowScore.length} sessions</Eyebrow>
-            </div>
-            {stats.lowScore.slice(0, 30).map((s) => (
-              <div
-                key={s.id}
-                style={{
-                  padding: '14px 24px',
-                  display: 'grid',
-                  gridTemplateColumns: '1.5fr 1.4fr 90px 90px 80px',
-                  gap: 12,
-                  alignItems: 'center',
-                  borderBottom: '0.5px solid rgba(60,20,15,0.04)',
-                }}
-              >
-                <div style={{ fontSize: 13, color: COLOR.ink, fontWeight: 600 }}>
-                  {s.scenario_summary ?? pushbackLabel(s.pushback_id, [], 'Untitled scenario')}
-                </div>
-                <StatusPill tone="neutral">
-                  {pushbackLabel(s.pushback_id, [], 'Pushback not recorded')}
-                </StatusPill>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: COLOR.inkSoft,
-                    fontFamily: 'var(--pbt-mono)',
-                  }}
-                >
-                  {s.turns ?? 0} turns
-                </div>
-                <ScoreBadge score={s.score_overall} />
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: COLOR.inkMute,
-                    textAlign: 'right',
-                  }}
-                >
-                  {fmtAgo(new Date(s.created_at).getTime())}
-                </div>
-              </div>
-            ))}
-            {stats.lowScore.length > 30 && (
-              <div style={{ padding: '12px 24px', fontSize: 12, color: COLOR.inkMute }}>
-                Showing the 30 lowest of {stats.lowScore.length}. Narrow the date range to see the rest.
-              </div>
-            )}
-            {stats.lowScore.length === 0 && (
-              <EmptyState
-                title="No low scores in this window"
-                subtitle="Every scored session came in at 60 or above."
-              />
-            )}
-          </Glass>
         </QueryBoundary>
       </ScreenShell>
     </>

@@ -3,14 +3,24 @@
  *
  * The portal used to be eighteen flat links in a wrapping pill bar — every
  * screen equally prominent, nothing grouped, and two rows of chrome before you
- * reached any content. This restructures it into **four sections of twelve
+ * reached any content. This restructures it into **four sections of ten
  * destinations**, where closely-related screens are tabs of one destination
  * rather than separate entries:
  *
- *   Monitor   Overview · Analytics [insights|traffic|quality] · Activity [sessions|analyzer]
+ *   Monitor   Analytics [overview|trainees|sessions|skills|engagement|quality|analyzer]
  *   People    People   [users|members|roles|invites]
  *   Content   Scenario Studio [studio|categories|trainee] · Knowledge · AI tuning · Feedback [sessions|reports]
  *   Platform  Email    [templates|settings|log] · Flags · Audit · Preview
+ *
+ * Monitor used to be three destinations — Overview, Analytics [insights|
+ * traffic|quality] and Activity [sessions|analyzer] — that repeated each
+ * other (the same average score, finish rate and "needs review" list on two
+ * screens) and had nowhere to look at ONE trainee. It is now a single
+ * Analytics destination: the Overview tab is the landing page, Trainees adds
+ * per-person analytics (with a profile at `#/analytics/trainees/<user id>`),
+ * Skills is the old Insights, Engagement the old Traffic. Old `#/overview`,
+ * `#/activity/…`, `#/analytics/insights` and `#/analytics/traffic` links are
+ * rewritten by `legacyRoute()` below, so bookmarks keep working.
  *
  * Content used to be a single "Library" destination with four unrelated jobs
  * (trainee scenarios, the builder, knowledge, simulation) behind one icon.
@@ -31,9 +41,7 @@ import type { Permission } from '../../../src/shared/access/permissions';
 import type { AdminRoute } from '../lib/route';
 
 export type AdminScreen =
-  | 'overview'
   | 'analytics'
-  | 'activity'
   | 'people'
   | 'scenarios'
   | 'knowledge'
@@ -78,25 +86,22 @@ export const NAV_SECTIONS: NavSection[] = [
     key: 'monitor',
     label: 'Monitor',
     items: [
-      { key: 'overview', label: 'Overview', icon: '✦', requires: 'overview.read' },
       {
         key: 'analytics',
         label: 'Analytics',
         icon: '⌁',
-        requires: 'insights.read',
+        requires: 'overview.read',
         tabs: [
-          { key: 'insights', label: 'Insights', requires: 'insights.read' },
-          { key: 'traffic', label: 'Traffic', requires: 'analytics.read' },
-          { key: 'quality', label: 'AI quality', requires: 'quality.read' },
-        ],
-      },
-      {
-        key: 'activity',
-        label: 'Activity',
-        icon: '◇',
-        requires: 'sessions.read',
-        tabs: [
+          // The landing page: the platform at a glance + what needs attention.
+          { key: 'overview', label: 'Overview', requires: 'overview.read' },
+          // Per-person analytics — a sortable roster, and a profile per trainee.
+          { key: 'trainees', label: 'Trainees', requires: 'sessions.read' },
           { key: 'sessions', label: 'Sessions', requires: 'sessions.read' },
+          // Was "Insights": how well the team handles pushback.
+          { key: 'skills', label: 'Skills', requires: 'insights.read' },
+          // Was "Traffic": how the app is used.
+          { key: 'engagement', label: 'Engagement', requires: 'analytics.read' },
+          { key: 'quality', label: 'AI quality', requires: 'quality.read' },
           { key: 'analyzer', label: 'Pet Analyzer', requires: 'analyzer.read' },
         ],
       },
@@ -216,10 +221,22 @@ export function defaultTab(item: NavItem, permissions: readonly string[]): strin
  * links in old emails must keep landing on the same screen. Likewise the
  * Studio's old `#/scenarios/objections` tab, now `#/scenarios/categories`.
  *
- * Any route that isn't a Library one comes back as the SAME object, so a
- * caller can test `legacyRoute(r) !== r` to decide whether to rewrite the URL.
+ * The same goes for the old Monitor screens: `#/overview`, `#/activity/…`,
+ * `#/analytics/insights` and `#/analytics/traffic` all live inside the one
+ * Analytics destination now.
+ *
+ * Any route that isn't an old one comes back as the SAME object, so a caller
+ * can test `legacyRoute(r) !== r` to decide whether to rewrite the URL.
  */
 export function legacyRoute(route: AdminRoute): AdminRoute {
+  // Monitor became one Analytics destination: Overview is its first tab,
+  // Activity's tabs moved in, Insights became Skills and Traffic Engagement.
+  if (route.screen === 'overview') return { screen: 'analytics', tab: 'overview' };
+  if (route.screen === 'activity') {
+    return { screen: 'analytics', tab: route.tab === 'analyzer' ? 'analyzer' : 'sessions', id: route.id ?? null };
+  }
+  if (route.screen === 'analytics' && route.tab === 'insights') return { screen: 'analytics', tab: 'skills' };
+  if (route.screen === 'analytics' && route.tab === 'traffic') return { screen: 'analytics', tab: 'engagement' };
   // The Studio's "Objections" tab became "Categories" (objections now live
   // inside their category on the same screen).
   if (route.screen === 'scenarios' && route.tab === 'objections') return { screen: 'scenarios', tab: 'categories' };
