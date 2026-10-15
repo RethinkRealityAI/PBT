@@ -23,6 +23,7 @@ import { categoryKnowledgeFor, mergeCategories } from '../../shared/scenarios/ob
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
 import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
 import { getOrCreateSessionId, readStorage, writeStorage } from '../../lib/storage';
+import { hasAcceptedCurrentTerms } from '../../lib/terms';
 import { SESSIONS_KEY } from '../../lib/sessionsKey';
 import { uuid } from '../../lib/id';
 import { getSupabase } from '../auth/supabaseClient';
@@ -253,9 +254,11 @@ async function persistToSupabase(args: PersistArgs): Promise<void> {
 /**
  * An anonymous session: the browser can't write `training_sessions` (RLS), so
  * the server records it without identifying details. Best-effort, like the
- * signed-in upsert — the trainee's local history is canonical.
+ * signed-in upsert — the trainee's local history is canonical. Nothing is sent
+ * until this device accepted the Terms version that says so.
  */
 async function recordAnonymousSession(args: PersistArgs): Promise<void> {
+  if (!hasAcceptedCurrentTerms()) return;
   const body: SessionSaveRequest = {
     sessionId: args.recordId,
     anonSessionId: getOrCreateSessionId(),

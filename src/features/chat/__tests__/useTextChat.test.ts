@@ -61,6 +61,7 @@ import type { FlagSnapshot } from '../../../services/flagsClient';
 import type { TeamObjection } from '../../../shared/scenarios/objections';
 import type { ObjectionCategory } from '../../../shared/scenarios/objectionCategories';
 import { readStorage, type StorageKeyDef } from '../../../lib/storage';
+import { acceptTerms } from '../../../lib/terms';
 import type { SessionRecord } from '../../../services/types';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
@@ -493,8 +494,14 @@ describe('anonymous sessions are recorded by the server', () => {
   /** Supabase is configured but nobody is signed in. */
   function fakeSignedOutSupabase() {
     const from = vi.fn();
-    return { client: { auth: { getUser: async () => ({ data: { user: null } }) }, from }, from };
+    const getUser = vi.fn(async () => ({ data: { user: null } }));
+    return { client: { auth: { getUser }, from }, from, getUser };
   }
+
+  // Recording is only allowed once the device accepted the Terms that say so.
+  beforeEach(() => {
+    acceptTerms();
+  });
 
   it('sends a finished anonymous session to session-save, never writing the table itself', async () => {
     const sb = fakeSignedOutSupabase();
@@ -540,5 +547,30 @@ describe('anonymous sessions are recorded by the server', () => {
     });
     await vi.waitFor(() => expect(postAi).toHaveBeenCalled());
     expect(postAi.mock.calls[0][1]).toMatchObject({ completed: false, endedReason: 'user_exit' });
+  });
+
+  it('sends nothing while this device has only accepted an older Terms version', async () => {
+    localStorage.setItem('pbt:terms_version', '1');
+    const sb = fakeSignedOutSupabase();
+    supabase.client = sb.client;
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    await act(async () => {
+      await result.current.send('I hear you on the cost.');
+    });
+    evaluateConversation.mockResolvedValueOnce(goodReport(70));
+    await act(async () => {
+      await result.current.end();
+    });
+
+    // The save path ran (it asked who is signed in) and stopped at the gate.
+    await vi.waitFor(() => expect(sb.getUser).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(postAi).not.toHaveBeenCalled();
+    expect(sb.from).not.toHaveBeenCalledWith('training_sessions');
   });
 });

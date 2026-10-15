@@ -3,6 +3,8 @@ import { SEED_SCENARIOS } from '../../data/scenarios';
 import { AI_ENDPOINTS } from '../../shared/ai/contract';
 import { MODEL_LIVE as SHARED_LIVE, MODEL_TEXT as SHARED_TEXT } from '../../shared/ai/models';
 import { isScoreUnavailable, type ChatMessage, type ScoreReport } from '../types';
+import { getOrCreateSessionId } from '../../lib/storage';
+import { acceptTerms } from '../../lib/terms';
 
 /**
  * geminiService is now a thin client over the `ai-*` Netlify Functions, so
@@ -198,6 +200,24 @@ describe('evaluateConversation', () => {
     const [, body] = lastCall();
     expect(body).not.toHaveProperty('config');
     expect(body).not.toHaveProperty('retrieved');
+  });
+
+  it("sends this device's anonymous id once the current Terms were accepted", async () => {
+    acceptTerms();
+    postAi.mockResolvedValueOnce({ report: REPORT, persisted: true });
+    await evaluateConversation(SCENARIO, TRANSCRIPT);
+    expect(lastCall()[1].anonSessionId).toBe(getOrCreateSessionId());
+  });
+
+  it('omits the anonymous id while only an older Terms version was accepted (or none)', async () => {
+    postAi.mockResolvedValue({ report: REPORT, persisted: false });
+    await evaluateConversation(SCENARIO, TRANSCRIPT);
+    expect(lastCall()[1]).not.toHaveProperty('anonSessionId');
+
+    acceptTerms();
+    localStorage.setItem('pbt:terms_version', '1');
+    await evaluateConversation(SCENARIO, TRANSCRIPT);
+    expect(lastCall()[1]).not.toHaveProperty('anonSessionId');
   });
 
   it('never throws: a transport failure becomes the honest scoreUnavailable report', async () => {

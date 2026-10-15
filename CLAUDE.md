@@ -50,8 +50,11 @@ Tab bar (mobile): Train · History · Library · You — see `SCREENS_WITH_TAB_B
 Initial screen logic in `App.tsx::getInitialScreen()`:
 
 1. No `pbt:terms_accepted_at` → onboarding (T&C blocks)
-2. No `pbt:profile` → quiz (RouteResolver effect handles redirect)
-3. Else → home
+2. Accepted an older `pbt:terms_version` than `CURRENT_TERMS_VERSION`
+   (`src/lib/terms.ts` — the one terms module) → terms, once, with an
+   "updated" notice; accepting goes home (quiz only without a profile)
+3. No `pbt:profile` → quiz (RouteResolver effect handles redirect)
+4. Else → home
 
 **Feature switches (Admin → Flags).** `src/app/screenFlags.ts` is the ONE
 screen → switch map (`SCREEN_FLAGS`, `useScreenEnabled()`): the route guard
@@ -139,15 +142,26 @@ telemetry). Model IDs live in `src/shared/ai/models.ts`.
   (service role; RLS `auth.uid() = user_id` is never true for a NULL owner):
   `session-save` the conversation (no score), `ai-evaluate` the score
   (`anonSessionId` in the body, read only for an anonymous caller). Both
-  refuse a row owned by an account or by another device
-  (`_shared/anonSessions.ts::checkSessionOwner`) and write nothing with
+  write through `_shared/anonSessions.ts::writeAnonymousSession`: the
+  ownership guard is IN the statement (update `where user_id is null and
+  anon_session_id = <device>`, else insert-if-absent), never a prior read, so
+  a sign-in claim racing a save can't be undone; a row owned by an account or
+  another device is never touched; one device creates at most
+  `ANON_DAILY_CAP` (100) rows a day; `session-save` takes ≤ 128 KB and has
+  separate per-IP buckets for recording and claiming. Both write nothing with
   `allowTelemetry: false` (the trainee's "Allow training data use" opt-out —
   anonymous practice is recorded for the training team, so the opt-out
   decides) or `preview: true`. On sign-in the backfill first CLAIMS this
   device's anonymous rows among its local sessions (`session-save`
-  `claim: true`, signed-in only), so a complete one keeps its verified score
-  instead of being re-uploaded. The Terms' "Anonymous by default" section says
-  so (en + fr).
+  `claim: true`, signed-in only; a failed claim is an error status and the
+  session upload is skipped that run), then reads the account's rows back and
+  uploads only the sessions it lacks or holds as `reconstructed` — the
+  backfill runs on every load (twice at sign-up), and re-uploading would
+  replace the full server scenario with the 3-field local summary. The Terms'
+  "Anonymous by default" section says
+  so (en + fr), and nothing anonymous leaves the device (`session-save` post,
+  `anonSessionId` on `ai-evaluate`) until that Terms version was accepted
+  (`hasAcceptedCurrentTerms()`, `src/lib/terms.ts`).
 
 Local dev: run `netlify dev` (serves the functions); `vite` alone has no AI.
 
@@ -846,8 +860,11 @@ file's header explains it in full:
   app announced with a `session_open` event (when, objection, mode, device,
   scorecard reached or `session_abandon`; no transcript, no score — never
   stored). Anonymous voice sessions before it logged no `session_open` and
-  can't be rebuilt. Must be applied BEFORE deploying `admin-sessions` (it
-  selects the new columns).
+  can't be rebuilt. The backfill distrusts `nav_events` (anonymous-insertable,
+  client-stamped): events from 2026-05-01 to the 2026-10-16 cutoff only,
+  leave / scorecard moments within 6 h of the open, durations clamped before
+  the cast. Must be applied BEFORE deploying the release — signed-in saves,
+  scores, the backfill and `session-save` all write the new columns.
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -1254,8 +1271,13 @@ The static test catches "migration file missing"; `verify:db` catches
    could not rebuild them (~90 on 1 Oct alone); only their AI usage
    (`ai_call_telemetry` call type `voice`) remains. (i) The Terms'
    "Anonymous by default" wording changed with anonymous recording
-   (2026-10-15) WITHOUT bumping `TERMS_VERSION` (existing users are not
-   re-asked) — a product/legal call; the French text joins item 2's review.
+   (2026-10-15); `CURRENT_TERMS_VERSION` is now 2, so existing devices are
+   re-asked once — the French text joins item 2's review. (j) `session-save`
+   is open to anyone, like the rest of the anonymous-first app: rate limits,
+   the 128 KB body and the per-device daily cap bound it, but a script
+   rotating device ids can still add fake anonymous sessions. Tying a row to
+   a real AI session (an HMAC issued by `ai-roleplay` / `ai-voice-token`) is
+   the next step if that ever shows up in Analytics.
 
 1. **a11y deep sweep**: aria labels/aria-live/keyboard basics are in; still
    owed: modal focus traps + Escape + `aria-modal` everywhere, CreateScreen

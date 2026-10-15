@@ -8,6 +8,10 @@ export const terms = {
   'terms.eyebrow': 'PBT · Pushback Training',
   'terms.headline': 'A few things\nbefore we start.',
 
+  // Shown above the sections when this device accepted an older version.
+  'terms.updated.notice':
+    "We've updated these terms: “Anonymous by default” now explains what we record when you practise without an account.",
+
   'terms.section.what.title': 'What this is',
   'terms.section.what.body':
     'PBT (Pushback Training) is a simulation tool designed to help veterinary teams practise handling common client objections — pricing, breed diets, raw food, and more. Scenarios here are roleplay exercises, not real client interactions. They are not a substitute for professional judgment.',
@@ -26,7 +30,7 @@ export const terms = {
 
   'terms.section.anonymous.title': 'Anonymous by default',
   'terms.section.anonymous.body':
-    "You can use PBT without an account. Your profile and session history are kept in your browser on this device. If you don't sign in, we never ask for your name, email or any other personal details, and nothing we record is linked to you. We record only anonymous usage data and your practice sessions (the conversations and their scores), and use them only to understand and improve the training. All data is encrypted in transit and at rest. You can switch this off with “Allow training data use” on the You tab. Creating an account is optional — it backs up your data to a private, encrypted cloud profile.",
+    "You can use PBT without an account. Your profile and session history are kept in your browser on this device. If you don't sign in, we never ask for your name, email or any other personal details. We record only anonymous usage data and your practice sessions (the conversations and their scores), under a random ID for this device rather than your identity, and use them only to understand and improve the training. All data is encrypted in transit and at rest. You can stop this recording at any time with “Allow training data use” on the You tab. Creating an account is optional — it backs up your data to a private, encrypted cloud profile, and sessions already practised on this device move to it.",
 
   'terms.section.privacy.title': 'Privacy',
   'terms.section.privacy.body':

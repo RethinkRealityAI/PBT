@@ -5,12 +5,11 @@ import { Icon } from '../design-system/Icon';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
-import { writeStorage, STORAGE_KEYS } from '../lib/storage';
+import { useProfile } from '../app/providers/ProfileProvider';
+import { acceptTerms, needsTermsReview } from '../lib/terms';
 import { RADII } from '../design-system/tokens';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
-
-const TERMS_VERSION = 1;
 
 /**
  * Section copy lives in the `terms` catalog namespace (legal-adjacent — see
@@ -39,13 +38,18 @@ const SECTIONS: { id: string; title: CatalogKey; body: CatalogKey }[] = [
 
 export function TermsScreen() {
   const { replace } = useNavigation();
+  const { profile } = useProfile();
   const t = useT();
   const [agreed, setAgreed] = useState(false);
+  // Read once: a returning device that accepted an older version sees what
+  // changed. (Accepting flips it, but by then we've navigated away.)
+  const [isReview] = useState(needsTermsReview);
 
   const handleAccept = () => {
-    writeStorage(STORAGE_KEYS.termsAcceptedAt, new Date().toISOString());
-    localStorage.setItem('pbt:terms_version', String(TERMS_VERSION));
-    replace('quiz');
+    acceptTerms();
+    // A returning user already has an ECHO profile — never send them back
+    // through the quiz.
+    replace(profile ? 'home' : 'quiz');
   };
 
   return (
@@ -81,6 +85,34 @@ export function TermsScreen() {
         >
           {t('terms.headline')}
         </h1>
+
+        {/* What changed since this device last agreed */}
+        {isReview && (
+          <Glass radius={RADII.lg} padding={16} role="note" style={{ marginBottom: 10 }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: 10,
+                alignItems: 'flex-start',
+                fontSize: 14,
+                lineHeight: 1.5,
+                color: 'var(--pbt-text)',
+              }}
+            >
+              <Icon.info
+                style={{
+                  width: 18,
+                  height: 18,
+                  flexShrink: 0,
+                  marginTop: 1,
+                  color: 'var(--pbt-driver-primary)',
+                }}
+                aria-hidden
+              />
+              <span>{t('terms.updated.notice')}</span>
+            </div>
+          </Glass>
+        )}
 
         {/* Content sections */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>

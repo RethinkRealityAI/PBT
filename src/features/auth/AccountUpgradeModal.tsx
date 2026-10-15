@@ -14,7 +14,7 @@ import {
 import type { CatalogKey } from '../../i18n/catalog';
 import { FLAGS } from '../../app/flags';
 import { useProfile, type Profile } from '../../app/providers/ProfileProvider';
-import { readStorage, writeStorage, STORAGE_KEYS } from '../../lib/storage';
+import { acceptTerms, hasAcceptedCurrentTerms } from '../../lib/terms';
 import { backfillLocalDataToCloud } from './backfillLocalData';
 import { DRIVER_KEYS, type DriverKey } from '../../design-system/tokens';
 import { useT } from '../../i18n/useT';
@@ -274,11 +274,10 @@ function AuthDialog({
 
         // ── Sign-in side-effects ─────────────────────────────
         // Returning users have already accepted terms when they originally
-        // signed up; persist that locally so the routing layer doesn't
-        // bounce a fresh-device sign-in into the onboarding flow.
-        if (!readStorage(STORAGE_KEYS.termsAcceptedAt)) {
-          writeStorage(STORAGE_KEYS.termsAcceptedAt, new Date().toISOString());
-        }
+        // signed up (their account's terms cover them); persist that locally,
+        // with the current version, so the routing layer doesn't bounce a
+        // fresh-device sign-in into onboarding or the terms review.
+        if (!hasAcceptedCurrentTerms()) acceptTerms();
 
         // Hydrate the profile synchronously from cloud so the caller can
         // navigate to home without a quiz-redirect flash. useCloudSync's

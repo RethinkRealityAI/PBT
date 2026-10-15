@@ -105,6 +105,7 @@ const ResetPasswordScreen = lazy(() =>
 );
 
 import { readStorage, STORAGE_KEYS, getOrCreateSessionId } from '../lib/storage';
+import { needsTermsReview } from '../lib/terms';
 
 function getInitialScreen(): Screen {
   // Admin preview iframe: the builder drives this document by postMessage and
@@ -114,6 +115,9 @@ function getInitialScreen(): Screen {
   if (isPreviewMode()) return 'home';
   const terms = readStorage(STORAGE_KEYS.termsAcceptedAt);
   if (!terms) return 'onboarding';
+  // Accepted an older Terms version: show the new text once (TermsScreen
+  // explains what changed) before anything else.
+  if (needsTermsReview()) return 'terms';
   return 'home';
 }
 
