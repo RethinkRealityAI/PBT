@@ -140,3 +140,30 @@ describe('selectAll', () => {
     expect(res).toEqual({ rows: [], truncated: false, error: null });
   });
 });
+
+describe('largeJsonResponse', () => {
+  it('buffers a small body and streams one past the 6 MB buffered limit', async () => {
+    const { largeJsonResponse } = await import('../_shared/admin');
+    const small = largeJsonResponse({ ok: true });
+    expect(small.headers.get('content-type')).toBe('application/json');
+    expect(await small.json()).toEqual({ ok: true });
+
+    const big = Array.from({ length: 60_000 }, (_, i) => ({ i, pad: 'é'.repeat(40) }));
+    const res = largeJsonResponse(big, { status: 200 });
+    expect(res.headers.get('content-type')).toBe('application/json');
+    // Streamed in chunks (a buffered body arrives as one).
+    const reader = res.body!.getReader();
+    const chunks: Uint8Array[] = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    expect(chunks.length).toBeGreaterThan(1);
+    const text = Buffer.concat(chunks).toString('utf8');
+    expect(Buffer.byteLength(text)).toBeGreaterThan(4 * 1024 * 1024);
+    const back = JSON.parse(text) as typeof big;
+    expect(back).toHaveLength(60_000);
+    expect(back[59_999]).toEqual(big[59_999]);
+  });
+});

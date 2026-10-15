@@ -125,7 +125,7 @@ export function overviewNarrative(input: OverviewNarrativeInput): NarrativeSente
   const activity: NarrativeSentence = [
     `${windowPhrase(range)}, `,
     { text: plural(current.activeTrainees, 'trainee', 'trainees'), strong: true },
-    range === 'all' ? ' have practised ' : ' practised ',
+    range === 'all' ? (current.activeTrainees === 1 ? ' has practised ' : ' have practised ') : ' practised ',
     { text: times(current.sessions), strong: true },
   ];
   if (comparable) {
@@ -145,7 +145,7 @@ export function overviewNarrative(input: OverviewNarrativeInput): NarrativeSente
     sentences.push([
       current.finished === 0
         ? `${current.sessions === 1 ? 'It wasn’t' : 'None of them was'} finished, so there are no scores yet.`
-        : `${current.sessions === 1 ? 'It has' : 'None of them has'} a score yet.`,
+        : `${current.sessions === 1 ? 'It hasn’t' : 'None of them has'} been scored yet.`,
     ]);
   } else {
     const score: NarrativeSentence = ['The team averages ', { text: String(Math.round(current.avgScore)), strong: true }];
