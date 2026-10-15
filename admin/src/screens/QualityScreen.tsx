@@ -14,16 +14,15 @@ import {
 import { Glass } from '../primitives/Glass';
 import {
   EmptyState,
-  Kpi,
   LoadingShimmer,
   SectionTitle,
   StatusPill,
 } from '../primitives';
 import { QueryBoundary } from '../primitives/QueryBoundary';
 import { ContextBar, ScreenShell, type Range } from '../primitives/Shell';
-import { useAiCalls } from '../data/queries';
-import { useSessionSummaries } from '../analytics/data';
-import { splitByPeriod } from '../analytics/lib/period';
+import { useAiCallsWindow, useSessionSummaries } from '../analytics/data';
+import { compareWords, pointsDelta, splitByPeriod } from '../analytics/lib/period';
+import { AutoGrid, StatTile } from '../analytics/ui';
 import { COLOR } from '../lib/tokens';
 import { CALL_TYPE_LABELS, labelOf } from '../lib/labels';
 import { fmtMoney } from '../lib/format';
@@ -164,20 +163,36 @@ export function QualityScreen({
   // Sessions tab filters them and the Overview flags them) — and the list
   // counted failed scorings, stored as a stand-in 0, as the worst sessions.
   const sessions = useSessionSummaries(range);
-  const aiCalls = useAiCalls(range, 5000);
+  // Twice the window, shared with the Overview's AI health strip (one fetch):
+  // the current window drives every chart, the previous one the deltas.
+  const callsWindow = useAiCallsWindow(range);
+  const callSplit = useMemo(() => splitByPeriod(callsWindow.data, range), [callsWindow.data, range]);
+  const aiCalls = { ...callsWindow, data: callSplit.current };
 
   const stats = useMemo(() => {
-    const c = aiCalls.data;
-    const current = splitByPeriod(sessions.data.rows, range).current;
-    const finished = current.filter((x) => x.completed);
-    return {
-      scoringFailed: finished.filter((x) => x.score_unavailable).length,
-      finished: finished.length,
-      slow: c.filter((x) => x.latency_ms > SLOW_REPLY_MS),
-      refused: c.filter((x) => x.refusal),
-      errored: c.filter((x) => x.error != null),
+    const rates = (c: AiCall[]) => ({
+      calls: c.length,
+      errored: c.filter((x) => x.error != null).length,
+      refused: c.filter((x) => x.refusal).length,
+      slow: c.filter((x) => x.latency_ms > SLOW_REPLY_MS).length,
+    });
+    const split = splitByPeriod(sessions.data.rows, range);
+    const failedScoring = (rows: typeof split.current) => {
+      const finished = rows.filter((x) => x.completed);
+      return { finished: finished.length, failed: finished.filter((x) => x.score_unavailable).length };
     };
-  }, [sessions.data, aiCalls.data, range]);
+    return {
+      cur: rates(callSplit.current),
+      prev: range === 'all' ? null : rates(callSplit.previous),
+      scoring: failedScoring(split.current),
+      scoringPrev: range === 'all' ? null : failedScoring(split.previous),
+    };
+  }, [sessions.data, callSplit, range]);
+  const share = (n: number, d: number) => (d > 0 ? (n / d) * 100 : null);
+  const shareDelta = (key: 'errored' | 'refused' | 'slow') =>
+    stats.prev && stats.prev.calls > 0
+      ? pointsDelta(share(stats.cur[key], stats.cur.calls), share(stats.prev[key], stats.prev.calls))
+      : null;
 
   // ── Alert threshold banner ──────────────────────────────────────────
   const alertStats = useMemo(() => {
@@ -376,54 +391,56 @@ export function QualityScreen({
             </Glass>
           )}
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: 16,
-            }}
-          >
+          <AutoGrid min={220}>
             {sessions.loading || aiCalls.loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <LoadingShimmer key={i} height={140} />
               ))
             ) : (
               <>
-                <Kpi
+                <StatTile
                   label="Replies that failed"
-                  value={fmtCount(stats.errored.length)}
-                  icon="✕"
-                  accent={COLOR.dangerSoft}
-                  sparkColor={COLOR.danger}
+                  value={fmtPct1(share(stats.cur.errored, stats.cur.calls))}
+                  delta={range === 'all' ? undefined : shareDelta('errored')}
+                  goodWhen="down"
+                  compareLabel={compareWords(range)}
+                  hint={`${fmtCount(stats.cur.errored)} of ${fmtCount(stats.cur.calls)} AI replies errored out`}
                 />
-                <Kpi
+                <StatTile
                   label="Replies the AI declined"
-                  value={fmtCount(stats.refused.length)}
-                  icon="⊘"
-                  accent={COLOR.warnSoft}
-                  sparkColor={COLOR.warn}
+                  value={fmtPct1(share(stats.cur.refused, stats.cur.calls))}
+                  delta={range === 'all' ? undefined : shareDelta('refused')}
+                  goodWhen="down"
+                  compareLabel={compareWords(range)}
+                  hint={`${fmtCount(stats.cur.refused)} refusals — usually prompt wording, see AI tuning`}
                 />
-                <Kpi
+                <StatTile
                   label="Replies slower than 2 seconds"
-                  value={fmtCount(stats.slow.length)}
-                  icon="◷"
-                  accent="oklch(0.94 0.06 70)"
-                  sparkColor={COLOR.warn}
+                  value={fmtPct1(share(stats.cur.slow, stats.cur.calls))}
+                  delta={range === 'all' ? undefined : shareDelta('slow')}
+                  goodWhen="down"
+                  compareLabel={compareWords(range)}
+                  hint={`${fmtCount(stats.cur.slow)} replies; scoring is naturally slower than a reply`}
                 />
-                <Kpi
-                  label={
-                    stats.finished
-                      ? `Scorings that failed · of ${fmtCount(stats.finished)}`
-                      : 'Scorings that failed'
+                <StatTile
+                  label="Sessions the scorer couldn’t grade"
+                  value={fmtCount(stats.scoring.failed)}
+                  unit={stats.scoring.finished ? `of ${fmtCount(stats.scoring.finished)}` : undefined}
+                  delta={
+                    range === 'all' || !stats.scoringPrev || stats.scoringPrev.finished === 0
+                      ? range === 'all' ? undefined : null
+                      : pointsDelta(
+                          share(stats.scoring.failed, stats.scoring.finished),
+                          share(stats.scoringPrev.failed, stats.scoringPrev.finished),
+                        )
                   }
-                  value={fmtCount(stats.scoringFailed)}
-                  icon="↓"
-                  accent={COLOR.warnSoft}
-                  sparkColor={COLOR.warn}
+                  goodWhen="down"
+                  compareLabel={compareWords(range)}
+                  hint="Finished, but the score couldn’t be produced; the trainee can retry"
                 />
               </>
             )}
-          </div>
+          </AutoGrid>
 
           {/* ── Failure-rate trend ── */}
           <Glass padding={24} radius={20}>
@@ -598,7 +615,7 @@ export function QualityScreen({
                       fontSize={11}
                       tickLine={false}
                       width={56}
-                      tickFormatter={(v: number) => fmtMoney(v)}
+                      tickFormatter={(v: number) => (v === 0 ? '$0' : v < 0.01 ? `$${v.toFixed(3)}` : fmtMoney(v))}
                     />
                     <Tooltip
                       cursor={{ fill: 'rgba(60,20,15,0.04)' }}
