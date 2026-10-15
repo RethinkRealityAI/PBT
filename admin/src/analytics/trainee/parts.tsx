@@ -47,7 +47,7 @@ if (typeof document !== 'undefined' && !document.getElementById('pbt-trainee-css
     .pbt-sort-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; }
     .pbt-sort-btn:hover { color: ${COLOR.ink}; }
     .pbt-sort-btn:focus-visible { outline: 2px solid ${COLOR.brand}; outline-offset: 2px; }
-    .pbt-session-row { all: unset; box-sizing: border-box; display: grid; align-items: center; gap: 12px; width: 100%;
+    .pbt-session-row { all: unset; box-sizing: border-box; display: grid; align-items: center; gap: 12px; width: calc(100% + 20px);
       padding: 10px 10px; margin: 0 -10px; border-radius: 12px; cursor: pointer; transition: background 0.14s ease; }
     .pbt-session-row:hover { background: rgba(60,20,15,0.04); }
     .pbt-session-row:focus-visible { outline: 2px solid ${COLOR.brand}; outline-offset: 1px; }
