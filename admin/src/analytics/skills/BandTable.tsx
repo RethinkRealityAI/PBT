@@ -121,7 +121,7 @@ export function ObjectionSkillTable({
             <col key={k} />
           ))}
           <col />
-          <col style={{ width: 58 }} />
+          <col style={{ width: 54 }} />
         </colgroup>
         <thead>
           <tr>

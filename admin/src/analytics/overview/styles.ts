@@ -37,7 +37,7 @@ const CSS = `
   @container (max-width: 700px) {
     .pbt-sk-full { display: none; }
     .pbt-sk-short { display: inline; }
-    .pbt-sk-labelcol { width: 23%; }
+    .pbt-sk-labelcol { width: 20%; }
   }
   abbr.pbt-sk-short { text-decoration: none; }
 `;
