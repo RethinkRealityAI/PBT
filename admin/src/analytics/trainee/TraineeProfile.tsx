@@ -264,7 +264,7 @@ function ProfileBody({
           <StatTile
             label="Average score"
             value={m.cur.avgScore == null ? '—' : Math.round(m.cur.avgScore)}
-            delta={cmp ? pointsDelta(m.cur.avgScore, m.prev?.avgScore ?? null) : undefined}
+            delta={cmp && m.cur.avgScore != null ? pointsDelta(m.cur.avgScore, m.prev?.avgScore ?? null) : undefined}
             compareLabel={compare}
             hint={
               m.teamAvg != null
@@ -294,7 +294,7 @@ function ProfileBody({
             label="Finish rate"
             value={m.cur.finishRate == null ? '—' : Math.round(m.cur.finishRate)}
             unit={m.cur.finishRate == null ? undefined : '%'}
-            delta={cmp ? pointsDelta(m.cur.finishRate, m.prev?.finishRate ?? null) : undefined}
+            delta={cmp && m.cur.finishRate != null ? pointsDelta(m.cur.finishRate, m.prev?.finishRate ?? null) : undefined}
             compareLabel={compare}
             hint="Sessions finished rather than left early"
           />
@@ -504,6 +504,10 @@ function IdentityCard({ detail, model, now }: { detail: TraineeDetail; model: Mo
           padding: 24,
           height: '100%',
           boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          gap: 22,
           background: `radial-gradient(120% 90% at 0% 0%, color-mix(in oklab, ${tint} 15%, transparent) 0%, transparent 60%)`,
         }}
       >
@@ -543,7 +547,7 @@ function IdentityCard({ detail, model, now }: { detail: TraineeDetail; model: Mo
           </div>
         </div>
 
-        <div className="pbt-tp-facts" style={{ marginTop: 22 }}>
+        <div className="pbt-tp-facts">
           <MiniFact label="Communication style">
             <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
               {primary ? <DriverChip driver={primary} /> : <span style={{ color: COLOR.inkMute }}>Quiz not taken</span>}

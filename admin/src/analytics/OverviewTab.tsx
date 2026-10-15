@@ -50,13 +50,13 @@ import {
 import { rollupTrainees, statusCounts } from './lib/trainees';
 import { overviewNarrative } from './lib/narrative';
 import { aiHealth, buildAttention, type AttentionTarget } from './lib/attention';
-import { leaders, measured, practiceFunnel, trendExtras } from './lib/overview';
+import { firstActiveBucket, leaders, measured, practiceFunnel, trendExtras } from './lib/overview';
 import { teamObjectionTitles } from './lib/skills';
 import { NarrativeHero } from './overview/Hero';
 import { AttentionPanel } from './overview/Attention';
 import { FunnelPanel, LeadersPanel } from './overview/People';
 import { AiHealthStrip } from './overview/AiHealthStrip';
-import { PracticeActivityPanel, ScoreTrendPanel, granularityWord } from './overview/TrendPanels';
+import { PracticeActivityPanel, ScoreTrendPanel, granularityWord, inWindow } from './overview/TrendPanels';
 import { SkillBars } from './overview/charts';
 
 export function OverviewTab(props: AnalyticsTabProps) {
@@ -114,8 +114,18 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
     const { current, previous } = splitByPeriod(sessions.data.rows, range, now);
     const cur = sessionStats(current);
     const prev = comparable ? sessionStats(previous) : null;
-    const trend = sessionTrend(current, range, now);
-    const extras = trendExtras(current, range, now);
+    const fullTrend = sessionTrend(current, range, now);
+    const fullExtras = trendExtras(current, range, now);
+    // All time is bucketed as a year: start the charts where the team did.
+    const from = range === 'all' ? firstActiveBucket(fullTrend.points) : 0;
+    const trend = { granularity: fullTrend.granularity, points: fullTrend.points.slice(from) };
+    const extras = {
+      practiceHours: fullExtras.practiceHours.slice(from),
+      resolvedRate: fullExtras.resolvedRate.slice(from),
+      finishRate: fullExtras.finishRate.slice(from),
+      scored: fullExtras.scored.slice(from),
+    };
+    const chartSince = from > 0 && trend.points.length ? trend.points[0].label : null;
     const skillsCur = skillAverages(current);
     const skillsPrev = comparable ? skillAverages(previous) : null;
     const weakest = extremeSkill(skillsCur.avg, 'weakest');
@@ -179,6 +189,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
       attention,
       narrative,
       busiest,
+      chartSince,
       truncated: sessions.data.truncated || all.data.truncated,
     };
   }, [
@@ -337,7 +348,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                 <LeadersPanel
                   improved={model.lead.improved}
                   active={model.lead.active}
-                  windowWords={windowWords}
+                  inWindow={inWindow(range)}
                   onOpenProfile={openProfile}
                   onOpenTrainees={openTrainees}
                 />
@@ -349,6 +360,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   granularity={model.trend.granularity}
                   range={range}
                   windowWords={windowWords}
+                  since={model.chartSince}
                   onWiden={() => onRange('all')}
                   footnote={
                     <>
@@ -368,6 +380,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   granularity={model.trend.granularity}
                   range={range}
                   windowWords={windowWords}
+                  since={model.chartSince}
                   onWiden={() => onRange('all')}
                   footnote={
                     cur.scoringFailed > 0
@@ -443,7 +456,7 @@ function SkillsGlance({
     >
       {count === 0 ? (
         <div style={{ fontSize: 12.5, color: COLOR.inkMute, padding: '10px 0', lineHeight: 1.5 }}>
-          No scored sessions with skill scores in the {rangeWords(range)}.
+          No scored sessions with skill scores {inWindow(range)}.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

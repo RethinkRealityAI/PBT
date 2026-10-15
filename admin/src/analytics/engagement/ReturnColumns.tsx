@@ -10,9 +10,12 @@ import { activeDaysLabel } from '../lib/engagementInsights';
 export function ReturnColumns({
   histogram,
   returningPct,
+  singleDay = false,
 }: {
   histogram: EngagementReport['active_days_histogram'];
   returningPct: number | null;
+  /** A one-day window: nobody can have used the app on several days, so say so. */
+  singleDay?: boolean;
 }) {
   const max = Math.max(1, ...histogram.map((b) => b.visitors));
   const total = histogram.reduce((a, b) => a + b.visitors, 0);
@@ -20,12 +23,16 @@ export function ReturnColumns({
     <Panel
       title="How often people come back"
       subtitle={
-        returningPct == null
+        returningPct == null || singleDay
           ? 'People by the number of different days they used the app'
           : `${Math.round(returningPct)}% used the app on two or more days`
       }
     >
-      {total === 0 ? (
+      {singleDay ? (
+        <div style={{ fontSize: 12.5, color: COLOR.inkMute, padding: '12px 0', lineHeight: 1.5 }}>
+          Coming back is measured across several days. Pick 7 days or longer to see how often people return.
+        </div>
+      ) : total === 0 ? (
         <div style={{ fontSize: 12.5, color: COLOR.inkMute, padding: '12px 0' }}>Nobody used the app in this window.</div>
       ) : (
         <div

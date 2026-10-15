@@ -72,13 +72,14 @@ function SubHead({ children, hint }: { children: string; hint: string }) {
 export function LeadersPanel({
   improved,
   active,
-  windowWords,
+  inWindow,
   onOpenProfile,
   onOpenTrainees,
 }: {
   improved: TraineeRow[];
   active: TraineeRow[];
-  windowWords: string;
+  /** "in the last 28 days" / "so far". */
+  inWindow: string;
   onOpenProfile: (id: string) => void;
   onOpenTrainees: () => void;
 }) {
@@ -99,7 +100,7 @@ export function LeadersPanel({
             <SubHead hint="Latest 5 scores vs the 5 before">Most improved</SubHead>
             {improved.length === 0 ? (
               <div style={{ fontSize: 12, color: COLOR.inkMute, lineHeight: 1.5 }}>
-                No one who practised in the {windowWords} has 7+ scored sessions showing a rise yet.
+                No one who practised {inWindow} has a clear rise yet — it takes 7+ scored sessions to tell.
               </div>
             ) : (
               <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -117,7 +118,7 @@ export function LeadersPanel({
             )}
           </div>
           <div>
-            <SubHead hint={`Sessions in the ${windowWords}`}>Most active</SubHead>
+            <SubHead hint={`Sessions ${inWindow}`}>Most active</SubHead>
             {active.length === 0 ? (
               <div style={{ fontSize: 12, color: COLOR.inkMute }}>No sessions in this window.</div>
             ) : (

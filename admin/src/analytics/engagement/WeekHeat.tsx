@@ -32,8 +32,11 @@ export function WeekHeat({ heatmap, rangeLabel }: { heatmap: EngagementReport['h
   const summary = heatSummary(heatmap);
   const sentence = peakSentence(heatmap);
 
+  // Facts sit beside the grid when there's room, below it when there isn't.
+  const wide = width === 0 || width >= 820;
+  const gridWidth = wide ? width - 224 : width;
   // Fit 24 columns to the space there is: row labels ~44px, 3px spacing.
-  const cell = width > 0 ? Math.max(14, Math.min(30, Math.floor((width - 44) / 24) - 3)) : 22;
+  const cell = width > 0 ? Math.max(14, Math.min(30, Math.floor((gridWidth - 44) / 24) - 3)) : 22;
 
   return (
     <Panel
@@ -46,8 +49,11 @@ export function WeekHeat({ heatmap, rangeLabel }: { heatmap: EngagementReport['h
       }
       footnote="Times are in your time zone."
     >
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start' }}>
-        <div ref={ref} style={{ flex: '1 1 520px', minWidth: 0 }}>
+      <div
+        ref={ref}
+        style={{ display: 'flex', flexDirection: wide ? 'row' : 'column', gap: wide ? 24 : 18, alignItems: wide ? 'flex-start' : 'stretch' }}
+      >
+        <div style={{ flex: '1 1 auto', minWidth: 0 }}>
           {summary.total === 0 ? (
             <div style={{ fontSize: 12.5, color: COLOR.inkMute, padding: '24px 0' }}>No screens were opened in this window.</div>
           ) : asTable ? (
@@ -74,12 +80,13 @@ export function WeekHeat({ heatmap, rangeLabel }: { heatmap: EngagementReport['h
         {summary.total > 0 && (
           <div
             style={{
-              flex: '0 1 200px',
+              flex: wide ? '0 0 200px' : '1 1 auto',
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gridTemplateColumns: wide ? '1fr' : 'repeat(auto-fit, minmax(130px, 1fr))',
               gap: 16,
-              paddingLeft: 20,
-              borderLeft: `0.5px solid ${CHART.grid}`,
+              ...(wide
+                ? { paddingLeft: 20, borderLeft: `0.5px solid ${CHART.grid}` }
+                : { paddingTop: 16, borderTop: `0.5px solid ${CHART.grid}` }),
             }}
           >
             {summary.busiestDay && (

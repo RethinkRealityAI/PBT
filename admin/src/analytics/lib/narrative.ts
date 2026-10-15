@@ -154,7 +154,9 @@ export function overviewNarrative(input: OverviewNarrativeInput): NarrativeSente
     }
     const prevAvg = comparable ? previous.avgScore : null;
     if (prevAvg != null) {
-      const d = Math.round(current.avgScore) - Math.round(prevAvg);
+      // Round the DIFFERENCE, as the tiles' delta chips do, so the sentence
+      // and the "Average score" tile never disagree by a point.
+      const d = Math.round(current.avgScore - prevAvg);
       if (d === 0) score.push(', the same as before');
       else score.push(', ', { text: `${d > 0 ? 'up' : 'down'} ${Math.abs(d)} point${Math.abs(d) === 1 ? '' : 's'}`, strong: true });
     }

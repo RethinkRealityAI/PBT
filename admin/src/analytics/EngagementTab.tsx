@@ -118,13 +118,18 @@ function EngagementBody({ report, range }: { report: EngagementReport; range: Ra
           compareLabel={compareLabel}
           hint="Distinct accounts that opened the app"
         />
-        <StatTile
-          label="Returning"
-          value={curReturn == null ? '—' : `${Math.round(curReturn)}%`}
-          delta={delta(prev ? pointsDelta(curReturn, returningRate(prev)) : null)}
-          compareLabel={compareLabel}
-          hint={`${people(cur.returning_visitors)} came back on 2 or more days`}
-        />
+        {range === '24h' ? (
+          // Coming back on two different days can't be measured inside one day.
+          <StatTile label="Returning" value="—" hint="Measured over several days — pick 7 days or longer" />
+        ) : (
+          <StatTile
+            label="Returning"
+            value={curReturn == null ? '—' : `${Math.round(curReturn)}%`}
+            delta={delta(prev ? pointsDelta(curReturn, returningRate(prev)) : null)}
+            compareLabel={compareLabel}
+            hint={`${people(cur.returning_visitors)} came back on 2 or more days`}
+          />
+        )}
         <StatTile
           label="Screens per person"
           value={curPerVisitor == null ? '—' : curPerVisitor.toFixed(1)}
@@ -227,7 +232,11 @@ function EngagementBody({ report, range }: { report: EngagementReport; range: Ra
       </SplitRow>
 
       <SplitRow ratio="1fr 1.25fr">
-        <ReturnColumns histogram={report.active_days_histogram} returningPct={curReturn} />
+        <ReturnColumns
+          histogram={report.active_days_histogram}
+          returningPct={curReturn}
+          singleDay={range === '24h'}
+        />
         <Panel title="Most-used actions" subtitle="What people did, most frequent first">
           {actions.length === 0 ? (
             <div style={{ fontSize: 12.5, color: COLOR.inkMute, padding: '12px 0' }}>No actions were recorded in this window.</div>

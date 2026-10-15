@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { leaders, measured, practiceFunnel, trendExtras } from '../overview';
+import { firstActiveBucket, leaders, measured, practiceFunnel, trendExtras } from '../overview';
 import { DAY_MS } from '../period';
 import { rollupTrainees } from '../trainees';
 import { person, session } from './fixtures';
@@ -26,6 +26,13 @@ describe('trendExtras', () => {
     expect(t.passRate[0]).toBeNull();
     expect(t.resolvedRate[0]).toBeNull();
     expect(t.finishRate[0]).toBeNull();
+  });
+
+  it('starts an all-time chart at the first bucket with a session', () => {
+    const pts = [0, 0, 0, 0, 2, 0, 3, 1].map((sessions) => ({ sessions }));
+    expect(firstActiveBucket(pts)).toBe(4);
+    expect(firstActiveBucket(pts, 6)).toBe(2);
+    expect(firstActiveBucket([{ sessions: 0 }, { sessions: 0 }])).toBe(0);
   });
 
   it('measured() drops empty buckets', () => {
@@ -73,6 +80,7 @@ describe('leaders', () => {
       person({ user_id: 'down', display_name: 'Down' }),
       person({ user_id: 'old', display_name: 'Lapsed improver' }),
       person({ user_id: 'busy', display_name: 'Busy' }),
+      person({ user_id: 'flat', display_name: 'Flat' }),
     ];
     const seq = (user: string, scores: number[], startDaysAgo: number) =>
       scores.map((score, i) => session({ user_id: user, score_overall: score, created_at: ago(startDaysAgo - i) }));
@@ -82,12 +90,14 @@ describe('leaders', () => {
       ...seq('down', [80, 82, 80, 60, 62, 60, 60, 60], 8),
       ...seq('old', [40, 40, 40, 80, 80, 80, 80, 80], 60),
       ...seq('busy', Array.from({ length: 10 }, () => 70), 10),
+      // Rose by less than a point — not named.
+      ...seq('flat', [70, 70, 70, 70, 70, 70.4, 70.4, 70.4, 70.4, 70.4], 12),
     ];
     const rows = rollupTrainees(directory, sessions, { windowStart: NOW - 28 * DAY_MS, now: NOW });
     const l = leaders(rows);
     expect(l.improved.map((r) => r.name)).toEqual(['Up']);
     // A tie on sessions goes to the higher average.
-    expect(l.active.map((r) => r.name)).toEqual(['Busy', 'Down', 'Up']);
-    expect(l.active.map((r) => r.sessions)).toEqual([10, 8, 8]);
+    expect(l.active.map((r) => r.name)).toEqual(['Flat', 'Busy', 'Down', 'Up']);
+    expect(l.active.map((r) => r.sessions)).toEqual([10, 10, 8, 8]);
   });
 });

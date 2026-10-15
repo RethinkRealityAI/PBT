@@ -9,7 +9,7 @@ import { EmptyState } from '../../primitives';
 import { COLOR } from '../../lib/tokens';
 import { CHART, GhostButton, Legend, Panel } from '../ui';
 import type { TrendPoint } from '../lib/metrics';
-import type { Range } from '../lib/period';
+import { rangeWords, type Range } from '../lib/period';
 import { ActivityBars, MiniTable, SOLID, SOLID_LINE, ScoreLine, TableToggle, bucketTitle } from './charts';
 
 type Granularity = 'hour' | 'day' | 'week';
@@ -18,9 +18,18 @@ export function granularityWord(g: Granularity): string {
   return g === 'hour' ? 'hour' : g === 'day' ? 'day' : 'week';
 }
 
-/** Chart window in words: `all` is charted as the last 12 months. */
-export function chartWindowWords(range: Range, words: string): string {
-  return range === 'all' ? 'last 12 months' : words;
+/**
+ * Chart window in words. All time is bucketed as the last 12 months, and
+ * starts at the team's first session when that's later (`since`).
+ */
+export function chartWindowWords(range: Range, words: string, since?: string | null): string {
+  if (range !== 'all') return words;
+  return since ? `since ${since}` : 'last 12 months';
+}
+
+/** "in the last 28 days" — or "so far" for all time ("No practice so far"). */
+export function inWindow(range: Range): string {
+  return range === 'all' ? 'so far' : `in the ${rangeWords(range)}`;
 }
 
 function WidenEmpty({ title, subtitle, onWiden }: { title: string; subtitle: string; onWiden?: () => void }) {
@@ -38,6 +47,7 @@ export function PracticeActivityPanel({
   granularity,
   range,
   windowWords,
+  since,
   footnote,
   onWiden,
 }: {
@@ -45,6 +55,7 @@ export function PracticeActivityPanel({
   granularity: Granularity;
   range: Range;
   windowWords: string;
+  since?: string | null;
   footnote?: ReactNode;
   onWiden?: () => void;
 }) {
@@ -53,7 +64,7 @@ export function PracticeActivityPanel({
   return (
     <Panel
       title="Practice activity"
-      subtitle={`Sessions per ${granularityWord(granularity)} · ${chartWindowWords(range, windowWords)}`}
+      subtitle={`Sessions per ${granularityWord(granularity)} · ${chartWindowWords(range, windowWords, since)}`}
       actions={
         total > 0 ? (
           <>
@@ -73,7 +84,7 @@ export function PracticeActivityPanel({
     >
       {total === 0 ? (
         <WidenEmpty
-          title={`No practice in the ${windowWords}`}
+          title={`No practice ${inWindow(range)}`}
           subtitle="Sessions appear here as soon as someone practises."
           onWiden={range === 'all' ? undefined : onWiden}
         />
@@ -112,6 +123,7 @@ export function ScoreTrendPanel({
   granularity,
   range,
   windowWords,
+  since,
   title = 'Average score',
   footnote,
   height = 220,
@@ -121,6 +133,7 @@ export function ScoreTrendPanel({
   granularity: Granularity;
   range: Range;
   windowWords: string;
+  since?: string | null;
   title?: string;
   footnote?: ReactNode;
   height?: number;
@@ -134,25 +147,21 @@ export function ScoreTrendPanel({
   return (
     <Panel
       title={title}
-      subtitle={`By ${granularityWord(granularity)} · scored sessions · ${chartWindowWords(range, windowWords)}`}
-      actions={
-        measured.length > 0 ? (
-          <>
-            {!table && (
-              <Legend
-                items={[
-                  { label: 'Average', color: CHART.primary, shape: 'line' },
-                  { label: `Solid (${SOLID})`, color: SOLID_LINE, shape: 'line' },
-                ]}
-              />
-            )}
-            <TableToggle table={table} onToggle={() => setTable((t) => !t)} label={title} />
-          </>
-        ) : undefined
-      }
+      subtitle={`By ${granularityWord(granularity)} · scored sessions · ${chartWindowWords(range, windowWords, since)}`}
+      actions={measured.length > 0 ? <TableToggle table={table} onToggle={() => setTable((t) => !t)} label={title} /> : undefined}
       footnote={
         measured.length > 0 ? (
           <>
+            {!table && (
+              <div style={{ marginBottom: 6 }}>
+                <Legend
+                  items={[
+                    { label: 'Average score', color: CHART.primary, shape: 'line' },
+                    { label: `Solid (${SOLID}+)`, color: SOLID_LINE, shape: 'line' },
+                  ]}
+                />
+              </div>
+            )}
             {measured.length > 1 && lo != null && hi != null && (
               <>
                 {granularityWord(granularity) === 'week' ? 'Weekly' : granularityWord(granularity) === 'day' ? 'Daily' : 'Hourly'} averages ranged{' '}
@@ -167,7 +176,7 @@ export function ScoreTrendPanel({
       {measured.length === 0 ? (
         <WidenEmpty
           title="No scored sessions yet"
-          subtitle={`Nothing in the ${windowWords} was finished and scored.`}
+          subtitle={`Nothing ${inWindow(range)} was finished and scored.`}
           onWiden={range === 'all' ? undefined : onWiden}
         />
       ) : table ? (

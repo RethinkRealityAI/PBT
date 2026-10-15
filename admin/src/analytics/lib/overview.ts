@@ -58,6 +58,17 @@ export function trendExtras(
   };
 }
 
+/**
+ * Where an all-time chart should start: the first bucket with a session
+ * (keeping at least `keep` buckets). All time is bucketed as a year, and a
+ * team four months in would otherwise see two-thirds of every chart empty.
+ */
+export function firstActiveBucket(points: ReadonlyArray<{ sessions: number }>, keep = 4): number {
+  const i = points.findIndex((p) => p.sessions > 0);
+  if (i < 0) return 0;
+  return Math.max(0, Math.min(i, points.length - keep));
+}
+
 /** A sparkline needs numbers: drop the empty buckets (the line joins the measured ones). */
 export function measured(series: ReadonlyArray<number | null>): number[] {
   return series.filter((v): v is number => v != null && Number.isFinite(v));
@@ -129,10 +140,13 @@ export interface Leaders {
   active: TraineeRow[];
 }
 
+/** A rise smaller than a point (it would print as "+0") isn't an improvement worth naming. */
+export const MIN_MOMENTUM = 1;
+
 export function leaders(rows: readonly TraineeRow[], opts: { improved?: number; active?: number } = {}): Leaders {
   const live = rows.filter((r) => !r.disabled);
   const improved = live
-    .filter((r) => r.momentum != null && r.momentum > 0 && r.sessions > 0)
+    .filter((r) => r.momentum != null && r.momentum >= MIN_MOMENTUM && r.sessions > 0)
     .sort((a, b) => (b.momentum as number) - (a.momentum as number))
     .slice(0, opts.improved ?? 3);
   const active = live
