@@ -31,7 +31,7 @@ export const terms: Record<keyof typeof en, string> = {
 
   'terms.section.anonymous.title': 'Anonyme par défaut',
   'terms.section.anonymous.body':
-    "Vous pouvez utiliser PBT sans compte. Votre profil et votre historique de séances sont conservés dans votre navigateur, sur cet appareil. Pour améliorer la formation, vos conversations de pratique et vos résultats sont aussi enregistrés de façon anonyme — jamais associés à votre nom ni à votre courriel — à moins que vous ne désactiviez « Autoriser l'utilisation des données d'entraînement » dans l'onglet Vous. La création d'un compte est facultative — elle sauvegarde vos données dans un profil infonuagique privé et chiffré.",
+    "Vous pouvez utiliser PBT sans compte. Votre profil et votre historique de séances sont conservés dans votre navigateur, sur cet appareil. Si vous ne vous connectez pas, nous ne vous demandons jamais votre nom, votre courriel ni aucun autre renseignement personnel, et rien de ce que nous enregistrons ne vous est associé. Nous n'enregistrons que des données d'utilisation anonymes et vos séances de pratique (les conversations et leurs résultats), et nous nous en servons uniquement pour comprendre et améliorer la formation. Toutes les données sont chiffrées en transit et au repos. Vous pouvez désactiver cette collecte avec l'option « Autoriser l'utilisation des données d'entraînement » dans l'onglet Vous. La création d'un compte est facultative — elle sauvegarde vos données dans un profil infonuagique privé et chiffré.",
 
   'terms.section.privacy.title': 'Confidentialité',
   'terms.section.privacy.body':
