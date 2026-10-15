@@ -4,6 +4,7 @@ import {
   activeFilterCount,
   filterSessions,
   fmtLength,
+  inWindowWords,
   matchesQuery,
   objectionIfDifferent,
   objectionOptions,
@@ -50,6 +51,11 @@ describe('sessionsExplorer outcomes', () => {
 });
 
 describe('sessionsExplorer words', () => {
+  it('phrases a window so "all time" still reads', () => {
+    expect(inWindowWords('28d')).toBe('in the last 28 days');
+    expect(inWindowWords('all')).toBe('so far');
+  });
+
   it('titles a session by title, then summary, then objection', () => {
     expect(sessionTitle(session({ scenario_title: 'Senior lab', scenario_summary: 'x' }))).toBe('Senior lab');
     expect(sessionTitle(session({ scenario_title: null, scenario_summary: 'Beagle · Cost' }))).toBe('Beagle · Cost');

@@ -82,7 +82,7 @@ export function WeekHeat({ heatmap, rangeLabel }: { heatmap: EngagementReport['h
             style={{
               flex: wide ? '0 0 200px' : '1 1 auto',
               display: 'grid',
-              gridTemplateColumns: wide ? '1fr' : 'repeat(auto-fit, minmax(130px, 1fr))',
+              gridTemplateColumns: wide ? '1fr' : 'repeat(auto-fit, minmax(120px, 1fr))',
               gap: 16,
               ...(wide
                 ? { paddingLeft: 20, borderLeft: `0.5px solid ${CHART.grid}` }

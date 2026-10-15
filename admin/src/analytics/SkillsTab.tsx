@@ -39,7 +39,7 @@ import {
   sessionTrend,
   skillAverages,
 } from './lib/metrics';
-import { measured, trendExtras } from './lib/overview';
+import { firstActiveBucket, measured, trendExtras } from './lib/overview';
 import {
   SKILL_COACHING,
   feedbackSummary,
@@ -52,7 +52,7 @@ import {
   splitBy,
 } from './lib/skills';
 import { SkillBars } from './overview/charts';
-import { ScoreTrendPanel } from './overview/TrendPanels';
+import { ScoreTrendPanel, inWindow } from './overview/TrendPanels';
 import { BandLegend, MatchupGrid, ObjectionSkillTable } from './skills/BandTable';
 import {
   DifficultyPanel,
@@ -110,8 +110,17 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
     const { current, previous } = splitByPeriod(sessions.data.rows, range, now);
     const cur = sessionStats(current);
     const prev = comparable ? sessionStats(previous) : null;
-    const trend = sessionTrend(current, range, now);
-    const extras = trendExtras(current, range, now);
+    const fullTrend = sessionTrend(current, range, now);
+    const fullExtras = trendExtras(current, range, now);
+    // All time is bucketed as a year: start the charts where the team did.
+    const from = range === 'all' ? firstActiveBucket(fullTrend.points) : 0;
+    const trend = { granularity: fullTrend.granularity, points: fullTrend.points.slice(from) };
+    const extras = {
+      resolvedRate: fullExtras.resolvedRate.slice(from),
+      scored: fullExtras.scored.slice(from),
+      passRate: fullExtras.passRate.slice(from),
+    };
+    const chartSince = from > 0 && trend.points.length ? trend.points[0].label : null;
     const skillsCur = skillAverages(current);
     const skillsPrev = comparable ? skillAverages(previous) : null;
     const weakest = extremeSkill(skillsCur.avg, 'weakest');
@@ -166,6 +175,7 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
       prev,
       trend,
       scorePoints: trend.points.map((p, i) => ({ ...p, scored: extras.scored[i] })),
+      chartSince,
       extras,
       skillsCur,
       skillsPrev,
@@ -233,9 +243,9 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
           {loading ? (
             <SkillsSkeleton />
           ) : cur.scored === 0 ? (
-            <Panel title="No scored sessions" subtitle={`Nothing in the ${windowWords} was finished and scored.`}>
+            <Panel title="No scored sessions" subtitle={`Nothing ${inWindow(range)} was finished and scored.`}>
               <EmptyState
-                title={`No scores in the ${windowWords}`}
+                title={`No scores ${inWindow(range)}`}
                 subtitle={
                   cur.sessions > 0
                     ? `${cur.sessions} session${cur.sessions === 1 ? ' was' : 's were'} started, but none finished with a score.`
@@ -346,6 +356,7 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   granularity={m.trend.granularity}
                   range={range}
                   windowWords={windowWords}
+                  since={m.chartSince}
                   height={250}
                   onWiden={() => onRange('all')}
                   footnote={exclusions || undefined}

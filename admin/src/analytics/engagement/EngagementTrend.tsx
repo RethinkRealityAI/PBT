@@ -21,7 +21,14 @@ const METRIC_WORDS: Record<Metric, { one: string; many: string; title: string }>
 
 const GRAIN_WORDS = { hour: 'per hour', day: 'per day', week: 'per week' } as const;
 
-export function EngagementTrend({ report }: { report: EngagementReport }) {
+export function EngagementTrend({
+  report,
+  trimLeadingEmpty = false,
+}: {
+  report: EngagementReport;
+  /** All time is charted as a year; start where the activity starts instead of a long flat line. */
+  trimLeadingEmpty?: boolean;
+}) {
   const [metric, setMetric] = useState<Metric>('visitors');
   const [asTable, setAsTable] = useState(false);
   const words = METRIC_WORDS[metric];
@@ -31,8 +38,13 @@ export function EngagementTrend({ report }: { report: EngagementReport }) {
   // trailing seven days — complete enough to draw solid.)
   const partialLast = report.granularity !== 'week' && report.trend.length > 1;
   const data = useMemo(() => {
-    const n = report.trend.length;
-    return report.trend.map((b, i) => {
+    let trend = report.trend;
+    if (trimLeadingEmpty) {
+      const first = trend.findIndex((b) => b.visitors > 0 || b.screen_views > 0);
+      if (first > 1) trend = trend.slice(first - 1);
+    }
+    const n = trend.length;
+    return trend.map((b, i) => {
       const value = metric === 'visitors' ? b.visitors : b.screen_views;
       const last = i === n - 1;
       return {
@@ -44,7 +56,7 @@ export function EngagementTrend({ report }: { report: EngagementReport }) {
         partial: partialLast && i >= n - 2 ? value : null,
       };
     });
-  }, [report.trend, report.granularity, metric, partialLast]);
+  }, [report.trend, report.granularity, metric, partialLast, trimLeadingEmpty]);
   const peak = data.reduce<(typeof data)[number] | null>((best, d) => (d.value > (best?.value ?? 0) ? d : best), null);
   const fmt = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? words.one : words.many}`;
 

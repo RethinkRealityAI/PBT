@@ -28,6 +28,7 @@ import { useEngagement } from './data';
 import { AutoGrid, BarList, CHART, FreshnessNote, GhostButton, Panel, SplitRow, StatTile } from './ui';
 import { compareWords, hasComparison, pctDelta, pointsDelta, rangeWords, type Range } from './lib/period';
 import { featureAdoption } from './lib/engagementFeatures';
+import { inWindowWords } from './lib/sessionsExplorer';
 import { fmtDwell, returningRate, screensPerVisitor } from './lib/engagementInsights';
 import { EngagementTrend } from './engagement/EngagementTrend';
 import { WeekHeat } from './engagement/WeekHeat';
@@ -67,7 +68,7 @@ export function EngagementTab({ range, onRange }: AnalyticsTabProps) {
           ) : report.current.visitors === 0 ? (
             <Glass padding={0} radius={20}>
               <EmptyState
-                title={`Nobody used the app in the ${rangeWords(range)}`}
+                title={`Nobody has used the app ${inWindowWords(range)}`}
                 subtitle={
                   range === 'all'
                     ? 'Activity appears here as soon as someone opens the trainee app.'
@@ -154,14 +155,14 @@ function EngagementBody({ report, range }: { report: EngagementReport; range: Ra
         />
       </AutoGrid>
 
-      <EngagementTrend report={report} />
+      <EngagementTrend report={report} trimLeadingEmpty={range === 'all'} />
 
       <WeekHeat heatmap={report.heatmap} rangeLabel={rangeWords(range)} />
 
       <SplitRow ratio="1fr 1fr">
         <Panel
           title="Which features people use"
-          subtitle={`Share of the ${people(cur.visitors)} who used the app in the ${rangeWords(range)}`}
+          subtitle={`Share of the ${people(cur.visitors)} who used the app ${inWindowWords(range)}`}
           footnote="A person counts once per feature, however often they used it."
         >
           <BarList

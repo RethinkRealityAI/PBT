@@ -25,7 +25,7 @@ import { downloadRagExport } from '../data/queries';
 import { COLOR } from '../lib/tokens';
 import { useSessionSummaries, useTraineeDirectory } from './data';
 import { Fact, GhostButton } from './ui';
-import { rangeWords, splitByPeriod, windows } from './lib/period';
+import { splitByPeriod, windows } from './lib/period';
 import { sessionStats } from './lib/metrics';
 import { displayName } from './lib/trainees';
 import { downloadCsv, toCsv } from './lib/csv';
@@ -34,6 +34,7 @@ import {
   activeFilterCount,
   filterSessions,
   fmtLength,
+  inWindowWords,
   sessionsCsv,
   sortSessions,
   type SessionFilters,
@@ -157,7 +158,7 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
           ) : !anyInWindow ? (
             <Glass padding={0} radius={20}>
               <EmptyState
-                title={`No practice sessions in the ${rangeWords(range)}`}
+                title={`No practice sessions ${inWindowWords(range)}`}
                 subtitle={
                   range === 'all'
                     ? 'Sessions appear here as soon as a trainee finishes or leaves a conversation.'
@@ -248,7 +249,7 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                 <Glass padding={0} radius={20}>
                   <EmptyState
                     title="No sessions match"
-                    subtitle={`Nothing in the ${rangeWords(range)} fits these filters${query.trim() ? ' and search' : ''}.`}
+                    subtitle={`No session ${inWindowWords(range)} fits these filters${query.trim() ? ' and search' : ''}.`}
                     action={
                       <GhostButton
                         onClick={() => {

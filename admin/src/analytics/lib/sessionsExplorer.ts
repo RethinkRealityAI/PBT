@@ -13,6 +13,12 @@ import { ENDED_REASON_LABELS, MODE_LABELS, humanize, labelOf, pushbackLabel } fr
 import { difficultyLabel } from '../../lib/difficulty';
 import { SKILL_KEYS, SKILL_LABELS, isScored } from './metrics';
 import type { CsvValue } from './csv';
+import { rangeWords, type Range } from './period';
+
+/** "in the last 28 days", or "so far" for all time — reads after any sentence. */
+export function inWindowWords(range: Range): string {
+  return range === 'all' ? 'so far' : `in the ${rangeWords(range)}`;
+}
 
 // ─── Outcomes ──────────────────────────────────────────────────────────
 

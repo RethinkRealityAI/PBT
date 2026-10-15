@@ -365,7 +365,7 @@ function ProfileBody({
           </div>
         </>
       ) : (
-        <div className="pbt-tp-cols">
+        <div className={hasOptionalSections(detail) ? 'pbt-tp-cols' : 'pbt-tp-stack'}>
           <div className="pbt-tp-stack">
             <Glass padding={8} radius={20}>
               <EmptyState
@@ -375,9 +375,11 @@ function ProfileBody({
             </Glass>
             {detail.activity && detail.activity.active_days.length > 0 && <CalendarPanel model={m} now={now} showAppDays />}
           </div>
-          <div className="pbt-tp-stack">
-            <OptionalPanels detail={detail} now={now} />
-          </div>
+          {hasOptionalSections(detail) && (
+            <div className="pbt-tp-stack">
+              <OptionalPanels detail={detail} now={now} />
+            </div>
+          )}
         </div>
       )}
 
@@ -1043,15 +1045,34 @@ function SessionRow({ s, now, onOpen }: { s: SessionSummary; now: number; onOpen
 
 // ─── Optional sections (permission-gated, shown only when present) ─────
 
+/** The permission-gated sections that have something to show, in page order. */
+function optionalSections(detail: TraineeDetail) {
+  const a = detail.activity;
+  return {
+    feedback: (detail.feedback?.length ?? 0) > 0,
+    scenarios: (detail.scenarios?.length ?? 0) > 0,
+    pets:
+      (detail.analyzer?.length ?? 0) > 0 || actionCount(a, 'vision_analyze') > 0 || actionCount(a, 'fecal_scan') > 0,
+    activity: a != null && (a.screens.length > 0 || a.recent.length > 0),
+    reports: (detail.reports?.length ?? 0) > 0,
+    ai: (detail.ai_usage?.calls ?? 0) > 0,
+  };
+}
+
+function hasOptionalSections(detail: TraineeDetail): boolean {
+  return Object.values(optionalSections(detail)).some(Boolean);
+}
+
 function OptionalPanels({ detail, now }: { detail: TraineeDetail; now: number }) {
+  const show = optionalSections(detail);
   return (
     <>
-      {detail.feedback && detail.feedback.length > 0 && <FeedbackPanel rows={detail.feedback} now={now} />}
-      {detail.scenarios && detail.scenarios.length > 0 && <ScenariosPanel rows={detail.scenarios} now={now} />}
-      {(detail.analyzer || detail.activity) && <PetToolsPanel detail={detail} now={now} />}
-      {detail.activity && <ActivityPanel activity={detail.activity} now={now} />}
-      {detail.reports && detail.reports.length > 0 && <ReportsPanel rows={detail.reports} now={now} />}
-      {detail.ai_usage && detail.ai_usage.calls > 0 && <AiUsagePanel usage={detail.ai_usage} />}
+      {show.feedback && <FeedbackPanel rows={detail.feedback ?? []} now={now} />}
+      {show.scenarios && <ScenariosPanel rows={detail.scenarios ?? []} now={now} />}
+      {show.pets && <PetToolsPanel detail={detail} now={now} />}
+      {show.activity && detail.activity && <ActivityPanel activity={detail.activity} now={now} />}
+      {show.reports && <ReportsPanel rows={detail.reports ?? []} now={now} />}
+      {show.ai && detail.ai_usage && <AiUsagePanel usage={detail.ai_usage} />}
     </>
   );
 }
@@ -1120,7 +1141,6 @@ function PetToolsPanel({ detail, now }: { detail: TraineeDetail; now: number }) 
   const photos = actionCount(detail.activity, 'vision_analyze');
   const scans = actionCount(detail.activity, 'fecal_scan');
   const saved = detail.analyzer ?? [];
-  if (photos === 0 && scans === 0 && saved.length === 0) return null;
   return (
     <Panel title="Pet tools" subtitle="Pet Analyzer and Fecal Scan · all time">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
