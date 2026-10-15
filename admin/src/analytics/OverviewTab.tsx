@@ -21,7 +21,7 @@ import { EmptyState, LoadingShimmer } from '../primitives';
 import { useAccess } from '../primitives/access';
 import { COLOR } from '../lib/tokens';
 import { pushbackLabel } from '../lib/labels';
-import { AutoGrid, CHART, FreshnessNote, Legend, Panel, SplitRow, StatTile } from './ui';
+import { CHART, FreshnessNote, Legend, Panel, SplitRow, StatTile } from './ui';
 import {
   useAiCallsWindow,
   useOpenReports,
@@ -58,6 +58,7 @@ import { FunnelPanel, LeadersPanel } from './overview/People';
 import { AiHealthStrip } from './overview/AiHealthStrip';
 import { PracticeActivityPanel, ScoreTrendPanel, granularityWord, inWindow } from './overview/TrendPanels';
 import { SkillBars } from './overview/charts';
+import { TileRow } from './overview/TileRow';
 
 export function OverviewTab(props: AnalyticsTabProps) {
   const { can } = useAccess();
@@ -270,13 +271,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                 onOpenTrainees={openTrainees}
               />
 
-              <div>
-              {comparable && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: 11, color: COLOR.inkMute, margin: '0 4px 8px' }}>
-                  ▲▼ Change {compareWords(range)}
-                </div>
-              )}
-              <AutoGrid min={168} gap={14}>
+              <TileRow count={6} compare={compareLabel}>
                 <StatTile
                   label="Trainees practising"
                   value={cur.activeTrainees}
@@ -334,8 +329,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   trend={measured(model.extras.resolvedRate)}
                   hint="Finished sessions where the owner ended happy"
                 />
-              </AutoGrid>
-              </div>
+              </TileRow>
 
               {model.truncated && (
                 <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: -4 }}>
@@ -499,11 +493,11 @@ function OverviewSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading the overview" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <LoadingShimmer height={176} />
-      <AutoGrid min={168} gap={14}>
+      <TileRow count={6}>
         {Array.from({ length: 6 }).map((_, i) => (
           <LoadingShimmer key={i} height={158} />
         ))}
-      </AutoGrid>
+      </TileRow>
       <SplitRow ratio="minmax(0, 1.2fr) minmax(0, 1fr)">
         <LoadingShimmer height={300} />
         <LoadingShimmer height={300} />

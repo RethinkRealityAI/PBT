@@ -502,7 +502,7 @@ function IdentityCard({ detail, model, now }: { detail: TraineeDetail; model: Mo
   const finished = model.sessions.filter((s) => s.completed).length;
 
   return (
-    <Glass padding={0} radius={20} style={{ minWidth: 0, overflow: 'hidden' }}>
+    <Glass padding={0} radius={20} style={{ minWidth: 0, overflow: 'hidden', display: 'grid', gridTemplateRows: '1fr' }}>
       <div
         style={{
           padding: 24,

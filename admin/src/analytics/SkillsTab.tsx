@@ -23,7 +23,7 @@ import { useAccess } from '../primitives/access';
 import { COLOR, DRIVER_KEYS, type DriverKey } from '../lib/tokens';
 import { pushbackLabel } from '../lib/labels';
 import { averageScoreByDifficulty } from '../lib/difficulty';
-import { AutoGrid, CHART, FreshnessNote, Legend, Panel, SplitRow, StatTile } from './ui';
+import { CHART, FreshnessNote, Legend, Panel, SplitRow, StatTile } from './ui';
 import { useFeedbackWindow, useSessionSummaries, useTraineeDirectory } from './data';
 import { compareWords, pct, pctDelta, pointsDelta, rangeWords, splitByPeriod } from './lib/period';
 import {
@@ -63,6 +63,7 @@ import {
   type CommentView,
 } from './skills/Panels';
 import { useObjectionTitles } from './skills/useObjectionTitles';
+import { TileRow } from './overview/TileRow';
 import './overview/styles';
 
 export function SkillsTab(props: AnalyticsTabProps) {
@@ -262,49 +263,42 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
             </Panel>
           ) : (
             <>
-              <div>
-                {comparable && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: 11, color: COLOR.inkMute, margin: '0 4px 8px' }}>
-                    ▲▼ Change {compareWords(range)}
-                  </div>
-                )}
-                <AutoGrid min={200} gap={14}>
-                  <StatTile
-                    label="Average score"
-                    value={cur.avgScore == null ? '—' : Math.round(cur.avgScore)}
-                    unit={cur.avgScore == null ? undefined : '/ 100'}
-                    delta={d?.score}
-                    compareLabel={tileCompare(d?.score)}
-                    trend={measured(m.trend.points.map((p) => p.avgScore))}
-                    hint="Scored sessions only; scoring failures left out"
-                  />
-                  <StatTile
-                    label="Pass rate"
-                    value={pctText(cur.passRate)}
-                    delta={d?.pass}
-                    compareLabel={tileCompare(d?.pass)}
-                    trend={measured(m.extras.passRate)}
-                    hint="Scored sessions at 70 or more (Solid or Strong)"
-                  />
-                  <StatTile
-                    label="Owners won over"
-                    value={pctText(cur.resolvedRate)}
-                    delta={d?.won}
-                    compareLabel={tileCompare(d?.won)}
-                    trend={measured(m.extras.resolvedRate)}
-                    hint="Finished sessions where the owner ended happy"
-                  />
-                  <StatTile
-                    label="Scored sessions"
-                    value={cur.scored.toLocaleString('en-US')}
-                    delta={d?.scored}
-                    compareLabel={tileCompare(d?.scored)}
-                    trend={m.extras.scored}
-                    hint={`What every figure on this page rests on · ${cur.activeTrainees} trainee${cur.activeTrainees === 1 ? '' : 's'}`}
-                    onClick={() => onOpen('sessions')}
-                  />
-                </AutoGrid>
-              </div>
+              <TileRow count={4} compare={compareLabel}>
+                <StatTile
+                  label="Average score"
+                  value={cur.avgScore == null ? '—' : Math.round(cur.avgScore)}
+                  unit={cur.avgScore == null ? undefined : '/ 100'}
+                  delta={d?.score}
+                  compareLabel={tileCompare(d?.score)}
+                  trend={measured(m.trend.points.map((p) => p.avgScore))}
+                  hint="Scored sessions only; scoring failures left out"
+                />
+                <StatTile
+                  label="Pass rate"
+                  value={pctText(cur.passRate)}
+                  delta={d?.pass}
+                  compareLabel={tileCompare(d?.pass)}
+                  trend={measured(m.extras.passRate)}
+                  hint="Scored sessions at 70 or more (Solid or Strong)"
+                />
+                <StatTile
+                  label="Owners won over"
+                  value={pctText(cur.resolvedRate)}
+                  delta={d?.won}
+                  compareLabel={tileCompare(d?.won)}
+                  trend={measured(m.extras.resolvedRate)}
+                  hint="Finished sessions where the owner ended happy"
+                />
+                <StatTile
+                  label="Scored sessions"
+                  value={cur.scored.toLocaleString('en-US')}
+                  delta={d?.scored}
+                  compareLabel={tileCompare(d?.scored)}
+                  trend={m.extras.scored}
+                  hint={`What every figure on this page rests on · ${cur.activeTrainees} trainee${cur.activeTrainees === 1 ? '' : 's'}`}
+                  onClick={() => onOpen('sessions')}
+                />
+              </TileRow>
 
               <SplitRow ratio="minmax(0, 1fr) minmax(0, 1fr)">
                 <Panel
@@ -506,11 +500,11 @@ function CoachCallout({
 function SkillsSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading skills" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <AutoGrid min={200} gap={14}>
+      <TileRow count={4}>
         {Array.from({ length: 4 }).map((_, i) => (
           <LoadingShimmer key={i} height={158} />
         ))}
-      </AutoGrid>
+      </TileRow>
       <SplitRow ratio="minmax(0, 1fr) minmax(0, 1fr)">
         <LoadingShimmer height={340} />
         <LoadingShimmer height={340} />

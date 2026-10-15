@@ -187,7 +187,7 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                   aria-label="Summary of the sessions shown"
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(176px, 1fr))',
                     borderRadius: 18,
                     overflow: 'hidden',
                   }}

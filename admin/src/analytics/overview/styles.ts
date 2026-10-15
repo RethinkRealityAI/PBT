@@ -34,7 +34,14 @@ const CSS = `
   .pbt-sk-short { display: none; }
   .pbt-sk-labelcol { width: 25%; }
   .pbt-sk-head { overflow: hidden; text-overflow: ellipsis; }
-  @container (max-width: 700px) {
+  .pbt-tiles { display: grid; gap: 14px; }
+  .pbt-tiles-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .pbt-tiles-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @container (max-width: 1040px) { .pbt-tiles-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @container (max-width: 860px) { .pbt-tiles-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @container (max-width: 540px) { .pbt-tiles-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @container (max-width: 400px) { .pbt-tiles-4, .pbt-tiles-6 { grid-template-columns: 1fr; } }
+  @container (max-width: 760px) {
     .pbt-sk-full { display: none; }
     .pbt-sk-short { display: inline; }
     .pbt-sk-labelcol { width: 20%; }
