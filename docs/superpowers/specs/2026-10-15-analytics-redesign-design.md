@@ -119,5 +119,86 @@ everyone until one does.
 
 ## 6. Tabs
 
-(See the components under `admin/src/analytics/`; each tab file's header
-describes its panels.)
+Every tab: its own title, the shared range picker, and headline tiles that
+compare with the previous window of the same length. Every chart's numbers
+are reachable without hovering (a value on the mark, a "View as table"
+toggle, or a table). Loading shows the final layout in grey; errors go
+through `QueryBoundary`; a panel that needs another permission hides (or
+says what's hidden) instead of firing a request that would be refused.
+
+**Overview** (`OverviewTab.tsx`, `overview/`) — the 30-second answer.
+- A narrative headline (`lib/narrative.ts`): who practised, how often vs
+  before, the team average vs before, the weakest skill, who improved most —
+  names link to profiles; honest when the window is empty or thin.
+- "Your team" bar: Active · At risk · Dormant · Not started.
+- Six tiles: trainees practising, sessions, average score, finish rate,
+  practice time, owners won over (finished sessions whose AI owner ended
+  happy).
+- **Needs your attention** (`lib/attention.ts`), most severe first: AI
+  failure / slow-reply alerts (`quality.read`), open problem reports
+  (`reports.read`), sessions under 55, trainees slipping, scoring failures,
+  people who joined over a week ago and never practised — each a link to
+  where you act on it; "All clear" lists what was checked.
+- Leaders: most improved (latest 5 vs previous 5) and most active.
+- Practice activity (finished vs left early) and Average score (separate
+  charts — never two axes), Skills at a glance vs the previous window,
+  Getting-started funnel, a one-line AI health strip (`quality.read`).
+- Removed as redundant or dead: the ECHO-driver spread (Trainees shows
+  drivers per person), built-scenario and token counts, flagged sessions.
+
+**Trainees** (`TraineesTab.tsx`, `trainee/`) — per-person analytics.
+- Roster: four tiles (practising now, at risk → filters, improving vs
+  slipping, sessions per active trainee), status chips with counts, a
+  sortable table (status, sessions + 8-week sparkline, average + momentum,
+  five skill mini-bars with the weakest named, streak, last active), CSV.
+- Profile (`#/analytics/trainees/<id>`): identity card (driver, role,
+  joined, last active, language, device), **coaching notes**
+  (`coachingNotes` — each backed by a number on the page), six tiles,
+  score progression (each session, 5-session rolling average, team average),
+  skill profile vs team, objections weakest-first plus "not tried yet",
+  difficulty, a 26-week practice calendar (sessions, and days they only
+  opened the app), practice style (typed vs spoken, length, words per reply,
+  reply time, hints, how owners ended), recent sessions, and — each only with
+  its permission — feedback they gave, scenarios built, pet tools, app
+  activity, problems reported, AI usage and cost.
+
+**Sessions** (`SessionsTab.tsx`, `sessions/`) — the explorer. Outcome chips
+(Finished · Left early · Scoring failed · Low score), filters (mode,
+difficulty, objection, animal, scenario source), a summary strip for the
+filtered set, sortable columns, 50 at a time, CSV; the trainee name opens
+their profile. `#/analytics/sessions/<id>` opens the session modal on a
+skeleton while the transcript loads (404 → toast and close).
+
+**Skills** (`SkillsTab.tsx`, `skills/`) — outcomes. Tiles (average, pass
+rate, owners won over, scored sessions), skill breakdown vs previous window
+with a coaching callout for the weakest, score trend, the **objection ×
+skill** table (band-tinted, the hardest cell outlined and named), difficulty
+(same standard at every level), ECHO **communication-style matchups**
+(trainee driver × owner driver), score distribution, animal and scenario
+source, how owners felt (start → end sentiment), trainee feedback.
+
+**Engagement** (`EngagementTab.tsx`, `engagement/`) — app usage, from the
+server-side aggregate. Tiles (people, signed-in trainees, returning %,
+screens per person, time in app, sessions started), a people / screen-views
+trend (one at a time), the weekday × hour heat map with its peak sentence,
+feature adoption, the onboarding path, where time goes vs most-opened
+screens, return frequency, most-used actions, and devices & context.
+
+**AI quality** keeps its charts; its tiles became shares with deltas and the
+low-*training*-score list moved out (Sessions filter, Overview attention).
+**Pet Analyzer** is unchanged, now a tab here.
+
+## 7. People → Users
+
+Account management stays there. Its averages now exclude failed and missing
+scores, the never-written "plays" pills are gone, ended reasons read in
+words, and the user card links to the person's Analytics profile ("Full
+analytics →").
+
+## 8. Verification
+
+Unit tests for every pure helper (`admin/src/analytics/lib/__tests__`,
+`src/shared/analytics/__tests__`), function tests (`adminAnalytics`,
+`adminSessions`, `adminListPaging`, `paging`), the label-exhaustiveness and
+no-emoji guards, and screenshots of every tab against the seeded mock at
+1440 / 1280 / 900 / 820 px with no horizontal overflow and no console errors.

@@ -54,29 +54,36 @@ tells you which is in effect.
 
 ## What it surfaces
 
-| Screen     | Function                       | Source tables                      |
-|------------|--------------------------------|------------------------------------|
-| Overview   | admin-{users,sessions,ai-calls,scenarios} | profiles, training_sessions, ai_call_telemetry, user_scenarios |
-| Users      | admin-{users,sessions}         | profiles, training_sessions        |
-| Sessions   | admin-sessions                 | training_sessions (transcript inline) |
-| Scenarios  | admin-scenarios                | user_scenarios                     |
-| Analyzer   | admin-analyzer                 | analyzer_events                    |
-| AI Quality | admin-{sessions,ai-calls}      | training_sessions, ai_call_telemetry |
-| People     | admin-{users,roles,invites,user-actions} | profiles, admin_roles, admin_invites |
-| Email      | admin-email-{templates,settings,log} | email_templates, email_settings, email_log |
+| Screen | Function | Source tables |
+|--------|----------|---------------|
+| Analytics → Overview, Skills | admin-sessions `?view=summary`, admin-analytics `op=directory` (+ admin-ai-calls, admin-reports, admin-feedback where permitted) | training_sessions, nav_events (coach hints), profiles, ai_call_telemetry, platform_reports, session_feedback |
+| Analytics → Trainees | admin-analytics `op=directory` / `op=trainee`, admin-sessions `?view=summary` | profiles + Auth, training_sessions, nav_events, session_feedback, user_scenarios, analyzer_events, platform_reports, ai_call_telemetry (each section gated on its own permission) |
+| Analytics → Sessions | admin-sessions `?view=summary`, `?id=` (transcript on open) | training_sessions, scenario_overrides (titles) |
+| Analytics → Engagement | admin-analytics `op=engagement` (aggregated server-side) | nav_events |
+| Analytics → AI quality | admin-ai-calls, admin-sessions `?view=summary` | ai_call_telemetry, training_sessions |
+| Analytics → Pet Analyzer | admin-analyzer | analyzer_events |
+| People | admin-{users,roles,invites,user-actions} | profiles, admin_roles, admin_invites |
+| Scenario Studio | admin-scenario-*, admin-objections, admin-scenarios | scenario_overrides, scenario_objections, user_scenarios |
+| Email | admin-email-{templates,settings,log} | email_templates, email_settings, email_log |
+
+Every list read pages past Supabase's 1,000-row response cap
+(`netlify/functions/_shared/paging.ts`).
 
 Destinations and their tabs:
 
 | Section | Destination | Tabs |
 |---------|-------------|------|
-| Monitor | Overview | — |
-| Monitor | Analytics | Insights · Traffic · AI quality |
-| Monitor | Activity | Sessions · Pet Analyzer |
+| Monitor | Analytics | Overview · Trainees · Sessions · Skills · Engagement · AI quality · Pet Analyzer |
 | People | People | Users · Admins · Roles · Invites |
-| Content | Library | Scenarios · Builder · Knowledge · Simulation |
+| Content | Scenario Studio | Studio · Categories · Trainee-built |
+| Content | Knowledge / AI tuning | — |
 | Content | Feedback | Session feedback · Platform reports |
 | Platform | Email | Templates · Settings · Delivery |
 | Platform | Flags / Audit / Preview | — |
+
+Old links (`#/overview`, `#/activity/…`, `#/analytics/insights|traffic`,
+`#/library/…`) are rewritten to their new home. A record can be linked
+directly: `#/analytics/trainees/<user id>`, `#/analytics/sessions/<session id>`.
 
 Screens don't know they're tabbed: the destination publishes its tabs through
 `SectionTabsProvider`, and `ContextBar` — which every screen already renders —
@@ -91,9 +98,10 @@ Two outputs, populated by the consumer app on session end:
   prompt + transcript + critique) and `metadata` (driver, pushback, scorecard,
   telemetry rollup). Indexed on `pushback_id` and `driver`. Reserved
   `embedding` column for pgvector.
-- **`/admin/ai-quality` "Export sessions"** — Sessions screen toolbar invokes
-  `/.netlify/functions/admin-rag-export` which streams `rag_export_v1` rows
-  as JSONL ready for fine-tune / external embedder workflows.
+- **"Download transcripts (.jsonl)"** — the Analytics → Sessions toolbar
+  (with `rag.export`) invokes `/.netlify/functions/admin-rag-export`, which
+  streams `rag_export_v1` rows as JSONL ready for fine-tune / external
+  embedder workflows.
 
 ## Roles & permissions
 

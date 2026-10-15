@@ -159,8 +159,8 @@ SUCCESS CRITERIA", set in the Studio's AI brief step), and documents filed
 for the `scoring` tool. **Difficulty never changes the standard** — it is
 shown BESIDE the score instead: `SessionRecord.difficulty` (stamped by
 `useTextChat`), `SessionDifficulty` on History / History detail / the
-scorecard, and the admin Sessions table, session modal and Insights
-"Average score by difficulty" (`admin-sessions` derives `difficulty` from the
+scorecard, and the admin Analytics Sessions table, session modal and Skills
+"By difficulty" (`admin-sessions` derives `difficulty` from the
 stored `scenario` jsonb — no column). One mark everywhere:
 `src/design-system/DifficultyMeter.tsx` (`parseDifficulty` in
 `src/shared/scenarios/difficulty.ts` reads it tolerantly; an older record
