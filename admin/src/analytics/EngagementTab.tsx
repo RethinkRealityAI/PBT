@@ -16,6 +16,7 @@
  *   return       active-days columns  |  most-used actions
  *   context      device, OS, installed, language, theme
  */
+import type { ReactNode } from 'react';
 import type { AnalyticsTabProps } from './AnalyticsDestination';
 import type { EngagementReport } from '../../../src/shared/analytics/contract';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
@@ -35,6 +36,7 @@ import { WeekHeat } from './engagement/WeekHeat';
 import { OnboardingPath } from './engagement/OnboardingPath';
 import { ReturnColumns } from './engagement/ReturnColumns';
 import { ContextPanel } from './engagement/ContextPanel';
+import { useElementWidth } from './engagement/useElementWidth';
 
 const TOP_SCREENS = 8;
 
@@ -104,7 +106,7 @@ function EngagementBody({ report, range }: { report: EngagementReport; range: Ra
 
   return (
     <>
-      <AutoGrid min={165} gap={14}>
+      <TileRow>
         <StatTile
           label="People using the app"
           value={cur.visitors.toLocaleString('en-US')}
@@ -153,7 +155,7 @@ function EngagementBody({ report, range }: { report: EngagementReport; range: Ra
           compareLabel={compareLabel}
           hint="Practice conversations opened"
         />
-      </AutoGrid>
+      </TileRow>
 
       <EngagementTrend report={report} trimLeadingEmpty={range === 'all'} />
 
@@ -281,6 +283,17 @@ function EngagementBody({ report, range }: { report: EngagementReport; range: Ra
         </div>
       )}
     </>
+  );
+}
+
+/** Six tiles as 6, 3 + 3 or 2 + 2 + 2 — never a lonely tile on its own row. */
+function TileRow({ children }: { children: ReactNode }) {
+  const [ref, width] = useElementWidth<HTMLDivElement>();
+  const cols = width === 0 || width >= 1080 ? 6 : width >= 500 ? 3 : 2;
+  return (
+    <div ref={ref} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 14 }}>
+      {children}
+    </div>
   );
 }
 
