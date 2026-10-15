@@ -218,9 +218,14 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                     {
                       label: 'Coach hints',
                       value: hintsKnown ? stats.hintsUsed.toLocaleString('en-US') : '—',
-                      sub: hintsKnown
-                        ? `In ${filtered.filter((s) => (s.hints_used ?? 0) > 0).length} sessions`
-                        : 'Not available',
+                      sub: !hintsKnown
+                        ? 'Not available'
+                        : stats.hintsUsed === 0
+                          ? 'None asked for'
+                          : (() => {
+                              const n = filtered.filter((s) => (s.hints_used ?? 0) > 0).length;
+                              return `In ${n} ${n === 1 ? 'session' : 'sessions'}`;
+                            })(),
                     },
                   ].map((f) => (
                     <div
@@ -280,7 +285,8 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                   >
                     <span>
                       Showing <strong style={{ color: COLOR.ink }}>{Math.min(limit, sorted.length)}</strong> of{' '}
-                      <strong style={{ color: COLOR.ink }}>{sorted.length.toLocaleString('en-US')}</strong> sessions
+                      <strong style={{ color: COLOR.ink }}>{sorted.length.toLocaleString('en-US')}</strong>{' '}
+                      {sorted.length === 1 ? 'session' : 'sessions'}
                       {stats.scoringFailed > 0 && ' · scoring failures are left out of the average score'}
                     </span>
                     {sorted.length > limit && (

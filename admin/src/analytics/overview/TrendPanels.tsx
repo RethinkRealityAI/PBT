@@ -10,7 +10,7 @@ import { COLOR } from '../../lib/tokens';
 import { CHART, GhostButton, Legend, Panel } from '../ui';
 import type { TrendPoint } from '../lib/metrics';
 import type { Range } from '../lib/period';
-import { ActivityBars, MiniTable, ScoreLine, TableToggle, bucketTitle } from './charts';
+import { ActivityBars, MiniTable, SOLID, SOLID_LINE, ScoreLine, TableToggle, bucketTitle } from './charts';
 
 type Granularity = 'hour' | 'day' | 'week';
 
@@ -135,15 +135,28 @@ export function ScoreTrendPanel({
     <Panel
       title={title}
       subtitle={`By ${granularityWord(granularity)} · scored sessions · ${chartWindowWords(range, windowWords)}`}
-      actions={measured.length > 0 ? <TableToggle table={table} onToggle={() => setTable((t) => !t)} label={title} /> : undefined}
+      actions={
+        measured.length > 0 ? (
+          <>
+            {!table && (
+              <Legend
+                items={[
+                  { label: 'Average', color: CHART.primary, shape: 'line' },
+                  { label: `Solid (${SOLID})`, color: SOLID_LINE, shape: 'line' },
+                ]}
+              />
+            )}
+            <TableToggle table={table} onToggle={() => setTable((t) => !t)} label={title} />
+          </>
+        ) : undefined
+      }
       footnote={
         measured.length > 0 ? (
           <>
             {measured.length > 1 && lo != null && hi != null && (
               <>
                 {granularityWord(granularity) === 'week' ? 'Weekly' : granularityWord(granularity) === 'day' ? 'Daily' : 'Hourly'} averages ranged{' '}
-                <strong style={{ color: COLOR.inkSoft }}>{lo}</strong>–<strong style={{ color: COLOR.inkSoft }}>{hi}</strong>. The line at 70 marks
-                “Solid”.{' '}
+                <strong style={{ color: COLOR.inkSoft }}>{lo}</strong>–<strong style={{ color: COLOR.inkSoft }}>{hi}</strong>.{' '}
               </>
             )}
             {footnote}

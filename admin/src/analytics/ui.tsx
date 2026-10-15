@@ -221,7 +221,7 @@ export function DeltaChip({
   const fg = good == null ? COLOR.inkSoft : good ? 'oklch(0.42 0.14 145)' : 'oklch(0.48 0.18 25)';
   const bg = good == null ? 'oklch(0.95 0.008 40)' : good ? COLOR.successSoft : COLOR.dangerSoft;
   const arrow = direction === 'up' ? '▲' : direction === 'down' ? '▼' : '■';
-  return (
+  const pill = (
     <span
       title={compareLabel ? `${text} ${compareLabel}` : text}
       style={{
@@ -235,15 +235,22 @@ export function DeltaChip({
         fontSize: size === 'xs' ? 10.5 : 11,
         fontWeight: 800,
         whiteSpace: 'nowrap',
+        flexShrink: 0,
       }}
     >
       <span aria-hidden="true" style={{ fontSize: 8 }}>
         {arrow}
       </span>
       {text}
-      {compareLabel && size === 'sm' && (
-        <span style={{ fontWeight: 600, color: COLOR.inkMute, marginLeft: 2 }}>{compareLabel}</span>
-      )}
+    </span>
+  );
+  if (!compareLabel || size === 'xs') return pill;
+  // The comparison sits BESIDE the pill and may wrap under it — inside the
+  // pill it overflowed narrow tiles ("vs previous 28 da…").
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
+      {pill}
+      <span style={{ fontSize: 11, fontWeight: 600, color: COLOR.inkMute }}>{compareLabel}</span>
     </span>
   );
 }

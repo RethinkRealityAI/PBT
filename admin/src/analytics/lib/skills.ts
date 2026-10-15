@@ -245,3 +245,17 @@ export function latestComments<T extends FeedbackLike>(rows: readonly T[], n = 3
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
     .slice(0, n);
 }
+
+// ─── Coaching ──────────────────────────────────────────────────────────
+
+/** A practical next step for a team whose weakest skill is this one. */
+export const SKILL_COACHING: Record<SkillKey, string> = {
+  acknowledge:
+    'Have trainees open every reply by naming the owner’s worry in their own words before giving any facts.',
+  clarify:
+    'Ask for one open question before any recommendation — “What worries you most about switching?” — and let the owner answer.',
+  transform:
+    'End every conversation on one concrete, low-risk next step the owner agrees to: a trial period, a weigh-in date, a written plan.',
+  empathy: 'Model warm, validating phrases (“It makes sense you’d want to be sure…”) and keep judgement out of the tone.',
+  rapport: 'Slow the pace: check in, use the pet’s name, and agree the plan together rather than prescribing it.',
+};

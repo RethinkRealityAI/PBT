@@ -7,14 +7,15 @@ import { COLOR } from '../../lib/tokens';
 import { CHART, HeatScale, heatColor } from '../ui';
 import { dayLabel, type CalendarModel } from '../lib/traineeProfile';
 
-const CELL = 13;
+/** Cells grow with the panel up to this size (px), never below 9. */
+const MAX_CELL = 18;
 const GAP = 3;
 const ROW_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''];
 const APP_RING = 'oklch(0.72 0.07 255)';
 
 export function PracticeCalendar({ model, now, showAppDays }: { model: CalendarModel; now: number; showAppDays: boolean }) {
-  // A one-session day should still read clearly, so the scale tops out at 3+.
-  const top = Math.max(model.max, 3);
+  // A one-session day should still read clearly, so the scale tops out at 2+.
+  const top = Math.max(model.max, 2);
   const weeks = model.columns.length;
   return (
     <div>
@@ -24,10 +25,11 @@ export function PracticeCalendar({ model, now, showAppDays }: { model: CalendarM
           aria-label={`Practice calendar, last ${weeks} weeks: ${model.sessions} sessions on ${model.practiceDays} days`}
           style={{
             display: 'grid',
-            gridTemplateColumns: `28px repeat(${weeks}, ${CELL}px)`,
-            gridTemplateRows: `14px repeat(7, ${CELL}px)`,
+            gridTemplateColumns: `28px repeat(${weeks}, minmax(9px, 1fr))`,
             gap: GAP,
-            width: 'max-content',
+            width: '100%',
+            minWidth: 28 + weeks * (9 + GAP),
+            maxWidth: 28 + weeks * (MAX_CELL + GAP),
           }}
         >
           <span />
@@ -80,7 +82,7 @@ function RowCells({
 }) {
   return (
     <>
-      <span style={{ fontSize: 10, fontWeight: 650, color: COLOR.inkMute, lineHeight: `${CELL}px` }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 650, color: COLOR.inkMute, display: 'flex', alignItems: 'center' }}>{label}</span>
       {model.columns.map((col, c) => {
         const d = col[r];
         if (d.future) return <span key={`${c}-${r}`} />;
@@ -97,8 +99,7 @@ function RowCells({
             className="pbt-heat-cell"
             title={`${dayLabel(d.t, now)} — ${what}`}
             style={{
-              width: CELL,
-              height: CELL,
+              aspectRatio: '1 / 1',
               borderRadius: 3,
               background: d.sessions > 0 ? heatColor(d.sessions / top) : CHART.track,
               boxShadow: appOnly ? `inset 0 0 0 1.5px ${APP_RING}` : undefined,

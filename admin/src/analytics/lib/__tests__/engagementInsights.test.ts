@@ -3,6 +3,7 @@ import {
   CONTEXT_HUES,
   CONTEXT_OTHER,
   activeDaysLabel,
+  bucketLabel,
   contextParts,
   fmtDwell,
   heatSummary,
@@ -106,5 +107,17 @@ describe('contextParts', () => {
   it('is empty for an empty or missing breakdown', () => {
     expect(contextParts([], labels, order)).toEqual([]);
     expect(contextParts(undefined, labels, order)).toEqual([]);
+  });
+});
+
+describe('bucketLabel', () => {
+  const start = new Date(2026, 9, 14, 15, 0, 0).getTime(); // Wed Oct 14, 3 pm local
+  it('labels hourly, daily and weekly buckets', () => {
+    expect(bucketLabel(start, 'hour')).toBe('3 pm');
+    expect(bucketLabel(start, 'hour', true)).toBe('Wed, Oct 14 · 3–4 pm');
+    expect(bucketLabel(start, 'day')).toBe('Oct 14');
+    expect(bucketLabel(start, 'day', true)).toBe('Wed, Oct 14');
+    expect(bucketLabel(start, 'week', true)).toBe('Week of Oct 14');
+    expect(bucketLabel(Number.NaN, 'day')).toBe('');
   });
 });

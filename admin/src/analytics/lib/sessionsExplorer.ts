@@ -197,6 +197,7 @@ export function searchText(s: SessionSummary, traineeName: string): string {
     s.persona,
     s.difficulty != null ? difficultyLabel(s.difficulty) : null,
     SPECIES_LABELS[s.species],
+    s.scenario_source !== 'unknown' ? SOURCE_LABELS[s.scenario_source] : null,
   ]
     .filter(Boolean)
     .join(' ')

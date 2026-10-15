@@ -1,0 +1,169 @@
+/**
+ * People (or screen views) per bucket across the window — one series at a
+ * time, switched with a toggle; never two measures on two axes. A 2px line
+ * over a ~10% wash, the peak named in words, and a table view so every
+ * number is reachable without hovering.
+ */
+import { useMemo, useState } from 'react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { EngagementReport } from '../../../../src/shared/analytics/contract';
+import { COLOR } from '../../lib/tokens';
+import { CHART, ChipFilter, Panel, tooltipStyle } from '../ui';
+import { tickEvery } from '../lib/period';
+import { bucketLabel } from '../lib/engagementInsights';
+
+type Metric = 'visitors' | 'views';
+
+const METRIC_WORDS: Record<Metric, { one: string; many: string; title: string }> = {
+  visitors: { one: 'person', many: 'people', title: 'People using the app' },
+  views: { one: 'screen view', many: 'screen views', title: 'Screens opened' },
+};
+
+const GRAIN_WORDS = { hour: 'per hour', day: 'per day', week: 'per week' } as const;
+
+export function EngagementTrend({ report }: { report: EngagementReport }) {
+  const [metric, setMetric] = useState<Metric>('visitors');
+  const [asTable, setAsTable] = useState(false);
+  const words = METRIC_WORDS[metric];
+
+  const data = useMemo(
+    () =>
+      report.trend.map((b) => ({
+        start: b.start,
+        label: bucketLabel(b.start, report.granularity),
+        long: bucketLabel(b.start, report.granularity, true),
+        value: metric === 'visitors' ? b.visitors : b.screen_views,
+      })),
+    [report.trend, report.granularity, metric],
+  );
+  const peak = data.reduce<(typeof data)[number] | null>((best, d) => (d.value > (best?.value ?? 0) ? d : best), null);
+  const fmt = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? words.one : words.many}`;
+
+  return (
+    <Panel
+      title={words.title}
+      subtitle={
+        peak
+          ? `${GRAIN_WORDS[report.granularity][0].toUpperCase()}${GRAIN_WORDS[report.granularity].slice(1)} · busiest ${report.granularity === 'hour' ? 'hour' : report.granularity === 'week' ? 'week' : 'day'}: ${peak.long} (${fmt(peak.value)})`
+          : `Distinct people ${GRAIN_WORDS[report.granularity]}`
+      }
+      actions={
+        <>
+          <ChipFilter<Metric>
+            label="Measure"
+            value={metric}
+            onChange={setMetric}
+            options={[
+              { key: 'visitors', label: 'People' },
+              { key: 'views', label: 'Screen views' },
+            ]}
+          />
+          <button
+            type="button"
+            className="pbt-link"
+            onClick={() => setAsTable((v) => !v)}
+            aria-pressed={asTable}
+            style={{ fontSize: 12 }}
+          >
+            {asTable ? 'View as chart' : 'View as table'}
+          </button>
+        </>
+      }
+      footnote={
+        metric === 'visitors'
+          ? 'Each bucket counts a person once, however many screens they opened. Signed-out visitors are counted by device.'
+          : undefined
+      }
+    >
+      {asTable ? (
+        <div style={{ maxHeight: 260, overflow: 'auto', borderRadius: 10, border: `0.5px solid ${CHART.grid}` }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                <th scope="col" style={thStyle}>
+                  {report.granularity === 'hour' ? 'Hour' : report.granularity === 'week' ? 'Week' : 'Day'}
+                </th>
+                <th scope="col" style={{ ...thStyle, textAlign: 'right' }}>
+                  {metric === 'visitors' ? 'People' : 'Screen views'}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...data].reverse().map((d) => (
+                <tr key={d.start}>
+                  <td style={tdStyle}>{d.long}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: COLOR.ink }}>
+                    {d.value.toLocaleString('en-US')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ height: 230 }} role="img" aria-label={`${words.title} ${GRAIN_WORDS[report.granularity]}. ${peak ? `Busiest: ${peak.long}, ${fmt(peak.value)}.` : ''}`}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+              <CartesianGrid stroke={CHART.grid} vertical={false} />
+              <XAxis
+                dataKey="label"
+                stroke={CHART.axis}
+                fontSize={10.5}
+                tickLine={false}
+                axisLine={{ stroke: CHART.grid }}
+                interval={tickEvery(data.length)}
+                minTickGap={8}
+              />
+              <YAxis
+                allowDecimals={false}
+                stroke={CHART.axis}
+                fontSize={10.5}
+                tickLine={false}
+                axisLine={false}
+                width={44}
+              />
+              <Tooltip
+                contentStyle={tooltipStyle}
+                cursor={{ stroke: 'rgba(60,20,15,0.18)', strokeWidth: 1 }}
+                labelFormatter={(_l, payload) => (payload?.[0]?.payload as { long?: string } | undefined)?.long ?? ''}
+                formatter={(v: number) => [fmt(v), '']}
+                separator=""
+              />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke={CHART.primary}
+                strokeWidth={2}
+                fill={CHART.primary}
+                fillOpacity={0.1}
+                dot={false}
+                activeDot={{ r: 4, stroke: '#fff', strokeWidth: 2 }}
+                isAnimationActive={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+const thStyle = {
+  position: 'sticky' as const,
+  top: 0,
+  background: 'rgba(255,255,255,0.97)',
+  textAlign: 'left' as const,
+  padding: '8px 12px',
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase' as const,
+  color: COLOR.inkMute,
+  borderBottom: `0.5px solid ${CHART.grid}`,
+};
+
+const tdStyle = {
+  padding: '7px 12px',
+  borderBottom: `0.5px solid ${CHART.grid}`,
+  color: COLOR.inkSoft,
+};

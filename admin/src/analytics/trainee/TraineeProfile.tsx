@@ -51,7 +51,6 @@ import {
   isScored,
   sessionStats,
   sessionTime,
-  sessionTrend,
   skillAverages,
 } from '../lib/metrics';
 import { NEW_DAYS, coachingNotes, displayName, streaks, traineeStatus, type CoachingNote } from '../lib/trainees';
@@ -89,6 +88,9 @@ const WITHHELD_LABELS: Record<TraineeDetail['withheld'][number], string> = {
   reports: 'Problems they reported',
   ai_usage: 'AI usage',
 };
+
+/** Identity colour for spoken (voice) sessions, beside typed = CHART.primary. */
+const SPOKEN = 'oklch(0.72 0.10 195)';
 
 /** The AI owner's mood at the end — calm tones, always with the words. */
 const MOOD_PARTS = [
@@ -231,7 +233,6 @@ function ProfileBody({
             value={m.cur.sessions}
             delta={cmp ? pctDelta(m.cur.sessions, m.prev?.sessions) : undefined}
             compareLabel={compare}
-            trend={m.trend.sessions}
             hint={`${m.cur.finished} finished · ${words}`}
           />
           <StatTile
@@ -239,7 +240,6 @@ function ProfileBody({
             value={m.cur.avgScore == null ? '—' : Math.round(m.cur.avgScore)}
             delta={cmp ? pointsDelta(m.cur.avgScore, m.prev?.avgScore ?? null) : undefined}
             compareLabel={compare}
-            trend={m.trend.score}
             hint={
               m.teamAvg != null
                 ? `Team average ${Math.round(m.teamAvg)} · scored sessions only`
@@ -322,6 +322,7 @@ function ProfileBody({
           <div className="pbt-tp-cols">
             <div className="pbt-tp-stack">
               <ObjectionsPanel model={m} now={now} />
+              <DifficultyPanel model={m} />
               <CalendarPanel model={m} now={now} showAppDays={detail.activity != null} />
               <RecentSessionsPanel
                 sessions={m.sessions}
@@ -333,7 +334,6 @@ function ProfileBody({
             </div>
             <div className="pbt-tp-stack">
               <PracticeStylePanel model={m} />
-              <DifficultyPanel model={m} />
               <OptionalPanels detail={detail} now={now} />
             </div>
           </div>
@@ -396,8 +396,6 @@ function buildModel(detail: TraineeDetail, teamRows: SessionSummary[], range: Ra
   const skillsFellBack = windowSkills.count === 0 && scored.length > 0 && range !== 'all';
   const skills = skillsFellBack ? skillAverages(sessions) : windowSkills;
 
-  const trendPoints = sessionTrend(split.current, range, now).points;
-
   const lastSignals = [
     lastSessionAt,
     detail.activity?.last_seen ? new Date(detail.activity.last_seen).getTime() : null,
@@ -421,10 +419,6 @@ function buildModel(detail: TraineeDetail, teamRows: SessionSummary[], range: Ra
     skills,
     skillsFellBack,
     weakest: extremeSkill(skills.avg, 'weakest'),
-    trend: {
-      sessions: trendPoints.map((p) => p.sessions),
-      score: trendPoints.map((p) => p.avgScore).filter((v): v is number => v != null),
-    },
     objections: objectionBreakdown(sessions),
     untried: untriedObjections(sessions),
     difficulty: difficultyBreakdown(sessions),
@@ -806,16 +800,21 @@ function CalendarPanel({ model: m, now, showAppDays }: { model: Model; now: numb
   const sentence = peakPracticeSentence(m.peak);
   return (
     <Panel title="Practice calendar" subtitle="Last 26 weeks · each square is a day" footnote={sentence ?? undefined}>
-      <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ minWidth: 0, maxWidth: '100%' }}>
-          <PracticeCalendar model={m.calendar} now={now} showAppDays={showAppDays} />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, auto))', gap: '14px 22px', alignContent: 'start' }}>
-          <SmallStat label="Sessions" value={m.calendar.sessions} />
-          <SmallStat label="Practice days" value={m.calendar.practiceDays} />
-          <SmallStat label="Best streak" value={`${m.streak.best} day${m.streak.best === 1 ? '' : 's'}`} />
-          {showAppDays && <SmallStat label="App-only days" value={m.calendar.appOnlyDays} />}
-        </div>
+      <PracticeCalendar model={m.calendar} now={now} showAppDays={showAppDays} />
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+          gap: '14px 20px',
+          marginTop: 18,
+          paddingTop: 16,
+          borderTop: `1px solid ${COLOR.borderSoft}`,
+        }}
+      >
+        <SmallStat label="Sessions" value={m.calendar.sessions} />
+        <SmallStat label="Practice days" value={m.calendar.practiceDays} />
+        <SmallStat label="Best streak" value={`${m.streak.best} day${m.streak.best === 1 ? '' : 's'}`} />
+        {showAppDays && <SmallStat label="App-only days" value={m.calendar.appOnlyDays} />}
       </div>
     </Panel>
   );
@@ -843,7 +842,7 @@ function PracticeStylePanel({ model: m }: { model: Model }) {
           <ShareBar
             parts={[
               { key: 'text', label: MODE_LABELS.text, value: s.typed, color: CHART.primary },
-              { key: 'voice', label: MODE_LABELS.voice, value: s.spoken, color: CHART.accent },
+              { key: 'voice', label: MODE_LABELS.voice, value: s.spoken, color: SPOKEN },
             ]}
           />
         </div>
@@ -886,7 +885,7 @@ function SmallFact({ label, value, sub }: { label: string; value: ReactNode; sub
 
 // ─── Recent sessions ───────────────────────────────────────────────────
 
-const SESSION_GRID = '92px minmax(0, 1fr) 118px 58px 60px 88px';
+const SESSION_GRID = '86px minmax(0, 1fr) 116px 64px 84px';
 
 function RecentSessionsPanel({
   sessions,
@@ -919,11 +918,11 @@ function RecentSessionsPanel({
             marginBottom: 4,
           }}
         >
-          {['Date', 'Session', 'Owner', 'Mode', 'Length', 'Score'].map((h, i) => (
+          {['Date', 'Session', 'Owner', 'Length', 'Score'].map((h, i) => (
             <span
               key={h}
-              className={i === 2 || i === 3 || i === 4 ? 'pbt-tq-hide' : undefined}
-              style={{ ...thStyle, padding: 0, border: 'none', textAlign: i === 5 ? 'right' : 'left' }}
+              className={i === 2 || i === 3 ? 'pbt-tq-hide' : undefined}
+              style={{ ...thStyle, padding: 0, border: 'none', textAlign: i === 4 ? 'right' : 'left' }}
             >
               {h}
             </span>
@@ -985,11 +984,13 @@ function SessionRow({ s, now, onOpen }: { s: SessionSummary; now: number; onOpen
       <span className="pbt-tq-hide">
         {s.difficulty != null ? <AdminDifficultyMeter level={s.difficulty} /> : <Muted>—</Muted>}
       </span>
-      <span className="pbt-tq-hide" style={{ fontSize: 12, color: COLOR.inkSoft }}>
-        {s.mode ? labelOf(MODE_LABELS, s.mode) : '—'}
-      </span>
-      <span className="pbt-tq-hide" style={{ fontSize: 12, color: COLOR.inkSoft, fontVariantNumeric: 'tabular-nums' }}>
-        {sessionLength(s.duration_seconds)}
+      <span className="pbt-tq-hide" style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 12, color: COLOR.inkSoft, fontVariantNumeric: 'tabular-nums' }}>
+          {sessionLength(s.duration_seconds)}
+        </span>
+        <span style={{ display: 'block', fontSize: 11, color: COLOR.inkMute, marginTop: 1 }}>
+          {s.mode ? labelOf(MODE_LABELS, s.mode) : ''}
+        </span>
       </span>
       <span style={{ textAlign: 'right' }}>
         {isScored(s) ? (
@@ -1119,7 +1120,7 @@ function ActivityPanel({ activity, now }: { activity: NonNullable<TraineeDetail[
       value: s.views,
       display: s.views,
     }));
-  const timeline = activityTimeline(activity.recent, 12);
+  const timeline = activityTimeline(activity.recent, 10);
   return (
     <Panel
       title="App activity"

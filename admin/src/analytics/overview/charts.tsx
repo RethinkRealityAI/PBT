@@ -31,6 +31,8 @@ import type { TrendPoint } from '../lib/metrics';
 export const AXIS_TICK = { fontSize: 11, fill: COLOR.inkMute } as const;
 /** Scores at or above this are "Solid" (the band the scorer and the admin both use). */
 export const SOLID = 70;
+/** The "Solid" reference line — a recessive ink rule, never a series colour. */
+export const SOLID_LINE = 'rgba(60,20,15,0.34)';
 
 // ─── Small pieces ───────────────────────────────────────────────────────
 
@@ -310,12 +312,7 @@ export function ScoreLine({
             tickMargin={8}
           />
           <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickLine={false} axisLine={false} tick={AXIS_TICK} width={40} />
-          <ReferenceLine
-            y={SOLID}
-            stroke="rgba(60,20,15,0.32)"
-            strokeWidth={1}
-            label={{ value: `Solid ${SOLID}`, position: 'insideBottomLeft', fill: COLOR.inkMute, fontSize: 10.5, dy: -2, dx: 4 }}
-          />
+          <ReferenceLine y={SOLID} stroke={SOLID_LINE} strokeWidth={1} />
           <Tooltip
             cursor={{ stroke: 'rgba(60,20,15,0.14)', strokeWidth: 1 }}
             content={(p) => (

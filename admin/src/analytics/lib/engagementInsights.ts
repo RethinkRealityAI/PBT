@@ -182,3 +182,21 @@ export function contextParts(
   if (other > 0) known.push({ key: 'other', label: 'Other', value: other, color: CONTEXT_OTHER });
   return known;
 }
+
+// ─── Trend buckets ─────────────────────────────────────────────────────
+
+/**
+ * A trend bucket's label. Short for the axis ("3 PM", "Oct 14"), long for a
+ * tooltip or the table ("Tue, Oct 14 · 3–4 pm", "Tue, Oct 14", "Week of Oct 6").
+ */
+export function bucketLabel(start: number, granularity: 'hour' | 'day' | 'week', long = false): string {
+  const d = new Date(start);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (granularity === 'hour') {
+    const h = d.getHours();
+    return long ? `${d.toLocaleDateString('en-US', { weekday: 'short' })}, ${day} · ${hourRange(h)}` : hourTick(h).replace('a', ' am').replace('p', ' pm');
+  }
+  if (granularity === 'week') return long ? `Week of ${day}` : day;
+  return long ? `${d.toLocaleDateString('en-US', { weekday: 'short' })}, ${day}` : day;
+}

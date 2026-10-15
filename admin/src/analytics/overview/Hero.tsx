@@ -39,14 +39,14 @@ export function NarrativeHero({
   return (
     <Glass padding={0} radius={22} className="pbt-ov-cq pbt-rise">
       <div className="pbt-ov-hero">
-        <div style={{ padding: '26px 30px 28px', minWidth: 0 }}>
+        <div style={{ padding: '26px 30px 28px', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <Eyebrow>{eyebrow}</Eyebrow>
           <p
             aria-label={narrativeText(sentences)}
             style={{
               margin: '12px 0 0',
-              fontSize: 19,
-              lineHeight: 1.6,
+              fontSize: 19.5,
+              lineHeight: 1.58,
               fontWeight: 450,
               letterSpacing: '-0.012em',
               color: COLOR.inkSoft,
@@ -80,12 +80,12 @@ export function NarrativeHero({
             ))}
           </p>
         </div>
-        <div style={{ padding: '24px 26px 24px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ padding: '24px 26px 22px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12, justifyContent: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-            <Eyebrow>Your team</Eyebrow>
-            <span style={{ fontSize: 12, color: COLOR.inkMute }}>
-              <strong style={{ color: COLOR.ink, fontWeight: 800 }}>{total}</strong> {total === 1 ? 'person' : 'people'}
-            </span>
+            <Eyebrow>Your team · {total} {total === 1 ? 'person' : 'people'}</Eyebrow>
+            <button type="button" className="pbt-link" onClick={onOpenTrainees} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+              See everyone →
+            </button>
           </div>
           <div
             role="img"
@@ -94,27 +94,26 @@ export function NarrativeHero({
           >
             {total > 0 &&
               ORDER.filter((k) => team[k] > 0).map((k) => (
-                <div key={k} style={{ width: `${(team[k] / total) * 100}%`, minWidth: 4, background: STATUS_COLORS[k] }} />
+                <div
+                  key={k}
+                  title={`${STATUS_LABELS[k]}: ${team[k]}`}
+                  style={{ width: `${(team[k] / total) * 100}%`, minWidth: 4, background: STATUS_COLORS[k] }}
+                />
               ))}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px 14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '9px 18px' }}>
             {ORDER.map((k) => (
-              <div key={k} title={STATUS_HELP[k]} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: STATUS_COLORS[k], flexShrink: 0 }} />
-                <span style={{ fontSize: 12.5, color: COLOR.inkSoft, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {STATUS_LABELS[k]}
+              <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, minWidth: 0 }}>
+                <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: STATUS_COLORS[k], flexShrink: 0, marginTop: 5 }} />
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 650, color: COLOR.inkSoft, whiteSpace: 'nowrap' }}>{STATUS_LABELS[k]}</span>
+                    <strong style={{ marginLeft: 'auto', fontSize: 14, color: COLOR.ink, fontVariantNumeric: 'tabular-nums' }}>{team[k]}</strong>
+                  </span>
+                  <span style={{ display: 'block', fontSize: 10.5, color: COLOR.inkMute, marginTop: 1, lineHeight: 1.35 }}>{STATUS_HELP[k]}</span>
                 </span>
-                <strong style={{ marginLeft: 'auto', fontSize: 13, color: COLOR.ink, fontVariantNumeric: 'tabular-nums' }}>{team[k]}</strong>
               </div>
             ))}
-          </div>
-          <div style={{ fontSize: 11, color: COLOR.inkMute, lineHeight: 1.45 }}>
-            Active = practised in the last 7 days · At risk = 8–21 days ago. Doesn’t change with the date range.
-          </div>
-          <div>
-            <button type="button" className="pbt-link" onClick={onOpenTrainees} style={{ fontSize: 12.5 }}>
-              See everyone →
-            </button>
           </div>
         </div>
       </div>

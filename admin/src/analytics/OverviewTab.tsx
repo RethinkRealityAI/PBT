@@ -216,6 +216,19 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
 
   const { cur, prev } = model;
   const points = model.trend.points;
+  // Deltas sit in narrow tiles: the comparison is said once above the row,
+  // and a tile only spells it out when there is nothing to compare with.
+  const d = comparable
+    ? {
+        trainees: pctDelta(cur.activeTrainees, prev?.activeTrainees),
+        sessions: pctDelta(cur.sessions, prev?.sessions),
+        score: pointsDelta(cur.avgScore, prev?.avgScore ?? null),
+        finish: pointsDelta(cur.finishRate, prev?.finishRate ?? null),
+        practice: pctDelta(cur.practiceSeconds, prev?.practiceSeconds),
+        resolved: pointsDelta(cur.resolvedRate, prev?.resolvedRate ?? null),
+      }
+    : null;
+  const tileCompare = (delta: unknown) => (comparable && delta == null ? compareLabel : undefined);
   const scorePoints = points.map((p, i) => ({ ...p, scored: model.extras.scored[i] }));
   const practice = durationParts(cur.practiceSeconds);
 
@@ -246,12 +259,18 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                 onOpenTrainees={openTrainees}
               />
 
+              <div>
+              {comparable && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: 11, color: COLOR.inkMute, margin: '0 4px 8px' }}>
+                  ▲▼ Change {compareWords(range)}
+                </div>
+              )}
               <AutoGrid min={168} gap={14}>
                 <StatTile
                   label="Trainees practising"
                   value={cur.activeTrainees}
-                  delta={comparable ? pctDelta(cur.activeTrainees, prev?.activeTrainees) : undefined}
-                  compareLabel={compareLabel}
+                  delta={d?.trainees}
+                  compareLabel={tileCompare(d?.trainees)}
                   trend={points.map((p) => p.trainees)}
                   hint="Different people with at least one session"
                   onClick={openTrainees}
@@ -259,8 +278,8 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                 <StatTile
                   label="Sessions"
                   value={cur.sessions.toLocaleString('en-US')}
-                  delta={comparable ? pctDelta(cur.sessions, prev?.sessions) : undefined}
-                  compareLabel={compareLabel}
+                  delta={d?.sessions}
+                  compareLabel={tileCompare(d?.sessions)}
                   trend={points.map((p) => p.sessions)}
                   hint="Every session started, finished or not"
                   onClick={() => onOpen('sessions')}
@@ -269,8 +288,8 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   label="Average score"
                   value={cur.avgScore == null ? '—' : Math.round(cur.avgScore)}
                   unit={cur.avgScore == null ? undefined : '/ 100'}
-                  delta={comparable ? pointsDelta(cur.avgScore, prev?.avgScore ?? null) : undefined}
-                  compareLabel={compareLabel}
+                  delta={d?.score}
+                  compareLabel={tileCompare(d?.score)}
                   trend={measured(points.map((p) => p.avgScore))}
                   hint={`${cur.scored.toLocaleString('en-US')} scored session${cur.scored === 1 ? '' : 's'}; scoring failures left out`}
                   onClick={canSkills ? () => onOpen('skills') : undefined}
@@ -278,8 +297,8 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                 <StatTile
                   label="Finish rate"
                   value={pctText(cur.finishRate)}
-                  delta={comparable ? pointsDelta(cur.finishRate, prev?.finishRate ?? null) : undefined}
-                  compareLabel={compareLabel}
+                  delta={d?.finish}
+                  compareLabel={tileCompare(d?.finish)}
                   trend={measured(model.extras.finishRate)}
                   hint="Sessions played through to the end"
                 />
@@ -287,8 +306,8 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   label="Practice time"
                   value={practice.value}
                   unit={practice.unit}
-                  delta={comparable ? pctDelta(cur.practiceSeconds, prev?.practiceSeconds) : undefined}
-                  compareLabel={compareLabel}
+                  delta={d?.practice}
+                  compareLabel={tileCompare(d?.practice)}
                   trend={model.extras.practiceHours}
                   hint={
                     cur.medianMinutes == null
@@ -299,12 +318,13 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                 <StatTile
                   label="Owners won over"
                   value={pctText(cur.resolvedRate)}
-                  delta={comparable ? pointsDelta(cur.resolvedRate, prev?.resolvedRate ?? null) : undefined}
-                  compareLabel={compareLabel}
+                  delta={d?.resolved}
+                  compareLabel={tileCompare(d?.resolved)}
                   trend={measured(model.extras.resolvedRate)}
                   hint="Finished sessions where the owner ended happy"
                 />
               </AutoGrid>
+              </div>
 
               {model.truncated && (
                 <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: -4 }}>
