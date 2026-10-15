@@ -86,6 +86,9 @@ describe('toSessionSummary — a full modern row', () => {
     expect(s).toEqual({
       id: 's-1',
       user_id: 'u-1',
+      anon_session_id: null,
+      locale: null,
+      reconstructed: false,
       created_at: '2026-10-01T12:10:00.000Z',
       started_at: '2026-10-01T12:05:00.000Z',
       completed: true,
@@ -135,6 +138,58 @@ describe('toSessionSummary — a full modern row', () => {
     const odd = fullRow();
     (odd.scenario as Record<string, unknown>).species = 'hamster';
     expect(toSessionSummary(odd).species).toBe('dog');
+  });
+});
+
+describe('anonymous sessions (no account)', () => {
+  it('has no user, keeps the device id and the language', () => {
+    const s = toSessionSummary(fullRow({ user_id: null, anon_session_id: 'dev-4f2a-0001', locale: 'fr' }));
+    expect(s.user_id).toBeNull();
+    expect(s.anon_session_id).toBe('dev-4f2a-0001');
+    expect(s.locale).toBe('fr');
+    expect(s.reconstructed).toBe(false);
+    // An app-recorded anonymous session is a full session: scored like any other.
+    expect(s.score_overall).toBe(74);
+  });
+
+  it('a signed-in row never carries a device id, whatever the column says', () => {
+    const s = toSessionSummary(fullRow({ anon_session_id: 'dev-4f2a-0001' }));
+    expect(s.user_id).toBe('u-1');
+    expect(s.anon_session_id).toBeNull();
+  });
+
+  it('a rebuilt row: known facts only — no transcript, no score, not a scoring failure', () => {
+    const s = toSessionSummary({
+      id: 'r-1',
+      user_id: null,
+      anon_session_id: 'dev-4f2a-0001',
+      origin: 'reconstructed',
+      scenario: { pushback: { id: 'cost' } },
+      transcript: [],
+      mode: 'text',
+      completed: true,
+      ended_reason: 'completed',
+      pushback_id: 'cost',
+      duration_seconds: 240,
+      model_id: null,
+      turns: null,
+      created_at: '2026-10-01T12:10:00.000Z',
+    });
+    expect(s.reconstructed).toBe(true);
+    expect(s.pushback_id).toBe('cost');
+    expect(s.completed).toBe(true);
+    expect(s.score_overall).toBeNull();
+    expect(s.score_unavailable).toBe(false);
+    expect(s.skills).toBeNull();
+    // Unknown, not "0 messages".
+    expect(s.turns).toBeNull();
+    expect(s.scenario_source).toBe('unknown');
+    expect(s.locale).toBeNull();
+  });
+
+  it('a rebuilt row keeps the message count the app logged', () => {
+    const s = toSessionSummary({ id: 'r-2', anon_session_id: 'dev', origin: 'reconstructed', transcript: [], turns: 6 });
+    expect(s.turns).toBe(6);
   });
 });
 

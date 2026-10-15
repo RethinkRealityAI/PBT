@@ -21,6 +21,8 @@ export interface SbCall {
 export interface SbResult {
   data?: unknown;
   error?: { code?: string; message: string } | null;
+  /** `select(…, { count: 'exact', head: true })` reads this. */
+  count?: number | null;
 }
 
 export type TableHandler = (call: SbCall) => SbResult | Promise<SbResult>;
@@ -128,4 +130,25 @@ export function jsonRequest(
     },
     body: bodyless ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
   });
+}
+
+/**
+ * A `training_sessions` handler for `writeAnonymousSession`'s statements:
+ * the guarded update matches only the device's own row (`own`), the cap
+ * lookup counts `recent` rows, and the insert-if-absent inserts only when no
+ * row exists (`own` / `taken` = a row is already there).
+ */
+export function anonSessionsTable(
+  id: string,
+  { own = false, taken = false, recent = 0 }: { own?: boolean; taken?: boolean; recent?: number } = {},
+): TableHandler {
+  return (call) => {
+    const first = call.ops[0];
+    if (first.op === 'update') return { data: own ? [{ id }] : [], error: null };
+    if (first.op === 'upsert') return { data: own || taken ? [] : [{ id }], error: null };
+    if (first.op === 'select' && (first.args[1] as { count?: string } | undefined)?.count) {
+      return { data: null, count: recent, error: null };
+    }
+    return { data: null, error: null };
+  };
 }

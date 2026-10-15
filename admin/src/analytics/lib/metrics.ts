@@ -7,17 +7,44 @@
  *   - A score is only real when the session finished, was scored, and the
  *     scoring didn't fail (`isScored`). A failed scoring attempt is stored as
  *     a stand-in 0; counting it would invent a terrible session.
- *   - "Finished" = `completed`. Everything else left early.
+ *   - "Finished" = `completed`. Everything else didn't finish: it LEFT EARLY
+ *     when the app recorded why, and its ending is NOT RECORDED when it
+ *     didn't (an anonymous session rebuilt from app activity whose end was
+ *     never seen — `endingUnknown`).
+ *   - People are signed-in trainees (`user_id`). An anonymous session counts
+ *     as a session — and its score in every average — but never as a
+ *     trainee; anonymous DEVICES are counted on their own (`./who.ts`).
  *   - Difficulty is context beside a score, never a weight on it.
  *
  * Pure; dates come in through `now` so everything is unit-tested.
  */
-import type { SessionSummary, SkillKey, SkillScores } from '../../../../src/shared/analytics/contract';
+import type { ScenarioSource, SessionSummary, SkillKey, SkillScores } from '../../../../src/shared/analytics/contract';
 import { SKILL_KEYS } from '../../../../src/shared/analytics/contract';
 import { bucketIndex, buckets, mean, median, pct, type Range } from './period';
+import { anonymousDevices, signedInTrainees } from './who';
 
 export { SKILL_KEYS };
 export type { SkillKey, SkillScores };
+
+/**
+ * Where a session's scenario came from — the ONE set of words the Sessions
+ * filter and table, the CSV export, the Skills split and the session modal
+ * all use.
+ */
+export const SCENARIO_SOURCE_LABELS: Record<ScenarioSource, string> = {
+  library: 'Built-in library',
+  studio: 'Scenario Studio',
+  'self-built': 'Built by the trainee',
+  unknown: 'Not recorded',
+};
+
+/** One line on each source, for tooltips. */
+export const SCENARIO_SOURCE_HINTS: Record<ScenarioSource, string> = {
+  library: 'The ready-made scenarios that ship with the app',
+  studio: 'Published by your team from the Scenario Studio',
+  'self-built': 'Made on the trainee’s own Build screen',
+  unknown: 'Older sessions that didn’t store it',
+};
 
 export const SKILL_LABELS: Record<SkillKey, string> = {
   acknowledge: 'Acknowledge',
@@ -40,6 +67,20 @@ export function isScored(s: SessionSummary): boolean {
   return s.completed && !s.score_unavailable && s.score_overall != null && Number.isFinite(s.score_overall);
 }
 
+/**
+ * Didn't finish, and nothing says how it ended — no reason was recorded (a
+ * rebuilt anonymous session that never reached the scorecard and was never
+ * seen leaving). Shown as "Ending not recorded", never as "Left early".
+ */
+export function endingUnknown(s: SessionSummary): boolean {
+  return !s.completed && !s.ended_reason;
+}
+
+/** Didn't finish, and the app recorded why (left, timed out, an error). */
+export function leftEarly(s: SessionSummary): boolean {
+  return !s.completed && !endingUnknown(s);
+}
+
 export function sessionTime(s: SessionSummary): number {
   return new Date(s.started_at ?? s.created_at).getTime();
 }
@@ -49,14 +90,24 @@ export function sessionTime(s: SessionSummary): number {
 export interface SessionStats {
   sessions: number;
   finished: number;
+  /** Didn't finish, with a recorded reason. */
   leftEarly: number;
+  /** Didn't finish, and how it ended wasn't recorded (rebuilt anonymous sessions). */
+  endingUnknown: number;
   scored: number;
   /** Finished but the scorer failed — excluded from every average. */
   scoringFailed: number;
   avgScore: number | null;
   /** 0–100. */
   finishRate: number | null;
+  /** Distinct SIGNED-IN trainees — an anonymous session is never a person. */
   activeTrainees: number;
+  /** Sessions played without an account. */
+  anonSessions: number;
+  /** Distinct anonymous devices behind them. */
+  anonDevices: number;
+  /** Anonymous sessions rebuilt from app activity (no transcript, no score). */
+  rebuilt: number;
   medianMinutes: number | null;
   /** Total practice time, seconds. */
   practiceSeconds: number;
@@ -76,12 +127,16 @@ export function sessionStats(rows: readonly SessionSummary[]): SessionStats {
   return {
     sessions: rows.length,
     finished: finished.length,
-    leftEarly: rows.length - finished.length,
+    leftEarly: rows.filter(leftEarly).length,
+    endingUnknown: rows.filter(endingUnknown).length,
     scored: scored.length,
     scoringFailed: finished.filter((s) => s.score_unavailable).length,
     avgScore: mean(scored.map((s) => s.score_overall as number)),
     finishRate: pct(finished.length, rows.length),
-    activeTrainees: new Set(rows.map((s) => s.user_id)).size,
+    activeTrainees: signedInTrainees(rows),
+    anonSessions: rows.filter((s) => !s.user_id).length,
+    anonDevices: anonymousDevices(rows),
+    rebuilt: rows.filter((s) => s.reconstructed).length,
     medianMinutes: (() => {
       const m = median(durations);
       return m == null ? null : m / 60;
@@ -129,8 +184,14 @@ export interface TrendPoint {
   label: string;
   sessions: number;
   finished: number;
+  /** Didn't finish, with a recorded reason. */
   leftEarly: number;
+  /** Didn't finish, ending not recorded (rebuilt anonymous sessions). */
+  endingUnknown: number;
+  /** Distinct signed-in trainees. */
   trainees: number;
+  /** Distinct anonymous devices. */
+  devices: number;
   avgScore: number | null;
 }
 
@@ -141,14 +202,23 @@ export function sessionTrend(
   now = Date.now(),
 ): { granularity: 'hour' | 'day' | 'week'; points: TrendPoint[] } {
   const { granularity, list } = buckets(range, now);
-  const acc = list.map(() => ({ sessions: 0, finished: 0, scores: [] as number[], users: new Set<string>() }));
+  const acc = list.map(() => ({
+    sessions: 0,
+    finished: 0,
+    unknown: 0,
+    scores: [] as number[],
+    users: new Set<string>(),
+    devices: new Set<string>(),
+  }));
   for (const s of rows) {
     const i = bucketIndex(list, sessionTime(s));
     if (i < 0) continue;
     acc[i].sessions++;
     if (s.completed) acc[i].finished++;
+    else if (endingUnknown(s)) acc[i].unknown++;
     if (isScored(s)) acc[i].scores.push(s.score_overall as number);
-    acc[i].users.add(s.user_id);
+    if (s.user_id) acc[i].users.add(s.user_id);
+    else if (s.anon_session_id) acc[i].devices.add(s.anon_session_id);
   }
   return {
     granularity,
@@ -157,8 +227,10 @@ export function sessionTrend(
       label: b.label,
       sessions: acc[i].sessions,
       finished: acc[i].finished,
-      leftEarly: acc[i].sessions - acc[i].finished,
+      leftEarly: acc[i].sessions - acc[i].finished - acc[i].unknown,
+      endingUnknown: acc[i].unknown,
       trainees: acc[i].users.size,
+      devices: acc[i].devices.size,
       avgScore: mean(acc[i].scores),
     })),
   };
@@ -229,7 +301,8 @@ export function driverMatchup(
 ): Map<string, { avgScore: number | null; scored: number }> {
   const acc = new Map<string, number[]>();
   for (const s of rows) {
-    if (!isScored(s) || !s.owner_driver) continue;
+    // An anonymous session has no trainee, so no trainee style to pair.
+    if (!isScored(s) || !s.owner_driver || !s.user_id) continue;
     const td = traineeDriverOf(s.user_id);
     if (!td) continue;
     const k = `${td}|${s.owner_driver}`;

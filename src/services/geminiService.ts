@@ -28,6 +28,8 @@ import {
   type RoleplayResponse,
 } from '../shared/ai/contract';
 import { postAi } from './aiApi';
+import { getOrCreateSessionId } from '../lib/storage';
+import { hasAcceptedCurrentTerms } from '../lib/terms';
 
 export { MODEL_TEXT, MODEL_LIVE } from '../shared/ai/models';
 
@@ -150,6 +152,11 @@ export async function evaluateConversation(
     mode: options.mode ?? 'text',
     sessionId: options.sessionId ?? null,
     locale: options.locale,
+    // Read by the server only for an anonymous caller: the score then lands
+    // in this device's anonymous session row (never for a signed-in caller,
+    // a preview or a trainee who opted out of training data use). Omitted
+    // until this device accepted the Terms version that says so.
+    ...(hasAcceptedCurrentTerms() ? { anonSessionId: getOrCreateSessionId() } : {}),
   };
   try {
     const { report } = await postAi<EvaluateResponse>(AI_ENDPOINTS.evaluate, body);

@@ -374,10 +374,6 @@ function OverviewTab({
           value={String(sessions.filter((s) => s.mode === 'voice').length)}
         />
         <RailRow
-          label="Flagged"
-          value={String(sessions.filter((s) => s.flagged).length)}
-        />
-        <RailRow
           label="Total turns"
           value={String(
             sessions.reduce((a, s) => a + (s.turns ?? 0), 0),

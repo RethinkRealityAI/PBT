@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { coachingNotes, rollupTrainees, scoreMomentum, statusCounts, streaks, traineeStatus } from '../trainees';
 import { DAY_MS } from '../period';
-import { person, session } from './fixtures';
+import { anonSession, person, rebuiltSession, session } from './fixtures';
 
 const NOW = new Date('2026-10-15T12:00:00').getTime();
 const daysAgo = (d: number) => new Date(NOW - d * DAY_MS).toISOString();
@@ -48,6 +48,21 @@ describe('rollupTrainees', () => {
     const u2 = rows.find((r) => r.user_id === 'u2')!;
     expect(u2).toMatchObject({ status: 'not_started', name: 'sam', sessions: 0, avgScore: null });
     expect(statusCounts(rows)).toMatchObject({ all: 2, active: 1, not_started: 1 });
+  });
+
+  it('never makes a roster row out of anonymous sessions', () => {
+    const rows = rollupTrainees(
+      [person({ user_id: 'u1' })],
+      [
+        session({ user_id: 'u1', created_at: daysAgo(1), score_overall: 80 }),
+        anonSession('dev-1', { created_at: daysAgo(1), score_overall: 20 }),
+        anonSession('dev-1', { created_at: daysAgo(2), score_overall: 20 }),
+        rebuiltSession('dev-2', 'unknown', { created_at: daysAgo(3) }),
+      ],
+      { windowStart: NOW - 28 * DAY_MS, now: NOW },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ user_id: 'u1', sessions: 1, sessionsAll: 1, avgScore: 80 });
   });
 
   it('takes the latest sign of life from sessions, app activity or sign-in', () => {

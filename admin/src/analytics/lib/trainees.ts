@@ -142,7 +142,8 @@ export function displayName(e: Pick<TraineeDirectoryEntry, 'display_name' | 'ema
 /**
  * One row per trainee in the directory. `allSessions` must be every session
  * (any window) — status, streaks and momentum are lifetime facts;
- * `windowStart` scopes the window-specific counts.
+ * `windowStart` scopes the window-specific counts. Anonymous sessions are
+ * skipped: they belong to a device, never to a person on the roster.
  */
 export function rollupTrainees(
   directory: readonly TraineeDirectoryEntry[],
@@ -152,6 +153,8 @@ export function rollupTrainees(
   const now = opts.now ?? Date.now();
   const byUser = new Map<string, SessionSummary[]>();
   for (const s of allSessions) {
+    // An anonymous session (no account) belongs to no one on the roster.
+    if (!s.user_id) continue;
     const list = byUser.get(s.user_id);
     if (list) list.push(s);
     else byUser.set(s.user_id, [s]);

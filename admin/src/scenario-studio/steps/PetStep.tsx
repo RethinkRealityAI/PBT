@@ -28,7 +28,16 @@ import {
 } from '../../../../src/shared/scenarios/species';
 import { LIFE_STAGES } from '../../../../src/shared/scenarios/enums';
 import { SCENARIO_LIMITS } from '../../../../src/shared/scenarios/limits';
-import { BuiltInHint, Caption, FitGrid, Group, StepBody, UnitInput, linkButton } from './stepParts';
+import {
+  BuiltInHint,
+  Caption,
+  ColumnsGrid,
+  FourUpGrid,
+  Group,
+  StepBody,
+  UnitInput,
+  linkButton,
+} from './stepParts';
 
 const SPECIES_DESCRIPTIONS: Record<ScenarioSpecies, string> = {
   dog: 'Dogs and puppies of any breed or size.',
@@ -86,19 +95,21 @@ export function PetStep({ draft, patch, canWrite, base, askAssistant }: StepProp
         hint="The AI customer talks about this animal, and the research it reads is filtered to match."
       >
         <Group label="Species">
-          <FitGrid min={220}>
+          {/* Side by side — stacked only when the step is phone-narrow. */}
+          <ColumnsGrid max={2} min={200}>
             {(['dog', 'cat'] as const).map((s) => (
               <OptionTile
                 key={s}
+                layout="row"
                 selected={draft.species === s}
                 onSelect={() => patch({ species: s })}
                 disabled={!canWrite}
-                glyph={<PetBadge species={s} size={40} />}
+                glyph={<PetBadge species={s} size={36} />}
                 title={SPECIES_LABELS[s]}
                 description={SPECIES_DESCRIPTIONS[s]}
               />
             ))}
-          </FitGrid>
+          </ColumnsGrid>
         </Group>
         {!declared && (
           <Caption>Not set — this scenario is treated as a dog.</Caption>
@@ -185,7 +196,7 @@ export function PetStep({ draft, patch, canWrite, base, askAssistant }: StepProp
 
       <StudioSection title="Life stage" hint="Age changes the clinical picture — and how the owner talks about it.">
         <Group label="Life stage">
-          <FitGrid min={140}>
+          <FourUpGrid>
             {LIFE_STAGES.map((stage) => (
               <OptionTile
                 key={stage}
@@ -197,7 +208,7 @@ export function PetStep({ draft, patch, canWrite, base, askAssistant }: StepProp
                 description={AGE_DESCRIPTIONS[stage]}
               />
             ))}
-          </FitGrid>
+          </FourUpGrid>
         </Group>
         <BuiltInHint
           base={base}

@@ -44,7 +44,7 @@ export const settings: Record<keyof typeof en, string> = {
   // ── Confidentialité et données (spec §8.3) ────────────────
   'settings.privacy.label': "Autoriser l'utilisation des données d'entraînement",
   'settings.privacy.help':
-    "Nous permet d'utiliser votre activité d'entraînement anonymisée pour améliorer les simulations et l'évaluation. Vos propres séances, évaluations et signalements sont conservés dans tous les cas.",
+    "Nous permet d'utiliser votre activité d'entraînement anonymisée pour améliorer les simulations et l'évaluation. Désactiver cette option met fin à cet enregistrement. Votre propre historique reste sur cet appareil (et dans votre compte si vous vous connectez), et les évaluations ou signalements que vous envoyez parviennent toujours à l'équipe.",
   'settings.privacy.on': 'Activé',
   'settings.privacy.off': 'Désactivé',
   'settings.privacy.ariaLabel': "Autoriser l'utilisation des données d'entraînement",

@@ -207,6 +207,8 @@ export function OptionalTag() {
 /**
  * A large selectable card — species, pushback category, driver, difficulty.
  * `accent` tints the selected state (drivers use their own colour).
+ * `layout="row"` puts the glyph beside the words instead of above them —
+ * half the height, for small fixed sets shown side by side (species, drivers).
  */
 export function OptionTile({
   selected,
@@ -218,6 +220,7 @@ export function OptionTile({
   disabled,
   footer,
   compact,
+  layout = 'stack',
 }: {
   selected: boolean;
   onSelect: () => void;
@@ -228,7 +231,20 @@ export function OptionTile({
   disabled?: boolean;
   footer?: ReactNode;
   compact?: boolean;
+  layout?: 'stack' | 'row';
 }) {
+  const row = layout === 'row';
+  const words = (
+    <>
+      <div style={{ fontSize: compact ? 13.5 : 14.5, fontWeight: 700, letterSpacing: '-0.01em', paddingRight: 22 }}>
+        {title}
+      </div>
+      {description && (
+        <div style={{ fontSize: 12.5, lineHeight: 1.45, color: COLOR.inkSoft }}>{description}</div>
+      )}
+      {footer}
+    </>
+  );
   return (
     <button
       type="button"
@@ -240,9 +256,10 @@ export function OptionTile({
         position: 'relative',
         textAlign: 'left',
         display: 'flex',
-        flexDirection: 'column',
-        gap: compact ? 4 : 8,
-        padding: compact ? '12px 14px' : '16px 16px 14px',
+        flexDirection: row ? 'row' : 'column',
+        alignItems: row ? 'center' : undefined,
+        gap: row ? 12 : compact ? 4 : 8,
+        padding: row ? '12px 14px' : compact ? '12px 14px' : '16px 16px 14px',
         borderRadius: RADIUS.lg,
         border: `1.5px solid ${selected ? accent : 'rgba(60,20,15,0.10)'}`,
         background: selected
@@ -253,18 +270,17 @@ export function OptionTile({
         opacity: disabled ? 0.5 : 1,
         fontFamily: 'var(--pbt-font)',
         color: COLOR.ink,
-        minHeight: compact ? 0 : 88,
+        minHeight: compact || row ? 0 : 88,
+        minWidth: 0,
       }}
     >
       {selected && <CheckBadge color={accent} />}
-      {glyph && <div style={{ fontSize: compact ? 20 : 28, lineHeight: 1 }}>{glyph}</div>}
-      <div style={{ fontSize: compact ? 13.5 : 14.5, fontWeight: 700, letterSpacing: '-0.01em', paddingRight: 22 }}>
-        {title}
-      </div>
-      {description && (
-        <div style={{ fontSize: 12.5, lineHeight: 1.45, color: COLOR.inkSoft }}>{description}</div>
+      {glyph && (
+        <div style={{ fontSize: compact ? 20 : 28, lineHeight: 1, flexShrink: 0, display: row ? 'flex' : undefined }}>
+          {glyph}
+        </div>
       )}
-      {footer}
+      {row ? <div style={{ display: 'grid', gap: 3, minWidth: 0, flex: 1 }}>{words}</div> : words}
     </button>
   );
 }

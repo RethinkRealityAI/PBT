@@ -25,6 +25,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
 } from 'react';
+import { PanelRightClose, X } from 'lucide-react';
 import type { A2uiActionEvent } from '../../lib/a2ui';
 import { COLOR, RADIUS } from '../../lib/tokens';
 import { Glass } from '../../primitives/Glass';
@@ -230,7 +231,8 @@ export function CopilotPanel(props: CopilotPanelProps) {
 
   /**
    * The docked panel and the drawer are separate mounts, so crossing the
-   * dock breakpoint (or hiding the dock) unmounts this panel mid-request.
+   * dock breakpoint unmounts this panel mid-request (folding the dock to its
+   * rail does not — the folded panel stays mounted, just hidden).
    * Its late reply would then write a STALE transcript over whatever the new
    * mount has added — so an unmounted panel drops its reply, and the new
    * mount offers Retry for the unanswered message (effect below).
@@ -536,12 +538,34 @@ export function CopilotPanel(props: CopilotPanelProps) {
   // ── Composer ───────────────────────────────────────────────────────────
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
+  const placeholder = composerPlaceholder(step);
+  /**
+   * Grow the composer to its text — or, while empty, to its placeholder (a
+   * step's hint can wrap onto a second line, which a fixed one-row box cut
+   * in half). Re-fitted when the step changes the hint and when the box's
+   * width changes (the panel unfolding, the window resizing).
+   */
+  const fitComposer = useCallback(() => {
     const el = inputRef.current;
-    if (!el) return;
+    // Folded away (display: none): nothing to measure — fitted when shown.
+    if (!el || el.clientWidth === 0) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight + 2, COMPOSER_MAX_HEIGHT)}px`;
-  }, [input]);
+  }, []);
+  useLayoutEffect(fitComposer, [input, placeholder, fitComposer]);
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let lastWidth = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      // Width only: the height is ours to set.
+      if (el.clientWidth === lastWidth) return;
+      lastWidth = el.clientWidth;
+      fitComposer();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fitComposer]);
 
   const submit = () => {
     if (!input.trim() || busy || !canWrite) return;
@@ -601,15 +625,22 @@ export function CopilotPanel(props: CopilotPanelProps) {
               Suggests — you decide. Nothing is saved until you press Save.
             </div>
           </div>
-          {variant === 'drawer' && onClose && (
+          {onClose && (
             <button
               type="button"
               className="pbt-btn"
               onClick={onClose}
-              aria-label="Close assistant"
+              aria-label={variant === 'drawer' ? 'Close assistant' : 'Hide assistant'}
+              title={variant === 'drawer' ? 'Close' : 'Hide assistant — gives the step more room'}
+              aria-expanded
+              aria-controls={props.controlsId}
               style={{
                 width: 32,
                 height: 32,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
                 borderRadius: 999,
                 border: `1px solid ${COLOR.border}`,
                 background: 'rgba(255,255,255,0.8)',
@@ -620,7 +651,11 @@ export function CopilotPanel(props: CopilotPanelProps) {
                 flexShrink: 0,
               }}
             >
-              ×
+              {variant === 'drawer' ? (
+                <X size={16} strokeWidth={2} aria-hidden focusable={false} />
+              ) : (
+                <PanelRightClose size={17} strokeWidth={1.9} aria-hidden focusable={false} />
+              )}
             </button>
           )}
         </header>
@@ -732,7 +767,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
               rows={1}
               maxLength={AGENT_LIMITS.maxTurnChars}
               disabled={!canWrite}
-              placeholder={composerPlaceholder(step)}
+              placeholder={placeholder}
               aria-label="Message the scenario assistant"
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onComposerKey}

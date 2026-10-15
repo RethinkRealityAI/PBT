@@ -1304,8 +1304,16 @@ export const ALL_CATEGORIES = '*';
 /** The category filter's "Something else / not set yet" value (never a category id). */
 export const NO_CATEGORY = '-';
 
-/** What a gallery lookup needs from a team objection: its name and category. */
-export type GalleryObjectionRef = ObjectionRef & { categoryId?: string };
+/**
+ * What a gallery lookup needs from a team objection: its name and category —
+ * and, when known, its animals and whether it is active (the empty state only
+ * offers to start a scenario from an objection that can still be picked).
+ */
+export type GalleryObjectionRef = ObjectionRef & {
+  categoryId?: string;
+  species?: readonly string[];
+  visible?: boolean;
+};
 
 /** The category a scenario sits in (NO_CATEGORY for "Something else" or none). */
 export function entryCategoryId(entry: StudioEntry, team: readonly GalleryObjectionRef[] = []): string {

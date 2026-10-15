@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  anonSessionsTable,
   jsonRequest,
   makeFakeSupabase,
   setFunctionEnv,
@@ -51,6 +52,7 @@ import vision from '../ai-vision';
 import voiceToken, { NEW_SESSION_WINDOW_MS, TOKEN_TTL_MS } from '../ai-voice-token';
 import scenarioAi from '../admin-scenario-ai';
 import { __resetAiCaches, __resetRateLimits } from '../_shared/ai';
+import { ANON_DAILY_CAP } from '../_shared/anonSessions';
 import { SEED_SCENARIOS } from '../../../src/data/scenarios';
 import { MODEL_LIVE, MODEL_TEXT } from '../../../src/shared/ai/models';
 import { AI_LIMITS } from '../../../src/shared/ai/contract';
@@ -321,6 +323,105 @@ describe('ai-evaluate', () => {
     expect(arg.config.responseSchema.properties.critique).toEqual({ type: 'STRING' });
     const insert = sb.firstOp('ai_call_telemetry', 'insert')?.args[0] as Record<string, unknown>;
     expect(insert).toMatchObject({ call_type: 'evaluate', session_id: UUID });
+  });
+
+  describe('anonymous callers (no account)', () => {
+    const DEVICE = '7f3e2d1c-0b9a-4876-8543-210fedcba987';
+
+    it("writes the score into the device's anonymous row, with the language", async () => {
+      sb.setHandler('training_sessions', anonSessionsTable(UUID));
+      mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+      const res = await evaluate(
+        jsonRequest('ai-evaluate', {
+          scenario,
+          transcript,
+          mode: 'text',
+          sessionId: UUID,
+          anonSessionId: DEVICE,
+          locale: 'fr',
+        }),
+      );
+      const body = await res.json();
+      expect(body.persisted).toBe(true);
+      const calls = sb.callsFor('training_sessions');
+      // guarded update (no row yet) → daily cap → insert-if-absent
+      expect(calls.map((c) => c.ops[0].op)).toEqual(['update', 'select', 'upsert']);
+      expect(calls[2].ops[0].args[1]).toEqual({ onConflict: 'id', ignoreDuplicates: true });
+      const row = calls[2].ops[0].args[0] as Record<string, unknown>;
+      expect(row).toMatchObject({
+        id: UUID,
+        user_id: null,
+        anon_session_id: DEVICE,
+        locale: 'fr',
+        score_overall: 80,
+        completed: true,
+      });
+    });
+
+    it('updates its own row only while it is still anonymous and this device’s', async () => {
+      sb.setHandler('training_sessions', anonSessionsTable(UUID, { own: true }));
+      mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+      const res = await evaluate(
+        jsonRequest('ai-evaluate', { scenario, transcript, mode: 'text', sessionId: UUID, anonSessionId: DEVICE }),
+      );
+      expect((await res.json()).persisted).toBe(true);
+      const [update] = sb.callsFor('training_sessions');
+      expect(update.ops.slice(1, 4)).toEqual([
+        { op: 'eq', args: ['id', UUID] },
+        { op: 'is', args: ['user_id', null] },
+        { op: 'eq', args: ['anon_session_id', DEVICE] },
+      ]);
+      // The owner columns are never in an update — a claimed row stays claimed.
+      expect(update.ops[0].args[0]).not.toHaveProperty('user_id');
+      expect(update.ops[0].args[0]).not.toHaveProperty('anon_session_id');
+    });
+
+    it('never scores into a row owned by an account or another device', async () => {
+      sb.setHandler('training_sessions', anonSessionsTable(UUID, { taken: true }));
+      mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+      const res = await evaluate(
+        jsonRequest('ai-evaluate', { scenario, transcript, mode: 'text', sessionId: UUID, anonSessionId: DEVICE }),
+      );
+      expect((await res.json()).persisted).toBe(false);
+      // update (no match) → cap → insert (conflict) → update again (no match)
+      expect(sb.callsFor('training_sessions').map((c) => c.ops[0].op)).toEqual(['update', 'select', 'upsert', 'update']);
+    });
+
+    it('stops at the daily per-device cap', async () => {
+      sb.setHandler('training_sessions', anonSessionsTable(UUID, { recent: ANON_DAILY_CAP }));
+      mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+      const res = await evaluate(
+        jsonRequest('ai-evaluate', { scenario, transcript, mode: 'text', sessionId: UUID, anonSessionId: DEVICE }),
+      );
+      expect((await res.json()).persisted).toBe(false);
+      expect(sb.callsFor('training_sessions').map((c) => c.ops[0].op)).toEqual(['update', 'select']);
+    });
+
+    it('writes nothing when the trainee opted out, in a preview, or without a valid device id', async () => {
+      mocks.generateContent.mockResolvedValue({ text: JSON.stringify(validScore) });
+      for (const extra of [{ allowTelemetry: false }, { preview: true }, { anonSessionId: 'x' }, { anonSessionId: undefined }]) {
+        const res = await evaluate(
+          jsonRequest('ai-evaluate', { scenario, transcript, mode: 'text', sessionId: UUID, anonSessionId: DEVICE, ...extra }),
+        );
+        expect((await res.json()).persisted).toBe(false);
+      }
+      expect(sb.callsFor('training_sessions')).toHaveLength(0);
+    });
+
+    it('ignores the device id for a signed-in caller', async () => {
+      const headers = signIn('user-1');
+      mocks.generateContent.mockResolvedValueOnce({ text: JSON.stringify(validScore) });
+      await evaluate(
+        jsonRequest(
+          'ai-evaluate',
+          { scenario, transcript, mode: 'text', sessionId: UUID, anonSessionId: DEVICE },
+          { headers },
+        ),
+      );
+      const row = sb.callsFor('training_sessions')[1].ops[0].args[0] as Record<string, unknown>;
+      expect(row.user_id).toBe('user-1');
+      expect(row).not.toHaveProperty('anon_session_id');
+    });
   });
 
   it('adds French field descriptions for locale fr', async () => {

@@ -8,7 +8,7 @@
  * refactored), the home composer, step navigation, what a save sends, the
  * publish gate, and resuming unsaved work.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 const state = {
@@ -36,12 +36,14 @@ vi.mock('../../data/queries', () => ({
 const objectionsState = vi.hoisted(() => ({
   objections: [] as unknown[],
   deleted: [] as unknown[],
+  categories: [] as unknown[],
 }));
 vi.mock('../objections/useObjections', () => ({
   useObjections: () => ({
     status: 'ready',
     objections: objectionsState.objections,
     deleted: objectionsState.deleted,
+    categories: objectionsState.categories,
     error: null,
     missingTable: false,
     loadedAt: 1,
@@ -57,18 +59,58 @@ vi.mock('../objections/useObjections', () => ({
   }),
 }));
 
-// The assistant panel: shows what the shell handed it.
+// The assistant panel: shows what the shell handed it, its hide / close
+// button, and a way to make a reply arrive.
 vi.mock('../copilot/CopilotPanel', () => ({
-  CopilotPanel: (props: { pendingPrompt: { text: string } | null; variant: string }) => (
+  CopilotPanel: (props: {
+    pendingPrompt: { text: string } | null;
+    variant: string;
+    onClose?: () => void;
+    transcript: { items: unknown[]; surfaces: object; suggestions: string[] };
+    onTranscriptChange: (t: unknown) => void;
+  }) => (
     <div data-testid="copilot" data-variant={props.variant}>
       {props.pendingPrompt ? `pending: ${props.pendingPrompt.text}` : 'no pending prompt'}
+      {props.onClose && (
+        <button type="button" onClick={props.onClose}>
+          {props.variant === 'drawer' ? 'Close assistant' : 'Hide assistant'}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() =>
+          props.onTranscriptChange({
+            ...props.transcript,
+            items: [...props.transcript.items, { id: `r${props.transcript.items.length}`, kind: 'assistant', text: 'Hi' }],
+          })
+        }
+      >
+        fake reply
+      </button>
     </div>
   ),
 }));
 
-// Steps owned by other tracks — stand-ins keep this test about the frame.
-vi.mock('../steps/PetStep', () => ({ PetStep: () => <div>pet step body</div> }));
-vi.mock('../steps/PushbackStep', () => ({ PushbackStep: () => <div>pushback step body</div> }));
+// Steps owned by other tracks — stand-ins keep this test about the frame
+// (they show what the frame started them with).
+vi.mock('../steps/PetStep', () => ({
+  PetStep: (p: { draft: { species?: string | null } }) => (
+    <div>
+      <div>pet step body</div>
+      <div data-testid="pet-species">{p.draft.species ?? 'no species'}</div>
+    </div>
+  ),
+}));
+vi.mock('../steps/PushbackStep', () => ({
+  PushbackStep: (p: { draft: { pushback_id?: string | null }; initialCategoryId?: string | null }) => (
+    <div>
+      <div>pushback step body</div>
+      <div data-testid="pushback-start">
+        {`objection: ${p.draft.pushback_id ?? 'none'} · category: ${p.initialCategoryId ?? 'none'}`}
+      </div>
+    </div>
+  ),
+}));
 vi.mock('../steps/CustomerStep', () => ({ CustomerStep: () => <div>customer step body</div> }));
 vi.mock('../steps/KnowledgeStep', () => ({ KnowledgeStep: () => <div>knowledge step body</div> }));
 vi.mock('../steps/BriefStep', () => ({ BriefStep: () => <div>brief step body</div> }));
@@ -86,6 +128,12 @@ import { ConfirmProvider } from '../../primitives/Confirm';
 import { LOCAL_DRAFTS_KEY } from '../localDrafts';
 // eslint-disable-next-line import/first
 import { EMPTY_TRANSCRIPT } from '../copilot/types';
+// eslint-disable-next-line import/first
+import { ASSISTANT_COLLAPSED_KEY } from '../AssistantDock';
+// eslint-disable-next-line import/first
+import { BUILT_IN_CATEGORIES } from '../../../../src/shared/scenarios/objectionCategories';
+// eslint-disable-next-line import/first
+import { PUSHBACK_LABELS } from '../../../../src/shared/scenarios/enums';
 
 const WRITER = ['scenarios.read', 'scenarios.write', 'knowledge.read'];
 
@@ -181,6 +229,7 @@ function traineeRow(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   objectionsState.objections = [];
   objectionsState.deleted = [];
+  objectionsState.categories = [...BUILT_IN_CATEGORIES];
   state.overrides = { data: [], loading: false, error: null, refetch: vi.fn() };
   state.userScenarios = { data: [], loading: false, error: null, refetch: vi.fn() };
   state.docs = { data: [], loading: false, error: null, refetch: vi.fn() };
@@ -530,5 +579,135 @@ describe('StudioEditor', () => {
     expect(within(picker).getByRole('option', { name: `${PROBIOTICS.title} (1)` })).toBeInTheDocument();
     fireEvent.change(picker, { target: { value: PROBIOTICS.id } });
     expect(screen.getAllByRole('article').map((a) => a.getAttribute('aria-label'))).toEqual([PROBIOTICS.title]);
+  });
+});
+
+// ── Gallery: an empty filter offers the scenario it was looking for ──
+
+describe('StudioHome empty gallery', () => {
+  const animalChip = (name: RegExp) =>
+    within(screen.getByRole('group', { name: 'Animal' })).getByRole('button', { name });
+
+  it('"Cats 0": create the first cat scenario — the builder starts with the cat', async () => {
+    renderScreen();
+    fireEvent.click(animalChip(/^Cats/));
+    expect(screen.getByText('No cat scenarios yet')).toBeInTheDocument();
+    // "Show all scenarios" stays, as the quiet way back.
+    expect(screen.getByRole('button', { name: 'Show all scenarios' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create your first cat scenario' }));
+    expect(await heading('Who is the patient?')).toBeInTheDocument();
+    expect(screen.getByTestId('pet-species')).toHaveTextContent('cat');
+    expect(screen.getByRole('heading', { level: 1, name: 'Untitled scenario' })).toBeInTheDocument();
+  });
+
+  it('with a category filter, the Pushback step opens on that category', async () => {
+    renderScreen();
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'weight' } });
+    fireEvent.click(animalChip(/^Cats/));
+    expect(screen.getByText('No cat scenarios in Weight management yet')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create a cat scenario in Weight management' }));
+    await heading('Who is the patient?');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to the pushback →' }));
+    await heading('What is the owner pushing back on?');
+    expect(screen.getByTestId('pushback-start')).toHaveTextContent('objection: none · category: weight');
+  });
+
+  it('with an objection filter, the new scenario starts from that objection', async () => {
+    renderScreen();
+    fireEvent.change(screen.getByLabelText('Objection'), { target: { value: 'cost' } });
+    fireEvent.click(animalChip(/^Cats/));
+    fireEvent.click(
+      screen.getByRole('button', { name: `Add a cat scenario for “${PUSHBACK_LABELS.cost}”` }),
+    );
+    await heading('Who is the patient?');
+    expect(screen.getByTestId('pet-species')).toHaveTextContent('cat');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to the pushback →' }));
+    await heading('What is the owner pushing back on?');
+    expect(screen.getByTestId('pushback-start')).toHaveTextContent('objection: cost · category: none');
+  });
+
+  it('never offers to create a trainee-built scenario', () => {
+    renderScreen();
+    fireEvent.click(within(screen.getByRole('group', { name: 'Show' })).getByRole('button', { name: /^From trainees/ }));
+    expect(screen.getByText('No trainee-built scenarios yet')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Create|^Add a/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show all scenarios' })).toBeInTheDocument();
+  });
+
+  it('a read-only role sees the words without the create action', () => {
+    renderScreen(['scenarios.read']);
+    fireEvent.click(animalChip(/^Cats/));
+    expect(screen.getByText('No cat scenarios yet')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Create your first cat scenario/ })).not.toBeInTheDocument();
+  });
+});
+
+// ── The assistant: folds to a rail on wide screens, slides over on narrow ──
+
+describe('StudioEditor assistant placement', () => {
+  const realWidth = window.innerWidth;
+  function setWidth(w: number) {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: w });
+  }
+  afterEach(() => setWidth(realWidth));
+
+  it('wide: folds the docked assistant to a rail, and the browser remembers it', async () => {
+    setWidth(1440);
+    renderScreen();
+    fireEvent.click(screen.getByRole('button', { name: 'Start step by step' }));
+    await heading('Who is the patient?');
+    expect(screen.getByTestId('copilot')).toHaveAttribute('data-variant', 'docked');
+    // Docked — so no floating launcher.
+    expect(screen.queryByRole('button', { name: /Open the assistant/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide assistant' }));
+    const show = screen.getByRole('button', { name: 'Show assistant' });
+    expect(show).toHaveAttribute('aria-expanded', 'false');
+    expect(localStorage.getItem(ASSISTANT_COLLAPSED_KEY)).toBe('1');
+    // Folded, not gone: the panel is still mounted (a reply in flight lands).
+    expect(screen.getByTestId('copilot')).not.toBeVisible();
+
+    // A reply while folded: a dot on the rail — it doesn't spring open.
+    fireEvent.click(screen.getByRole('button', { name: 'fake reply', hidden: true }));
+    expect(screen.getByRole('button', { name: 'Show assistant — new reply' })).toBeInTheDocument();
+    expect(screen.getByTestId('copilot')).not.toBeVisible();
+
+    // Back to the Studio and into another scenario: still folded.
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the Studio' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start step by step' }));
+    await heading('Who is the patient?');
+    expect(screen.getByRole('button', { name: 'Show assistant' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show assistant' }));
+    expect(screen.getByTestId('copilot')).toBeVisible();
+    expect(localStorage.getItem(ASSISTANT_COLLAPSED_KEY)).toBeNull();
+  });
+
+  it('wide: a folded assistant opens when the admin came to talk to it', async () => {
+    setWidth(1440);
+    localStorage.setItem(ASSISTANT_COLLAPSED_KEY, '1');
+    renderScreen();
+    fireEvent.change(screen.getByLabelText('Describe the conversation'), {
+      target: { value: 'A Persian owner who doubts the renal diet' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Build it with the assistant/ }));
+    await heading('Who is the patient?');
+    expect(screen.getByTestId('copilot')).toBeVisible();
+    expect(screen.getByTestId('copilot')).toHaveTextContent('pending: A Persian owner who doubts the renal diet');
+    // The remembered choice is the toggle's alone.
+    expect(localStorage.getItem(ASSISTANT_COLLAPSED_KEY)).toBe('1');
+  });
+
+  it('narrower: never a column under the step — a launcher opens a drawer', async () => {
+    setWidth(1000);
+    renderScreen();
+    fireEvent.click(screen.getByRole('button', { name: 'Start step by step' }));
+    await heading('Who is the patient?');
+    expect(screen.queryByRole('button', { name: /Show assistant/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open the assistant' }));
+    expect(screen.getByTestId('copilot')).toHaveAttribute('data-variant', 'drawer');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(await screen.findByRole('button', { name: 'Open the assistant' })).toBeInTheDocument();
   });
 });

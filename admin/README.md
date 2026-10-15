@@ -74,10 +74,10 @@ Destinations and their tabs:
 | Section | Destination | Tabs |
 |---------|-------------|------|
 | Monitor | Analytics | Overview · Trainees · Sessions · Skills · Engagement · AI quality · Pet Analyzer |
+| Monitor | Feedback | Session feedback · Platform reports |
 | People | People | Users · Admins · Roles · Invites |
 | Content | Scenario Studio | Studio · Categories · Trainee-built |
 | Content | Knowledge / AI tuning | — |
-| Content | Feedback | Session feedback · Platform reports |
 | Platform | Email | Templates · Settings · Delivery |
 | Platform | Flags / Audit / Preview | — |
 

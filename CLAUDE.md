@@ -50,8 +50,11 @@ Tab bar (mobile): Train · History · Library · You — see `SCREENS_WITH_TAB_B
 Initial screen logic in `App.tsx::getInitialScreen()`:
 
 1. No `pbt:terms_accepted_at` → onboarding (T&C blocks)
-2. No `pbt:profile` → quiz (RouteResolver effect handles redirect)
-3. Else → home
+2. Accepted an older `pbt:terms_version` than `CURRENT_TERMS_VERSION`
+   (`src/lib/terms.ts` — the one terms module) → terms, once, with an
+   "updated" notice; accepting goes home (quiz only without a profile)
+3. No `pbt:profile` → quiz (RouteResolver effect handles redirect)
+4. Else → home
 
 **Feature switches (Admin → Flags).** `src/app/screenFlags.ts` is the ONE
 screen → switch map (`SCREEN_FLAGS`, `useScreenEnabled()`): the route guard
@@ -106,6 +109,7 @@ long-lived key). `npm run check:bundle` fails if a key-shaped string
 | `suggestField` (admin `scenarioAi`)       | `admin-scenario-ai`   | `gemini-3-flash-preview`                | Legacy per-field wizard (admin, `scenarios.write`) — no UI calls it since the Scenario Studio |
 | `askScenarioAgent` (admin `scenario-studio/api`) | `admin-scenario-agent` | `gemini-3-flash-preview` (JSON, low thinking) | Scenario Studio assistant (admin, `scenarios.write`) — proposals only, never writes |
 | `inspectScenario` (admin `scenario-studio/api`)  | `admin-scenario-inspect` | — (no model call)                   | Exact customer prompt + retrieved passages for a draft (admin, `scenarios.read`) |
+| `recordAnonymousSession` (useTextChat) / `claimAnonymousSessions` (backfill) | `session-save` | — (no model call) | Records an ANONYMOUS session (owned by the device id); on sign-in, hands this device's anonymous rows to the account |
 
 Wire contract: `src/shared/ai/contract.ts` (read its header — it states what the
 server trusts). Transport: `src/services/aiApi.ts::postAi` attaches the Supabase
@@ -131,7 +135,33 @@ telemetry). Model IDs live in `src/shared/ai/models.ts`.
   only with `preview: true` (the Studio Test drive), and never sent to the
   customer prompt (roleplay, voice, inspector) or the public snapshot.
 - Anonymous callers are allowed by design (anonymous-first product); they get
-  the same AI behaviour with no persistence.
+  the same AI behaviour, and their sessions ARE recorded — without identifying
+  details (migration `20261015000000_anonymous_sessions.sql`): a
+  `training_sessions` row with `user_id` NULL, owned by `anon_session_id` (the
+  random per-device id in `pbt:session_id`). Only the server writes those rows
+  (service role; RLS `auth.uid() = user_id` is never true for a NULL owner):
+  `session-save` the conversation (no score), `ai-evaluate` the score
+  (`anonSessionId` in the body, read only for an anonymous caller). Both
+  write through `_shared/anonSessions.ts::writeAnonymousSession`: the
+  ownership guard is IN the statement (update `where user_id is null and
+  anon_session_id = <device>`, else insert-if-absent), never a prior read, so
+  a sign-in claim racing a save can't be undone; a row owned by an account or
+  another device is never touched; one device creates at most
+  `ANON_DAILY_CAP` (100) rows a day; `session-save` takes ≤ 128 KB and has
+  separate per-IP buckets for recording and claiming. Both write nothing with
+  `allowTelemetry: false` (the trainee's "Allow training data use" opt-out —
+  anonymous practice is recorded for the training team, so the opt-out
+  decides) or `preview: true`. On sign-in the backfill first CLAIMS this
+  device's anonymous rows among its local sessions (`session-save`
+  `claim: true`, signed-in only; a failed claim is an error status and the
+  session upload is skipped that run), then reads the account's rows back and
+  uploads only the sessions it lacks or holds as `reconstructed` — the
+  backfill runs on every load (twice at sign-up), and re-uploading would
+  replace the full server scenario with the 3-field local summary. The Terms'
+  "Anonymous by default" section says
+  so (en + fr), and nothing anonymous leaves the device (`session-save` post,
+  `anonSessionId` on `ai-evaluate`) until that Terms version was accepted
+  (`hasAcceptedCurrentTerms()`, `src/lib/terms.ts`).
 
 Local dev: run `netlify dev` (serves the functions); `vite` alone has no AI.
 
@@ -602,6 +632,16 @@ editable `scenario_overrides` column exactly once (unit-tested).
   `cleanup.sql` hard-deletes everything (admin deletes are soft) and must
   show zero rows. Fixtures: `scripts/e2e/fixtures.mjs` ("QA E2E", markers
   BRIGHTBITE / RIVULET).
+- **Layout** (2026-10-15): the builder's assistant column folds to a 56 px
+  rail ("Hide assistant"; remembered in `pbt:admin:studio_assistant_collapsed`;
+  a reply while folded shows a dot, never springs it open) and is a drawer
+  from a floating "Assistant" button below the docking width. Choice tiles
+  sit side by side (Dog | Cat, 2 × 2 drivers / difficulty, compact knowledge
+  rows — `stepParts.tsx` `ColumnsGrid`/`FourUpGrid`, `OptionTile
+  layout="row"`). An empty gallery filter offers the scenario that fits it
+  ("Create a cat scenario in Weight management", builder pre-filled with the
+  animal and objection; `galleryEmpty.ts`, `scenarios.write` only; never
+  under From trainees) with "Show all scenarios" as the secondary action.
 - UI vocabulary: `ui.tsx` (never put step content inside `<Glass>` or any
   transformed ancestor — `backdrop-filter`/`transform` trap in-place
   `position: fixed` modals; `.pbt-studio-in` uses fill-mode `backwards` for
@@ -612,7 +652,7 @@ editable `scenario_overrides` column exactly once (unit-tested).
 
 - Supabase client lazy-loaded from env vars; missing env = banner hidden, app still works.
 - `AccountUpgradeModal` does sign-up (no verification) and sign-in.
-- On sign-up: snapshot of `localStorage` profile + sessions uploaded to `profiles` + `training_sessions` tables.
+- On sign-up: snapshot of `localStorage` profile + sessions uploaded to `profiles` + `training_sessions` tables (after claiming this device's anonymous server rows — see "AI integration" → trust boundary).
 - `useCloudSync` debounce-mirrors profile changes (incl. `theme` + `locale`)
   once signed in; cloud `locale` applies on a fresh device only when no
   explicit local choice exists.
@@ -722,7 +762,7 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations (27 files, all hand-run; all applied to production —
+Migrations (28 files, all hand-run; all applied to production —
 `npm run verify:db` proves the live project has every relation AND column
 the code uses). Each
 file's header explains it in full:
@@ -812,6 +852,19 @@ file's header explains it in full:
   ON, guarded on its old "(planned)" description); refreshes the voice /
   journey-strip / greeting-override descriptions and the Content Manager
   role's "simulation tuning" description (each guarded on the old text).
+- `20261015000000_anonymous_sessions.sql` — anonymous sessions in
+  `training_sessions`: `user_id` nullable, `anon_session_id` (8–64 chars;
+  CHECK one owner), `locale` (regex CHECK), `origin` ('app' |
+  'reconstructed'), partial index on `anon_session_id`; then an idempotent
+  BACKFILL rebuilding one 'reconstructed' row per anonymous TEXT session the
+  app announced with a `session_open` event (when, objection, mode, device,
+  scorecard reached or `session_abandon`; no transcript, no score — never
+  stored). Anonymous voice sessions before it logged no `session_open` and
+  can't be rebuilt. The backfill distrusts `nav_events` (anonymous-insertable,
+  client-stamped): events from 2026-05-01 to the 2026-10-16 cutoff only,
+  leave / scorecard moments within 6 h of the open, durations clamped before
+  the cast. Must be applied BEFORE deploying the release — signed-in saves,
+  scores, the backfill and `session-save` all write the new columns.
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -829,7 +882,9 @@ pill bar. Related screens are tabs of one destination (Analytics =
 overview/trainees/sessions/skills/engagement/quality/analyzer, People =
 users/admins/roles/invites, Scenario Studio = studio/categories/trainee-built,
 …); Knowledge and AI tuning (the old "Simulation" screen) are destinations of
-their own. Old `#/library/…`, `#/overview`, `#/activity/…`,
+their own. Monitor holds Analytics and **Feedback** (Session feedback ·
+Platform reports — moved from Content on 2026-10-15; `#/feedback/…` URLs
+unchanged). Old `#/library/…`, `#/overview`, `#/activity/…`,
 `#/analytics/insights` and `#/analytics/traffic` hashes are rewritten by
 `legacyRoute()`. The rail collapses to icons and becomes a drawer under
 900px. Location is in the URL hash (`#/people/roles`; an optional third
@@ -918,6 +973,30 @@ backfill, whose score was dropped on purpose (no `model_id`).
 Trainee status: Active ≤ 7 days since the last session, At risk 8–21,
 Dormant > 21, Not started = never; "New" = joined ≤ 14 days.
 
+**Anonymous sessions** (2026-10-15; see "AI integration" → trust boundary
+and migration `20261015000000_anonymous_sessions.sql`). `SessionSummary`
+carries `user_id: string | null`, `anon_session_id`, `locale` and
+`reconstructed`. The rules live in `admin/src/analytics/lib/who.ts` (+
+`who.tsx` for `AnonAvatar` / `DeviceTag` / `RebuiltTag`):
+- An anonymous session IS a session — it counts in session counts, finish
+  rate and (when scored) every average — but NEVER a person: no trainee,
+  name, leader, profile or slipping / never-started nudge. People are counted
+  twice: signed-in trainees, and anonymous devices separately
+  (`sessionStats.anonDevices`).
+- The device tag ("Device 4F2A") is a 4-character HASH of `anon_session_id`;
+  the full id never reaches the screen or a CSV.
+- Language (`locale`: English / Français / Not recorded before 15 Oct) is a
+  Sessions filter and column and a Skills "Score by group" split, next to
+  Who (signed-in vs anonymous), animal and source.
+- A `reconstructed` row (rebuilt from `nav_events` for anonymous text sessions
+  before 15 Oct) shows a "Rebuilt" tag and "Score not recorded"; its animal is
+  unknown (`speciesOf` returns null — never split or filtered as a dog). A
+  session that didn't finish with no recorded reason reads "Ending not
+  recorded" (`endingUnknown`), never "Left early".
+- Feedback (now under Monitor) has a Who column and opens the rated session
+  in Analytics → Sessions when it exists. Every production rating so far is
+  anonymous.
+
 Offline review: `npm run dev:admin-mock` serves a seeded team
 (`admin/src/dev/mockAnalytics.ts`) whose summaries, engagement and profiles
 are computed with the same shared functions the server runs.
@@ -1004,7 +1083,7 @@ Telemetry capture in the consumer app:
   (`recordCall()` / `withTelemetry` are unused: AI calls are recorded
   server-side by `recordCallServer` in `netlify/functions/_shared/ai.ts`)
 - `src/services/geminiService.ts` — wraps `generateRoleplayMessage` / `evaluateConversation` with timing + tokens + refusal heuristics; takes a `{ sessionId }` option so rows attribute to a `training_sessions` id
-- `src/features/chat/useTextChat.ts` — allocates session id at `open()`, persists `completed`/`abandoned` + `rag_documents` row to Supabase, exposes `abandon()` (called by `ChatAbandonWatcher` in `App.tsx` when user leaves chat mid-flight)
+- `src/features/chat/useTextChat.ts` — allocates session id at `open()`, persists `completed`/`abandoned` (+ the app `locale`) + `rag_documents` row to Supabase when signed in, or posts the session to `session-save` when anonymous; exposes `abandon()` (called by `ChatAbandonWatcher` in `App.tsx` when user leaves chat mid-flight)
 - `src/features/scenarios/persistScenario.ts` — writes `user_scenarios` on Save
 - `src/features/pet-analyzer/useSavedPets.ts` — writes `analyzer_events` on save (incl. Pet Vision provenance)
 - `src/features/pet-analyzer/usePetVision.ts` + `src/services/petVisionService.ts` — multimodal photo analysis (results-only; raw image never stored)
@@ -1040,6 +1119,7 @@ Active keys:
 - `pbt:admin_nav_collapsed`, `pbt:admin:knowledge_auto_suggest` (admin portal UI preferences)
 - `pbt:admin:studio_drafts:<userId>` (Scenario Studio unsaved work + assistant transcripts, per admin account; ≤20 entries, 14-day expiry)
 - `pbt:train_species` (`'dog' | 'cat'`, default dog — the trainee's chosen animal, shared by Create and Home; `useTrainingSpecies`)
+- `pbt:admin:studio_assistant_collapsed` (admin portal: the Scenario Studio builder's assistant folded to a rail)
 
 ## Adding new content
 
@@ -1186,7 +1266,18 @@ The static test catches "migration file missing"; `verify:db` catches
    volume reaches the hundreds of thousands. (g) `nav_events.created_at` is
    client-stamped and anonymous visitors can insert: reads and aggregates
    ignore anything beyond `FUTURE_SKEW_MS` ahead of now, but a server-side
-   default/trigger would be the real fix.
+   default/trigger would be the real fix. (h) Anonymous VOICE sessions
+   before 2026-10-15 logged no `session_open`, so the anonymous backfill
+   could not rebuild them (~90 on 1 Oct alone); only their AI usage
+   (`ai_call_telemetry` call type `voice`) remains. (i) The Terms'
+   "Anonymous by default" wording changed with anonymous recording
+   (2026-10-15); `CURRENT_TERMS_VERSION` is now 2, so existing devices are
+   re-asked once — the French text joins item 2's review. (j) `session-save`
+   is open to anyone, like the rest of the anonymous-first app: rate limits,
+   the 128 KB body and the per-device daily cap bound it, but a script
+   rotating device ids can still add fake anonymous sessions. Tying a row to
+   a real AI session (an HMAC issued by `ai-roleplay` / `ai-voice-token`) is
+   the next step if that ever shows up in Analytics.
 
 1. **a11y deep sweep**: aria labels/aria-live/keyboard basics are in; still
    owed: modal focus traps + Escape + `aria-modal` everywhere, CreateScreen
@@ -1259,4 +1350,4 @@ full fr-CA localization; Fecal Scan; scoped + self-seeding knowledge base.)
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **Scenario Studio (Sept 25):** scenario building as its own admin destination — guided 7-step builder, A2UI assistant (proposals only, re-validated on confirm), prompt/retrieval inspector, native Test drive, dog/cat species (column applied 2026-09-27), Scenario Author role; Knowledge + AI tuning promoted to their own nav items. **Objections + animal-first (Oct 12):** team-authored objections (Studio Objections tab, `scenario_objections`, migration applied 2026-10-12), "Add to library" for trainee scenarios (`copied_from`), Animal/Objection library filters, trainee app asks Dog | Cat before the objection and its Library tab finally lists the published library; fixed a hooks-order crash that blanked the admin after sign-in (regression-tested in `admin/src/__tests__/AppSignIn.test.tsx`). **Categories (Oct 12, same branch):** Category → Objection → Scenario with categories as knowledge containers (Studio Categories tab, inherited knowledge, upload from the category), white line pet icons instead of emoji (admin `noEmoji` test), Change password + temporary passwords. **Scoring per scenario (Oct 13):** the scorer and coach read the objection's coaching as an answer key, per-scenario "What a great answer includes" (`success_criteria`, migration applied 2026-10-13), French trainee hints for team objections, advisory readiness warnings in the Studio, and difficulty shown beside every score (History, scorecard, admin Sessions + Insights) with scoring kept identical at every level; the trainee Create screen's Ready-made tab redesign (ViewTabs, ChipScroller, whole-card targets). **Audit 2026-09-27** (six adversarial reviews): species-scoped knowledge seeds + cat framing of retrieved research, minimal public snapshot, bounded scenario prose on every AI call, optimistic-concurrency saves, framed-only preview mode, assistant apply-time diffing. **`npm test` — ~2,250 tests / 153 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **Scenario Studio (Sept 25):** scenario building as its own admin destination — guided 7-step builder, A2UI assistant (proposals only, re-validated on confirm), prompt/retrieval inspector, native Test drive, dog/cat species (column applied 2026-09-27), Scenario Author role; Knowledge + AI tuning promoted to their own nav items. **Objections + animal-first (Oct 12):** team-authored objections (Studio Objections tab, `scenario_objections`, migration applied 2026-10-12), "Add to library" for trainee scenarios (`copied_from`), Animal/Objection library filters, trainee app asks Dog | Cat before the objection and its Library tab finally lists the published library; fixed a hooks-order crash that blanked the admin after sign-in (regression-tested in `admin/src/__tests__/AppSignIn.test.tsx`). **Categories (Oct 12, same branch):** Category → Objection → Scenario with categories as knowledge containers (Studio Categories tab, inherited knowledge, upload from the category), white line pet icons instead of emoji (admin `noEmoji` test), Change password + temporary passwords. **Scoring per scenario (Oct 13):** the scorer and coach read the objection's coaching as an answer key, per-scenario "What a great answer includes" (`success_criteria`, migration applied 2026-10-13), French trainee hints for team objections, advisory readiness warnings in the Studio, and difficulty shown beside every score (History, scorecard, admin Sessions + Insights) with scoring kept identical at every level; the trainee Create screen's Ready-made tab redesign (ViewTabs, ChipScroller, whole-card targets). **Audit 2026-09-27** (six adversarial reviews): species-scoped knowledge seeds + cat framing of retrieved research, minimal public snapshot, bounded scenario prose on every AI call, optimistic-concurrency saves, framed-only preview mode, assistant apply-time diffing. **`npm test` — ~2,690 tests / 186 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.

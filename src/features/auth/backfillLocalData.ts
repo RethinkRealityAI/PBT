@@ -23,10 +23,17 @@ import type { SessionRecord, ChatMessage, ScoreReport } from '../../services/typ
 import { SESSIONS_KEY } from '../../lib/sessionsKey';
 import type { Scenario } from '../../data/scenarios';
 import {
+  getOrCreateSessionId,
   readStorage,
   writeStorage,
   type StorageKeyDef,
 } from '../../lib/storage';
+import { postAi } from '../../services/aiApi';
+import {
+  AI_ENDPOINTS,
+  type SessionClaimRequest,
+  type SessionClaimResponse,
+} from '../../shared/ai/contract';
 import type { DriverKey } from '../../design-system/tokens';
 import { normalizeDimensions } from '../../data/knowledge/scoringRubric';
 import { parseDifficulty } from '../../shared/scenarios/difficulty';
@@ -138,6 +145,147 @@ function warnIfSingleRoleTranscript(
 }
 
 /**
+ * Hand this device's anonymous server rows for `ids` to the signed-in account
+ * (`session-save` claim). Returns the ids claimed now, or `null` when the
+ * claim failed (network, rate limit, server) — the caller then can't tell an
+ * anonymous server row from a missing one, and an upsert over an anonymous
+ * row fails RLS for the whole batch, so it skips the upload this time.
+ */
+async function claimAnonymousSessions(ids: string[]): Promise<Set<string> | null> {
+  try {
+    const body: SessionClaimRequest = {
+      claim: true,
+      anonSessionId: getOrCreateSessionId(),
+      sessionIds: ids,
+    };
+    const res = await postAi<SessionClaimResponse>(AI_ENDPOINTS.sessionSave, body);
+    return new Set((res.claimed ?? []).map((c) => c.id));
+  } catch (err) {
+    console.warn('[backfill] claiming anonymous sessions failed', err);
+    return null;
+  }
+}
+
+/**
+ * Which of `ids` already have a COMPLETE row in this account (RLS limits the
+ * read to the caller's own rows): those keep their server-written scenario,
+ * transcript and verified score and are never overwritten from the lossier
+ * local copy. A row rebuilt from app activity (`origin: 'reconstructed'`, no
+ * transcript) doesn't count — the local copy fills it. `null` on failure.
+ */
+async function completeServerRows(sb: SupabaseClient, ids: string[]): Promise<Set<string> | null> {
+  const { data, error } = await sb.from('training_sessions').select('id, origin').in('id', ids);
+  if (error) {
+    console.warn('[backfill] reading existing sessions failed', error);
+    return null;
+  }
+  return new Set(
+    ((data ?? []) as Array<{ id: string; origin?: string | null }>)
+      .filter((r) => r.origin !== 'reconstructed')
+      .map((r) => r.id),
+  );
+}
+
+/**
+ * Sessions played before signing in may already be on the server as
+ * ANONYMOUS rows (the server records anonymous practice — see `session-save`).
+ * Claim this device's rows first, then upload only the sessions the account
+ * doesn't hold complete: this runs on every load while local history exists
+ * (and twice at sign-up — the modal and `useCloudSync`), and re-uploading
+ * would replace the server's full scenario with the 3-field local summary.
+ */
+async function backfillSessions(
+  sb: SupabaseClient,
+  userId: string,
+  sessions: SessionRecord[],
+): Promise<void> {
+  const ids = sessions.map((s) => s.id);
+  const claimed = await claimAnonymousSessions(ids);
+  if (!claimed) return;
+  const complete = await completeServerRows(sb, ids);
+  if (!complete) return;
+  const toUpload = sessions.filter((s) => !complete.has(s.id));
+  const sessionRows = toUpload.map((s) => {
+    warnIfSingleRoleTranscript(`session ${s.id}`, s.transcript);
+    return {
+      id: s.id,
+      user_id: userId,
+      // Best-effort scenario reconstruction from the local summary.
+      // Server-side admin export uses scenario_summary / pushback_id /
+      // driver columns directly, so the missing fields aren't fatal.
+      // `difficulty` (when the record carries a valid one) is what the
+      // admin's session views read the level from.
+      scenario: {
+        summary: s.scenarioSummary,
+        pushbackId: s.pushbackId,
+        driver: s.driver,
+        ...(parseDifficulty(s.difficulty) != null
+          ? { difficulty: parseDifficulty(s.difficulty) }
+          : {}),
+      } as Record<string, unknown>,
+      transcript: s.transcript as unknown as Record<string, unknown>[],
+      // NO score_report / score_overall. Two reasons, and the second is
+      // the one that matters:
+      //
+      //  1. A database trigger rejects any write to those columns from
+      //     the `authenticated` role (see the migration
+      //     20260911000000_server_authoritative_scores.sql). Sending them
+      //     would raise 42501 and fail this whole batch upsert, so an
+      //     anonymous user upgrading to an account would lose their
+      //     entire history from the cloud.
+      //
+      //  2. These scores come from `pbt:sessions` in localStorage, which
+      //     is user-controlled — anyone can hand-edit it to perfect
+      //     scores before signing up. A backfilled score is unverifiable
+      //     by construction, which is precisely what the trigger exists
+      //     to stop. Dropping it is the correct answer, not a workaround.
+      //
+      // The transcript still lands, so the session is visible and can be
+      // scored later; History already renders an unscored session as "—"
+      // and excludes it from averages.
+      duration_seconds: s.durationSeconds,
+      mode: s.mode,
+      completed: !!s.scoreReport,
+      ended_reason: s.scoreReport ? 'completed' : 'abandoned',
+      pushback_id: s.pushbackId,
+      driver: s.driver as DriverKey,
+      scenario_summary: s.scenarioSummary,
+      turns: s.transcript.length,
+      created_at: s.createdAt,
+      // Recorded by the app (a claimed row rebuilt from activity stops
+      // being "reconstructed" once its transcript lands).
+      origin: 'app',
+    };
+  });
+  const { error: sessErr } =
+    sessionRows.length > 0
+      ? await sb.from('training_sessions').upsert(sessionRows, { onConflict: 'id' })
+      : { error: null };
+  if (sessErr) {
+    console.warn('[backfill] training_sessions upsert failed', sessErr);
+    return;
+  }
+  // A rag_documents row for each session uploaded or claimed now, so the RAG
+  // corpus reflects work done before sign-up (an anonymous session never had
+  // one; a session already in the account got its richer one when it ended).
+  // Idempotent on the (session_id) unique index.
+  const ragRows = sessions
+    .filter((s) => (!complete.has(s.id) || claimed.has(s.id)) && s.transcript.length > 0)
+    .map((s) => ({
+      session_id: s.id,
+      user_id: userId,
+      content: assembleRagContentFromRecord(s) as unknown as string,
+      metadata: ragMetadataFromRecord(s),
+    }));
+  if (ragRows.length > 0) {
+    const { error: ragErr } = await sb
+      .from('rag_documents')
+      .upsert(ragRows, { onConflict: 'session_id' });
+    if (ragErr) console.warn('[backfill] rag_documents upsert failed', ragErr);
+  }
+}
+
+/**
  * Run the backfill for the currently-signed-in user. Safe to call on every
  * sign-in — no-ops when there's nothing local to send.
  */
@@ -151,79 +299,7 @@ export async function backfillLocalDataToCloud(
   // ── Sessions → training_sessions ─────────────────────────
   if (sessions.length > 0) {
     try {
-      const sessionRows = sessions.map((s) => {
-        warnIfSingleRoleTranscript(`session ${s.id}`, s.transcript);
-        return {
-          id: s.id,
-          user_id: userId,
-          // Best-effort scenario reconstruction from the local summary.
-          // Server-side admin export uses scenario_summary / pushback_id /
-          // driver columns directly, so the missing fields aren't fatal.
-          // `difficulty` (when the record carries a valid one) is what the
-          // admin's session views read the level from.
-          scenario: {
-            summary: s.scenarioSummary,
-            pushbackId: s.pushbackId,
-            driver: s.driver,
-            ...(parseDifficulty(s.difficulty) != null
-              ? { difficulty: parseDifficulty(s.difficulty) }
-              : {}),
-          } as Record<string, unknown>,
-          transcript: s.transcript as unknown as Record<string, unknown>[],
-          // NO score_report / score_overall. Two reasons, and the second is
-          // the one that matters:
-          //
-          //  1. A database trigger rejects any write to those columns from
-          //     the `authenticated` role (see the migration
-          //     20260911000000_server_authoritative_scores.sql). Sending them
-          //     would raise 42501 and fail this whole batch upsert, so an
-          //     anonymous user upgrading to an account would lose their
-          //     entire history from the cloud.
-          //
-          //  2. These scores come from `pbt:sessions` in localStorage, which
-          //     is user-controlled — anyone can hand-edit it to perfect
-          //     scores before signing up. A backfilled score is unverifiable
-          //     by construction, which is precisely what the trigger exists
-          //     to stop. Dropping it is the correct answer, not a workaround.
-          //
-          // The transcript still lands, so the session is visible and can be
-          // scored later; History already renders an unscored session as "—"
-          // and excludes it from averages.
-          duration_seconds: s.durationSeconds,
-          mode: s.mode,
-          completed: !!s.scoreReport,
-          ended_reason: s.scoreReport ? 'completed' : 'abandoned',
-          pushback_id: s.pushbackId,
-          driver: s.driver as DriverKey,
-          scenario_summary: s.scenarioSummary,
-          turns: s.transcript.length,
-          created_at: s.createdAt,
-        };
-      });
-      const { error: sessErr } = await sb
-        .from('training_sessions')
-        .upsert(sessionRows, { onConflict: 'id' });
-      if (sessErr) {
-        console.warn('[backfill] training_sessions upsert failed', sessErr);
-      } else {
-        // For each completed session, also upsert a rag_documents row so the
-        // RAG corpus reflects historical work, not just sessions started
-        // after sign-up. Also idempotent on (session_id) unique index.
-        const ragRows = sessions
-          .filter((s) => s.transcript.length > 0)
-          .map((s) => ({
-            session_id: s.id,
-            user_id: userId,
-            content: assembleRagContentFromRecord(s) as unknown as string,
-            metadata: ragMetadataFromRecord(s),
-          }));
-        if (ragRows.length > 0) {
-          const { error: ragErr } = await sb
-            .from('rag_documents')
-            .upsert(ragRows, { onConflict: 'session_id' });
-          if (ragErr) console.warn('[backfill] rag_documents upsert failed', ragErr);
-        }
-      }
+      await backfillSessions(sb, userId, sessions);
     } catch (err) {
       console.warn('[backfill] sessions block threw', err);
     }

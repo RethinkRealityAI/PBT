@@ -12,9 +12,12 @@
  * and the Retry-scoring affordance keep working unchanged. Never a fake 0.
  *
  * Persistence: the score is written into the caller's OWN `training_sessions`
- * row (service role, ownership-guarded) when the caller is signed in, the
- * call is not an admin preview, the score is real and `sessionId` is a UUID.
- * The client never writes score columns — a database trigger
+ * row (service role, ownership-guarded) when the call is not an admin
+ * preview, the score is real and `sessionId` is a UUID — for a signed-in
+ * caller their row, for an anonymous caller the row owned by their device id
+ * (`anonSessionId`, see `_shared/anonSessions.ts`), and for the anonymous
+ * case only when the trainee allows training data use. The client never
+ * writes score columns — a database trigger
  * (`20260911000000_server_authoritative_scores.sql`) rejects it. This
  * function is the only writer of `score_report` / `score_overall`.
  */
@@ -49,9 +52,19 @@ import { resolveWeights } from '../../src/data/knowledge/simulationConfig';
 import { scenarioSummaryLine } from '../../src/data/scenarioSummary';
 import type { Scenario } from '../../src/data/scenarios';
 import { MODEL_LIVE, MODEL_TEXT } from '../../src/shared/ai/models';
-import type { EvaluateRequest, EvaluateResponse } from '../../src/shared/ai/contract';
+import {
+  isAnonSessionId,
+  type EvaluateRequest,
+  type EvaluateResponse,
+} from '../../src/shared/ai/contract';
 import { estimateCostUsd, estimateTokens } from '../../src/shared/ai/telemetryHeuristics';
-import { DEFAULT_LOCALE, type Locale } from '../../src/i18n/locales';
+import { DEFAULT_LOCALE, isLocale, type Locale } from '../../src/i18n/locales';
+import {
+  checkSessionOwner,
+  ownerColumns,
+  writeAnonymousSession,
+  type SessionOwner,
+} from './_shared/anonSessions';
 import type { ChatMessage, ScoreReport } from '../../src/services/types';
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -195,57 +208,58 @@ function buildResponseSchema(locale: Locale) {
 }
 
 interface PersistArgs {
-  userId: string;
+  owner: SessionOwner;
   sessionId: string;
   scenario: Scenario;
   transcript: ChatMessage[];
   report: ScoreReport;
   mode: 'text' | 'voice';
+  locale: Locale | null;
 }
 
 /**
  * Write the score into the caller's own row. Ownership guard first: a
- * client-supplied `sessionId` must never let one user overwrite another's
- * session. `duration_seconds` is deliberately not sent — the client fills it
- * with its own upsert (which omits the score columns).
+ * client-supplied `sessionId` must never let one user (or device) overwrite
+ * another's session — for a device the guard is inside the write itself
+ * (`writeAnonymousSession`: still anonymous, same device, daily row cap).
+ * `duration_seconds` is deliberately not sent — the client (or
+ * `session-save`) fills it with its own write, which omits the score columns.
  */
 async function persistScore(sb: SupabaseClient, args: PersistArgs): Promise<boolean> {
-  const { data: existing, error: readErr } = await sb
-    .from('training_sessions')
-    .select('user_id')
-    .eq('id', args.sessionId)
-    .maybeSingle();
-  if (readErr) {
-    console.warn('[ai-evaluate] ownership lookup failed', readErr.message);
-    return false;
-  }
-  const owner = (existing as { user_id?: string } | null)?.user_id;
-  if (existing && owner !== args.userId) {
-    console.warn('[ai-evaluate] refusing to write a score into another user\'s session', {
+  const fields = {
+    ...(args.locale ? { locale: args.locale } : {}),
+    scenario: args.scenario as unknown as Record<string, unknown>,
+    transcript: args.transcript as unknown as Record<string, unknown>[],
+    score_report: args.report as unknown as Record<string, unknown>,
+    score_overall: args.report.overall,
+    mode: args.mode,
+    model_id: args.mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
+    turns: args.transcript.length,
+    completed: true,
+    ended_reason: 'completed',
+    pushback_id: args.scenario.pushback.id,
+    driver: args.scenario.suggestedDriver,
+    scenario_summary: scenarioSummaryLine(args.scenario),
+  };
+  const refuse = () => {
+    console.warn('[ai-evaluate] refusing to write a score into another owner\'s session', {
       sessionId: args.sessionId,
     });
     return false;
+  };
+
+  if ('anonId' in args.owner) {
+    const written = await writeAnonymousSession(sb, args.sessionId, args.owner.anonId, fields);
+    if (written === 'not_owner') return refuse();
+    return written === 'ok';
   }
 
-  const { error } = await sb.from('training_sessions').upsert(
-    {
-      id: args.sessionId,
-      user_id: args.userId,
-      scenario: args.scenario as unknown as Record<string, unknown>,
-      transcript: args.transcript as unknown as Record<string, unknown>[],
-      score_report: args.report as unknown as Record<string, unknown>,
-      score_overall: args.report.overall,
-      mode: args.mode,
-      model_id: args.mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
-      turns: args.transcript.length,
-      completed: true,
-      ended_reason: 'completed',
-      pushback_id: args.scenario.pushback.id,
-      driver: args.scenario.suggestedDriver,
-      scenario_summary: scenarioSummaryLine(args.scenario),
-    },
-    { onConflict: 'id' },
-  );
+  const ownership = await checkSessionOwner(sb, args.sessionId, args.owner);
+  if (ownership !== 'ok') return ownership === 'not_owner' ? refuse() : false;
+
+  const { error } = await sb
+    .from('training_sessions')
+    .upsert({ id: args.sessionId, ...ownerColumns(args.owner), ...fields }, { onConflict: 'id' });
   if (error) {
     console.warn('[ai-evaluate] score upsert failed', error.message);
     return false;
@@ -381,16 +395,25 @@ export default async (req: Request): Promise<Response> => {
     return ok(payload);
   }
 
+  // Signed in → their own row. Anonymous → the row owned by their device id,
+  // and only when they allow training data use (their session is recorded
+  // for the training team, not for them, so the opt-out decides).
+  const owner: SessionOwner | null = caller.userId
+    ? { userId: caller.userId }
+    : allowTelemetry && isAnonSessionId(body.anonSessionId)
+      ? { anonId: body.anonSessionId }
+      : null;
   let persisted = false;
-  if (caller.userId && !preview && sessionId) {
+  if (owner && !preview && sessionId) {
     try {
       persisted = await persistScore(caller.sb, {
-        userId: caller.userId,
+        owner,
         sessionId,
         scenario,
         transcript,
         report,
         mode,
+        locale: isLocale(body.locale) ? body.locale : null,
       });
     } catch (err) {
       console.warn('[ai-evaluate] persist threw', errorMessage(err));

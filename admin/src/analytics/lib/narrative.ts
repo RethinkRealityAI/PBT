@@ -8,6 +8,8 @@
  *     words never claim something the reader can't check.
  *   - Honest when data is thin: no comparison without an earlier window, no
  *     "weakest skill" from two sessions, and an empty window says so plainly.
+ *   - People are signed-in trainees; anonymous practice is counted by device
+ *     ("30 anonymous visitors") and never named.
  *   - Output is SEGMENTS, not a string, so the page can set numbers in bold and
  *     names as links; `narrativeText()` flattens them (tests, aria labels).
  *
@@ -122,10 +124,21 @@ export function overviewNarrative(input: OverviewNarrativeInput): NarrativeSente
     return sentences;
   }
 
+  // Who: signed-in trainees and, separately, anonymous visitors (one per
+  // device) — an anonymous session is practice, never a trainee.
+  const who: NarrativeSeg[] = [];
+  if (current.activeTrainees > 0 || current.anonDevices === 0) {
+    who.push({ text: plural(current.activeTrainees, 'trainee', 'trainees'), strong: true });
+  }
+  if (current.anonDevices > 0) {
+    if (who.length) who.push(' and ');
+    who.push({ text: plural(current.anonDevices, 'anonymous visitor', 'anonymous visitors'), strong: true });
+  }
+  const single = current.activeTrainees + current.anonDevices === 1;
   const activity: NarrativeSentence = [
     `${windowPhrase(range)}, `,
-    { text: plural(current.activeTrainees, 'trainee', 'trainees'), strong: true },
-    range === 'all' ? (current.activeTrainees === 1 ? ' has practised ' : ' have practised ') : ' practised ',
+    ...who,
+    range === 'all' ? (single ? ' has practised ' : ' have practised ') : ' practised ',
     { text: times(current.sessions), strong: true },
   ];
   if (comparable) {
@@ -143,9 +156,12 @@ export function overviewNarrative(input: OverviewNarrativeInput): NarrativeSente
   // ── 2. Score ───────────────────────────────────────────────────────
   if (current.scored === 0 || current.avgScore == null) {
     sentences.push([
-      current.finished === 0
-        ? `${current.sessions === 1 ? 'It wasn’t' : 'None of them was'} finished, so there are no scores yet.`
-        : `${current.sessions === 1 ? 'It hasn’t' : 'None of them has'} been scored yet.`,
+      current.rebuilt > 0 && current.rebuilt === current.sessions
+        ? // Anonymous sessions from before 15 Oct 2026: no score was ever stored.
+          `${current.sessions === 1 ? 'It was' : 'They were'} rebuilt from app activity, so there are no scores.`
+        : current.finished === 0
+          ? `${current.sessions === 1 ? 'It wasn’t' : 'None of them was'} finished, so there are no scores yet.`
+          : `${current.sessions === 1 ? 'It hasn’t' : 'None of them has'} been scored yet.`,
     ]);
   } else {
     const score: NarrativeSentence = ['The team averages ', { text: String(Math.round(current.avgScore)), strong: true }];

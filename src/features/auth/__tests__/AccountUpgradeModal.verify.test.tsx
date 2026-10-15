@@ -25,6 +25,8 @@ vi.mock('../backfillLocalData', () => ({
 }));
 
 import { AccountUpgradeModal } from '../AccountUpgradeModal';
+import { STORAGE_KEYS, writeStorage } from '../../../lib/storage';
+import { hasAcceptedCurrentTerms } from '../../../lib/terms';
 
 const EMAIL = 'vet@clinic.com';
 const PASSWORD = 'correct-horse-battery';
@@ -136,5 +138,29 @@ describe('AccountUpgradeModal — email verification (flag on)', () => {
 
     await user.click(screen.getByRole('button', { name: /^back$/i }));
     expect(await screen.findByText('Create your account')).toBeInTheDocument();
+  });
+});
+
+describe('AccountUpgradeModal — sign-in and the Terms version', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('brings a device that accepted an older Terms version up to date (the account covers it)', async () => {
+    writeStorage(STORAGE_KEYS.termsAcceptedAt, '2026-08-01T00:00:00.000Z');
+    localStorage.setItem('pbt:terms_version', '1');
+    signInWithPassword.mockResolvedValue({ data: { user: null }, error: null });
+    const onSignedIn = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <AccountUpgradeModal open initialMode="signin" onClose={vi.fn()} onSignedIn={onSignedIn} />,
+    );
+    await user.type(screen.getByPlaceholderText('you@clinic.com'), EMAIL);
+    await user.type(screen.getByPlaceholderText('Your password'), PASSWORD);
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalled());
+    expect(hasAcceptedCurrentTerms()).toBe(true);
   });
 });

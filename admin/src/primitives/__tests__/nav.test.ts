@@ -45,12 +45,24 @@ describe('NAV_SECTIONS', () => {
 
   it('puts Scenario Studio first in Content, then Knowledge and AI tuning', () => {
     const content = NAV_SECTIONS.find((s) => s.key === 'content')!;
-    expect(content.items.map((i) => i.label)).toEqual([
-      'Scenario Studio',
-      'Knowledge',
-      'AI tuning',
-      'Feedback',
+    expect(content.items.map((i) => i.label)).toEqual(['Scenario Studio', 'Knowledge', 'AI tuning']);
+  });
+
+  it('puts Feedback under Monitor, right after Analytics, with its key and tabs unchanged', () => {
+    const monitor = NAV_SECTIONS.find((s) => s.key === 'monitor')!;
+    expect(monitor.items.map((i) => i.key)).toEqual(['analytics', 'feedback']);
+    expect(NAV_SECTIONS.find((s) => s.key === 'content')!.items.map((i) => i.key)).not.toContain('feedback');
+    const feedback = findNavItem('feedback')!;
+    expect(feedback).toMatchObject({ label: 'Feedback', icon: '☆', requires: 'feedback.read' });
+    expect(feedback.tabs?.map((t) => [t.key, t.label, t.requires])).toEqual([
+      ['sessions', 'Session feedback', 'feedback.read'],
+      ['reports', 'Platform reports', 'reports.read'],
     ]);
+  });
+
+  it('keeps four sections of ten destinations', () => {
+    expect(NAV_SECTIONS.map((s) => s.key)).toEqual(['monitor', 'people', 'content', 'platform']);
+    expect(ALL_NAV_ITEMS).toHaveLength(10);
   });
 
   it('gives the Studio three tabs, all readable with scenarios.read', () => {
@@ -137,9 +149,10 @@ describe('visibleItems by role', () => {
 });
 
 describe('Monitor is one Analytics destination', () => {
-  it('has a single Monitor destination with seven tabs, Overview first', () => {
+  it('has a single Analytics destination with seven tabs, Overview first', () => {
     const monitor = NAV_SECTIONS.find((s) => s.key === 'monitor')!;
-    expect(monitor.items.map((i) => i.key)).toEqual(['analytics']);
+    // Feedback rides along as Monitor's second destination; analytics is one.
+    expect(monitor.items.map((i) => i.key)).toEqual(['analytics', 'feedback']);
     expect(findNavItem('analytics')!.tabs?.map((t) => [t.key, t.label, t.requires])).toEqual([
       ['overview', 'Overview', 'overview.read'],
       ['trainees', 'Trainees', 'sessions.read'],

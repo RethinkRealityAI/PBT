@@ -6,10 +6,14 @@ import {
   dayKey,
   fetchSince,
   formatDelta,
+  inWindowWords,
   pctDelta,
   pointsDelta,
+  rangeWords,
   splitByPeriod,
+  windowNoun,
   windows,
+  type Range,
 } from '../period';
 
 const NOW = new Date('2026-10-15T12:00:00').getTime();
@@ -28,6 +32,29 @@ describe('windows', () => {
 
   it('fetches twice the window so the comparison is in hand', () => {
     expect(new Date(fetchSince('28d', NOW)).getTime()).toBe(NOW - 56 * DAY_MS);
+  });
+});
+
+describe('window words', () => {
+  const RANGES: Range[] = ['24h', '7d', '28d', '90d', 'all'];
+
+  it('says "in the last N" for a window and "so far" for all time', () => {
+    expect(inWindowWords('24h')).toBe('in the last 24 hours');
+    expect(inWindowWords('28d')).toBe('in the last 28 days');
+    expect(inWindowWords('all')).toBe('so far');
+  });
+
+  it('names the window as a noun — "all time" without an article', () => {
+    expect(windowNoun('7d')).toBe('the last 7 days');
+    expect(windowNoun('all')).toBe('all time');
+    expect(rangeWords('all')).toBe('all time');
+  });
+
+  it('never reads "the all time" on any range', () => {
+    for (const r of RANGES) {
+      expect(inWindowWords(r)).not.toMatch(/the all time/);
+      expect(windowNoun(r)).not.toMatch(/the all time/);
+    }
   });
 });
 

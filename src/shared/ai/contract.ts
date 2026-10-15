@@ -32,7 +32,14 @@
  *     as `Authorization: Bearer …`. The server uses it to attribute
  *     telemetry and to write the score into the caller's own
  *     `training_sessions` row. Anonymous callers get the same AI behaviour
- *     with no persistence — anonymous-first is product design.
+ *     — anonymous-first is product design — and their sessions are recorded
+ *     WITHOUT identifying details: the server (never the browser) writes a
+ *     `training_sessions` row owned by `anonSessionId`, the random per-device
+ *     id the app already keeps (`pbt:session_id`), via `session-save` (the
+ *     conversation) and `ai-evaluate` (the score). An anonymous row can only
+ *     be updated by a request carrying the same device id, never one owned by
+ *     an account, and nothing is written with `allowTelemetry: false` or in a
+ *     preview.
  */
 import type { Scenario } from '../../data/scenarios';
 import type { ChatMessage, ScoreReport } from '../../services/types';
@@ -66,7 +73,20 @@ export const AI_ENDPOINTS = {
   scenarioAgent: '/.netlify/functions/admin-scenario-agent',
   /** Admin-only (requires `scenarios.read`) — exact prompt + retrieval for a draft. */
   scenarioInspect: '/.netlify/functions/admin-scenario-inspect',
+  /** Anonymous session recording (no AI call) — see `SessionSaveRequest`. */
+  sessionSave: '/.netlify/functions/session-save',
 } as const;
+
+/**
+ * Shape of the per-device anonymous id (`pbt:session_id`, a UUID today).
+ * Bounded so a request can't store an arbitrary string as an owner key; the
+ * `training_sessions_anon_session_id_check` CHECK enforces the same length.
+ */
+export const ANON_SESSION_ID_RX = /^[A-Za-z0-9_-]{8,64}$/;
+
+export function isAnonSessionId(value: unknown): value is string {
+  return typeof value === 'string' && ANON_SESSION_ID_RX.test(value);
+}
 
 /** Fields every AI request may carry. */
 export interface AiRequestMeta {
@@ -113,6 +133,13 @@ export interface EvaluateRequest extends AiRequestMeta {
    * criteria are loaded server-side by `scenario._overrideId`.
    */
   promptOverrides?: PromptOverrides;
+  /**
+   * The anonymous device id (`pbt:session_id`). Read ONLY when the caller is
+   * not signed in: the score is then written into that device's anonymous
+   * `training_sessions` row (created if missing). Ignored for signed-in
+   * callers, previews and `allowTelemetry: false`.
+   */
+  anonSessionId?: string;
 }
 
 export interface EvaluateResponse {
@@ -129,6 +156,59 @@ export interface EvaluateResponse {
    * never writes score columns itself — a database trigger rejects it.
    */
   persisted: boolean;
+}
+
+// ─── Anonymous session recording ──────────────────────────────────────────
+
+/** How a session ended — the `training_sessions.ended_reason` CHECK values. */
+export type SessionEndedReason = 'completed' | 'abandoned' | 'timeout' | 'error' | 'user_exit';
+
+/**
+ * `session-save` — records the conversation of an ANONYMOUS session when it
+ * ends or is left (signed-in sessions are upserted by the app itself, under
+ * RLS). No AI call. The row is owned by `anonSessionId`; it never carries a
+ * score (only `ai-evaluate` writes those) and a row owned by an account or by
+ * another device is never touched.
+ */
+export interface SessionSaveRequest extends AiRequestMeta {
+  sessionId: string;
+  anonSessionId: string;
+  scenario: Scenario;
+  transcript: ChatMessage[];
+  mode: 'text' | 'voice';
+  completed: boolean;
+  endedReason: SessionEndedReason;
+  durationSeconds: number;
+}
+
+export interface SessionSaveResponse {
+  persisted: boolean;
+  /**
+   * Why nothing was written, when `persisted` is false. `limit` = this device
+   * already created its daily allowance of rows (`ANON_DAILY_CAP`).
+   */
+  skipped?: 'signed_in' | 'opted_out' | 'preview' | 'not_owner' | 'limit' | 'failed';
+}
+
+/**
+ * `session-save` with `claim: true` — a trainee who practised anonymously and
+ * then signed in hands over the ids of the sessions in their device's local
+ * history; the anonymous rows of THAT device among them become theirs.
+ * Signed-in callers only. A database failure is an error status (not an empty
+ * list), so the app knows it cannot tell its rows apart and skips the upload.
+ */
+export interface SessionClaimRequest {
+  claim: true;
+  anonSessionId: string;
+  sessionIds: string[];
+}
+
+export interface SessionClaimResponse {
+  /**
+   * Ids now owned by the caller. `complete: false` = a row rebuilt from app
+   * activity (no transcript) that the app should fill from its local copy.
+   */
+  claimed: Array<{ id: string; complete: boolean }>;
 }
 
 // ─── Coach hint ────────────────────────────────────────────────────────────

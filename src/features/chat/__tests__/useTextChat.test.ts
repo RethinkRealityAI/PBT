@@ -15,6 +15,7 @@ const {
   persistRagDocument,
   retrieveContext,
   logEvent,
+  postAi,
   supabase,
   flags,
 } = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ const {
   persistRagDocument: vi.fn(),
   retrieveContext: vi.fn(),
   logEvent: vi.fn(),
+  postAi: vi.fn(),
   /** Swapped per test: null = signed out / Supabase off (the default). */
   supabase: { client: null as unknown },
   /** The flags snapshot the hook reads (team objections + stored categories). */
@@ -51,6 +53,7 @@ vi.mock('../../../services/ragClient', async (importOriginal) => ({
   retrieveContext,
 }));
 vi.mock('../../../lib/analytics', () => ({ logEvent }));
+vi.mock('../../../services/aiApi', () => ({ postAi }));
 
 import { useTextChat } from '../useTextChat';
 import { LIBRARY_SCENARIOS, type Scenario } from '../../../data/scenarios';
@@ -58,6 +61,7 @@ import type { FlagSnapshot } from '../../../services/flagsClient';
 import type { TeamObjection } from '../../../shared/scenarios/objections';
 import type { ObjectionCategory } from '../../../shared/scenarios/objectionCategories';
 import { readStorage, type StorageKeyDef } from '../../../lib/storage';
+import { acceptTerms } from '../../../lib/terms';
 import type { SessionRecord } from '../../../services/types';
 
 const SESSIONS_KEY: StorageKeyDef<SessionRecord[]> = {
@@ -118,6 +122,8 @@ beforeEach(() => {
   persistRagDocument.mockReset();
   retrieveContext.mockReset();
   logEvent.mockReset();
+  postAi.mockReset();
+  postAi.mockResolvedValue({ persisted: true });
   retrieveContext.mockResolvedValue([]);
   generateRoleplayMessage.mockResolvedValue(aiTurn('That price still feels steep.'));
 });
@@ -480,5 +486,91 @@ describe('useTextChat — server-side AI contract', () => {
       expect(call[0]).not.toHaveProperty('score_report');
       expect(call[0]).not.toHaveProperty('score_overall');
     }
+  });
+});
+
+
+describe('anonymous sessions are recorded by the server', () => {
+  /** Supabase is configured but nobody is signed in. */
+  function fakeSignedOutSupabase() {
+    const from = vi.fn();
+    const getUser = vi.fn(async () => ({ data: { user: null } }));
+    return { client: { auth: { getUser }, from }, from, getUser };
+  }
+
+  // Recording is only allowed once the device accepted the Terms that say so.
+  beforeEach(() => {
+    acceptTerms();
+  });
+
+  it('sends a finished anonymous session to session-save, never writing the table itself', async () => {
+    const sb = fakeSignedOutSupabase();
+    supabase.client = sb.client;
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    await act(async () => {
+      await result.current.send('I hear you on the cost.');
+    });
+    evaluateConversation.mockResolvedValueOnce(goodReport(70));
+    await act(async () => {
+      await result.current.end();
+    });
+
+    await vi.waitFor(() => expect(postAi).toHaveBeenCalled());
+    expect(sb.from).not.toHaveBeenCalledWith('training_sessions');
+    const [endpoint, body] = postAi.mock.calls[0];
+    expect(endpoint).toBe('/.netlify/functions/session-save');
+    expect(body).toMatchObject({
+      sessionId: result.current.sessionId,
+      mode: 'text',
+      completed: true,
+      endedReason: 'completed',
+      locale: 'en',
+    });
+    expect(typeof body.anonSessionId).toBe('string');
+    expect(body.transcript).toHaveLength(3);
+    // The score never rides along: only ai-evaluate writes it.
+    expect(body).not.toHaveProperty('scoreReport');
+    expect(body).not.toHaveProperty('score_report');
+  });
+
+  it('records an anonymous session that was left early as not completed', async () => {
+    supabase.client = fakeSignedOutSupabase().client;
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    await act(async () => {
+      await result.current.abandon('user_exit');
+    });
+    await vi.waitFor(() => expect(postAi).toHaveBeenCalled());
+    expect(postAi.mock.calls[0][1]).toMatchObject({ completed: false, endedReason: 'user_exit' });
+  });
+
+  it('sends nothing while this device has only accepted an older Terms version', async () => {
+    localStorage.setItem('pbt:terms_version', '1');
+    const sb = fakeSignedOutSupabase();
+    supabase.client = sb.client;
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    await act(async () => {
+      await result.current.send('I hear you on the cost.');
+    });
+    evaluateConversation.mockResolvedValueOnce(goodReport(70));
+    await act(async () => {
+      await result.current.end();
+    });
+
+    // The save path ran (it asked who is signed in) and stopped at the gate.
+    await vi.waitFor(() => expect(sb.getUser).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(postAi).not.toHaveBeenCalled();
+    expect(sb.from).not.toHaveBeenCalledWith('training_sessions');
   });
 });

@@ -4,7 +4,10 @@
  * A seeded, deterministic team: ~20 trainees with different habits (a
  * steady improver, a lapsed one, someone who never started, a heavy coach-
  * hint user…), ~4 months of sessions with real transcripts and score
- * reports, and app-usage events. The summaries, engagement report and
+ * reports, and app-usage events. Plus an ANONYMOUS cohort (30 devices, mostly
+ * French): ~80 sessions rebuilt from app activity (a burst of 60 on one day
+ * two weeks ago, mixed endings, no transcript or score) and ~20 recent ones
+ * recorded in full with their language. The summaries, engagement report and
  * trainee profiles are then derived with the SAME shared functions the
  * Netlify Functions run (`src/shared/analytics/*`), so what the mock shows is
  * what production would compute from the same rows.
@@ -162,22 +165,27 @@ const CAT_BREEDS = ['Domestic Shorthair', 'Maine Coon', 'Siamese', 'Ragdoll'];
 // ── raw session rows (the shape training_sessions holds) ─────────────────
 interface RawRow {
   id: string;
-  user_id: string;
+  /** Null for an anonymous session (no account). */
+  user_id: string | null;
+  /** The device's random id — anonymous sessions only. */
+  anon_session_id: string | null;
+  /** App language; null before the release that records it. */
+  locale: string | null;
+  /** 'reconstructed' = rebuilt from app activity (anonymous, before 15 Oct 2026). */
+  origin: 'app' | 'reconstructed';
   scenario: Record<string, unknown>;
-  scenario_summary: string;
+  scenario_summary: string | null;
   pushback_id: string;
-  driver: string;
+  driver: string | null;
   transcript: Array<{ role: 'user' | 'ai'; text: string; timestamp: number; emotion?: 'red' | 'yellow' | 'green' }>;
   score_report: Record<string, unknown> | null;
   score_overall: number | null;
-  duration_seconds: number;
+  duration_seconds: number | null;
   mode: 'text' | 'voice';
   completed: boolean;
-  ended_reason: string;
-  flagged: boolean;
-  flag_reason: null;
-  model_id: string;
-  turns: number;
+  ended_reason: string | null;
+  model_id: string | null;
+  turns: number | null;
   created_at: string;
 }
 
@@ -196,10 +204,147 @@ const STAFF_LINES = [
   'Many owners feel the same at first. Here’s what we usually see in the first few weeks.',
   'How about a four-week trial, then we weigh her together and decide?',
 ];
+const OWNER_LINES_FR = [
+  'Honnêtement, cette nourriture coûte deux fois ce que je paie à l’animalerie.',
+  'Mon éleveur dit que cette marque est tout ce dont elle a besoin.',
+  'Je ne trouve pas qu’elle soit trop grosse — elle a une forte ossature.',
+  'D’accord. Qu’est-ce que vous suggérez, alors?',
+  'Ça se tient. On peut essayer pendant un mois?',
+];
+const STAFF_LINES_FR = [
+  'Je vous comprends tout à fait — le prix compte, et vous voulez être sûr que ça vaut la peine.',
+  'Qu’est-ce qui vous inquiète le plus à l’idée de changer?',
+  'Que lui donnez-vous en ce moment, et en quelle quantité?',
+  'Et si on faisait un essai de quatre semaines, puis une pesée ensemble?',
+];
+
+/**
+ * The day the app started recording the session's language (and anonymous
+ * sessions in full) — "15 Oct 2026" in production; two weeks back here so
+ * every state has data in the default 28-day window.
+ */
+const LOCALE_FROM = NOW - 13 * DAY;
 
 const rawRows: RawRow[] = [];
-const hintEvents: Array<{ user_id: string; sessionId: string; at: number }> = [];
+const hintEvents: Array<{ user_id: string | null; anon: string; sessionId: string; at: number }> = [];
 let sessionN = 0;
+
+/** One app-recorded session (signed-in or anonymous) with a transcript and, when finished, a score. */
+function appSession(o: {
+  userId: string | null;
+  anonId: string | null;
+  locale: 'en' | 'fr';
+  h: Habit;
+  k: number;
+  day: Date;
+}): RawRow | null {
+  const { h, k, day } = o;
+  sessionN++;
+  const id = sid(sessionN);
+  const pushback = pick(OBJECTIONS);
+  const species = rand() < 0.22 ? 'cat' : 'dog';
+  // Most practice is at the easier levels; harder owners appear as a trainee progresses.
+  const difficulty = (Math.min(4, 1 + Math.floor(rand() * Math.min(4, 1.6 + k / 12))) as 1 | 2 | 3 | 4);
+  const mode: 'text' | 'voice' = rand() < h.voice ? 'voice' : 'text';
+  const completed = rand() < h.finish;
+  const ownerDriver = pick(DRIVERS);
+  // Learning curve that levels off (≈ slope × 14 points at most), not a straight line to 100.
+  const learned = h.slope * 14 * (1 - Math.exp(-k / 14));
+  const skillLevel = clamp(h.base + learned + OBJECTION_DIFFICULTY[pushback] - (difficulty - 2) * 4 + between(-8, 8));
+  const skills = {
+    acknowledge: Math.round(clamp(skillLevel + h.shape[0] + between(-5, 5))),
+    clarify: Math.round(clamp(skillLevel + h.shape[1] + between(-5, 5))),
+    transform: Math.round(clamp(skillLevel + h.shape[2] + between(-5, 5))),
+    empathy: Math.round(clamp(skillLevel + h.shape[3] + between(-5, 5))),
+    rapport: Math.round(clamp(skillLevel + h.shape[4] + between(-5, 5))),
+  };
+  const overall = Math.round(
+    skills.acknowledge * 0.24 + skills.clarify * 0.24 + skills.transform * 0.22 + skills.empathy * 0.18 + skills.rapport * 0.12,
+  );
+  const failed = completed && rand() < 0.03;
+  const turns = completed ? 8 + Math.floor(rand() * 8) : 2 + Math.floor(rand() * 4);
+  const duration = Math.round(turns * between(22, 48));
+  const endAt = day.getTime() + duration * 1000;
+  if (endAt > NOW) return null;
+  const fr = o.locale === 'fr' && endAt >= LOCALE_FROM;
+  const transcript: RawRow['transcript'] = [];
+  let clock = day.getTime();
+  const resolved = overall >= 72 ? 'green' : overall >= 58 ? 'yellow' : 'red';
+  for (let i = 0; i < turns; i++) {
+    const ai = i % 2 === 0;
+    clock += (ai ? between(3, 6) : between(9, 40)) * 1000;
+    const last = i >= turns - 2;
+    transcript.push(
+      ai
+        ? { role: 'ai', text: pick(fr ? OWNER_LINES_FR : OWNER_LINES), timestamp: clock, emotion: last && completed ? resolved : i < 2 ? 'red' : 'yellow' }
+        : { role: 'user', text: pick(fr ? STAFF_LINES_FR : STAFF_LINES), timestamp: clock },
+    );
+  }
+  const sentiments = transcript
+    .map((m, idx) => ({ idx, speaker: m.role === 'ai' ? 'customer' : 'staff', sentiment: 0 }))
+    .map((e, i, arr) => ({
+      ...e,
+      sentiment: Number(
+        (e.speaker === 'customer' ? -0.7 + ((overall - 40) / 60) * 1.4 * (i / Math.max(1, arr.length - 1)) : 0.3).toFixed(2),
+      ),
+    }));
+  const report = completed
+    ? failed
+      ? { acknowledge: 0, clarify: 0, transform: 0, empathy: 0, rapport: 0, overall: 0, band: 'poor', scoreUnavailable: true, critique: '' }
+      : {
+          ...skills,
+          overall,
+          band: overall >= 75 ? 'good' : overall >= 55 ? 'ok' : 'poor',
+          critique: 'Strong acknowledgement; the next step came late and without a concrete plan.',
+          betterAlternative: 'Offer a four-week trial with a weigh-in booked before they leave.',
+          perDimensionNotes: {},
+          keyMoments: [
+            { ts: 1, type: 'win', label: 'Named the worry', quote: transcript[1]?.text ?? STAFF_LINES[0] },
+            ...(skills.transform < 65 ? [{ ts: 5, type: 'miss', label: 'No next step', quote: STAFF_LINES[3] }] : []),
+          ],
+          turnSentiment: sentiments,
+        }
+    : null;
+  const breed = species === 'cat' ? pick(CAT_BREEDS) : pick(DOG_BREEDS);
+  const source = rand();
+  const row: RawRow = {
+    id,
+    user_id: o.userId,
+    anon_session_id: o.userId ? null : o.anonId,
+    locale: endAt >= LOCALE_FROM ? o.locale : null,
+    origin: 'app',
+    scenario: {
+      species: species === 'cat' ? 'cat' : undefined,
+      breed,
+      age: pick(['Junior (1-3)', 'Adult (3-7)', 'Senior (7+)']),
+      pushback: { id: pushback, title: OBJECTION_TITLES[pushback], example: '' },
+      persona: pick(PERSONAS),
+      difficulty,
+      suggestedDriver: ownerDriver,
+      ...(source < 0.55 ? { _overrideId: `seed:${Math.floor(rand() * 3)}` } : source < 0.85 ? { _overrideId: 'admin:7c1d' } : {}),
+    },
+    scenario_summary: `${breed} · ${OBJECTION_TITLES[pushback]}`,
+    pushback_id: pushback,
+    driver: ownerDriver,
+    transcript,
+    score_report: report,
+    score_overall: report ? (report.overall as number) : null,
+    duration_seconds: duration,
+    mode,
+    completed,
+    ended_reason: completed ? 'completed' : pick(['user_exit', 'user_exit', 'abandoned', 'timeout']),
+    model_id: mode === 'voice' ? 'gemini-3.1-flash-live-preview' : 'gemini-3-flash-preview',
+    turns,
+    created_at: new Date(endAt).toISOString(),
+  };
+  if (mode === 'text') {
+    const hints = Math.min(3, Math.floor(between(0, h.hints * 1.6)));
+    for (let i = 0; i < hints; i++) {
+      hintEvents.push({ user_id: o.userId, anon: o.anonId ?? '', sessionId: id, at: day.getTime() + (i + 1) * 60_000 });
+    }
+  }
+  return row;
+}
 
 for (const person of MOCK_PEOPLE) {
   const h = person.habit;
@@ -210,111 +355,96 @@ for (const person of MOCK_PEOPLE) {
   let k = 0;
   while (t < end) {
     k++;
-    sessionN++;
-    const id = sid(sessionN);
-    const pushback = pick(OBJECTIONS);
-    const species = rand() < 0.22 ? 'cat' : 'dog';
-    // Most practice is at the easier levels; harder owners appear as a trainee progresses.
-    const difficulty = (Math.min(4, 1 + Math.floor(rand() * Math.min(4, 1.6 + k / 12))) as 1 | 2 | 3 | 4);
-    const mode: 'text' | 'voice' = rand() < h.voice ? 'voice' : 'text';
-    const completed = rand() < h.finish;
-    const ownerDriver = pick(DRIVERS);
-    // Learning curve that levels off (≈ slope × 14 points at most), not a straight line to 100.
-    const learned = h.slope * 14 * (1 - Math.exp(-k / 14));
-    const skillLevel = clamp(h.base + learned + OBJECTION_DIFFICULTY[pushback] - (difficulty - 2) * 4 + between(-8, 8));
-    const skills = {
-      acknowledge: Math.round(clamp(skillLevel + h.shape[0] + between(-5, 5))),
-      clarify: Math.round(clamp(skillLevel + h.shape[1] + between(-5, 5))),
-      transform: Math.round(clamp(skillLevel + h.shape[2] + between(-5, 5))),
-      empathy: Math.round(clamp(skillLevel + h.shape[3] + between(-5, 5))),
-      rapport: Math.round(clamp(skillLevel + h.shape[4] + between(-5, 5))),
-    };
-    const overall = Math.round(
-      skills.acknowledge * 0.24 + skills.clarify * 0.24 + skills.transform * 0.22 + skills.empathy * 0.18 + skills.rapport * 0.12,
-    );
-    const failed = completed && rand() < 0.03;
-    const turns = completed ? 8 + Math.floor(rand() * 8) : 2 + Math.floor(rand() * 4);
-    const duration = Math.round(turns * between(22, 48));
     // Practice clusters in the morning before clinic and over lunch.
     const day = new Date(t);
     day.setHours(pick([7, 8, 8, 12, 12, 13, 17, 19, 20]), Math.floor(rand() * 60), 0, 0);
-    const endAt = day.getTime() + duration * 1000;
-    if (endAt > NOW) break;
-    const transcript: RawRow['transcript'] = [];
-    let clock = day.getTime();
-    const resolved = overall >= 72 ? 'green' : overall >= 58 ? 'yellow' : 'red';
-    for (let i = 0; i < turns; i++) {
-      const ai = i % 2 === 0;
-      clock += (ai ? between(3, 6) : between(9, 40)) * 1000;
-      const last = i >= turns - 2;
-      transcript.push(
-        ai
-          ? { role: 'ai', text: pick(OWNER_LINES), timestamp: clock, emotion: last && completed ? resolved : i < 2 ? 'red' : 'yellow' }
-          : { role: 'user', text: pick(STAFF_LINES), timestamp: clock },
-      );
-    }
-    const sentiments = transcript
-      .map((m, idx) => ({ idx, speaker: m.role === 'ai' ? 'customer' : 'staff', sentiment: 0 }))
-      .map((e, i, arr) => ({
-        ...e,
-        sentiment: Number(
-          (e.speaker === 'customer' ? -0.7 + ((overall - 40) / 60) * 1.4 * (i / Math.max(1, arr.length - 1)) : 0.3).toFixed(2),
-        ),
-      }));
-    const report = completed
-      ? failed
-        ? { acknowledge: 0, clarify: 0, transform: 0, empathy: 0, rapport: 0, overall: 0, band: 'poor', scoreUnavailable: true, critique: '' }
-        : {
-            ...skills,
-            overall,
-            band: overall >= 75 ? 'good' : overall >= 55 ? 'ok' : 'poor',
-            critique: 'Strong acknowledgement; the next step came late and without a concrete plan.',
-            betterAlternative: 'Offer a four-week trial with a weigh-in booked before they leave.',
-            perDimensionNotes: {},
-            keyMoments: [
-              { ts: 1, type: 'win', label: 'Named the worry', quote: STAFF_LINES[0] },
-              ...(skills.transform < 65 ? [{ ts: 5, type: 'miss', label: 'No next step', quote: STAFF_LINES[3] }] : []),
-            ],
-            turnSentiment: sentiments,
-          }
-      : null;
-    const breed = species === 'cat' ? pick(CAT_BREEDS) : pick(DOG_BREEDS);
-    const source = rand();
-    rawRows.push({
-      id,
-      user_id: person.id,
-      scenario: {
-        species: species === 'cat' ? 'cat' : undefined,
-        breed,
-        age: pick(['Junior (1-3)', 'Adult (3-7)', 'Senior (7+)']),
-        pushback: { id: pushback, title: OBJECTION_TITLES[pushback], example: '' },
-        persona: pick(PERSONAS),
-        difficulty,
-        suggestedDriver: ownerDriver,
-        ...(source < 0.55 ? { _overrideId: `seed:${Math.floor(rand() * 3)}` } : source < 0.85 ? { _overrideId: 'admin:7c1d' } : {}),
-      },
-      scenario_summary: `${breed} · ${OBJECTION_TITLES[pushback]}`,
-      pushback_id: pushback,
-      driver: ownerDriver,
-      transcript,
-      score_report: report,
-      score_overall: report ? (report.overall as number) : null,
-      duration_seconds: duration,
-      mode,
-      completed,
-      ended_reason: completed ? 'completed' : pick(['user_exit', 'user_exit', 'abandoned', 'timeout']),
-      flagged: false,
-      flag_reason: null,
-      model_id: mode === 'voice' ? 'gemini-3.1-flash-live-preview' : 'gemini-3-flash-preview',
-      turns,
-      created_at: new Date(endAt).toISOString(),
-    });
-    if (mode === 'text') {
-      const hints = Math.min(3, Math.floor(between(0, h.hints * 1.6)));
-      for (let i = 0; i < hints; i++) hintEvents.push({ user_id: person.id, sessionId: id, at: day.getTime() + (i + 1) * 60_000 });
-    }
+    const row = appSession({ userId: person.id, anonId: `dev-${person.id.slice(-4)}`, locale: person.locale, h, k, day });
+    if (!row) break;
+    rawRows.push(row);
     t += (7 / h.rate) * between(0.4, 1.6) * DAY;
   }
+}
+
+// ── the anonymous cohort: people practising without an account ───────────
+// 30 devices, mostly French. Before the release that records anonymous
+// sessions, only app-usage events existed — those sessions are REBUILT
+// (`origin: 'reconstructed'`: when, the objection, the mode and whether the
+// scorecard was reached; no transcript, no score, no animal, no language):
+// a burst of ~60 on one day two weeks ago (a clinic's training day) and a
+// trickle before it. Since the release, anonymous sessions are recorded in
+// full, with their language.
+interface AnonDevice {
+  id: string;
+  locale: 'en' | 'fr';
+  device: 'mobile' | 'tablet' | 'desktop';
+  os: string;
+}
+const hex = (n: number) => Array.from({ length: n }, () => Math.floor(rand() * 16).toString(16)).join('');
+const ANON_DEVICES: AnonDevice[] = Array.from({ length: 30 }, () => ({
+  id: `${hex(8)}-${hex(4)}-4${hex(3)}-8${hex(3)}-${hex(12)}`,
+  locale: rand() < 0.8 ? 'fr' : 'en',
+  device: pick(['mobile', 'mobile', 'mobile', 'tablet', 'desktop'] as const),
+  os: pick(['ios', 'ios', 'android', 'windows']),
+}));
+const ANON_HABIT = H({ base: 56, slope: 0.4, voice: 0.15, finish: 0.75, hints: 0.9 });
+
+function rebuiltSession(device: AnonDevice, openedAt: number): RawRow | null {
+  sessionN++;
+  const id = sid(sessionN);
+  const pushback = pick(OBJECTIONS.filter((o) => !o.startsWith('team:')));
+  const r = rand();
+  // Reached the scorecard · left (the app logged why) · ending not recorded.
+  const ending = r < 0.45 ? 'finished' : r < 0.75 ? 'left' : 'unknown';
+  const seconds =
+    ending === 'finished' ? Math.round(between(180, 560)) : ending === 'left' ? Math.round(between(40, 240)) : null;
+  const endAt = seconds == null ? openedAt : openedAt + seconds * 1000;
+  if (endAt > NOW) return null;
+  return {
+    id,
+    user_id: null,
+    anon_session_id: device.id,
+    locale: null,
+    origin: 'reconstructed',
+    scenario: { pushback: { id: pushback } },
+    scenario_summary: null,
+    pushback_id: pushback,
+    driver: rand() < 0.8 ? pick(DRIVERS) : null,
+    transcript: [],
+    score_report: null,
+    score_overall: null,
+    duration_seconds: seconds,
+    mode: 'text',
+    completed: ending === 'finished',
+    ended_reason: ending === 'finished' ? 'completed' : ending === 'left' ? pick(['user_exit', 'user_exit', 'abandoned']) : null,
+    model_id: null,
+    turns: ending === 'left' && rand() < 0.6 ? 2 + Math.floor(rand() * 5) : null,
+    created_at: new Date(endAt).toISOString(),
+  };
+}
+
+const BURST_DAY = new Date(NOW - 14 * DAY);
+for (let i = 0; i < 60; i++) {
+  // Every device at least once; the rest return for a second or third try.
+  const device = i < ANON_DEVICES.length ? ANON_DEVICES[i] : pick(ANON_DEVICES);
+  const at = new Date(BURST_DAY);
+  at.setHours(9 + Math.floor(rand() * 8), Math.floor(rand() * 60), 0, 0);
+  const row = rebuiltSession(device, at.getTime());
+  if (row) rawRows.push(row);
+}
+for (let i = 0; i < 20; i++) {
+  const at = new Date(NOW - between(15, 40) * DAY);
+  at.setHours(pick([8, 12, 13, 19, 20]), Math.floor(rand() * 60), 0, 0);
+  const row = rebuiltSession(pick(ANON_DEVICES.slice(0, 10)), at.getTime());
+  if (row) rawRows.push(row);
+}
+// Since the release: recorded in full, with transcripts, scores and language.
+for (let i = 0; i < 22; i++) {
+  const device = ANON_DEVICES[Math.floor(rand() * 12)];
+  const day = new Date(NOW - between(0.2, 11) * DAY);
+  day.setHours(pick([8, 9, 12, 13, 18, 20]), Math.floor(rand() * 60), 0, 0);
+  if (day.getTime() < LOCALE_FROM) day.setTime(LOCALE_FROM + between(1, 20) * 3_600_000);
+  const row = appSession({ userId: null, anonId: device.id, locale: device.locale, h: ANON_HABIT, k: 1 + Math.floor(rand() * 4), day });
+  if (row) rawRows.push(row);
 }
 rawRows.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
@@ -341,9 +471,21 @@ const NAV: NavRow[] = [];
 const FLOW = ['home', 'create', 'chat', 'stats', 'history', 'home'];
 const BROWSE = ['home', 'resources', 'actGuide', 'analyzer', 'fecalScan', 'settings', 'history', 'historyDetail'];
 
-function visit(person: Person | null, at: number, anon: string, withSession: RawRow | null) {
+function visit(
+  person: Person | null,
+  at: number,
+  anon: string,
+  withSession: RawRow | null,
+  device?: AnonDevice,
+) {
   const userId = person?.id ?? null;
-  const ctx = person ?? { device: pick(['mobile', 'mobile', 'desktop'] as const), os: pick(['ios', 'android', 'windows']), installed: false, locale: 'en' as const };
+  const ctx = person ??
+    (device ? { ...device, installed: false } : null) ?? {
+      device: pick(['mobile', 'mobile', 'desktop'] as const),
+      os: pick(['ios', 'android', 'windows']),
+      installed: false,
+      locale: 'en' as const,
+    };
   NAV.push({
     user_id: userId,
     anon_session_id: anon,
@@ -387,14 +529,18 @@ function visit(person: Person | null, at: number, anon: string, withSession: Raw
 }
 
 for (const r of rawRows) {
-  const person = MOCK_PEOPLE.find((p) => p.id === r.user_id)!;
-  const at = new Date(r.created_at).getTime() - (r.duration_seconds + 90) * 1000;
-  visit(person, at, `dev-${person.id.slice(-4)}`, r);
+  const at = new Date(r.created_at).getTime() - ((r.duration_seconds ?? 120) + 90) * 1000;
+  const person = r.user_id ? MOCK_PEOPLE.find((p) => p.id === r.user_id) : undefined;
+  if (person) {
+    visit(person, at, `dev-${person.id.slice(-4)}`, r);
+  } else if (r.anon_session_id) {
+    visit(null, at, r.anon_session_id, r, ANON_DEVICES.find((d) => d.id === r.anon_session_id));
+  }
 }
 for (const e of hintEvents) {
   NAV.push({
     user_id: e.user_id,
-    anon_session_id: `dev-${e.user_id.slice(-4)}`,
+    anon_session_id: e.anon,
     event_type: 'custom',
     screen: 'chat',
     target: 'coach_hint_request',
@@ -494,7 +640,8 @@ function fullSession(id: string) {
 const AI_CALLS = rawRows.flatMap((r, i) => {
   const at = new Date(r.created_at).getTime();
   const calls = [];
-  for (let k = 0; k < Math.ceil(r.turns / 2); k++) {
+  const turns = r.turns ?? 6;
+  for (let k = 0; k < Math.ceil(turns / 2); k++) {
     const slow = rand() < 0.05;
     calls.push({
       id: `call-${i}-${k}`,
@@ -508,10 +655,10 @@ const AI_CALLS = rawRows.flatMap((r, i) => {
       cost_usd: 0.00031,
       refusal: rand() < 0.01,
       off_topic: false,
-      end_token_emitted: k === Math.ceil(r.turns / 2) - 1,
+      end_token_emitted: k === Math.ceil(turns / 2) - 1,
       retries: 0,
       error: rand() < 0.015 ? 'upstream timeout' : null,
-      created_at: new Date(at - (r.turns - k * 2) * 30_000).toISOString(),
+      created_at: new Date(at - (turns - k * 2) * 30_000).toISOString(),
     });
   }
   if (r.completed) {
@@ -536,21 +683,47 @@ const AI_CALLS = rawRows.flatMap((r, i) => {
   return calls;
 });
 
-const FEEDBACK = rawRows
-  .filter((_, i) => i % 5 === 1)
-  .map((r, i) => ({
-    id: `fb-${i}`,
-    session_id: r.id,
-    user_id: r.user_id,
-    anon_session_id: null,
-    realism: 3 + (i % 3),
-    ai_quality: 4 + (i % 2),
-    comfort: 3 + ((i + 1) % 3),
-    comment: i % 3 === 0 ? 'Felt like a real client conversation.' : null,
-    scenario_summary: r.scenario_summary,
-    pushback_id: r.pushback_id,
-    created_at: r.created_at,
-  }));
+// Ratings: some from signed-in trainees, most from anonymous practice (as in
+// production), plus one whose session isn't in the data (no link to open).
+const FEEDBACK = [
+  ...rawRows.filter((r) => r.user_id).filter((_, i) => i % 5 === 1),
+  ...rawRows.filter((r) => !r.user_id).filter((_, i) => i % 4 === 0),
+]
+  .map((r, i) => {
+    const fr = !r.user_id && ANON_DEVICES.find((d) => d.id === r.anon_session_id)?.locale === 'fr';
+    return {
+      id: `fb-${i}`,
+      session_id: r.id,
+      user_id: r.user_id,
+      anon_session_id: r.user_id ? null : r.anon_session_id,
+      realism: 3 + (i % 3),
+      ai_quality: 4 + (i % 2),
+      comfort: 3 + ((i + 1) % 3),
+      comment:
+        i % 3 === 0
+          ? fr
+            ? 'Très réaliste — le client réagit comme les nôtres.'
+            : 'Felt like a real client conversation.'
+          : null,
+      scenario_summary: r.scenario_summary,
+      pushback_id: r.pushback_id,
+      created_at: new Date(new Date(r.created_at).getTime() + 60_000).toISOString(),
+    };
+  })
+  .concat({
+    id: 'fb-orphan',
+    session_id: '5e550000-0000-4000-8000-999999999999',
+    user_id: null,
+    anon_session_id: ANON_DEVICES[3].id,
+    realism: 5,
+    ai_quality: 4,
+    comfort: 4,
+    comment: 'J’aimerais plus de scénarios pour les chats.',
+    scenario_summary: null,
+    pushback_id: 'cost',
+    created_at: new Date(NOW - 3 * DAY).toISOString(),
+  })
+  .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
 function since(url: string): number {
   const s = param(url, 'since');

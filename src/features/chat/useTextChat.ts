@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Scenario } from '../../data/scenarios';
+import type { Locale } from '../../i18n/locales';
 import {
   evaluateConversation,
   generateRoleplayMessage,
@@ -21,11 +22,18 @@ import {
 import { categoryKnowledgeFor, mergeCategories } from '../../shared/scenarios/objectionCategories';
 import { LIBRARY_SCENARIOS } from '../../data/scenarios';
 import type { PromptOverrides } from '../../data/knowledge/promptBuilders';
-import { readStorage, writeStorage } from '../../lib/storage';
+import { getOrCreateSessionId, readStorage, writeStorage } from '../../lib/storage';
+import { hasAcceptedCurrentTerms } from '../../lib/terms';
 import { SESSIONS_KEY } from '../../lib/sessionsKey';
 import { uuid } from '../../lib/id';
 import { getSupabase } from '../auth/supabaseClient';
 import { recordTurns } from '../../services/aiTelemetry';
+import { postAi } from '../../services/aiApi';
+import {
+  AI_ENDPOINTS,
+  type SessionSaveRequest,
+  type SessionSaveResponse,
+} from '../../shared/ai/contract';
 import { persistRagDocument } from '../../services/ragDocument';
 import {
   retrieveContext,
@@ -164,10 +172,15 @@ interface PersistArgs {
   mode: 'text' | 'voice';
   completed: boolean;
   endedReason: 'completed' | 'abandoned' | 'timeout' | 'error' | 'user_exit';
+  /** App language the session was played in (stored as `training_sessions.locale`). */
+  locale: Locale;
 }
 
 /**
- * Mirror a session to Supabase training_sessions when the user is signed in.
+ * Mirror a session to Supabase training_sessions — the trainee's own row when
+ * signed in; otherwise the server records it anonymously (`session-save`),
+ * owned by this device's random id, unless the trainee opted out of training
+ * data use (the server checks `allowTelemetry`, which `postAi` always sends).
  * Best-effort: failures don't surface to the user (local copy is canonical).
  *
  * The full transcript array is persisted as-is — every ChatMessage with
@@ -202,10 +215,14 @@ async function persistToSupabase(args: PersistArgs): Promise<void> {
     const {
       data: { user },
     } = await sb.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      await recordAnonymousSession(args);
+      return;
+    }
     await sb.from('training_sessions').upsert({
       id: args.recordId,
       user_id: user.id,
+      locale: args.locale,
       scenario: args.scenario as unknown as Record<string, unknown>,
       transcript: args.transcript as unknown as Record<string, unknown>[],
       duration_seconds: args.durationSeconds,
@@ -231,6 +248,32 @@ async function persistToSupabase(args: PersistArgs): Promise<void> {
     }
   } catch (err) {
     console.warn('[useTextChat] persistToSupabase failed', err);
+  }
+}
+
+/**
+ * An anonymous session: the browser can't write `training_sessions` (RLS), so
+ * the server records it without identifying details. Best-effort, like the
+ * signed-in upsert — the trainee's local history is canonical. Nothing is sent
+ * until this device accepted the Terms version that says so.
+ */
+async function recordAnonymousSession(args: PersistArgs): Promise<void> {
+  if (!hasAcceptedCurrentTerms()) return;
+  const body: SessionSaveRequest = {
+    sessionId: args.recordId,
+    anonSessionId: getOrCreateSessionId(),
+    scenario: args.scenario,
+    transcript: args.transcript,
+    mode: args.mode,
+    completed: args.completed,
+    endedReason: args.endedReason,
+    durationSeconds: args.durationSeconds,
+    locale: args.locale,
+  };
+  try {
+    await postAi<SessionSaveResponse>(AI_ENDPOINTS.sessionSave, body);
+  } catch (err) {
+    console.warn('[useTextChat] anonymous session not recorded', err);
   }
 }
 
@@ -536,6 +579,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       mode: 'text',
       completed: true,
       endedReason: 'completed',
+      locale,
     });
     void persistRagDocument({
       sessionId: recordId,
@@ -598,6 +642,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       mode,
       completed: true,
       endedReason: 'completed',
+      locale,
     });
     void persistRagDocument({
       sessionId: recordId,
@@ -643,9 +688,10 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         mode: 'text',
         completed: false,
         endedReason: reason,
+        locale,
       });
     },
-    [scenario],
+    [scenario, locale],
   );
 
   // Keep endRef current so the setTimeout in send() calls the latest end()
@@ -733,6 +779,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           mode: 'voice',
           completed: false,
           endedReason: 'abandoned',
+          locale,
         });
         return;
       }
@@ -769,6 +816,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         mode: 'voice',
         completed: true,
         endedReason: 'completed',
+        locale,
       });
       void persistRagDocument({
         sessionId: recordId,
@@ -781,7 +829,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         completed: true,
       });
     },
-    [scenario],
+    [scenario, locale],
   );
 
   return {

@@ -2,6 +2,8 @@
  * Trainees roster — everyone on the team, how they are practising, and who
  * needs a nudge. Status, streaks and momentum are lifetime facts (from all
  * sessions); the session count, average score and skills follow the range.
+ * Anonymous sessions belong to no one here; a footnote says how many there
+ * were and opens Sessions filtered to them.
  */
 import { useMemo, useState } from 'react';
 import type { AnalyticsTabProps } from '../AnalyticsDestination';
@@ -13,10 +15,12 @@ import { useAccess } from '../../primitives/access';
 import { COLOR } from '../../lib/tokens';
 import { useEngagement, useSessionSummaries, useTraineeDirectory } from '../data';
 import { AutoGrid, ChipFilter, DeltaChip, FreshnessNote, GhostButton, StatTile } from '../ui';
-import { compareWords, pctDelta, rangeWords, windows } from '../lib/period';
+import { compareWords, inWindowWords, pctDelta, windowNoun, windows } from '../lib/period';
 import { STATUS_HELP, STATUS_LABELS, rollupTrainees, statusCounts, type TraineeRow } from '../lib/trainees';
+import { presetSessionFilters } from '../lib/sessionsExplorer';
 import {
   MOMENTUM_THRESHOLD,
+  anonymousSessionsInWindow,
   defaultDir,
   inSegment,
   matchesQuery,
@@ -89,6 +93,15 @@ export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }:
     [rows, sessions.data.rows, range, now],
   );
 
+  const anonymous = useMemo(
+    () => anonymousSessionsInWindow(sessions.data.rows, range, now),
+    [sessions.data.rows, range, now],
+  );
+  const openAnonymous = () => {
+    presetSessionFilters({ who: 'anonymous' });
+    onOpen('sessions');
+  };
+
   const searched = useMemo(() => rows.filter((r) => matchesQuery(r, query)), [rows, query]);
   const visible = useMemo(
     () =>
@@ -136,17 +149,20 @@ export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }:
           {loading ? (
             <RosterSkeleton />
           ) : rows.length === 0 ? (
-            <Glass padding={8} radius={20}>
-              <EmptyState
-                title="No trainees yet"
-                subtitle="People appear here as soon as they create an account in the trainee app."
-                action={
-                  can('team.read') ? (
-                    <GhostButton onClick={() => onNav('people', 'invites')}>Invite people</GhostButton>
-                  ) : undefined
-                }
-              />
-            </Glass>
+            <>
+              <Glass padding={8} radius={20}>
+                <EmptyState
+                  title="No trainees yet"
+                  subtitle="People appear here as soon as they create an account in the trainee app."
+                  action={
+                    can('team.read') ? (
+                      <GhostButton onClick={() => onNav('people', 'invites')}>Invite people</GhostButton>
+                    ) : undefined
+                  }
+                />
+              </Glass>
+              <AnonymousNote count={anonymous} range={range} onOpen={openAnonymous} />
+            </>
           ) : (
             <>
               <AutoGrid min={210}>
@@ -156,7 +172,7 @@ export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }:
                   unit={`of ${rows.length}`}
                   delta={range === 'all' ? undefined : pctDelta(summary.practising, summary.practisingPrev)}
                   compareLabel={compare}
-                  hint={`Trainees with at least one session in the ${rangeWords(range)}`}
+                  hint={`Trainees with at least one session ${inWindowWords(range)}`}
                 />
                 <StatTile
                   label="At risk"
@@ -189,7 +205,7 @@ export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }:
                         : pctDelta(summary.perActive, summary.perActivePrev)
                   }
                   compareLabel={compare}
-                  hint={`Average for people who practised in the ${rangeWords(range)}`}
+                  hint={`Average for people who practised ${inWindowWords(range)}`}
                 />
               </AutoGrid>
 
@@ -295,14 +311,33 @@ export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }:
                 }}
               >
                 Status, streaks and score momentum use every session a trainee has ever done; sessions, average score
-                and skills cover the {rangeWords(range)}. Averages count scored sessions only — sessions left early or
+                and skills cover {windowNoun(range)}. Averages count scored sessions only — sessions left early or
                 where scoring failed are excluded. {counts.new > 0 && `${counts.new} joined in the last 14 days.`}
               </div>
+              <AnonymousNote count={anonymous} range={range} onOpen={openAnonymous} />
             </>
           )}
         </QueryBoundary>
       </ScreenShell>
     </>
+  );
+}
+
+/**
+ * Anonymous sessions belong to no one on the roster — say how many the window
+ * had and open them in Sessions (Who: Anonymous).
+ */
+function AnonymousNote({ count, range, onOpen }: { count: number; range: AnalyticsTabProps['range']; onOpen: () => void }) {
+  if (count === 0) return null;
+  return (
+    <div style={{ fontSize: 11.5, color: COLOR.inkMute, lineHeight: 1.55, padding: '0 4px', marginTop: -6 }}>
+      {count.toLocaleString('en-US')} {count === 1 ? 'session' : 'sessions'}{' '}
+      {range === 'all' ? 'so far' : 'in this window'} {count === 1 ? 'was' : 'were'} played without an account —{' '}
+      <button type="button" className="pbt-link" onClick={onOpen} style={{ fontSize: 11.5 }}>
+        see Sessions → Who: Anonymous
+      </button>
+      .
+    </div>
   );
 }
 

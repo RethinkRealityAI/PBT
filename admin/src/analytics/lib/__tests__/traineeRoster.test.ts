@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { inSegment, matchesQuery, roleLabel, rosterCsv, rosterSummary, sortRoster } from '../traineeRoster';
+import {
+  anonymousSessionsInWindow,
+  inSegment,
+  matchesQuery,
+  roleLabel,
+  rosterCsv,
+  rosterSummary,
+  sortRoster,
+} from '../traineeRoster';
 import { rollupTrainees } from '../trainees';
 import { DAY_MS } from '../period';
-import { person, session } from './fixtures';
+import { anonSession, person, rebuiltSession, session } from './fixtures';
 
 const NOW = new Date('2026-10-15T12:00:00').getTime();
 const daysAgo = (d: number) => new Date(NOW - d * DAY_MS).toISOString();
@@ -25,6 +33,10 @@ const sessions = [
   session({ user_id: 'u4', created_at: daysAgo(38), score_overall: 65 }),
   // Someone not in the directory never counts.
   session({ user_id: 'ghost', created_at: daysAgo(1) }),
+  // Nor does anonymous practice: it belongs to a device, not a trainee.
+  anonSession('dev-1', { created_at: daysAgo(1) }),
+  anonSession('dev-1', { created_at: daysAgo(31) }),
+  rebuiltSession('dev-2', 'unknown', { created_at: daysAgo(14) }),
 ];
 const rows = rollupTrainees(directory, sessions, { windowStart: NOW - 28 * DAY_MS, now: NOW });
 
@@ -89,6 +101,15 @@ describe('rosterSummary', () => {
     expect(s.practisingPrev).toBeNull();
     expect(s.atRiskPrev).toBeNull();
     expect(s.practising).toBe(3);
+  });
+});
+
+describe('anonymousSessionsInWindow', () => {
+  it('counts the window’s sessions played without an account', () => {
+    expect(anonymousSessionsInWindow(sessions, '28d', NOW)).toBe(2);
+    expect(anonymousSessionsInWindow(sessions, '7d', NOW)).toBe(1);
+    expect(anonymousSessionsInWindow(sessions, 'all', NOW)).toBe(3);
+    expect(anonymousSessionsInWindow([], '28d', NOW)).toBe(0);
   });
 });
 

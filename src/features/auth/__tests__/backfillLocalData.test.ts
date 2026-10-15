@@ -17,6 +17,10 @@
  * Hence the explicit assertion below rather than a general shape check.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+const { postAi } = vi.hoisted(() => ({ postAi: vi.fn() }));
+vi.mock('../../../services/aiApi', () => ({ postAi }));
+
 import { backfillLocalDataToCloud } from '../backfillLocalData';
 import { writeStorage } from '../../../lib/storage';
 import { SESSIONS_KEY } from '../../../lib/sessionsKey';
@@ -64,8 +68,17 @@ function sessionRecord(id: string, report?: ScoreReport): SessionRecord {
   } as SessionRecord;
 }
 
-/** Records each upsert per table so assertions can target one table. */
-function fakeSupabase() {
+/**
+ * Records each upsert per table so assertions can target one table.
+ * `existing` = the caller's own `training_sessions` rows the backfill reads
+ * back after the claim (`select('id, origin').in('id', …)`).
+ */
+function fakeSupabase(
+  { existing = [], readError = null }: {
+    existing?: Array<{ id: string; origin: string }>;
+    readError?: { message: string } | null;
+  } = {},
+) {
   const upserts: Record<string, unknown[][]> = {};
   const sb = {
     from(table: string) {
@@ -80,6 +93,7 @@ function fakeSupabase() {
         },
         select: () => ({
           eq: () => Promise.resolve({ data: [], error: null }),
+          in: () => Promise.resolve(readError ? { data: null, error: readError } : { data: existing, error: null }),
         }),
       };
     },
@@ -90,6 +104,9 @@ function fakeSupabase() {
 beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
+  postAi.mockReset();
+  // Default: the claim succeeds and finds nothing anonymous on the server.
+  postAi.mockResolvedValue({ claimed: [] });
 });
 
 describe('backfillLocalDataToCloud → training_sessions', () => {
@@ -160,5 +177,68 @@ describe('backfillLocalDataToCloud → training_sessions', () => {
     const [row] = (upserts['rag_documents'] ?? []).flat() as Record<string, unknown>[];
     const metadata = row.metadata as Record<string, unknown>;
     expect(metadata.score_overall).toBe(88);
+  });
+});
+
+
+describe('backfill claims sessions the server already recorded anonymously', () => {
+  const A = '44444444-4444-4444-8444-444444444444';
+  const B = '55555555-5555-4555-8555-555555555555';
+  const C = '66666666-6666-4666-8666-666666666666';
+
+  it('claims this device’s rows first and uploads only those the account lacks complete', async () => {
+    writeStorage(SESSIONS_KEY, [sessionRecord(A, scoreReport(80)), sessionRecord(B), sessionRecord(C)]);
+    // A was recorded in full (server-verified score kept); B was rebuilt from
+    // app activity (no transcript) — fill it; C was never on the server.
+    postAi.mockResolvedValueOnce({ claimed: [{ id: A, complete: true }, { id: B, complete: false }] });
+    const { sb, upserts } = fakeSupabase({
+      existing: [
+        { id: A, origin: 'app' },
+        { id: B, origin: 'reconstructed' },
+      ],
+    });
+    await backfillLocalDataToCloud(sb as never, USER_ID);
+
+    const [endpoint, body] = postAi.mock.calls[0];
+    expect(endpoint).toBe('/.netlify/functions/session-save');
+    expect(body).toMatchObject({ claim: true, sessionIds: [A, B, C] });
+    expect(typeof body.anonSessionId).toBe('string');
+
+    const rows = (upserts['training_sessions'] ?? []).flat() as Record<string, unknown>[];
+    expect(rows.map((r) => r.id)).toEqual([B, C]);
+    expect(rows.every((r) => r.origin === 'app' && r.user_id === USER_ID)).toBe(true);
+    // The claimed session gets its RAG document too (an anonymous one never had one).
+    const rag = (upserts['rag_documents'] ?? []).flat() as Record<string, unknown>[];
+    expect(rag.map((r) => r.session_id)).toEqual([A, B, C]);
+  });
+
+  it('never re-uploads a session the account already holds (every later load, the second sign-up run)', async () => {
+    writeStorage(SESSIONS_KEY, [sessionRecord(A, scoreReport(80)), sessionRecord(B)]);
+    // Already claimed earlier → the claim finds nothing; both rows are the account's.
+    const { sb, upserts } = fakeSupabase({
+      existing: [
+        { id: A, origin: 'app' },
+        { id: B, origin: 'app' },
+      ],
+    });
+    await backfillLocalDataToCloud(sb as never, USER_ID);
+    expect(upserts['training_sessions']).toBeUndefined();
+    expect(upserts['rag_documents']).toBeUndefined();
+  });
+
+  it('uploads nothing when the claim fails — an anonymous row would fail the whole batch', async () => {
+    writeStorage(SESSIONS_KEY, [sessionRecord(A), sessionRecord(B)]);
+    postAi.mockRejectedValueOnce(new Error('429'));
+    const { sb, upserts } = fakeSupabase();
+    await backfillLocalDataToCloud(sb as never, USER_ID);
+    expect(upserts['training_sessions']).toBeUndefined();
+    expect(upserts['rag_documents']).toBeUndefined();
+  });
+
+  it('uploads nothing when the account’s rows cannot be read', async () => {
+    writeStorage(SESSIONS_KEY, [sessionRecord(A)]);
+    const { sb, upserts } = fakeSupabase({ readError: { message: 'boom' } });
+    await backfillLocalDataToCloud(sb as never, USER_ID);
+    expect(upserts['training_sessions']).toBeUndefined();
   });
 });

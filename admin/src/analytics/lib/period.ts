@@ -63,6 +63,20 @@ export function rangeWords(range: Range): string {
   }
 }
 
+/**
+ * "in the last 28 days", or "so far" for all time — reads after any sentence
+ * ("No practice so far", "At least one session in the last 7 days"). Never
+ * write `in the ${rangeWords(range)}`: on all time it reads "in the all time".
+ */
+export function inWindowWords(range: Range): string {
+  return range === 'all' ? 'so far' : `in the ${rangeWords(range)}`;
+}
+
+/** "the last 28 days", or "all time" — the window as a noun ("cover the last 28 days" / "cover all time"). */
+export function windowNoun(range: Range): string {
+  return range === 'all' ? 'all time' : `the ${rangeWords(range)}`;
+}
+
 /** "vs previous 28 days" — the comparison a delta is against. */
 export function compareWords(range: Range): string {
   switch (range) {

@@ -41,7 +41,7 @@ import {
 import type { SessionSummaryResponse } from '../../src/shared/analytics/contract';
 
 const FULL_COLUMNS =
-  'id, user_id, scenario, scenario_summary, pushback_id, driver, transcript, score_report, score_overall, duration_seconds, mode, completed, ended_reason, flagged, flag_reason, model_id, turns, created_at';
+  'id, user_id, anon_session_id, locale, origin, scenario, scenario_summary, pushback_id, driver, transcript, score_report, score_overall, duration_seconds, mode, completed, ended_reason, model_id, turns, created_at';
 
 /** Full rows (with transcripts) per list. */
 export const LIST_MAX = 5000;

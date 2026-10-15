@@ -91,6 +91,18 @@ export const STORAGE_KEYS = {
     validate: (v): v is string | null => v === null || typeof v === 'string',
   } as StorageKeyDef<string | null>,
 
+  /**
+   * Which Terms version this device accepted. Read and written through
+   * `src/lib/terms.ts`. Devices that accepted version 1 hold the raw string
+   * "1" (an old direct `setItem`), which JSON-parses to the number 1.
+   */
+  termsVersion: {
+    key: 'terms_version',
+    fallback: null as number | null,
+    validate: (v): v is number | null =>
+      v === null || (typeof v === 'number' && Number.isFinite(v)),
+  } as StorageKeyDef<number | null>,
+
   // App display language. Note: values must stay in sync with the Locale
   // union in src/i18n/locales.ts (kept inline here to avoid a lib → i18n
   // import cycle; the i18n catalog test asserts the two stay aligned).

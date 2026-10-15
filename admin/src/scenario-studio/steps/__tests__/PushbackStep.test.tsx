@@ -111,6 +111,25 @@ describe('PushbackStep', () => {
     expect(screen.getByRole('button', { name: /Skepticism on Rx diet/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('opens on the category a new scenario was started from — until it has an objection', () => {
+    const StartedFromWeight = (p: StepProps) => <PushbackStep {...p} initialCategoryId="weight" />;
+    const { patchSpy } = renderStep(StartedFromWeight);
+    expect(chip(/Weight management/)).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /Weight \/ obesity denial/ })).toBeInTheDocument();
+    // Nothing is picked for the admin.
+    expect(patchSpy).not.toHaveBeenCalled();
+    // Picking an objection in another category moves the chips with it.
+    fireEvent.click(chip(/Prescription diets/));
+    fireEvent.click(screen.getByRole('button', { name: /Skepticism on Rx diet/ }));
+    expect(chip(/Prescription diets/)).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('a scenario that already has an objection opens on its own category, whatever it was started from', () => {
+    const StartedFromWeight = (p: StepProps) => <PushbackStep {...p} initialCategoryId="weight" />;
+    renderStep(StartedFromWeight, { draft: { ...emptyAdminDraft('admin:t'), pushback_id: 'rx-diet' } });
+    expect(chip(/Prescription diets/)).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('the example speaks about the right animal', () => {
     renderStep(PushbackStep, { draft: { ...emptyAdminDraft('admin:t'), species: 'cat' } });
     expect(screen.getByRole('button', { name: /Switching brands/ })).toHaveTextContent('My cat already eats fine');

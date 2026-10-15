@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AI_ALERTS, aiHealth, buildAttention, nameList, type AiHealth } from '../attention';
 import { DAY_MS } from '../period';
 import { rollupTrainees } from '../trainees';
-import { person, session } from './fixtures';
+import { anonSession, person, rebuiltSession, session } from './fixtures';
 
 const NOW = new Date('2026-10-15T12:00:00.000Z').getTime();
 const ago = (days: number) => new Date(NOW - days * DAY_MS).toISOString();
@@ -95,6 +95,41 @@ describe('buildAttention', () => {
     const low = items.find((i) => i.key === 'low-scores');
     expect(low?.action.target).toMatchObject({ kind: 'tab', tab: 'sessions' });
     expect((low?.action.target as { id?: string }).id).toBeTruthy();
+  });
+
+  it('never turns anonymous sessions into a person: no name, no slipping, no "never started"', () => {
+    const b = base();
+    const anon = [
+      anonSession('dev-1', { created_at: ago(1), score_overall: 30, pushback_id: 'cost' }),
+      anonSession('dev-2', { created_at: ago(2), score_overall: 50 }),
+      rebuiltSession('dev-3', 'unknown', { created_at: ago(12) }),
+    ];
+    const sessions = [...b.windowSessions, ...anon];
+    const directory = [
+      person({ user_id: 'a', display_name: 'Active Ann', created_at: ago(60) }),
+      person({ user_id: 'b', display_name: 'Slipping Sam', created_at: ago(60) }),
+      person({ user_id: 'c', display_name: 'Slipping Cy', created_at: ago(60) }),
+    ];
+    const asked: string[] = [];
+    const items = buildAttention({
+      ...b,
+      trainees: rollupTrainees(directory, sessions, { windowStart: NOW - 28 * DAY_MS, now: NOW }),
+      windowSessions: sessions,
+      nameOf: (id) => {
+        asked.push(id);
+        return b.nameOf(id);
+      },
+    });
+    const low = items.find((i) => i.key === 'low-scores');
+    expect(low?.title).toBe('4 sessions scored under 55');
+    expect(low?.detail).toBe(
+      'Across 2 trainees and 2 anonymous devices. Lowest: an anonymous session on “Cost / price pushback” (30). Its transcript shows where the conversation went wrong.',
+    );
+    // The name lookup is never asked about a session with no account.
+    expect(asked.every((id) => typeof id === 'string' && id.length > 0)).toBe(true);
+    const atRisk = items.find((i) => i.key === 'at-risk');
+    expect(atRisk?.detail.startsWith('Slipping Cy and Slipping Sam')).toBe(true);
+    expect(items.find((i) => i.key === 'not-started')).toBeUndefined();
   });
 
   it('stays quiet about AI on a healthy or tiny sample, and when the viewer cannot see it', () => {

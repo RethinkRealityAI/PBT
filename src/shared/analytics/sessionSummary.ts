@@ -27,7 +27,7 @@ export type SessionRowLike = Record<string, unknown>;
 
 /** Columns to select for `toSessionSummary` (the transcript is read, never returned). */
 export const SESSION_SUMMARY_COLUMNS =
-  'id, user_id, scenario, scenario_summary, pushback_id, driver, model_id, transcript, score_report, score_overall, duration_seconds, mode, completed, ended_reason, turns, created_at';
+  'id, user_id, anon_session_id, locale, origin, scenario, scenario_summary, pushback_id, driver, model_id, transcript, score_report, score_overall, duration_seconds, mode, completed, ended_reason, turns, created_at';
 
 /**
  * The LITE summary read (`admin-sessions?view=summary&lite=1`): scalar columns
@@ -39,7 +39,7 @@ export const SESSION_SUMMARY_COLUMNS =
  * empty — the all-time roster and funnel never use them.
  */
 export const SESSION_SUMMARY_LITE_COLUMNS = [
-  'id, user_id, created_at, completed, ended_reason, mode, duration_seconds, turns',
+  'id, user_id, anon_session_id, locale, origin, created_at, completed, ended_reason, mode, duration_seconds, turns',
   'pushback_id, driver, model_id, scenario_summary, score_overall',
   'sr_acknowledge:score_report->acknowledge, sr_clarify:score_report->clarify',
   'sr_transform:score_report->transform, sr_empathy:score_report->empathy',
@@ -303,17 +303,25 @@ export function toSessionSummary(row: SessionRowLike, options: SessionSummaryOpt
   const stats = transcriptStats(r.transcript, mode);
   const { source, id: scenarioId } = scenarioSourceOf(scenario);
   const turnsCol = num(r.turns);
+  const reconstructed = r.origin === 'reconstructed';
+  // A rebuilt row's transcript is an empty placeholder: its message count is
+  // the logged one (when the app logged it) or unknown — never "0 messages".
+  const turns =
+    turnsCol !== null && turnsCol >= 0 ? turnsCol : reconstructed ? null : stats.messages;
 
   return {
     id,
-    user_id: str(r.user_id) ?? '',
+    user_id: str(r.user_id),
+    anon_session_id: str(r.user_id) ? null : str(r.anon_session_id),
+    locale: str(r.locale),
+    reconstructed,
     created_at,
     started_at,
     completed: r.completed === true,
     ended_reason: str(r.ended_reason),
     mode,
     duration_seconds,
-    turns: turnsCol !== null && turnsCol >= 0 ? turnsCol : stats.messages,
+    turns,
     pushback_id: str(r.pushback_id) ?? (pushback ? str(pushback.id) : null),
     owner_driver: str(r.driver) ?? (scenario ? str(scenario.suggestedDriver) : null),
     scenario_summary: str(r.scenario_summary),

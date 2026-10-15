@@ -12,7 +12,8 @@ import {
   splitBy,
   teamObjectionTitles,
 } from '../skills';
-import { session } from './fixtures';
+import { anonSession, rebuiltSession, session } from './fixtures';
+import { LANGUAGE_NONE, languageKey, speciesOf } from '../who';
 
 const label = (id: string) => `L:${id}`;
 const skills = (v: number, transform = v) => ({ acknowledge: v, clarify: v, transform, empathy: v, rapport: v });
@@ -97,6 +98,27 @@ describe('splits and moods', () => {
       { key: 'dog', sessions: 2, scored: 2, avgScore: 75 },
       { key: 'cat', sessions: 1, scored: 1, avgScore: 60 },
     ]);
+  });
+
+  it('splits by language and by who practised; rebuilt sessions count as sessions, never in an average or an animal', () => {
+    const rows = [
+      session({ locale: 'en', score_overall: 80 }),
+      anonSession('d1', { locale: 'fr', score_overall: 60 }),
+      anonSession('d2', { locale: 'fr', score_overall: 70 }),
+      rebuiltSession('d3', 'finished'),
+      rebuiltSession('d3', 'unknown'),
+    ];
+    expect(splitBy(rows, (s) => languageKey(s.locale), ['en', 'fr', LANGUAGE_NONE])).toEqual([
+      { key: 'en', sessions: 1, scored: 1, avgScore: 80 },
+      { key: 'fr', sessions: 2, scored: 2, avgScore: 65 },
+      { key: LANGUAGE_NONE, sessions: 2, scored: 0, avgScore: null },
+    ]);
+    expect(splitBy(rows, (s) => (s.user_id ? 'signed_in' : 'anonymous'), ['signed_in', 'anonymous'])).toEqual([
+      { key: 'signed_in', sessions: 1, scored: 1, avgScore: 80 },
+      { key: 'anonymous', sessions: 4, scored: 2, avgScore: 65 },
+    ]);
+    // A rebuilt session's animal is unknown: left out, not guessed as a dog.
+    expect(splitBy(rows, (s) => speciesOf(s), ['dog', 'cat'])).toEqual([{ key: 'dog', sessions: 3, scored: 3, avgScore: 70 }]);
   });
 
   it('counts how finished sessions ended', () => {

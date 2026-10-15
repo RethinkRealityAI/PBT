@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { firstActiveBucket, leaders, measured, practiceFunnel, trendExtras } from '../overview';
 import { DAY_MS } from '../period';
 import { rollupTrainees } from '../trainees';
-import { person, session } from './fixtures';
+import { anonSession, person, rebuiltSession, session } from './fixtures';
 
 const NOW = new Date('2026-10-15T12:00:00.000Z').getTime();
 const ago = (days: number) => new Date(NOW - days * DAY_MS).toISOString();
@@ -56,6 +56,11 @@ describe('practiceFunnel', () => {
       session({ user_id: 'b', created_at: ago(60) }),
       session({ user_id: 'x', created_at: ago(1) }),
       session({ user_id: 'ghost', created_at: ago(1) }),
+      // Anonymous practice is never an account in the funnel.
+      anonSession('dev-1', { created_at: ago(1) }),
+      anonSession('dev-1', { created_at: ago(2) }),
+      anonSession('dev-1', { created_at: ago(3) }),
+      rebuiltSession('dev-2', 'finished', { created_at: ago(14) }),
     ];
     const steps = practiceFunnel(directory, sessions, NOW - 28 * DAY_MS, 'last 28 days');
     expect(steps.map((s) => [s.key, s.count, s.pctOfAccounts])).toEqual([

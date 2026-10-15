@@ -9,7 +9,7 @@
  *
  * Pure; unit-tested in `__tests__/skills.test.ts`.
  */
-import type { ScenarioSource, SessionSummary } from '../../../../src/shared/analytics/contract';
+import type { SessionSummary } from '../../../../src/shared/analytics/contract';
 import { mean } from './period';
 import {
   SKILL_KEYS,
@@ -143,20 +143,6 @@ export function hardestPairing(
 
 // ─── Splits ────────────────────────────────────────────────────────────
 
-export const SOURCE_LABELS: Record<ScenarioSource, string> = {
-  library: 'Ready-made library',
-  studio: 'Team scenarios',
-  'self-built': 'Built by the trainee',
-  unknown: 'Not recorded',
-};
-
-export const SOURCE_HINTS: Record<ScenarioSource, string> = {
-  library: 'The built-in scenarios',
-  studio: 'Published from the Scenario Studio',
-  'self-built': 'Made on the trainee’s own Build screen',
-  unknown: 'Older sessions that didn’t store it',
-};
-
 export interface SplitRowStats {
   key: string;
   sessions: number;
@@ -164,10 +150,14 @@ export interface SplitRowStats {
   avgScore: number | null;
 }
 
-/** Sessions and average score per value of `keyOf`, in the order given by `order`. */
+/**
+ * Sessions and average score per value of `keyOf`, in the order given by
+ * `order`. `keyOf` returns null for a session that has no value to split on
+ * (a rebuilt session's animal) — it is left out, not guessed.
+ */
 export function splitBy(
   rows: readonly SessionSummary[],
-  keyOf: (s: SessionSummary) => string,
+  keyOf: (s: SessionSummary) => string | null,
   order: readonly string[],
 ): SplitRowStats[] {
   const groups = new Map(groupStats(rows, keyOf).map((g) => [g.key, g]));

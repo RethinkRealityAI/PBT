@@ -1,13 +1,58 @@
 import { describe, expect, it } from 'vitest';
 import { sessionStats } from '../metrics';
 import { joinNames, narrativeText, overviewNarrative, priorWords, windowPhrase } from '../narrative';
-import { session } from './fixtures';
+import { anonSession, rebuiltSession, session } from './fixtures';
 
 function many(n: number, over: Parameters<typeof session>[0] = {}, users = 1) {
   return Array.from({ length: n }, (_, i) => session({ user_id: `u${(i % users) + 1}`, ...over }));
 }
 
 describe('overviewNarrative', () => {
+  it('names trainees and anonymous visitors apart — anonymous practice is never a trainee', () => {
+    const rows = [
+      ...many(90, { score_overall: 70 }, 13),
+      ...Array.from({ length: 30 }, (_, i) => anonSession(`dev-${i}`, { score_overall: 70 })),
+    ];
+    const text = narrativeText(
+      overviewNarrative({
+        range: '28d',
+        current: sessionStats(rows),
+        previous: null,
+        weakestSkill: null,
+        skillSessions: 0,
+        improvers: [],
+      }),
+    );
+    expect(text.startsWith('In the last 28 days, 13 trainees and 30 anonymous visitors practised 120 times.')).toBe(true);
+  });
+
+  it('reads naturally with only anonymous practice, and on all time', () => {
+    const anonOnly = sessionStats([
+      rebuiltSession('dev-1', 'finished'),
+      rebuiltSession('dev-1', 'unknown'),
+      rebuiltSession('dev-2', 'left'),
+    ]);
+    const text = narrativeText(
+      overviewNarrative({ range: '7d', current: anonOnly, previous: null, weakestSkill: null, skillSessions: 0, improvers: [] }),
+    );
+    expect(text.startsWith('In the last 7 days, 2 anonymous visitors practised 3 times.')).toBe(true);
+    // Rebuilt sessions never kept a score — said plainly, not "not scored yet".
+    expect(text).toContain('They were rebuilt from app activity, so there are no scores.');
+
+    const one = sessionStats([session({ user_id: 'a' }), anonSession('dev-1')]);
+    expect(
+      narrativeText(
+        overviewNarrative({ range: 'all', current: one, previous: null, weakestSkill: null, skillSessions: 0, improvers: [] }),
+      ).startsWith('So far, 1 trainee and 1 anonymous visitor have practised twice.'),
+    ).toBe(true);
+    const solo = sessionStats([anonSession('dev-1')]);
+    expect(
+      narrativeText(
+        overviewNarrative({ range: 'all', current: solo, previous: null, weakestSkill: null, skillSessions: 0, improvers: [] }),
+      ).startsWith('So far, 1 anonymous visitor has practised once.'),
+    ).toBe(true);
+  });
+
   it('reads like the example: activity vs before, score vs before, weakest skill and improvers', () => {
     const current = sessionStats(many(112, { score_overall: 71 }, 14));
     const previous = sessionStats(many(100, { score_overall: 68 }, 12));

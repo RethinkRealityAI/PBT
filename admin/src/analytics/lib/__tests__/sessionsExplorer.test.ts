@@ -15,8 +15,13 @@ import {
   sessionTitle,
   sessionsCsv,
   sortSessions,
+  clearSessionFilterPreset,
+  presetSessionFilters,
+  sessionFilterPreset,
+  whoName,
 } from '../sessionsExplorer';
-import { session } from './fixtures';
+import { deviceTag } from '../who';
+import { anonSession, rebuiltSession, session } from './fixtures';
 
 const failed = () => session({ score_unavailable: true, score_overall: 0, skills: null });
 const left = (reason: string | null = 'user_exit') =>
@@ -33,16 +38,28 @@ describe('sessionsExplorer outcomes', () => {
     expect(outcomeWords(left('user_exit'))).toBe('Left early');
     expect(outcomeWords(left('timeout'))).toBe('Timed out');
     expect(outcomeWords(left('error'))).toBe('Ended by an error');
-    expect(outcomeWords(left(null))).toBe('Left early');
     // A contradictory row (reason says completed, flag says not) is still early.
     expect(outcomeWords(left('completed'))).toBe('Left early');
     expect(outcomeWords(failed())).toBe('Scoring failed');
   });
 
-  it('counts chips: finished + left = all; failed and low are subsets of finished', () => {
-    const rows = [session({ score_overall: 90 }), session({ score_overall: 40 }), failed(), left(), left()];
+  it('an unfinished session with no recorded reason reads "Ending not recorded", never "Left early"', () => {
+    expect(sessionOutcome(left(null))).toBe('unknown');
+    expect(outcomeWords(left(null))).toBe('Ending not recorded');
+    expect(outcomeWords(rebuiltSession('d', 'unknown'))).toBe('Ending not recorded');
+    expect(outcomeWords(rebuiltSession('d', 'left'))).toBe('Left early');
+    expect(outcomeWords(rebuiltSession('d', 'finished'))).toBe('Finished');
+  });
+
+  it('counts chips: finished + left + not recorded = all; failed and low are subsets of finished', () => {
+    const rows = [session({ score_overall: 90 }), session({ score_overall: 40 }), failed(), left(), left(), left(null)];
     const c = outcomeCounts(rows);
-    expect(c).toEqual({ all: 5, finished: 3, left: 2, failed: 1, low: 1 });
+    expect(c).toEqual({ all: 6, finished: 3, left: 2, unknown: 1, failed: 1, low: 1 });
+  });
+
+  it('a rebuilt session that reached the scorecard is finished, never low or failed', () => {
+    const c = outcomeCounts([rebuiltSession('d', 'finished')]);
+    expect(c).toMatchObject({ finished: 1, failed: 0, low: 0 });
   });
 
   it('never counts a scoring failure as a low score', () => {
@@ -127,6 +144,59 @@ describe('sessionsExplorer filters', () => {
     expect(activeFilterCount({ ...NO_FILTERS, outcome: 'low', species: 'cat' })).toBe(2);
   });
 
+  it('filters by who and by language', () => {
+    const mixed = [
+      session({ user_id: 'u1', locale: 'en' }),
+      anonSession('dev-a', { locale: 'fr' }),
+      anonSession('dev-b', { locale: 'fr' }),
+      rebuiltSession('dev-b', 'unknown'),
+    ];
+    const ids = (f: Partial<typeof NO_FILTERS>) =>
+      filterSessions(mixed, { ...NO_FILTERS, ...f }, '', nameOf).rows.length;
+    expect(ids({ who: 'anonymous' })).toBe(3);
+    expect(ids({ who: 'signed_in' })).toBe(1);
+    expect(ids({ language: 'fr' })).toBe(2);
+    expect(ids({ language: 'en' })).toBe(1);
+    expect(ids({ language: 'none' })).toBe(1);
+    expect(ids({ who: 'anonymous', language: 'fr' })).toBe(2);
+    expect(activeFilterCount({ ...NO_FILTERS, who: 'anonymous', language: 'fr' })).toBe(2);
+  });
+
+  it('a rebuilt session matches neither Dog nor Cat — its animal was never stored', () => {
+    const r = [rebuiltSession('dev', 'finished')];
+    expect(filterSessions(r, { ...NO_FILTERS, species: 'dog' }, '', nameOf).rows).toHaveLength(0);
+    expect(filterSessions(r, { ...NO_FILTERS, species: 'cat' }, '', nameOf).rows).toHaveLength(0);
+    expect(scenarioContext(r[0])).toBe('');
+  });
+
+  it('names an anonymous session by its device, never by a trainee lookup', () => {
+    const calls: string[] = [];
+    const lookup = (id: string) => {
+      calls.push(id);
+      return 'Unknown trainee';
+    };
+    const anon = anonSession('dev-a', { locale: 'fr' });
+    expect(whoName(anon, lookup)).toBe(`Anonymous · Device ${deviceTag('dev-a')}`);
+    expect(calls).toEqual([]);
+    // Search finds it by "anonymous", its device tag and its language.
+    const q = (text: string) => filterSessions([anon], NO_FILTERS, text, lookup).rows.length;
+    expect(q('anonymous')).toBe(1);
+    expect(q(`device ${deviceTag('dev-a')}`)).toBe(1);
+    expect(q('français')).toBe(1);
+    expect(q('rebuilt')).toBe(0);
+    expect(filterSessions([rebuiltSession('dev-a', 'left')], NO_FILTERS, 'rebuilt', lookup).rows).toHaveLength(1);
+    expect(calls).toEqual([]);
+  });
+
+  it('hands a filter preset to the Sessions tab once', () => {
+    presetSessionFilters({ who: 'anonymous' });
+    expect(sessionFilterPreset()).toEqual({ ...NO_FILTERS, who: 'anonymous' });
+    // Read again before it is cleared (a double render) — still there.
+    expect(sessionFilterPreset().who).toBe('anonymous');
+    clearSessionFilterPreset();
+    expect(sessionFilterPreset()).toEqual(NO_FILTERS);
+  });
+
   it('lists objections present in the data by their label', () => {
     expect(objectionOptions(rows).map((o) => o.label)).toEqual(['Cost / price pushback', 'Skepticism on Rx diet']);
     expect(objectionOptions(rows).find((o) => o.value === 'cost')?.count).toBe(2);
@@ -161,6 +231,33 @@ describe('sessionsCsv', () => {
     expect(col('Acknowledge')).toBeNull();
     expect(col('Trainee')).toBe('Marie');
     expect(col('Mode')).toBe('Typed');
+  });
+
+  it('says who and the language; an anonymous row carries only its short device tag', () => {
+    const anon = anonSession('4f2a9c1e-0000-4000-8000-000000000001', { locale: 'fr' });
+    const rebuilt = rebuiltSession('4f2a9c1e-0000-4000-8000-000000000001', 'unknown');
+    const { header, rows } = sessionsCsv([session({ locale: 'en' }), anon, rebuilt], {
+      nameOf: () => 'Marie',
+      emailOf: () => 'marie@example.com',
+    });
+    const col = (r: number, name: string) => rows[r][header.indexOf(name)];
+    expect(header.slice(0, 6)).toEqual(['Date and time', 'Who', 'Trainee', 'Email', 'Language', 'Recorded as']);
+    expect(col(0, 'Who')).toBe('Signed-in trainee');
+    expect(col(0, 'Trainee')).toBe('Marie');
+    expect(col(0, 'Language')).toBe('English');
+    expect(col(0, 'Recorded as')).toBe('Saved by the app');
+    expect(col(1, 'Who')).toBe(`Anonymous · Device ${deviceTag(anon.anon_session_id)}`);
+    expect(col(1, 'Trainee')).toBe('');
+    expect(col(1, 'Email')).toBe('');
+    expect(col(1, 'Language')).toBe('Français');
+    expect(col(2, 'Recorded as')).toBe('Rebuilt from app activity');
+    expect(col(2, 'Outcome')).toBe('Ending not recorded');
+    expect(col(2, 'Score')).toBeNull();
+    expect(col(2, 'Animal')).toBe('');
+    expect(col(2, 'Language')).toBe('Not recorded');
+    expect(col(2, 'Messages')).toBeNull();
+    // The full device id never leaves the portal.
+    expect(JSON.stringify(rows)).not.toContain('4f2a9c1e-0000');
   });
 
   it('includes skills and email when allowed', () => {

@@ -21,8 +21,9 @@ import {
 import { QueryBoundary } from '../primitives/QueryBoundary';
 import { ContextBar, ScreenShell, type Range } from '../primitives/Shell';
 import { useAiCallsWindow, useSessionSummaries } from '../analytics/data';
-import { compareWords, pointsDelta, splitByPeriod } from '../analytics/lib/period';
+import { compareWords, median, pointsDelta, splitByPeriod } from '../analytics/lib/period';
 import { AutoGrid, StatTile } from '../analytics/ui';
+import { REPLY_AIM_MS } from '../analytics/overview/AiHealthStrip';
 import { useAccess } from '../primitives/access';
 import { COLOR } from '../lib/tokens';
 import { CALL_TYPE_LABELS, labelOf } from '../lib/labels';
@@ -32,8 +33,9 @@ import type { AiCall } from '../data/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** A reply slower than this feels like a stall to the person waiting on it. */
-const SLOW_REPLY_MS = 2200;
+// Reply speed: "slow" is anything over `REPLY_AIM_MS` (2s, shared with the
+// Overview's AI health strip), and "typical" reply time is the MEDIAN here
+// too — one stalled call can't drag it the way it drags an average.
 
 // ─── Enhanced Observability Layer ──────────────────────────────────────
 // Ops-tunable alert thresholds. These are the trip points for the banner
@@ -50,11 +52,6 @@ const ALERT_THRESHOLDS = {
 
 function pct(n: number, total: number): number {
   return total > 0 ? (n / total) * 100 : 0;
-}
-
-function avgOf(values: number[]): number | null {
-  if (values.length === 0) return null;
-  return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
 /** Nearest-rank p95 — null when there's nothing to sample. Shown as
@@ -178,7 +175,7 @@ export function QualityScreen({
       calls: c.length,
       errored: c.filter((x) => x.error != null).length,
       refused: c.filter((x) => x.refusal).length,
-      slow: c.filter((x) => x.latency_ms > SLOW_REPLY_MS).length,
+      slow: c.filter((x) => x.latency_ms > REPLY_AIM_MS).length,
     });
     const split = splitByPeriod(sessions.data.rows, range);
     const failedScoring = (rows: typeof split.current) => {
@@ -277,7 +274,7 @@ export function QualityScreen({
       const n = b.length;
       return {
         label,
-        avgLatency: n > 0 ? avgOf(b.map((x) => x.latency_ms)) : null,
+        medianLatency: n > 0 ? median(b.map((x) => x.latency_ms)) : null,
         p95Latency: n > 0 ? p95(b.map((x) => x.latency_ms)) : null,
         n,
       };
@@ -321,7 +318,7 @@ export function QualityScreen({
         errorPct: pct(errors, n),
         refusals,
         refusalPct: pct(refusals, n),
-        avgLatency: avgOf(latencies) ?? 0,
+        medianLatency: median(latencies) ?? 0,
         p95Latency: p95(latencies) ?? 0,
         cost: calls.reduce((a, x) => a + Number(x.cost_usd ?? 0), 0),
       };
@@ -554,19 +551,19 @@ export function QualityScreen({
                       contentStyle={CHART_TOOLTIP_STYLE}
                       formatter={(value: number | null, name: string) => [
                         fmtSecs(value),
-                        name === 'avgLatency' ? 'Typical reply' : 'Slowest 5% of replies',
+                        name === 'medianLatency' ? 'Typical reply' : 'Slowest 5% of replies',
                       ]}
                     />
                     <Legend
                       wrapperStyle={{ fontSize: 11 }}
                       formatter={(value: string) =>
-                        value === 'avgLatency' ? 'Typical reply' : 'Slowest 5% of replies'
+                        value === 'medianLatency' ? 'Typical reply' : 'Slowest 5% of replies'
                       }
                     />
                     <Line
                       type="monotone"
-                      dataKey="avgLatency"
-                      name="avgLatency"
+                      dataKey="medianLatency"
+                      name="medianLatency"
                       stroke={COLOR.info}
                       strokeWidth={2}
                       dot={{ r: 3, fill: COLOR.info }}
@@ -747,7 +744,7 @@ export function QualityScreen({
                   </div>
                   <div>
                     <div style={{ fontSize: 13, color: COLOR.inkSoft, fontFamily: 'var(--pbt-mono)' }}>
-                      {fmtSecs(j.avgLatency)}
+                      {fmtSecs(j.medianLatency)}
                     </div>
                     <div
                       style={{
