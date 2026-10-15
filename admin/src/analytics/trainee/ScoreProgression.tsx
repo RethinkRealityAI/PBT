@@ -4,6 +4,7 @@
  * as a muted reference — all on one 0–100 axis. Dots open the session.
  * "Table" shows the same numbers without hovering.
  */
+import { objectionLabel } from '../lib/objectionNames';
 import { useState } from 'react';
 import {
   CartesianGrid,
@@ -18,7 +19,6 @@ import {
 import { ScoreBadge } from '../../primitives';
 import { AdminDifficultyMeter } from '../../primitives/DifficultyMeter';
 import { COLOR } from '../../lib/tokens';
-import { pushbackLabel } from '../../lib/labels';
 import { difficultyLabel } from '../../lib/difficulty';
 import { CHART, Legend, tooltipStyle } from '../ui';
 import { dayLabel, shortDate, type ProgressPoint } from '../lib/traineeProfile';
@@ -119,7 +119,7 @@ export function ScoreProgression({
                 <div style={{ ...tooltipStyle, minWidth: 190 }}>
                   <div style={{ fontWeight: 800, color: COLOR.ink }}>{dayLabel(p.t, now)}</div>
                   <div style={{ color: COLOR.inkSoft, marginTop: 2 }}>
-                    {pushbackLabel(p.pushback_id, [], p.title ?? 'Session')}
+                    {objectionLabel(p.pushback_id, p.title ?? 'Session')}
                   </div>
                   {p.difficulty != null && (
                     <div style={{ color: COLOR.inkMute, marginTop: 1 }}>{difficultyLabel(p.difficulty)} owner</div>
@@ -245,7 +245,7 @@ function ProgressTable({
                 </button>
               </td>
               <td style={{ ...tdStyle, padding: '8px 12px' }}>
-                {pushbackLabel(p.pushback_id, [], p.title ?? 'Session')}
+                {objectionLabel(p.pushback_id, p.title ?? 'Session')}
               </td>
               <td style={{ ...tdStyle, padding: '8px 12px' }}>
                 {p.difficulty != null ? (

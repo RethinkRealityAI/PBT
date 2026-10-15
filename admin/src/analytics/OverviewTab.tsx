@@ -51,7 +51,7 @@ import { rollupTrainees, statusCounts } from './lib/trainees';
 import { overviewNarrative } from './lib/narrative';
 import { aiHealth, buildAttention, type AttentionTarget } from './lib/attention';
 import { firstActiveBucket, leaders, measured, practiceFunnel, trendExtras } from './lib/overview';
-import { useObjectionTitles } from './skills/useObjectionTitles';
+import { useObjectionTitles } from './objectionTitles';
 import { NarrativeHero } from './overview/Hero';
 import { AttentionPanel } from './overview/Attention';
 import { FunnelPanel, LeadersPanel } from './overview/People';

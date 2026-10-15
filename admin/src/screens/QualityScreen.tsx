@@ -110,7 +110,7 @@ const CHART_TOOLTIP_STYLE = {
   boxShadow: '0 8px 20px -8px rgba(60,20,15,0.18)',
 } as const;
 
-// ─── time bucketing (mirrors InsightsScreen's day/week granularity) ────
+// ─── time bucketing (day / week, like the Analytics tabs) ────
 
 interface BucketSet {
   labels: string[];
@@ -134,7 +134,7 @@ function bucketizeCalls(calls: AiCall[], range: Range): BucketSet {
 
   for (const call of calls) {
     // Clamp to 0 so clock-skewed created_at values land in the newest
-    // bucket instead of vanishing from the trend (mirrors InsightsScreen).
+    // bucket instead of vanishing from the trend (like the Analytics tabs).
     const ageDays = Math.max(0, Math.floor((now - new Date(call.created_at).getTime()) / DAY_MS));
     const ageBuckets = Math.floor(ageDays / bucketSizeDays);
     if (ageBuckets >= bucketCount) continue;

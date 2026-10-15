@@ -14,10 +14,13 @@
  * `invalidate(prefix)` is how a write (or a "Refresh" button) forces fresh data.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiError } from '../lib/api';
 
 interface Entry<T> {
   data?: T;
   error?: string | null;
+  /** HTTP status of a failed request (`ApiError`), so "not found" is a fact, not a guess at wording. */
+  errorStatus?: number | null;
   at: number;
   inflight?: Promise<T>;
 }
@@ -59,6 +62,7 @@ export function fetchCached<T>(key: string, fn: () => Promise<T>): Promise<T> {
       store.set(key, {
         data: prev?.data,
         error: err instanceof Error ? err.message : 'Query failed',
+        errorStatus: err instanceof ApiError ? err.status : null,
         at: Date.now(),
       });
       notify(key);
@@ -90,6 +94,8 @@ export interface CachedQueryState<T> {
   /** True while a background refresh runs behind data already on screen. */
   refreshing: boolean;
   error: string | null;
+  /** HTTP status behind `error` (404 = the record doesn't exist), or null. */
+  errorStatus: number | null;
   refetch: () => void;
   /** When the data on screen was fetched (ms epoch), or null before the first answer. */
   updatedAt: number | null;
@@ -136,7 +142,7 @@ export function useCachedQuery<T>(
   }, [key, rerender]);
 
   if (key == null) {
-    return { data: fallback, loading: false, refreshing: false, error: null, refetch, updatedAt: null };
+    return { data: fallback, loading: false, refreshing: false, error: null, errorStatus: null, refetch, updatedAt: null };
   }
   const entry = store.get(key) as Entry<T> | undefined;
   const hasData = entry?.data !== undefined;
@@ -148,6 +154,7 @@ export function useCachedQuery<T>(
     // A failed background refresh keeps the last good data on screen; only a
     // fetch that never produced data is an error state.
     error: hasData ? null : entry?.error ?? null,
+    errorStatus: hasData ? null : entry?.errorStatus ?? null,
     refetch,
     updatedAt: hasData ? entry!.at : null,
   };

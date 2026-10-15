@@ -8,8 +8,9 @@
  * when `isScored`. A failed scoring attempt is a finished session with no
  * score — it is never shown or exported as a 0.
  */
+import { objectionLabel } from './objectionNames';
 import type { OwnerMood, ScenarioSource, SessionSummary } from '../../../../src/shared/analytics/contract';
-import { ENDED_REASON_LABELS, MODE_LABELS, humanize, labelOf, pushbackLabel } from '../../lib/labels';
+import { ENDED_REASON_LABELS, MODE_LABELS, humanize, labelOf } from '../../lib/labels';
 import { difficultyLabel } from '../../lib/difficulty';
 import { SKILL_KEYS, SKILL_LABELS, isScored } from './metrics';
 import type { CsvValue } from './csv';
@@ -112,7 +113,7 @@ export function sessionTitle(s: SessionSummary): string {
   return (
     s.scenario_title?.trim() ||
     s.scenario_summary?.trim() ||
-    pushbackLabel(s.pushback_id, [], 'Practice session')
+    objectionLabel(s.pushback_id, 'Practice session')
   );
 }
 
@@ -124,7 +125,7 @@ export function sessionTitle(s: SessionSummary): string {
  */
 export function objectionIfDifferent(s: SessionSummary): string | null {
   if (!s.pushback_id) return null;
-  const label = pushbackLabel(s.pushback_id);
+  const label = objectionLabel(s.pushback_id);
   const title = sessionTitle(s).trim().toLowerCase();
   const l = label.trim().toLowerCase();
   if (!l || title === l || title.includes(l)) return null;
@@ -198,7 +199,7 @@ export function searchText(s: SessionSummary, traineeName: string): string {
     traineeName,
     s.scenario_title,
     s.scenario_summary,
-    s.pushback_id ? pushbackLabel(s.pushback_id) : null,
+    s.pushback_id ? objectionLabel(s.pushback_id) : null,
     s.breed,
     s.persona,
     s.difficulty != null ? difficultyLabel(s.difficulty) : null,
@@ -238,7 +239,7 @@ export function objectionOptions(rows: readonly SessionSummary[]): Array<{ value
   const counts = new Map<string, number>();
   for (const s of rows) if (s.pushback_id) counts.set(s.pushback_id, (counts.get(s.pushback_id) ?? 0) + 1);
   return [...counts.entries()]
-    .map(([value, count]) => ({ value, label: pushbackLabel(value), count }))
+    .map(([value, count]) => ({ value, label: objectionLabel(value), count }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
@@ -322,7 +323,7 @@ export function sessionsCsv(
       opts.nameOf(s.user_id),
       ...(opts.emailOf ? [opts.emailOf(s.user_id)] : []),
       sessionTitle(s),
-      s.pushback_id ? pushbackLabel(s.pushback_id) : '',
+      s.pushback_id ? objectionLabel(s.pushback_id) : '',
       SPECIES_LABELS[s.species] ?? '',
       s.breed ?? '',
       s.persona ?? '',

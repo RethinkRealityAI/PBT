@@ -13,9 +13,13 @@ import { SessionModal } from '../../screens/SessionModal';
 import { useToast } from '../../primitives/Toast';
 import { useSessionDetail } from '../data';
 
-/** A load failure that means "there is no such session", not "try again". */
-export function isMissingSession(error: string | null): boolean {
-  return error != null && /not found|must be a session uuid|\(404\)|\(400\)/i.test(error);
+/**
+ * A load failure that means "there is no such session", not "try again":
+ * the server's 404 (no row) or 400 (not a session id). Decided on the HTTP
+ * status the cache keeps, never on the wording of the message.
+ */
+export function isMissingSession(status: number | null): boolean {
+  return status === 404 || status === 400;
 }
 
 export function SessionDetail({
@@ -36,7 +40,7 @@ export function SessionDetail({
   const detail = useSessionDetail(id);
   const toast = useToast();
   const missing =
-    isMissingSession(detail.error) || (!detail.loading && detail.error == null && detail.updatedAt != null && detail.data == null);
+    isMissingSession(detail.errorStatus) || (!detail.loading && detail.error == null && detail.updatedAt != null && detail.data == null);
 
   // Close once per missing id — the toast must not repeat on every render.
   const handled = useRef<string | null>(null);

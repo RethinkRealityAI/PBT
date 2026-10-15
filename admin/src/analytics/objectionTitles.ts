@@ -1,5 +1,6 @@
 /**
- * Names for team-authored objections (`team:<slug>`) on the Skills tab.
+ * Names for team-authored objections (`team:<slug>`) across every Analytics
+ * tab.
  *
  * With `scenarios.read` the real titles come from `admin-objections`
  * (cached — the Studio's own store is separate); otherwise, or until that
@@ -8,11 +9,14 @@
  * the slug as a last resort).
  */
 import { useMemo } from 'react';
-import { useCachedQuery } from '../../data/cache';
-import { fetchObjections } from '../../scenario-studio/api';
-import { useAccess } from '../../primitives/access';
-import type { SessionSummary } from '../../../../src/shared/analytics/contract';
-import { teamObjectionTitles } from '../lib/skills';
+import { useCachedQuery } from '../data/cache';
+import { fetchObjections } from '../scenario-studio/api';
+import { useAccess } from '../primitives/access';
+import type { SessionSummary } from '../../../src/shared/analytics/contract';
+import { teamObjectionTitles } from './lib/skills';
+import { rememberObjectionTitles } from './lib/objectionNames';
+
+export { objectionLabel } from './lib/objectionNames';
 
 function parseTitles(raw: unknown): Array<{ id: string; title: string }> {
   const list = raw && typeof raw === 'object' ? (raw as { objections?: unknown }).objections : null;
@@ -29,9 +33,11 @@ function parseTitles(raw: unknown): Array<{ id: string; title: string }> {
 export function useObjectionTitles(rows: readonly SessionSummary[]): Array<{ id: string; title: string }> {
   const { can } = useAccess();
   const q = useCachedQuery<unknown>(can('scenarios.read') ? 'analytics:objection-titles' : null, fetchObjections, null, 5 * 60_000);
-  return useMemo(() => {
-    const known = parseTitles(q.data);
-    const ids = new Set(known.map((k) => k.id));
-    return [...known, ...teamObjectionTitles(rows).filter((t) => !ids.has(t.id))];
+  const titles = useMemo(() => {
+    const fetched = parseTitles(q.data);
+    const ids = new Set(fetched.map((k) => k.id));
+    return [...fetched, ...teamObjectionTitles(rows).filter((t) => !ids.has(t.id))];
   }, [q.data, rows]);
+  rememberObjectionTitles(titles);
+  return titles;
 }

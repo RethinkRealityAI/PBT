@@ -62,7 +62,7 @@ import {
   SplitsPanel,
   type CommentView,
 } from './skills/Panels';
-import { useObjectionTitles } from './skills/useObjectionTitles';
+import { useObjectionTitles } from './objectionTitles';
 import { TileRow } from './overview/TileRow';
 import './overview/styles';
 
@@ -187,6 +187,7 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
       difficulty,
       leftEarly,
       matchup,
+      matchupHasData: [...matchup.values()].some((v) => v.scored >= 2),
       pairing,
       noStyle,
       histogram: scoreHistogram(current),
@@ -398,11 +399,13 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   title="Communication styles"
                   subtitle="Average score by the trainee’s ECHO style and the AI owner’s"
                   footnote={
+                    m.matchupHasData && (
                     <>
                       Cells with fewer than 2 scored sessions show “—”.
                       {m.noStyle > 0 &&
                         ` ${m.noStyle} session${m.noStyle === 1 ? '' : 's'} by trainees without a quiz result ${m.noStyle === 1 ? 'is' : 'are'} left out.`}
                     </>
+                    )
                   }
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -414,7 +417,7 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                         <strong style={{ color: COLOR.ink }}>{Math.round(m.pairing.avgScore)}</strong> ({m.pairing.scored} sessions).
                       </div>
                     )}
-                    {[...m.matchup.values()].some((v) => v.scored >= 2) ? (
+                    {m.matchupHasData ? (
                       <MatchupGrid
                         drivers={DRIVER_KEYS}
                         cell={(t: DriverKey, o: DriverKey) => m.matchup.get(`${t}|${o}`)}

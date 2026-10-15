@@ -24,6 +24,7 @@ import { useToast } from '../primitives/Toast';
 import { downloadRagExport } from '../data/queries';
 import { COLOR } from '../lib/tokens';
 import { useSessionSummaries, useTraineeDirectory } from './data';
+import { useObjectionTitles } from './objectionTitles';
 import { Fact, GhostButton } from './ui';
 import { splitByPeriod, windows } from './lib/period';
 import { sessionStats } from './lib/metrics';
@@ -81,6 +82,8 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
   );
 
   const current = useMemo(() => splitByPeriod(summaries.data.rows, range).current, [summaries.data.rows, range]);
+  // Team objections by their real titles in the table, filters and CSV.
+  useObjectionTitles(summaries.data.rows);
   const { rows: filtered, chipBase } = useMemo(
     () => filterSessions(current, filters, query, nameOf),
     [current, filters, query, nameOf],

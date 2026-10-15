@@ -4,10 +4,10 @@
  * come from the window's own data where they vary (objections), so the
  * Objection list never offers something that can only return nothing.
  */
+import { objectionLabel } from '../lib/objectionNames';
 import type { SessionSummary } from '../../../../src/shared/analytics/contract';
 import { COLOR } from '../../lib/tokens';
 import { difficultyLabel } from '../../lib/difficulty';
-import { pushbackLabel } from '../../lib/labels';
 import { ChipFilter, SelectFilter } from '../ui';
 import {
   OUTCOME_FILTERS,
@@ -42,7 +42,7 @@ export function SessionFilterBar({
   const objections = objectionOptions(rows);
   // A choice made in another window stays selectable (and visibly selected) here.
   if (filters.objection !== 'all' && !objections.some((o) => o.value === filters.objection)) {
-    objections.push({ value: filters.objection, label: pushbackLabel(filters.objection), count: 0 });
+    objections.push({ value: filters.objection, label: objectionLabel(filters.objection), count: 0 });
   }
   const sources = (['library', 'studio', 'self-built', 'unknown'] as const).filter(
     (k) => k === filters.source || (k !== 'unknown' && rows.some((s) => s.scenario_source === k)),

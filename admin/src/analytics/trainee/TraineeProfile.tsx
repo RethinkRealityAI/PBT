@@ -9,6 +9,7 @@
  * difficulty, practice style and the calendar describe the whole history —
  * every panel says which.
  */
+import { objectionLabel } from '../lib/objectionNames';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AnalyticsTabProps } from '../AnalyticsDestination';
 import type { SessionSummary, TraineeDetail } from '../../../../src/shared/analytics/contract';
@@ -30,9 +31,9 @@ import {
   SCREEN_LABELS,
   humanize,
   labelOf,
-  pushbackLabel,
 } from '../../lib/labels';
 import { useSessionSummaries, useTraineeDetail } from '../data';
+import { useObjectionTitles } from '../objectionTitles';
 import { BarList, CHART, GhostButton, Legend, Panel, ShareBar, StatTile } from '../ui';
 import { compareWords, pctDelta, pointsDelta, rangeWords, splitByPeriod, windows, type Range } from '../lib/period';
 import {
@@ -82,8 +83,6 @@ const WITHHELD_LABELS: Record<TraineeDetail['withheld'][number], string> = {
   ai_usage: 'AI usage',
 };
 
-/** Identity colour for spoken (voice) sessions, beside typed = CHART.primary. */
-const SPOKEN = 'oklch(0.72 0.10 195)';
 
 /** The AI owner's mood at the end — calm tones, always with the words. */
 const MOOD_PARTS = [
@@ -96,6 +95,8 @@ export function TraineeProfile({ userId, range, onRange, onOpen, onNav }: Props)
   const { can } = useAccess();
   const detail = useTraineeDetail(userId);
   const team = useSessionSummaries(range);
+  // Team objections by their real titles in every table below.
+  useObjectionTitles(team.data.rows);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -106,7 +107,8 @@ export function TraineeProfile({ userId, range, onRange, onOpen, onNav }: Props)
 
   const d = detail.data;
   const notFound =
-    !detail.loading && (detail.error ? /not found|404/i.test(detail.error) : d == null && detail.updatedAt != null);
+    !detail.loading &&
+    (detail.error ? detail.errorStatus === 404 || detail.errorStatus === 400 : d == null && detail.updatedAt != null);
   const name = d ? displayName(d.profile) : notFound ? 'Trainee not found' : 'Trainee';
 
   const copyLink = () => {
@@ -444,7 +446,7 @@ function buildModel(detail: TraineeDetail, teamRows: SessionSummary[], range: Ra
     isNew: now - new Date(detail.profile.created_at).getTime() <= NEW_DAYS * DAY_MS,
     streak: streaks(sessions.map(sessionTime), now),
     notes: [
-      ...coachingNotes({ sessions, teamSkills, objectionLabel: (id) => pushbackLabel(id), now }),
+      ...coachingNotes({ sessions, teamSkills, objectionLabel: (id) => objectionLabel(id), now }),
       ...[
         gettingStartedNote({
           sessions: sessions.length,
@@ -766,7 +768,7 @@ function ObjectionsPanel({ model: m, now }: { model: Model; now: number }) {
         m.untried.length > 0 ? (
           <>
             <strong style={{ color: COLOR.inkSoft }}>Not tried yet:</strong>{' '}
-            {m.untried.map((id) => pushbackLabel(id)).join(' · ')}
+            {m.untried.map((id) => objectionLabel(id)).join(' · ')}
           </>
         ) : (
           'They’ve practised every built-in objection.'
@@ -798,7 +800,7 @@ function ObjectionsPanel({ model: m, now }: { model: Model; now: number }) {
               {m.objections.map((o) => (
                 <tr key={o.key}>
                   <td style={{ ...tdStyle, paddingLeft: 4, fontWeight: 650, color: COLOR.ink }}>
-                    {pushbackLabel(o.key)}
+                    {objectionLabel(o.key)}
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{o.sessions}</td>
                   <td style={{ ...tdStyle, textAlign: 'right' }}>
@@ -944,7 +946,7 @@ function PracticeStylePanel({ model: m }: { model: Model }) {
           <ShareBar
             parts={[
               { key: 'text', label: MODE_LABELS.text, value: s.typed, color: CHART.primary },
-              { key: 'voice', label: MODE_LABELS.voice, value: s.spoken, color: SPOKEN },
+              { key: 'voice', label: MODE_LABELS.voice, value: s.spoken, color: CHART.spoken },
             ]}
           />
         </div>
@@ -1051,7 +1053,7 @@ function RecentSessionsPanel({
 
 function SessionRow({ s, now, onOpen }: { s: SessionSummary; now: number; onOpen: () => void }) {
   const t = sessionTime(s);
-  const objection = pushbackLabel(s.pushback_id, [], 'Objection not recorded');
+  const objection = objectionLabel(s.pushback_id, 'Objection not recorded');
   const title = s.scenario_title && s.scenario_title !== objection ? s.scenario_title : objection;
   const pet = [s.species === 'cat' ? 'Cat' : 'Dog', s.breed].filter(Boolean).join(' · ');
   const sub = title !== objection ? `${objection} · ${pet}` : pet;
@@ -1217,7 +1219,7 @@ function ScenariosPanel({ rows, now }: { rows: NonNullable<TraineeDetail['scenar
               </div>
               <div style={{ fontSize: 11.5, color: COLOR.inkMute, marginTop: 1 }}>
                 {[
-                  pushbackLabel(r.pushback_id, [], ''),
+                  objectionLabel(r.pushback_id, ''),
                   r.species ? humanize(r.species) : null,
                   shortDate(new Date(r.created_at).getTime(), now),
                 ]
@@ -1478,7 +1480,7 @@ function sessionsCsv(sessions: readonly SessionSummary[]) {
   const mood = (m: SessionSummary['owner_mood_end']) => MOOD_PARTS.find((p) => p.key === m)?.label ?? '';
   const rows = sessions.map((s) => [
     new Date(sessionTime(s)).toISOString().replace('T', ' ').slice(0, 16),
-    pushbackLabel(s.pushback_id, [], ''),
+    objectionLabel(s.pushback_id, ''),
     s.scenario_title ?? '',
     s.species === 'cat' ? 'Cat' : 'Dog',
     s.breed ?? '',

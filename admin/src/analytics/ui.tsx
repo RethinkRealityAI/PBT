@@ -39,6 +39,11 @@ export const CHART = {
   track: 'oklch(0.955 0.008 40)',
   /** Team / benchmark reference marks. */
   benchmark: 'oklch(0.35 0.03 30)',
+  /**
+   * Identity for spoken (voice) sessions beside typed = `primary`. Teal, not
+   * the brand red, which reads as a warning.
+   */
+  spoken: 'oklch(0.72 0.10 195)',
 } as const;
 
 /** Score bands — status colours, used only where the colour means good/poor. */
