@@ -1,0 +1,321 @@
+/**
+ * The Sessions tab's explorer logic — outcome chips, filters, search, sort
+ * and the CSV export — kept pure so every rule is unit-tested
+ * (`__tests__/sessionsExplorer.test.ts`) and the tab only draws.
+ *
+ * Definitions match `metrics.ts` (the one place "finished" and "scored" are
+ * decided): a session FINISHED when `completed`; it has a real score only
+ * when `isScored`. A failed scoring attempt is a finished session with no
+ * score — it is never shown or exported as a 0.
+ */
+import type { OwnerMood, ScenarioSource, SessionSummary } from '../../../../src/shared/analytics/contract';
+import { ENDED_REASON_LABELS, MODE_LABELS, humanize, labelOf, pushbackLabel } from '../../lib/labels';
+import { difficultyLabel } from '../../lib/difficulty';
+import { SKILL_KEYS, SKILL_LABELS, isScored } from './metrics';
+import type { CsvValue } from './csv';
+
+// ─── Outcomes ──────────────────────────────────────────────────────────
+
+/** Below this a scored session counts as a low score (the "Needs work" band). */
+export const LOW_SCORE = 55;
+
+export type OutcomeFilter = 'all' | 'finished' | 'left' | 'failed' | 'low';
+
+export const OUTCOME_FILTERS: readonly OutcomeFilter[] = ['all', 'finished', 'left', 'failed', 'low'];
+
+export const OUTCOME_FILTER_LABELS: Record<OutcomeFilter, string> = {
+  all: 'All',
+  finished: 'Finished',
+  left: 'Left early',
+  failed: 'Scoring failed',
+  low: `Low score (under ${LOW_SCORE})`,
+};
+
+/** What happened to one session, as its row pill says it. */
+export type SessionOutcome = 'finished' | 'left' | 'failed';
+
+export function sessionOutcome(s: SessionSummary): SessionOutcome {
+  if (!s.completed) return 'left';
+  return s.score_unavailable ? 'failed' : 'finished';
+}
+
+/**
+ * The words on a row's outcome: "Finished", "Scoring failed", or why the
+ * session ended early ("Left early", "Timed out", "Ended by an error").
+ */
+export function outcomeWords(s: SessionSummary): string {
+  const o = sessionOutcome(s);
+  if (o === 'finished') return 'Finished';
+  if (o === 'failed') return 'Scoring failed';
+  // A row that says `completed` as its reason but isn't completed is still early.
+  if (!s.ended_reason || s.ended_reason === 'completed') return 'Left early';
+  return labelOf(ENDED_REASON_LABELS, s.ended_reason, 'Left early');
+}
+
+export function matchesOutcome(s: SessionSummary, f: OutcomeFilter): boolean {
+  switch (f) {
+    case 'all':
+      return true;
+    case 'finished':
+      return s.completed;
+    case 'left':
+      return !s.completed;
+    case 'failed':
+      return s.completed && s.score_unavailable;
+    case 'low':
+      return isScored(s) && (s.score_overall as number) < LOW_SCORE;
+  }
+}
+
+/** Count per outcome chip. Finished + Left early = All; the last two are subsets of Finished. */
+export function outcomeCounts(rows: readonly SessionSummary[]): Record<OutcomeFilter, number> {
+  const out: Record<OutcomeFilter, number> = { all: 0, finished: 0, left: 0, failed: 0, low: 0 };
+  for (const s of rows) for (const f of OUTCOME_FILTERS) if (matchesOutcome(s, f)) out[f]++;
+  return out;
+}
+
+// ─── Words for raw values ──────────────────────────────────────────────
+
+/** How the AI owner felt by the end of the conversation (its last message). */
+export const OWNER_ENDING_LABELS: Record<OwnerMood, string> = {
+  green: 'Won over',
+  yellow: 'Undecided',
+  red: 'Still upset',
+};
+
+/** Where the scenario came from — the filter's words. */
+export const SOURCE_LABELS: Record<ScenarioSource, string> = {
+  library: 'Built-in library',
+  studio: 'Scenario Studio',
+  'self-built': 'Built by the trainee',
+  unknown: 'Not recorded',
+};
+
+/** The same, short enough for a table row's muted line. */
+export const SOURCE_SHORT: Record<ScenarioSource, string> = {
+  library: 'Built-in',
+  studio: 'Studio',
+  'self-built': 'Self-built',
+  unknown: '',
+};
+
+export const SPECIES_LABELS: Record<'dog' | 'cat', string> = { dog: 'Dog', cat: 'Cat' };
+
+/** The scenario as a person reads it: its title, else its summary, else its objection. */
+export function sessionTitle(s: SessionSummary): string {
+  return (
+    s.scenario_title?.trim() ||
+    s.scenario_summary?.trim() ||
+    pushbackLabel(s.pushback_id, [], 'Practice session')
+  );
+}
+
+/** "Dog · Labrador Retriever · Skeptical owner · Built-in". */
+export function scenarioContext(s: SessionSummary): string {
+  return [
+    SPECIES_LABELS[s.species] ?? null,
+    s.breed?.trim() || null,
+    s.persona?.trim() ? `${s.persona.trim()} owner` : null,
+    SOURCE_SHORT[s.scenario_source] || null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** "4m 12s" — a session's length. */
+export function fmtLength(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return '—';
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r ? `${m}m ${r}s` : `${m}m`;
+}
+
+// ─── Filters ───────────────────────────────────────────────────────────
+
+export interface SessionFilters {
+  outcome: OutcomeFilter;
+  mode: 'all' | 'text' | 'voice';
+  /** 'all' or a level 1–4, as a string (it comes from a <select>). */
+  difficulty: string;
+  /** 'all' or a pushback id. */
+  objection: string;
+  species: 'all' | 'dog' | 'cat';
+  source: 'all' | ScenarioSource;
+}
+
+export const NO_FILTERS: SessionFilters = {
+  outcome: 'all',
+  mode: 'all',
+  difficulty: 'all',
+  objection: 'all',
+  species: 'all',
+  source: 'all',
+};
+
+export function activeFilterCount(f: SessionFilters): number {
+  return (Object.keys(NO_FILTERS) as Array<keyof SessionFilters>).filter((k) => f[k] !== NO_FILTERS[k]).length;
+}
+
+/** Every filter but the outcome chip — the chips count within these. */
+export function matchesSelects(s: SessionSummary, f: SessionFilters): boolean {
+  if (f.mode !== 'all' && s.mode !== f.mode) return false;
+  if (f.difficulty !== 'all' && String(s.difficulty ?? '') !== f.difficulty) return false;
+  if (f.objection !== 'all' && (s.pushback_id ?? '') !== f.objection) return false;
+  if (f.species !== 'all' && s.species !== f.species) return false;
+  if (f.source !== 'all' && s.scenario_source !== f.source) return false;
+  return true;
+}
+
+/** Everything a search box should find a session by, lower-cased. */
+export function searchText(s: SessionSummary, traineeName: string): string {
+  return [
+    traineeName,
+    s.scenario_title,
+    s.scenario_summary,
+    s.pushback_id ? pushbackLabel(s.pushback_id) : null,
+    s.breed,
+    s.persona,
+    s.difficulty != null ? difficultyLabel(s.difficulty) : null,
+    SPECIES_LABELS[s.species],
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+/** Every word of the query must appear somewhere ("cat hostile" narrows, not widens). */
+export function matchesQuery(s: SessionSummary, traineeName: string, query: string): boolean {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const hay = searchText(s, traineeName);
+  return terms.every((t) => hay.includes(t));
+}
+
+/**
+ * Rows the table shows, and the rows the outcome chips count over (every
+ * filter applied except the chip itself, so a chip's count is what you'd get
+ * by clicking it).
+ */
+export function filterSessions(
+  rows: readonly SessionSummary[],
+  f: SessionFilters,
+  query: string,
+  nameOf: (userId: string) => string,
+): { rows: SessionSummary[]; chipBase: SessionSummary[] } {
+  const chipBase = rows.filter((s) => matchesSelects(s, f) && matchesQuery(s, nameOf(s.user_id), query));
+  return { rows: chipBase.filter((s) => matchesOutcome(s, f.outcome)), chipBase };
+}
+
+/** The objections present in the data, as select options, by label. */
+export function objectionOptions(rows: readonly SessionSummary[]): Array<{ value: string; label: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const s of rows) if (s.pushback_id) counts.set(s.pushback_id, (counts.get(s.pushback_id) ?? 0) + 1);
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, label: pushbackLabel(value), count }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// ─── Sort ──────────────────────────────────────────────────────────────
+
+export type SortKey = 'when' | 'score' | 'length';
+export type SortDir = 'asc' | 'desc';
+
+function sortValue(s: SessionSummary, key: SortKey): number | null {
+  switch (key) {
+    case 'when':
+      return new Date(s.created_at).getTime();
+    case 'score':
+      return isScored(s) ? (s.score_overall as number) : null;
+    case 'length':
+      return s.duration_seconds != null && s.duration_seconds > 0 ? s.duration_seconds : null;
+  }
+}
+
+/** A sorted copy. Rows with no value (unscored, no length) go last either way; ties newest first. */
+export function sortSessions(rows: readonly SessionSummary[], key: SortKey, dir: SortDir): SessionSummary[] {
+  const sign = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = sortValue(a, key);
+    const vb = sortValue(b, key);
+    if (va == null && vb != null) return 1;
+    if (vb == null && va != null) return -1;
+    if (va != null && vb != null && va !== vb) return (va - vb) * sign;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+}
+
+// ─── Export ────────────────────────────────────────────────────────────
+
+/** "2026-10-10 15:04" in the reader's time zone — what a spreadsheet sorts on. */
+export function localStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * The filtered sessions as a spreadsheet: plain-English headers, words not
+ * ids, a blank score when there is no real one (never a stand-in 0), and the
+ * five skills. `emailOf` adds an Email column — pass it only when the caller
+ * may see emails.
+ */
+export function sessionsCsv(
+  rows: readonly SessionSummary[],
+  opts: { nameOf: (userId: string) => string; emailOf?: (userId: string) => string | null },
+): { header: string[]; rows: CsvValue[][] } {
+  const header = [
+    'Date and time',
+    'Trainee',
+    ...(opts.emailOf ? ['Email'] : []),
+    'Scenario',
+    'Objection',
+    'Animal',
+    'Breed',
+    'Owner persona',
+    'Owner communication style',
+    'Scenario source',
+    'Difficulty',
+    'Mode',
+    'Outcome',
+    'Length (minutes)',
+    'Messages',
+    'Coach hints used',
+    'Median reply time (seconds)',
+    'Words per reply',
+    'Owner by the end',
+    'Score',
+    ...SKILL_KEYS.map((k) => SKILL_LABELS[k]),
+    'Session ID',
+  ];
+  const out = rows.map((s): CsvValue[] => {
+    const scored = isScored(s);
+    return [
+      localStamp(s.created_at),
+      opts.nameOf(s.user_id),
+      ...(opts.emailOf ? [opts.emailOf(s.user_id)] : []),
+      sessionTitle(s),
+      s.pushback_id ? pushbackLabel(s.pushback_id) : '',
+      SPECIES_LABELS[s.species] ?? '',
+      s.breed ?? '',
+      s.persona ?? '',
+      s.owner_driver ? humanize(s.owner_driver) : '',
+      SOURCE_LABELS[s.scenario_source],
+      s.difficulty != null ? difficultyLabel(s.difficulty) : '',
+      s.mode ? labelOf(MODE_LABELS, s.mode) : '',
+      outcomeWords(s),
+      s.duration_seconds != null && s.duration_seconds > 0 ? Math.round((s.duration_seconds / 60) * 10) / 10 : null,
+      s.turns,
+      s.hints_used,
+      s.reply_seconds_median,
+      s.staff_words_avg,
+      s.owner_mood_end ? OWNER_ENDING_LABELS[s.owner_mood_end] : '',
+      scored ? s.score_overall : null,
+      ...SKILL_KEYS.map((k) => (scored && s.skills ? s.skills[k] : null)),
+      s.id,
+    ];
+  });
+  return { header, rows: out };
+}

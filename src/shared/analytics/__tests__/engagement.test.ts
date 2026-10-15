@@ -318,8 +318,8 @@ describe('app_open context', () => {
       { value: 'dark', visitors: 1 },
       { value: 'system', visitors: 1 },
     ]);
-    // app_open is also an action (app opens).
-    expect(r.actions.find((a) => a.action === 'app_open')?.count).toBe(4);
+    // app_open is also an action (app opens), whatever its meta.
+    expect(r.actions.find((a) => a.action === 'app_open')?.count).toBe(5);
   });
 
   it('is empty until the event ships', () => {
