@@ -183,15 +183,19 @@ export interface SessionSaveRequest extends AiRequestMeta {
 
 export interface SessionSaveResponse {
   persisted: boolean;
-  /** Why nothing was written, when `persisted` is false. */
-  skipped?: 'signed_in' | 'opted_out' | 'preview' | 'not_owner' | 'failed';
+  /**
+   * Why nothing was written, when `persisted` is false. `limit` = this device
+   * already created its daily allowance of rows (`ANON_DAILY_CAP`).
+   */
+  skipped?: 'signed_in' | 'opted_out' | 'preview' | 'not_owner' | 'limit' | 'failed';
 }
 
 /**
  * `session-save` with `claim: true` — a trainee who practised anonymously and
  * then signed in hands over the ids of the sessions in their device's local
  * history; the anonymous rows of THAT device among them become theirs.
- * Signed-in callers only.
+ * Signed-in callers only. A database failure is an error status (not an empty
+ * list), so the app knows it cannot tell its rows apart and skips the upload.
  */
 export interface SessionClaimRequest {
   claim: true;

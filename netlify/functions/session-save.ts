@@ -23,7 +23,13 @@
  *     local history — the same sessions the sign-up backfill uploads, so a
  *     shared device behaves exactly as before.
  *
- * Rate-limited per IP; the body is bounded like `ai-evaluate`'s.
+ * Abuse bounds (the endpoint is open to anyone, like the rest of the
+ * anonymous-first app): per-IP rate limits (recording and claiming have their
+ * own buckets, so a clinic behind one IP can't lose a claim to its own
+ * recording), a 128 KB body (a real 16-turn session is a few KB; turns are
+ * capped by `sanitizeTurns`) and at most `ANON_DAILY_CAP` new rows per device
+ * a day. Writes are ownership-guarded in the statement itself
+ * (`writeAnonymousSession`), so a claim racing a save can't be undone.
  */
 import {
   aiError,
@@ -35,7 +41,7 @@ import {
   sanitizeScenario,
   sanitizeTurns,
 } from './_shared/ai';
-import { checkSessionOwner, ownerColumns } from './_shared/anonSessions';
+import { writeAnonymousSession } from './_shared/anonSessions';
 import { scenarioSummaryLine } from '../../src/data/scenarioSummary';
 import { MODEL_LIVE, MODEL_TEXT } from '../../src/shared/ai/models';
 import {
@@ -48,7 +54,7 @@ import {
 } from '../../src/shared/ai/contract';
 import { isLocale } from '../../src/i18n/locales';
 
-const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_BODY_BYTES = 128 * 1024;
 /** Sessions one claim may hand over (the app keeps at most 50 locally). */
 export const CLAIM_MAX = 100;
 /** Longest session we'll record (voice is capped at 5 min; text has no hard cap). */
@@ -60,7 +66,7 @@ type ClaimRequest = SessionClaimRequest;
 type ClaimResponse = SessionClaimResponse;
 
 async function claim(
-  sb: Parameters<typeof checkSessionOwner>[0],
+  sb: Parameters<typeof writeAnonymousSession>[0],
   userId: string,
   body: Partial<ClaimRequest>,
 ): Promise<Response> {
@@ -76,7 +82,7 @@ async function claim(
     .select('id, origin');
   if (error) {
     console.warn('[session-save] claim failed', error.message);
-    return ok<ClaimResponse>({ claimed: [] });
+    return aiError(500, 'server', 'Could not claim sessions');
   }
   const rows = (data ?? []) as Array<{ id: string; origin?: string | null }>;
   return ok<ClaimResponse>({
@@ -85,12 +91,15 @@ async function claim(
 }
 
 export default async (req: Request): Promise<Response> => {
-  const limited = rateLimit(req, 'session-save', { limit: 20, windowMs: 60_000 });
-  if (limited) return limited;
-
   const parsed = await parseJsonBody<SessionSaveRequest | ClaimRequest>(req, MAX_BODY_BYTES);
   if (parsed instanceof Response) return parsed;
   const body = parsed.body as Partial<SessionSaveRequest> & Partial<ClaimRequest>;
+
+  const limited =
+    body.claim === true
+      ? rateLimit(req, 'session-claim', { limit: 10, windowMs: 60_000 })
+      : rateLimit(req, 'session-save', { limit: 20, windowMs: 60_000 });
+  if (limited) return limited;
 
   const caller = await readCaller(req);
   if (caller instanceof Response) return caller;
@@ -121,36 +130,23 @@ export default async (req: Request): Promise<Response> => {
     ? Math.max(0, Math.min(MAX_DURATION_SECONDS, Math.round(duration)))
     : null;
 
-  const owner = { anonId: body.anonSessionId };
-  const ownership = await checkSessionOwner(caller.sb, body.sessionId, owner);
-  if (ownership === 'not_owner') return skip('not_owner');
-  if (ownership === 'error') return skip('failed');
-
-  // No score columns: only `ai-evaluate` writes those, and an upsert leaves
-  // the columns it doesn't name untouched, so a score already written stays.
-  const { error } = await caller.sb.from('training_sessions').upsert(
-    {
-      id: body.sessionId,
-      ...ownerColumns(owner),
-      origin: 'app',
-      scenario: scenario as unknown as Record<string, unknown>,
-      transcript: transcript as unknown as Record<string, unknown>[],
-      duration_seconds: durationSeconds,
-      mode,
-      completed: body.completed === true,
-      ended_reason: endedReason,
-      pushback_id: scenario.pushback.id,
-      driver: scenario.suggestedDriver,
-      scenario_summary: scenarioSummaryLine(scenario),
-      model_id: mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
-      turns: transcript.length,
-      locale: isLocale(body.locale) ? body.locale : null,
-    },
-    { onConflict: 'id' },
-  );
-  if (error) {
-    console.warn('[session-save] upsert failed', error.message);
-    return skip('failed');
-  }
-  return ok<SessionSaveResponse>({ persisted: true });
+  // No score columns: only `ai-evaluate` writes those, and a write leaves the
+  // columns it doesn't name untouched, so a score already written stays.
+  const written = await writeAnonymousSession(caller.sb, body.sessionId, body.anonSessionId, {
+    origin: 'app',
+    scenario: scenario as unknown as Record<string, unknown>,
+    transcript: transcript as unknown as Record<string, unknown>[],
+    duration_seconds: durationSeconds,
+    mode,
+    completed: body.completed === true,
+    ended_reason: endedReason,
+    pushback_id: scenario.pushback.id,
+    driver: scenario.suggestedDriver,
+    scenario_summary: scenarioSummaryLine(scenario),
+    model_id: mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
+    turns: transcript.length,
+    locale: isLocale(body.locale) ? body.locale : null,
+  });
+  if (written === 'ok') return ok<SessionSaveResponse>({ persisted: true });
+  return skip(written === 'error' ? 'failed' : written);
 };

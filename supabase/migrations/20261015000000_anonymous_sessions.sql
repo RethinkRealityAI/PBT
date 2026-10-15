@@ -38,8 +38,21 @@
 -- VOICE sessions before this release logged no `session_open`, so they cannot
 -- be rebuilt (their AI usage is still in `ai_call_telemetry`).
 --
--- Apply BEFORE deploying the code that selects these columns
--- (`admin-sessions`, `admin-analytics`). Safe to re-run.
+-- `nav_events` is anonymous-insertable and its timestamps come from the
+-- browser, so the backfill trusts nothing it reads:
+--   • only events between the product's first release (2026-05-01) and the
+--     release cutoff (2026-10-16 00:00 UTC), so a later re-run never rebuilds
+--     a session this release recorded or failed to record;
+--   • a leave or scorecard moment counts only within 6 hours after the open
+--     (otherwise the ending stays unknown);
+--   • durations are clamped to 0–6 h before the integer cast;
+--   • the objection id is at most 65 characters.
+--
+-- Apply BEFORE deploying this release. The code writes and reads these
+-- columns everywhere sessions are saved, not only in the admin: on a database
+-- without them, signed-in session saves (`locale`), scores (`ai-evaluate`),
+-- the sign-in backfill (`origin`), `session-save` and Analytics → Sessions all
+-- fail. `npm run verify:db` reports the missing columns. Safe to re-run.
 
 do $$
 begin
@@ -128,7 +141,9 @@ begin
       and n.anon_session_id is not null
       and char_length(n.anon_session_id) between 8 and 64
       and n.meta->>'sessionId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-      and n.created_at <= now()
+      and char_length(n.meta->>'scenario') between 1 and 65
+      and n.created_at >= timestamptz '2026-05-01 00:00:00+00'
+      and n.created_at < least(now(), timestamptz '2026-10-16 00:00:00+00')
     group by 1
   ),
   sequenced as (
@@ -141,18 +156,21 @@ begin
       (n.meta->>'sessionId')::uuid as id,
       min(n.created_at) as left_at,
       (array_agg(n.meta->>'reason' order by n.created_at))[1] as reason,
-      max(case when (n.meta->>'turns') ~ '^[0-9]{1,4}$' then (n.meta->>'turns')::int end) as turns
+      max(case when (n.meta->>'turns') ~ '^[0-9]{1,3}$' then (n.meta->>'turns')::int end) as turns
     from public.nav_events n
     where n.target = 'session_abandon'
       and n.meta->>'sessionId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      and n.created_at < least(now(), timestamptz '2026-10-16 00:00:00+00')
     group by 1
   ),
   rebuilt as (
     select
       s.*,
-      a.left_at,
+      -- A leave stamped before the open or more than 6 h after it is clock
+      -- skew or forged — ignored, so the ending stays unknown.
+      case when a.left_at > s.opened_at and a.left_at <= s.opened_at + interval '6 hours' then a.left_at end as left_at,
       a.reason,
-      a.turns,
+      case when a.left_at > s.opened_at and a.left_at <= s.opened_at + interval '6 hours' then a.turns end as turns,
       (
         select min(v.created_at)
         from public.nav_events v
@@ -160,7 +178,11 @@ begin
           and v.event_type = 'screen_view'
           and v.screen = 'stats'
           and v.created_at > s.opened_at
-          and v.created_at < least(coalesce(s.next_open, 'infinity'::timestamptz), s.opened_at + interval '90 minutes')
+          and v.created_at < least(
+            coalesce(s.next_open, 'infinity'::timestamptz),
+            s.opened_at + interval '90 minutes',
+            timestamptz '2026-10-16 00:00:00+00'
+          )
       ) as scored_at
     from sequenced s
     left join abandons a on a.id = s.id
@@ -188,11 +210,13 @@ begin
     r.pushback_id,
     case when r.driver in ('Activator', 'Energizer', 'Analyzer', 'Harmonizer') then r.driver end,
     r.turns,
+    -- Clamped BEFORE the cast: an out-of-range epoch must never abort the
+    -- migration with "integer out of range".
     case
       when r.left_at is not null and (r.scored_at is null or r.left_at < r.scored_at)
-        then greatest(0, extract(epoch from (r.left_at - r.opened_at))::int)
+        then least(greatest(extract(epoch from (r.left_at - r.opened_at)), 0), 21600)::int
       when r.scored_at is not null
-        then greatest(0, extract(epoch from (r.scored_at - r.opened_at))::int)
+        then least(greatest(extract(epoch from (r.scored_at - r.opened_at)), 0), 21600)::int
     end,
     coalesce(
       case when r.left_at is not null and (r.scored_at is null or r.left_at < r.scored_at) then r.left_at end,

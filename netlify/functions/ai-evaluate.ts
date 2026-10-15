@@ -59,7 +59,12 @@ import {
 } from '../../src/shared/ai/contract';
 import { estimateCostUsd, estimateTokens } from '../../src/shared/ai/telemetryHeuristics';
 import { DEFAULT_LOCALE, isLocale, type Locale } from '../../src/i18n/locales';
-import { checkSessionOwner, ownerColumns, type SessionOwner } from './_shared/anonSessions';
+import {
+  checkSessionOwner,
+  ownerColumns,
+  writeAnonymousSession,
+  type SessionOwner,
+} from './_shared/anonSessions';
 import type { ChatMessage, ScoreReport } from '../../src/services/types';
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -215,41 +220,46 @@ interface PersistArgs {
 /**
  * Write the score into the caller's own row. Ownership guard first: a
  * client-supplied `sessionId` must never let one user (or device) overwrite
- * another's session. `duration_seconds` is deliberately not sent — the client
- * (or `session-save`) fills it with its own upsert, which omits the score
- * columns.
+ * another's session — for a device the guard is inside the write itself
+ * (`writeAnonymousSession`: still anonymous, same device, daily row cap).
+ * `duration_seconds` is deliberately not sent — the client (or
+ * `session-save`) fills it with its own write, which omits the score columns.
  */
 async function persistScore(sb: SupabaseClient, args: PersistArgs): Promise<boolean> {
-  const ownership = await checkSessionOwner(sb, args.sessionId, args.owner);
-  if (ownership !== 'ok') {
-    if (ownership === 'not_owner') {
-      console.warn('[ai-evaluate] refusing to write a score into another owner\'s session', {
-        sessionId: args.sessionId,
-      });
-    }
+  const fields = {
+    ...(args.locale ? { locale: args.locale } : {}),
+    scenario: args.scenario as unknown as Record<string, unknown>,
+    transcript: args.transcript as unknown as Record<string, unknown>[],
+    score_report: args.report as unknown as Record<string, unknown>,
+    score_overall: args.report.overall,
+    mode: args.mode,
+    model_id: args.mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
+    turns: args.transcript.length,
+    completed: true,
+    ended_reason: 'completed',
+    pushback_id: args.scenario.pushback.id,
+    driver: args.scenario.suggestedDriver,
+    scenario_summary: scenarioSummaryLine(args.scenario),
+  };
+  const refuse = () => {
+    console.warn('[ai-evaluate] refusing to write a score into another owner\'s session', {
+      sessionId: args.sessionId,
+    });
     return false;
+  };
+
+  if ('anonId' in args.owner) {
+    const written = await writeAnonymousSession(sb, args.sessionId, args.owner.anonId, fields);
+    if (written === 'not_owner') return refuse();
+    return written === 'ok';
   }
 
-  const { error } = await sb.from('training_sessions').upsert(
-    {
-      id: args.sessionId,
-      ...ownerColumns(args.owner),
-      ...(args.locale ? { locale: args.locale } : {}),
-      scenario: args.scenario as unknown as Record<string, unknown>,
-      transcript: args.transcript as unknown as Record<string, unknown>[],
-      score_report: args.report as unknown as Record<string, unknown>,
-      score_overall: args.report.overall,
-      mode: args.mode,
-      model_id: args.mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
-      turns: args.transcript.length,
-      completed: true,
-      ended_reason: 'completed',
-      pushback_id: args.scenario.pushback.id,
-      driver: args.scenario.suggestedDriver,
-      scenario_summary: scenarioSummaryLine(args.scenario),
-    },
-    { onConflict: 'id' },
-  );
+  const ownership = await checkSessionOwner(sb, args.sessionId, args.owner);
+  if (ownership !== 'ok') return ownership === 'not_owner' ? refuse() : false;
+
+  const { error } = await sb
+    .from('training_sessions')
+    .upsert({ id: args.sessionId, ...ownerColumns(args.owner), ...fields }, { onConflict: 'id' });
   if (error) {
     console.warn('[ai-evaluate] score upsert failed', error.message);
     return false;

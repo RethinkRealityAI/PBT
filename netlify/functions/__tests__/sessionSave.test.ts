@@ -4,13 +4,20 @@
  * Supabase is the chainable fake; no AI call is involved.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { jsonRequest, makeFakeSupabase, setFunctionEnv, type FakeSupabase } from './fakeSupabase';
+import {
+  anonSessionsTable,
+  jsonRequest,
+  makeFakeSupabase,
+  setFunctionEnv,
+  type FakeSupabase,
+} from './fakeSupabase';
 
 const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 
 import save from '../session-save';
 import { __resetRateLimits } from '../_shared/ai';
+import { ANON_DAILY_CAP } from '../_shared/anonSessions';
 import { SEED_SCENARIOS } from '../../../src/data/scenarios';
 import { MODEL_LIVE, MODEL_TEXT } from '../../../src/shared/ai/models';
 
@@ -57,17 +64,22 @@ beforeEach(() => {
 
 describe('session-save · record', () => {
   it('writes an anonymous row owned by the device — conversation, language, no score', async () => {
+    sb.setHandler('training_sessions', anonSessionsTable(SESSION));
     const res = await save(jsonRequest('session-save', body()));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ persisted: true });
 
     const calls = sb.callsFor('training_sessions');
-    expect(calls).toHaveLength(2);
-    expect(calls[0].ops.map((o) => o.op)).toEqual(['select', 'eq', 'maybeSingle']);
-    const upsert = calls[1].ops[0];
-    expect(upsert.op).toBe('upsert');
-    expect(upsert.args[1]).toEqual({ onConflict: 'id' });
-    const row = upsert.args[0] as Record<string, unknown>;
+    // guarded update (no row yet) → the device's daily cap → insert-if-absent
+    expect(calls.map((c) => c.ops[0].op)).toEqual(['update', 'select', 'upsert']);
+    expect(calls[1].ops).toEqual([
+      { op: 'select', args: ['id', { count: 'exact', head: true }] },
+      { op: 'eq', args: ['anon_session_id', DEVICE] },
+      { op: 'gte', args: ['created_at', expect.any(String)] },
+    ]);
+    const insert = calls[2].ops[0];
+    expect(insert.args[1]).toEqual({ onConflict: 'id', ignoreDuplicates: true });
+    const row = insert.args[0] as Record<string, unknown>;
     expect(row).toMatchObject({
       id: SESSION,
       user_id: null,
@@ -90,8 +102,9 @@ describe('session-save · record', () => {
   });
 
   it('records an abandoned voice session', async () => {
+    sb.setHandler('training_sessions', anonSessionsTable(SESSION));
     await save(jsonRequest('session-save', body({ mode: 'voice', completed: false, endedReason: 'user_exit' })));
-    const row = sb.callsFor('training_sessions')[1].ops[0].args[0] as Record<string, unknown>;
+    const row = sb.callsFor('training_sessions')[2].ops[0].args[0] as Record<string, unknown>;
     expect(row).toMatchObject({ mode: 'voice', model_id: MODEL_LIVE, completed: false, ended_reason: 'user_exit' });
   });
 
@@ -109,26 +122,34 @@ describe('session-save · record', () => {
   });
 
   it('never touches a row owned by an account or by another device', async () => {
-    for (const existing of [
-      { user_id: 'user-9', anon_session_id: null },
-      { user_id: null, anon_session_id: 'another-device-id' },
-    ]) {
-      sb = makeFakeSupabase({ training_sessions: () => ({ data: existing, error: null }) });
-      mocks.createClient.mockImplementation(() => sb.client);
-      const res = await save(jsonRequest('session-save', body()));
-      expect(await res.json()).toEqual({ persisted: false, skipped: 'not_owner' });
-      expect(sb.callsFor('training_sessions')).toHaveLength(1);
-    }
+    sb.setHandler('training_sessions', anonSessionsTable(SESSION, { taken: true }));
+    const res = await save(jsonRequest('session-save', body()));
+    expect(await res.json()).toEqual({ persisted: false, skipped: 'not_owner' });
+    // update (no match) → cap → insert (conflict) → update again (no match)
+    expect(sb.callsFor('training_sessions').map((c) => c.ops[0].op)).toEqual(['update', 'select', 'upsert', 'update']);
   });
 
-  it('updates its own device row again (e.g. after the score was written)', async () => {
-    sb.setHandler('training_sessions', (call) =>
-      call.ops[0].op === 'select'
-        ? { data: { user_id: null, anon_session_id: DEVICE }, error: null }
-        : { data: null, error: null },
-    );
+  it('updates its own device row in place, guarded in the statement (a claim racing it wins)', async () => {
+    sb.setHandler('training_sessions', anonSessionsTable(SESSION, { own: true }));
     const res = await save(jsonRequest('session-save', body()));
     expect(await res.json()).toEqual({ persisted: true });
+    const calls = sb.callsFor('training_sessions');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].ops.slice(1, 4)).toEqual([
+      { op: 'eq', args: ['id', SESSION] },
+      { op: 'is', args: ['user_id', null] },
+      { op: 'eq', args: ['anon_session_id', DEVICE] },
+    ]);
+    const fields = calls[0].ops[0].args[0] as Record<string, unknown>;
+    expect(fields).not.toHaveProperty('user_id');
+    expect(fields).not.toHaveProperty('anon_session_id');
+  });
+
+  it('stops creating rows once the device reached its daily cap', async () => {
+    sb.setHandler('training_sessions', anonSessionsTable(SESSION, { recent: ANON_DAILY_CAP }));
+    const res = await save(jsonRequest('session-save', body()));
+    expect(await res.json()).toEqual({ persisted: false, skipped: 'limit' });
+    expect(sb.callsFor('training_sessions').map((c) => c.ops[0].op)).toEqual(['update', 'select']);
   });
 
   it('rejects malformed input with 400', async () => {
@@ -146,18 +167,30 @@ describe('session-save · record', () => {
     expect(sb.callsFor('training_sessions')).toHaveLength(0);
   });
 
+  it('refuses a body over 128 KB', async () => {
+    const long = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'user' : 'ai', text: 'x'.repeat(4000), timestamp: i }));
+    const res = await save(jsonRequest('session-save', body({ transcript: long })));
+    expect(res.status).toBe(413);
+    expect(sb.callsFor('training_sessions')).toHaveLength(0);
+  });
+
   it('reports a failed write without throwing', async () => {
     sb.setHandler('training_sessions', (call) =>
-      call.ops[0].op === 'upsert' ? { data: null, error: { message: 'boom' } } : { data: null, error: null },
+      call.ops[0].op === 'update' ? { data: null, error: { message: 'boom' } } : { data: null, error: null },
     );
     const res = await save(jsonRequest('session-save', body()));
     expect(await res.json()).toEqual({ persisted: false, skipped: 'failed' });
   });
 
-  it('is rate-limited per IP', async () => {
+  it('is rate-limited per IP, separately from claims', async () => {
     let last: Response | null = null;
     for (let i = 0; i < 21; i++) last = await save(jsonRequest('session-save', body()));
     expect(last?.status).toBe(429);
+    const headers = signIn('user-1');
+    const claimed = await save(
+      jsonRequest('session-save', { claim: true, anonSessionId: DEVICE, sessionIds: [SESSION] }, { headers }),
+    );
+    expect(claimed.status).toBe(200);
   });
 });
 
@@ -196,7 +229,7 @@ describe('session-save · claim', () => {
     expect(ops[3]).toEqual({ op: 'eq', args: ['anon_session_id', DEVICE] });
   });
 
-  it('claims nothing without valid ids and survives a failed update', async () => {
+  it('claims nothing without valid ids; a failed update is an error, not an empty list', async () => {
     const headers = signIn('user-1');
     const none = await save(jsonRequest('session-save', { claim: true, anonSessionId: DEVICE, sessionIds: ['x'] }, { headers }));
     expect(await none.json()).toEqual({ claimed: [] });
@@ -206,6 +239,7 @@ describe('session-save · claim', () => {
     const failed = await save(
       jsonRequest('session-save', { claim: true, anonSessionId: DEVICE, sessionIds: [SESSION] }, { headers }),
     );
-    expect(await failed.json()).toEqual({ claimed: [] });
+    // The app can't tell its rows apart without the claim, so it must know.
+    expect(failed.status).toBe(500);
   });
 });
