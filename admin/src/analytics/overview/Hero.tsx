@@ -8,7 +8,6 @@ import { Eyebrow } from '../../primitives';
 import { COLOR } from '../../lib/tokens';
 import { CHART } from '../ui';
 import type { NarrativeSentence } from '../lib/narrative';
-import { narrativeText } from '../lib/narrative';
 import { STATUS_HELP, STATUS_LABELS, type TraineeStatus } from '../lib/trainees';
 import './styles';
 
@@ -42,7 +41,6 @@ export function NarrativeHero({
         <div style={{ padding: '26px 30px 28px', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <Eyebrow>{eyebrow}</Eyebrow>
           <p
-            aria-label={narrativeText(sentences)}
             style={{
               margin: '12px 0 0',
               fontSize: 19.5,

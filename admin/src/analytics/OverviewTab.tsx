@@ -51,7 +51,7 @@ import { rollupTrainees, statusCounts } from './lib/trainees';
 import { overviewNarrative } from './lib/narrative';
 import { aiHealth, buildAttention, type AttentionTarget } from './lib/attention';
 import { firstActiveBucket, leaders, measured, practiceFunnel, trendExtras } from './lib/overview';
-import { teamObjectionTitles } from './lib/skills';
+import { useObjectionTitles } from './skills/useObjectionTitles';
 import { NarrativeHero } from './overview/Hero';
 import { AttentionPanel } from './overview/Attention';
 import { FunnelPanel, LeadersPanel } from './overview/People';
@@ -104,6 +104,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
   const directory = useTraineeDirectory();
   const aiCalls = useAiCallsWindow(range, canQuality);
   const reports = useOpenReports(canReports);
+  const teamTitles = useObjectionTitles(all.data.rows);
 
   const loading = sessions.loading || all.loading || directory.loading;
   const comparable = range !== 'all';
@@ -145,10 +146,9 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
         ? practiceFunnel(dir, allRows, now - 7 * DAY_MS, 'last 7 days')
         : practiceFunnel(dir, allRows, windowStart, windowWords);
 
-    const team_ = teamObjectionTitles(allRows);
     const names = new Map(trainees.map((t) => [t.user_id, t.name]));
     const nameOf = (id: string) => names.get(id) ?? 'A trainee';
-    const objectionLabel = (id: string | null) => pushbackLabel(id, team_, 'Other pushback');
+    const objectionLabel = (id: string | null) => pushbackLabel(id, teamTitles, 'Other pushback');
 
     const health = canQuality && !aiCalls.loading && !aiCalls.error ? aiHealth(aiCalls.data, range, now) : null;
     const attention = buildAttention({
@@ -204,6 +204,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
     reports.data,
     reports.loading,
     reports.error,
+    teamTitles,
     range,
     comparable,
     windowWords,

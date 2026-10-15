@@ -15,6 +15,7 @@ import { COLOR, DRIVER_KEYS, type DriverKey } from '../../lib/tokens';
 import { fmtAgo } from '../../lib/format';
 import { MODE_LABELS, labelOf } from '../../lib/labels';
 import { isScored } from '../lib/metrics';
+import { useElementWidth } from '../engagement/useElementWidth';
 import {
   OWNER_ENDING_LABELS,
   fmtLength,
@@ -131,20 +132,32 @@ export function SessionsTable({
   onOpenSession: (id: string) => void;
   onOpenTrainee: (userId: string) => void;
 }) {
+  // Under ~1100px the Mode and Hints columns fold into the Length cell, so
+  // Score and When stay on screen on a laptop; below ~900px the table scrolls.
+  const [ref, width] = useElementWidth<HTMLDivElement>();
+  const compact = width > 0 && width < 1100;
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', minWidth: 1100, borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+    <div ref={ref} style={{ overflowX: 'auto' }}>
+      <table
+        style={{
+          width: '100%',
+          minWidth: compact ? 900 : 1100,
+          borderCollapse: 'separate',
+          borderSpacing: 0,
+          tableLayout: 'fixed',
+        }}
+      >
         <caption style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }}>
           Practice sessions. Select a scenario to open the session.
         </caption>
         <colgroup>
-          <col style={{ width: 168 }} />
+          <col style={{ width: compact ? 156 : 168 }} />
           <col />
           <col style={{ width: 110 }} />
           <col style={{ width: 118 }} />
-          <col style={{ width: 66 }} />
-          <col style={{ width: 80 }} />
-          <col style={{ width: 54 }} />
+          {!compact && <col style={{ width: 66 }} />}
+          <col style={{ width: compact ? 104 : 80 }} />
+          {!compact && <col style={{ width: 54 }} />}
           <col style={{ width: 112 }} />
           <col style={{ width: 84 }} />
           <col style={{ width: 80 }} />
@@ -155,9 +168,9 @@ export function SessionsTable({
             <Plain>Scenario</Plain>
             <Plain>Outcome</Plain>
             <Plain>Difficulty</Plain>
-            <Plain>Mode</Plain>
+            {!compact && <Plain>Mode</Plain>}
             <SortHeader label="Length" k="length" sort={sort} onSort={onSort} />
-            <Plain>Hints</Plain>
+            {!compact && <Plain>Hints</Plain>}
             <Plain>Owner ending</Plain>
             <SortHeader label="Score" k="score" sort={sort} onSort={onSort} />
             <SortHeader label="When" k="when" sort={sort} onSort={onSort} />
@@ -244,7 +257,7 @@ export function SessionsTable({
                     {scenarioContext(s)}
                   </div>
                 </td>
-                <td style={td}>
+                <td style={{ ...td, overflow: 'hidden' }} title={s.completed ? undefined : outcomeWords(s)}>
                   {s.completed ? (
                     <StatusPill tone="success">Finished</StatusPill>
                   ) : (
@@ -254,17 +267,31 @@ export function SessionsTable({
                 <td style={td}>
                   {s.difficulty != null ? <AdminDifficultyMeter level={s.difficulty} /> : <Muted>—</Muted>}
                 </td>
-                <td style={td}>{s.mode ? labelOf(MODE_LABELS, s.mode) : <Muted>—</Muted>}</td>
-                <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{fmtLength(s.duration_seconds)}</td>
+                {!compact && <td style={td}>{s.mode ? labelOf(MODE_LABELS, s.mode) : <Muted>—</Muted>}</td>}
                 <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>
-                  {s.hints_used == null ? (
-                    <Muted>—</Muted>
-                  ) : s.hints_used === 0 ? (
-                    <Muted>0</Muted>
-                  ) : (
-                    <strong style={{ color: COLOR.ink }}>{s.hints_used}</strong>
+                  {fmtLength(s.duration_seconds)}
+                  {compact && (
+                    <div style={{ fontSize: 11, color: COLOR.inkMute, marginTop: 2, whiteSpace: 'nowrap' }}>
+                      {[
+                        s.mode ? labelOf(MODE_LABELS, s.mode) : null,
+                        s.hints_used ? `${s.hints_used} ${s.hints_used === 1 ? 'hint' : 'hints'}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </div>
                   )}
                 </td>
+                {!compact && (
+                  <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>
+                    {s.hints_used == null ? (
+                      <Muted>—</Muted>
+                    ) : s.hints_used === 0 ? (
+                      <Muted>0</Muted>
+                    ) : (
+                      <strong style={{ color: COLOR.ink }}>{s.hints_used}</strong>
+                    )}
+                  </td>
+                )}
                 <td style={td}>
                   {s.owner_mood_end ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
