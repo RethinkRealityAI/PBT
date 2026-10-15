@@ -11,6 +11,10 @@
  * Layout, top to bottom: one filter row (outcome chips with counts + the
  * selects), a slim summary strip for exactly the filtered rows, then the
  * sortable table, 50 rows at a time.
+ *
+ * Anonymous sessions (no account) are listed with everyone else and can be
+ * picked out with "Who"; they are never looked up in the directory. Another
+ * tab can open this one on a filter (`presetSessionFilters`).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AnalyticsTabProps } from './AnalyticsDestination';
@@ -33,15 +37,18 @@ import { downloadCsv, toCsv } from './lib/csv';
 import {
   NO_FILTERS,
   activeFilterCount,
+  clearSessionFilterPreset,
   filterSessions,
   fmtLength,
   inWindowWords,
+  sessionFilterPreset,
   sessionsCsv,
   sortSessions,
   type SessionFilters,
   type SortDir,
   type SortKey,
 } from './lib/sessionsExplorer';
+import { peopleWords } from './lib/who';
 import { SessionFilterBar } from './sessions/SessionFilterBar';
 import { SessionsTable, type TableRowPerson } from './sessions/SessionsTable';
 import { SessionDetail } from './sessions/SessionDetail';
@@ -54,7 +61,9 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
   const summaries = useSessionSummaries(range);
   const directory = useTraineeDirectory();
 
-  const [filters, setFilters] = useState<SessionFilters>(NO_FILTERS);
+  // Starts on the filter another tab asked for ("see Sessions → Who: Anonymous"), once.
+  const [filters, setFilters] = useState<SessionFilters>(sessionFilterPreset);
+  useEffect(() => clearSessionFilterPreset(), []);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'when', dir: 'desc' });
   const [limit, setLimit] = useState(PAGE);
 
@@ -64,6 +73,7 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
     return m;
   }, [directory.data.rows]);
 
+  // Signed-in trainees only — an anonymous session is never looked up here.
   const nameOf = useCallback(
     (userId: string) => {
       const e = people.get(userId);
@@ -202,7 +212,7 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                     {
                       label: 'Sessions',
                       value: stats.sessions.toLocaleString('en-US'),
-                      sub: `${stats.activeTrainees} ${stats.activeTrainees === 1 ? 'trainee' : 'trainees'}`,
+                      sub: peopleWords(stats.activeTrainees, stats.anonDevices),
                     },
                     {
                       label: 'Finished',
@@ -213,9 +223,10 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                       label: 'Average score',
                       value: stats.avgScore == null ? '—' : Math.round(stats.avgScore),
                       sub:
-                        stats.scored === 0
+                        (stats.scored === 0
                           ? 'No scored sessions'
-                          : `${stats.scored} scored${stats.scoringFailed ? ` · ${stats.scoringFailed} failed` : ''}`,
+                          : `${stats.scored} scored${stats.scoringFailed ? ` · ${stats.scoringFailed} failed` : ''}`) +
+                        (stats.rebuilt > 0 ? ` · ${stats.rebuilt} rebuilt, no score` : ''),
                     },
                     {
                       label: 'Median length',
@@ -295,6 +306,8 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                       <strong style={{ color: COLOR.ink }}>{sorted.length.toLocaleString('en-US')}</strong>{' '}
                       {sorted.length === 1 ? 'session' : 'sessions'}
                       {stats.scoringFailed > 0 && ' · scoring failures are left out of the average score'}
+                      {stats.rebuilt > 0 &&
+                        ' · rebuilt sessions are anonymous practice from before 15 Oct 2026, with no transcript or score'}
                     </span>
                     {sorted.length > limit && (
                       <GhostButton onClick={() => setLimit((n) => n + PAGE)}>

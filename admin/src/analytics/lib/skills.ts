@@ -150,10 +150,14 @@ export interface SplitRowStats {
   avgScore: number | null;
 }
 
-/** Sessions and average score per value of `keyOf`, in the order given by `order`. */
+/**
+ * Sessions and average score per value of `keyOf`, in the order given by
+ * `order`. `keyOf` returns null for a session that has no value to split on
+ * (a rebuilt session's animal) — it is left out, not guessed.
+ */
 export function splitBy(
   rows: readonly SessionSummary[],
-  keyOf: (s: SessionSummary) => string,
+  keyOf: (s: SessionSummary) => string | null,
   order: readonly string[],
 ): SplitRowStats[] {
   const groups = new Map(groupStats(rows, keyOf).map((g) => [g.key, g]));

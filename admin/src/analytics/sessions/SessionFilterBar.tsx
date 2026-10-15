@@ -1,8 +1,9 @@
 /**
  * The Sessions tab's one filter row: outcome chips (with the count each would
- * give) and the selects that narrow by how and what was practised. Options
- * come from the window's own data where they vary (objections), so the
- * Objection list never offers something that can only return nothing.
+ * give) and the selects that narrow by who practised, in which language, and
+ * how and what. Options come from the window's own data where they vary
+ * (objections), so the Objection list never offers something that can only
+ * return nothing. "Ending not recorded" shows only when the window has one.
  */
 import { objectionLabel } from '../lib/objectionNames';
 import type { SessionSummary } from '../../../../src/shared/analytics/contract';
@@ -18,6 +19,7 @@ import {
   type SessionFilters,
 } from '../lib/sessionsExplorer';
 import { SCENARIO_SOURCE_LABELS } from '../lib/metrics';
+import { WHO_FILTER_LABELS, languageLabel, languageOrder, type WhoFilter } from '../lib/who';
 
 export function SessionFilterBar({
   rows,
@@ -47,6 +49,10 @@ export function SessionFilterBar({
   const sources = (['library', 'studio', 'self-built', 'unknown'] as const).filter(
     (k) => k === filters.source || (k !== 'unknown' && rows.some((s) => s.scenario_source === k)),
   );
+  const languages = languageOrder(rows);
+  if (filters.language !== 'all' && !languages.includes(filters.language)) languages.push(filters.language);
+  // An outcome nobody had is noise — except the one already selected.
+  const outcomes = OUTCOME_FILTERS.filter((k) => k !== 'unknown' || counts.unknown > 0 || filters.outcome === 'unknown');
 
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 18px' }}>
@@ -54,9 +60,21 @@ export function SessionFilterBar({
         label="Outcome"
         value={filters.outcome}
         onChange={(v) => set('outcome', v)}
-        options={OUTCOME_FILTERS.map((k) => ({ key: k, label: OUTCOME_FILTER_LABELS[k], count: counts[k] }))}
+        options={outcomes.map((k) => ({ key: k, label: OUTCOME_FILTER_LABELS[k], count: counts[k] }))}
       />
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+        <SelectFilter
+          label="Who"
+          value={filters.who}
+          onChange={(v) => set('who', v as WhoFilter)}
+          options={(['all', 'signed_in', 'anonymous'] as const).map((k) => ({ value: k, label: WHO_FILTER_LABELS[k] }))}
+        />
+        <SelectFilter
+          label="Language"
+          value={filters.language}
+          onChange={(v) => set('language', v)}
+          options={[{ value: 'all', label: 'Any' }, ...languages.map((k) => ({ value: k, label: languageLabel(k) }))]}
+        />
         <SelectFilter
           label="Mode"
           value={filters.mode}

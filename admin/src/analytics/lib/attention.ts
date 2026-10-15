@@ -18,6 +18,7 @@ import type { SessionSummary } from '../../../../src/shared/analytics/contract';
 import { DAY_MS, median, splitByPeriod, type Range } from './period';
 import { isScored } from './metrics';
 import type { TraineeRow } from './trainees';
+import { anonymousDevices, signedInTrainees } from './who';
 
 // ─── AI health ─────────────────────────────────────────────────────────
 
@@ -119,8 +120,9 @@ export interface ReportLike {
 export interface AttentionInput {
   /** Every trainee (from `rollupTrainees` over ALL sessions — status is a lifetime fact). */
   trainees: readonly TraineeRow[];
-  /** Sessions in the current window. */
+  /** Sessions in the current window (anonymous ones included — they are never named). */
   windowSessions: readonly SessionSummary[];
+  /** A signed-in trainee's name; never called for an anonymous session. */
   nameOf: (userId: string) => string;
   objectionLabel: (pushbackId: string | null) => string;
   /** Recent problem reports; null when the viewer can't read them. */
@@ -224,7 +226,20 @@ export function buildAttention(input: AttentionInput): AttentionItem[] {
     .sort((a, b) => (a.score_overall as number) - (b.score_overall as number));
   if (low.length > 0) {
     const worst = low[0];
-    const people = new Set(low.map((s) => s.user_id)).size;
+    // People are signed-in trainees; anonymous sessions are counted by device
+    // and never named.
+    const trainees = signedInTrainees(low);
+    const devices = anonymousDevices(low);
+    const across =
+      trainees + devices > 1
+        ? `Across ${[
+            trainees > 0 ? count(trainees, 'trainee', 'trainees') : null,
+            devices > 0 ? count(devices, 'anonymous device', 'anonymous devices') : null,
+          ]
+            .filter(Boolean)
+            .join(' and ')}. `
+        : '';
+    const who = worst.user_id ? input.nameOf(worst.user_id) : 'an anonymous session';
     items.push({
       key: 'low-scores',
       tone: 'warn',
@@ -232,8 +247,11 @@ export function buildAttention(input: AttentionInput): AttentionItem[] {
       count: low.length,
       title: `${count(low.length, 'session', 'sessions')} scored under ${LOW_SCORE}`,
       detail:
-        (low.length > 1 && people > 1 ? `Across ${people} trainees. ` : '') +
-        `Lowest: ${input.nameOf(worst.user_id)} on “${input.objectionLabel(worst.pushback_id)}” (${Math.round(worst.score_overall as number)}). Reviewing one together is the quickest way to lift a score.`,
+        (low.length > 1 ? across : '') +
+        `Lowest: ${who} on “${input.objectionLabel(worst.pushback_id)}” (${Math.round(worst.score_overall as number)}). ` +
+        (worst.user_id
+          ? 'Reviewing one together is the quickest way to lift a score.'
+          : 'Its transcript shows where the conversation went wrong.'),
       action:
         low.length === 1
           ? { label: 'Open the session', target: { kind: 'tab', tab: 'sessions', id: worst.id } }

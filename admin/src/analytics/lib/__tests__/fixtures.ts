@@ -8,6 +8,9 @@ export function session(over: Partial<SessionSummary> = {}): SessionSummary {
   return {
     id: `s${n}`,
     user_id: 'u1',
+    anon_session_id: null,
+    locale: null,
+    reconstructed: false,
     created_at: '2026-10-10T15:00:00.000Z',
     started_at: null,
     completed: true,
@@ -41,6 +44,50 @@ export function session(over: Partial<SessionSummary> = {}): SessionSummary {
     key_misses: 1,
     ...over,
   };
+}
+
+/** An anonymous (no account) session from one device — scored like any other. */
+export function anonSession(device: string, over: Partial<SessionSummary> = {}): SessionSummary {
+  return session({ user_id: null, anon_session_id: device, ...over });
+}
+
+/**
+ * An anonymous session rebuilt from app activity (before 15 Oct 2026): no
+ * transcript, no score, no animal or scenario details. `ending`: 'finished'
+ * (reached the scorecard), 'left' (with the logged reason) or 'unknown'.
+ */
+export function rebuiltSession(
+  device: string,
+  ending: 'finished' | 'left' | 'unknown',
+  over: Partial<SessionSummary> = {},
+): SessionSummary {
+  return session({
+    user_id: null,
+    anon_session_id: device,
+    reconstructed: true,
+    completed: ending === 'finished',
+    ended_reason: ending === 'finished' ? 'completed' : ending === 'left' ? 'user_exit' : null,
+    duration_seconds: ending === 'unknown' ? null : 240,
+    turns: null,
+    owner_driver: null,
+    scenario_source: 'unknown',
+    scenario_id: null,
+    difficulty: null,
+    breed: null,
+    persona: null,
+    score_overall: null,
+    skills: null,
+    band: null,
+    owner_sentiment_start: null,
+    owner_sentiment_end: null,
+    owner_mood_end: null,
+    staff_messages: 0,
+    staff_words_avg: null,
+    reply_seconds_median: null,
+    key_wins: 0,
+    key_misses: 0,
+    ...over,
+  });
 }
 
 export function person(over: Partial<TraineeDirectoryEntry> = {}): TraineeDirectoryEntry {

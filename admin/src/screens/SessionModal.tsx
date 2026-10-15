@@ -20,6 +20,11 @@
  * Sentiment is read from `score_report.turnSentiment` populated by the
  * scorer model. Older sessions saved before that field was added show a
  * neutral fallback chart. A failed scoring attempt is NEVER shown as a 0.
+ *
+ * An anonymous session (no account, `user_id` null) is headed "Anonymous
+ * trainee" with its short device tag — no profile link. A REBUILT one
+ * (`origin: 'reconstructed'`, anonymous practice before 15 Oct 2026) says so
+ * up front; its Transcript and Scoring tabs explain why they are empty.
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import {
@@ -53,6 +58,17 @@ import { AdminDifficultyMeter } from '../primitives/DifficultyMeter';
 import type { SessionSummary } from '../../../src/shared/analytics/contract';
 import { toSessionSummary, type SessionRowLike } from '../../../src/shared/analytics/sessionSummary';
 import { SCENARIO_SOURCE_LABELS } from '../analytics/lib/metrics';
+import {
+  LANGUAGE_NONE,
+  LANGUAGE_NONE_HELP,
+  REBUILT_EXPLAINER,
+  REBUILT_SCORE_HELP,
+  languageKey,
+  languageLabel,
+  speciesOf,
+} from '../analytics/lib/who';
+import { ENDING_UNKNOWN_HELP } from '../analytics/lib/sessionsExplorer';
+import { AnonAvatar, DeviceTag } from '../analytics/who';
 
 type TabKey = 'overview' | 'transcript' | 'scoring';
 
@@ -165,8 +181,21 @@ function realScore(session: AdminSession): number | null {
     : null;
 }
 
+/** Anonymous practice before 15 Oct 2026, rebuilt from app activity (no transcript, no score). */
+function isRebuilt(session: AdminSession, facts?: SessionSummary | null): boolean {
+  return session.origin === 'reconstructed' || facts?.reconstructed === true;
+}
+
+/** Messages, when known — a rebuilt session's empty transcript is not "0 messages". */
+function messageCount(session: AdminSession, rebuilt: boolean): number | null {
+  if (session.turns != null) return session.turns;
+  return rebuilt ? null : (session.transcript?.length ?? null);
+}
+
 function outcomeOf(session: AdminSession): { word: string; tone: 'success' | 'neutral' | 'warn' | 'danger' } {
   if (session.completed) return { word: 'Finished', tone: 'success' };
+  // Didn't finish and nothing says how it ended — never claim "Left early".
+  if (!session.ended_reason) return { word: 'Ending not recorded', tone: 'neutral' };
   const reason = session.ended_reason && session.ended_reason !== 'completed' ? session.ended_reason : null;
   return {
     word: labelOf(ENDED_REASON_LABELS, reason, 'Left early'),
@@ -285,10 +314,18 @@ export function SessionModal({
             }}
           >
             {tab === 'overview' && <OverviewTab session={session} facts={facts} scoring={scoring} />}
-            {tab === 'transcript' && <TranscriptTab session={session} turnSentiment={turnSentiment} />}
-            {tab === 'scoring' && <ScoringTab session={session} scoring={scoring} />}
+            {tab === 'transcript' &&
+              (isRebuilt(session, facts) ? (
+                <EmptyState
+                  title="No conversation was stored"
+                  subtitle="This anonymous session was played before 15 October 2026, when only signed-in sessions were saved. What happened is known — the Overview has it — but the messages were never kept."
+                />
+              ) : (
+                <TranscriptTab session={session} turnSentiment={turnSentiment} />
+              ))}
+            {tab === 'scoring' && <ScoringTab session={session} facts={facts} scoring={scoring} />}
           </div>
-          <SideRail session={session} sparkData={sparkData} hasSentiment={turnSentiment.length > 0} />
+          <SideRail session={session} facts={facts} sparkData={sparkData} hasSentiment={turnSentiment.length > 0} />
         </div>
       </div>
     </Modal>
@@ -311,12 +348,17 @@ function SessionHeader({
 }) {
   const score = realScore(session);
   const outcome = outcomeOf(session);
-  const name = user?.display_name?.trim() || (user ? 'Unnamed trainee' : 'Unknown trainee');
+  const anonymous = !session.user_id;
+  const rebuilt = isRebuilt(session, facts);
+  const name = anonymous
+    ? 'Anonymous trainee'
+    : user?.display_name?.trim() || (user ? 'Unnamed trainee' : 'Unknown trainee');
   const title =
     facts?.scenario_title?.trim() ||
     session.scenario_summary ||
     (session.pushback_id ? pushbackLabel(session.pushback_id) : 'Practice session');
   const when = new Date(session.created_at);
+  const lang = languageKey(session.locale ?? facts?.locale);
   const meta = [
     session.driver ? `${humanize(session.driver)} owner` : null,
     session.mode ? labelOf(MODE_LABELS, session.mode) : null,
@@ -361,10 +403,24 @@ function SessionHeader({
             {title}
           </h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: COLOR.inkSoft }}>
-            <Avatar name={user?.display_name ?? null} driver={asDriver(user?.echo_primary)} size={22} />
+            {anonymous ? (
+              <AnonAvatar size={22} />
+            ) : (
+              <Avatar name={user?.display_name ?? null} driver={asDriver(user?.echo_primary)} size={22} />
+            )}
             <span style={{ fontWeight: 700, color: COLOR.ink }}>{name}</span>
+            {anonymous && (
+              <span style={{ color: COLOR.inkMute }}>
+                · <DeviceTag anonId={session.anon_session_id ?? facts?.anon_session_id} lower />
+              </span>
+            )}
+            {lang !== LANGUAGE_NONE && (
+              <span style={{ color: COLOR.inkMute }} title="The app language this session was played in">
+                · {languageLabel(lang)}
+              </span>
+            )}
             {meta.length > 0 && <span style={{ color: COLOR.inkMute }}>· {meta.join(' · ')}</span>}
-            {onViewTrainee && user && (
+            {onViewTrainee && user && !anonymous && (
               <button
                 type="button"
                 className="pbt-link"
@@ -377,6 +433,11 @@ function SessionHeader({
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
             <StatusPill tone={outcome.tone}>{outcome.word}</StatusPill>
+            {rebuilt && (
+              <StatusPill tone="neutral" dot={false}>
+                Rebuilt from app activity
+              </StatusPill>
+            )}
             {session.completed && session.score_unavailable && <StatusPill tone="warn">Scoring failed</StatusPill>}
             {score != null && (
               <StatusPill tone={scoreTone(score)} dot={false}>
@@ -458,8 +519,11 @@ function OverviewTab({
   const score = realScore(session);
   const outcome = outcomeOf(session);
   const ending = facts?.owner_mood_end ? OWNER_ENDING[facts.owner_mood_end] : null;
-  const messages = session.turns ?? session.transcript?.length ?? null;
+  const rebuilt = isRebuilt(session, facts);
+  const messages = messageCount(session, rebuilt);
   const voice = session.mode === 'voice';
+  const lang = languageKey(session.locale ?? facts?.locale);
+  const species = facts ? speciesOf(facts) : null;
 
   const hints =
     facts?.hints_used == null
@@ -470,12 +534,43 @@ function OverviewTab({
   const reply =
     facts?.reply_seconds_median != null
       ? { value: fmtLen(facts.reply_seconds_median), sub: 'Median time to answer the owner' }
-      : { value: '—', sub: voice ? 'Not measured in spoken sessions' : 'Not enough replies to measure' };
+      : {
+          value: '—',
+          sub: rebuilt ? 'Not recorded' : voice ? 'Not measured in spoken sessions' : 'Not enough replies to measure',
+        };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {rebuilt && (
+        <div
+          role="note"
+          style={{
+            display: 'flex',
+            gap: 12,
+            padding: '13px 15px',
+            borderRadius: 14,
+            background: COLOR.infoSoft,
+            border: '0.5px solid oklch(0.86 0.05 250)',
+          }}
+        >
+          <span aria-hidden="true" style={{ width: 3, borderRadius: 2, background: COLOR.info, flexShrink: 0 }} />
+          <div style={{ fontSize: 13, color: COLOR.inkSoft, lineHeight: 1.55 }}>{REBUILT_EXPLAINER}</div>
+        </div>
+      )}
       <FactGroup title="How it went">
-        <FactCell label="Outcome" value={outcome.word} sub={session.completed ? 'Reached the end of the conversation' : 'Before the scorer ran'} />
+        <FactCell
+          label="Outcome"
+          value={outcome.word}
+          sub={
+            session.completed
+              ? rebuilt
+                ? 'Reached the scorecard'
+                : 'Reached the end of the conversation'
+              : !session.ended_reason
+                ? ENDING_UNKNOWN_HELP
+                : 'Before the scorer ran'
+          }
+        />
         <FactCell
           label="Score"
           value={
@@ -483,6 +578,8 @@ function OverviewTab({
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <ScoreBadge score={score} /> {scoreWord(score)}
               </span>
+            ) : rebuilt ? (
+              'Not recorded'
             ) : session.completed && session.score_unavailable ? (
               'Scoring failed'
             ) : (
@@ -490,11 +587,13 @@ function OverviewTab({
             )
           }
           sub={
-            session.score_unavailable
-              ? 'Left out of every average'
-              : score == null
-                ? 'Only finished sessions are scored'
-                : undefined
+            rebuilt
+              ? 'Anonymous sessions before 15 Oct 2026 kept no score'
+              : session.score_unavailable
+                ? 'Left out of every average'
+                : score == null
+                  ? 'Only finished sessions are scored'
+                  : undefined
           }
         />
         <FactCell
@@ -521,17 +620,32 @@ function OverviewTab({
       </FactGroup>
 
       <FactGroup title="How they practised">
+        <FactCell
+          label="Language"
+          value={languageLabel(lang)}
+          sub={lang === LANGUAGE_NONE ? LANGUAGE_NONE_HELP : 'The app’s language'}
+        />
         <FactCell label="Mode" value={labelOf(MODE_LABELS, session.mode, 'Not recorded')} />
-        <FactCell label="Length" value={fmtLen(session.duration_seconds)} />
+        <FactCell
+          label="Length"
+          value={fmtLen(session.duration_seconds)}
+          sub={rebuilt && !session.duration_seconds ? 'Not recorded — the end wasn’t seen' : undefined}
+        />
         <FactCell
           label="Messages"
           value={messages ?? '—'}
-          sub={facts && facts.staff_messages > 0 ? `${facts.staff_messages} from the trainee` : undefined}
+          sub={
+            facts && facts.staff_messages > 0
+              ? `${facts.staff_messages} from the trainee`
+              : rebuilt && messages == null
+                ? 'Not recorded'
+                : undefined
+          }
         />
         <FactCell
           label="Words per reply"
           value={facts?.staff_words_avg != null ? Math.round(facts.staff_words_avg) : '—'}
-          sub={facts?.staff_words_avg != null ? 'Average trainee message' : 'No trainee messages'}
+          sub={facts?.staff_words_avg != null ? 'Average trainee message' : rebuilt ? 'Not recorded' : 'No trainee messages'}
         />
         <FactCell label="Reply time" value={reply.value} sub={reply.sub} />
         <FactCell label="Coach hints" value={hints.value} sub={hints.sub} />
@@ -541,7 +655,11 @@ function OverviewTab({
         <FactCell label="Objection" value={session.pushback_id ? pushbackLabel(session.pushback_id) : 'Not recorded'} />
         <FactCell
           label="Animal"
-          value={[facts?.species === 'cat' ? 'Cat' : 'Dog', facts?.breed].filter(Boolean).join(' · ')}
+          value={
+            rebuilt
+              ? 'Not recorded'
+              : [species === 'cat' ? 'Cat' : 'Dog', facts?.breed].filter(Boolean).join(' · ')
+          }
         />
         <FactCell
           label="Owner"
@@ -811,7 +929,18 @@ function TranscriptTab({ session, turnSentiment }: { session: AdminSession; turn
 }
 
 // ─── Scoring tab — dimension breakdown + key moments ────────
-function ScoringTab({ session, scoring }: { session: AdminSession; scoring: Scoring }) {
+function ScoringTab({
+  session,
+  facts,
+  scoring,
+}: {
+  session: AdminSession;
+  facts: SessionSummary | null;
+  scoring: Scoring;
+}) {
+  if (isRebuilt(session, facts)) {
+    return <EmptyState title="No score was stored" subtitle={`${REBUILT_SCORE_HELP}.`} />;
+  }
   if (session.completed && session.score_unavailable) {
     return (
       <EmptyState
@@ -924,15 +1053,19 @@ function DimensionBar({ label, score }: { label: string; score: number | null })
 // ─── Side rail (always visible) ─────────────────────────────
 function SideRail({
   session,
+  facts,
   sparkData,
   hasSentiment,
 }: {
   session: AdminSession;
+  facts: SessionSummary | null;
   sparkData: number[];
   hasSentiment: boolean;
 }) {
   const level = sessionDifficulty(session);
   const score = realScore(session);
+  const rebuilt = isRebuilt(session, facts);
+  const messages = messageCount(session, rebuilt);
   return (
     <div
       style={{
@@ -961,13 +1094,17 @@ function SideRail({
         <Eyebrow>Quick stats</Eyebrow>
         <RailRow
           label="Score"
-          value={score != null ? String(score) : session.completed && session.score_unavailable ? 'Failed' : '—'}
+          value={
+            score != null ? String(score) : !rebuilt && session.completed && session.score_unavailable ? 'Failed' : '—'
+          }
         />
         <RailRow label="Outcome" value={outcomeOf(session).word} />
         <RailRow label="Difficulty" value={level != null ? `${difficultyLabel(level)} · ${level}/4` : '—'} />
-        <RailRow label="Messages" value={String(session.turns ?? session.transcript?.length ?? '—')} />
+        <RailRow label="Messages" value={messages == null ? '—' : String(messages)} />
         <RailRow label="Length" value={fmtLen(session.duration_seconds)} />
         <RailRow label="Mode" value={labelOf(MODE_LABELS, session.mode, '—')} />
+        <RailRow label="Language" value={languageLabel(languageKey(session.locale ?? facts?.locale))} />
+        <RailRow label="Account" value={session.user_id ? 'Signed in' : 'Anonymous'} />
         {session.model_id && <RailRow label="AI model" value={session.model_id} small />}
       </div>
     </div>

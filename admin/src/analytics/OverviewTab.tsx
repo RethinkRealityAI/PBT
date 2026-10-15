@@ -43,6 +43,7 @@ import {
   SKILL_KEYS,
   SKILL_LABELS,
   extremeSkill,
+  isScored,
   sessionStats,
   sessionTrend,
   skillAverages,
@@ -133,6 +134,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
     const skillsPrev = comparable ? skillAverages(previous) : null;
     const weakest = extremeSkill(skillsCur.avg, 'weakest');
     const windowStart = windows(range, now).current.start;
+    const anonScored = current.filter((s) => !s.user_id && isScored(s)).length;
 
     const dir = directory.data.rows;
     const allRows = all.data.rows;
@@ -179,6 +181,7 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
     return {
       cur,
       prev,
+      anonScored,
       trend,
       extras,
       skillsCur,
@@ -280,7 +283,11 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   delta={d?.trainees}
                   compareLabel={tileCompare(d?.trainees)}
                   trend={points.map((p) => p.trainees)}
-                  hint="Different people with at least one session"
+                  hint={
+                    cur.anonDevices > 0
+                      ? `Signed-in people with at least one session · + ${cur.anonDevices.toLocaleString('en-US')} anonymous ${cur.anonDevices === 1 ? 'device' : 'devices'}`
+                      : 'Different people with at least one session'
+                  }
                   onClick={openTrainees}
                 />
                 <StatTile
@@ -289,7 +296,11 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   delta={d?.sessions}
                   compareLabel={tileCompare(d?.sessions)}
                   trend={points.map((p) => p.sessions)}
-                  hint="Every session started, finished or not"
+                  hint={
+                    cur.anonSessions > 0
+                      ? `Every session started, finished or not · ${cur.anonSessions.toLocaleString('en-US')} without an account`
+                      : 'Every session started, finished or not'
+                  }
                   onClick={() => onOpen('sessions')}
                 />
                 <StatTile
@@ -362,6 +373,12 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                     <>
                       <strong style={{ color: COLOR.inkSoft }}>{cur.finished}</strong> finished ·{' '}
                       <strong style={{ color: COLOR.inkSoft }}>{cur.leftEarly}</strong> left early
+                      {cur.endingUnknown > 0 && (
+                        <>
+                          {' '}
+                          · <strong style={{ color: COLOR.inkSoft }}>{cur.endingUnknown}</strong> ending not recorded
+                        </>
+                      )}
                       {model.busiest && model.busiest.sessions > 0 && (
                         <>
                           {' '}
@@ -379,9 +396,17 @@ function OverviewBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   since={model.chartSince}
                   onWiden={() => onRange('all')}
                   footnote={
-                    cur.scoringFailed > 0
-                      ? `${cur.scoringFailed} session${cur.scoringFailed === 1 ? '' : 's'} couldn’t be scored and ${cur.scoringFailed === 1 ? 'is' : 'are'} left out.`
-                      : undefined
+                    [
+                      cur.scoringFailed > 0
+                        ? `${cur.scoringFailed} session${cur.scoringFailed === 1 ? '' : 's'} couldn’t be scored and ${cur.scoringFailed === 1 ? 'is' : 'are'} left out.`
+                        : null,
+                      model.anonScored > 0 ? 'Scored anonymous sessions count in the average.' : null,
+                      cur.rebuilt > 0
+                        ? `${cur.rebuilt} anonymous session${cur.rebuilt === 1 ? '' : 's'} from before 15 Oct 2026 kept no score.`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' ') || undefined
                   }
                 />
               </SplitRow>

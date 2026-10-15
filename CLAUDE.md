@@ -956,6 +956,30 @@ backfill, whose score was dropped on purpose (no `model_id`).
 Trainee status: Active ≤ 7 days since the last session, At risk 8–21,
 Dormant > 21, Not started = never; "New" = joined ≤ 14 days.
 
+**Anonymous sessions** (2026-10-15; see "AI integration" → trust boundary
+and migration `20261015000000_anonymous_sessions.sql`). `SessionSummary`
+carries `user_id: string | null`, `anon_session_id`, `locale` and
+`reconstructed`. The rules live in `admin/src/analytics/lib/who.ts` (+
+`who.tsx` for `AnonAvatar` / `DeviceTag` / `RebuiltTag`):
+- An anonymous session IS a session — it counts in session counts, finish
+  rate and (when scored) every average — but NEVER a person: no trainee,
+  name, leader, profile or slipping / never-started nudge. People are counted
+  twice: signed-in trainees, and anonymous devices separately
+  (`sessionStats.anonDevices`).
+- The device tag ("Device 4F2A") is a 4-character HASH of `anon_session_id`;
+  the full id never reaches the screen or a CSV.
+- Language (`locale`: English / Français / Not recorded before 15 Oct) is a
+  Sessions filter and column and a Skills "Score by group" split, next to
+  Who (signed-in vs anonymous), animal and source.
+- A `reconstructed` row (rebuilt from `nav_events` for anonymous text sessions
+  before 15 Oct) shows a "Rebuilt" tag and "Score not recorded"; its animal is
+  unknown (`speciesOf` returns null — never split or filtered as a dog). A
+  session that didn't finish with no recorded reason reads "Ending not
+  recorded" (`endingUnknown`), never "Left early".
+- Feedback (now under Monitor) has a Who column and opens the rated session
+  in Analytics → Sessions when it exists. Every production rating so far is
+  anonymous.
+
 Offline review: `npm run dev:admin-mock` serves a seeded team
 (`admin/src/dev/mockAnalytics.ts`) whose summaries, engagement and profiles
 are computed with the same shared functions the server runs.
@@ -1225,7 +1249,13 @@ The static test catches "migration file missing"; `verify:db` catches
    volume reaches the hundreds of thousands. (g) `nav_events.created_at` is
    client-stamped and anonymous visitors can insert: reads and aggregates
    ignore anything beyond `FUTURE_SKEW_MS` ahead of now, but a server-side
-   default/trigger would be the real fix.
+   default/trigger would be the real fix. (h) Anonymous VOICE sessions
+   before 2026-10-15 logged no `session_open`, so the anonymous backfill
+   could not rebuild them (~90 on 1 Oct alone); only their AI usage
+   (`ai_call_telemetry` call type `voice`) remains. (i) The Terms'
+   "Anonymous by default" wording changed with anonymous recording
+   (2026-10-15) WITHOUT bumping `TERMS_VERSION` (existing users are not
+   re-asked) — a product/legal call; the French text joins item 2's review.
 
 1. **a11y deep sweep**: aria labels/aria-live/keyboard basics are in; still
    owed: modal focus traps + Escape + `aria-modal` everywhere, CreateScreen
@@ -1298,4 +1328,4 @@ full fr-CA localization; Fecal Scan; scoped + self-seeding knowledge base.)
 
 ---
 
-**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **Scenario Studio (Sept 25):** scenario building as its own admin destination — guided 7-step builder, A2UI assistant (proposals only, re-validated on confirm), prompt/retrieval inspector, native Test drive, dog/cat species (column applied 2026-09-27), Scenario Author role; Knowledge + AI tuning promoted to their own nav items. **Objections + animal-first (Oct 12):** team-authored objections (Studio Objections tab, `scenario_objections`, migration applied 2026-10-12), "Add to library" for trainee scenarios (`copied_from`), Animal/Objection library filters, trainee app asks Dog | Cat before the objection and its Library tab finally lists the published library; fixed a hooks-order crash that blanked the admin after sign-in (regression-tested in `admin/src/__tests__/AppSignIn.test.tsx`). **Categories (Oct 12, same branch):** Category → Objection → Scenario with categories as knowledge containers (Studio Categories tab, inherited knowledge, upload from the category), white line pet icons instead of emoji (admin `noEmoji` test), Change password + temporary passwords. **Scoring per scenario (Oct 13):** the scorer and coach read the objection's coaching as an answer key, per-scenario "What a great answer includes" (`success_criteria`, migration applied 2026-10-13), French trainee hints for team objections, advisory readiness warnings in the Studio, and difficulty shown beside every score (History, scorecard, admin Sessions + Insights) with scoring kept identical at every level; the trainee Create screen's Ready-made tab redesign (ViewTabs, ChipScroller, whole-card targets). **Audit 2026-09-27** (six adversarial reviews): species-scoped knowledge seeds + cat framing of retrieved research, minimal public snapshot, bounded scenario prose on every AI call, optimistic-concurrency saves, framed-only preview mode, assistant apply-time diffing. **`npm test` — ~2,250 tests / 153 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.
+**Status:** Shipped 2026. Voice (Gemini Live + worklet), scenario builder (library tab + dropdown pushback), desktop sidebar layout, Pet Analyzer refresh, glass readability pass. **Phase 2 (June):** ACT-first scoring, Pet Vision Analyzer (multimodal), Simulation Feedback Tool, Platform Reporting Tool + admin surfacing. **July UX pass:** honest scoring pipeline (retry + `scoreUnavailable` + in-place rescore), scorecard reveal (resolution arc, delta chip, focus-next), in-chat coach hints, daily Today's-pick rotation, voice permission-race fixes. **August (SOW completion + French):** Home streak strip, voice 5-min cap + scorer sessionId attribution, privacy opt-out, self-service account deletion, saved-pets list, past-session feedback memory, code-split (main entry 504→~60 kB gzip, `npm run check:bundle` gate), and the full **fr-CA platform** — typed catalogs, data overlays, AI-layer French (customer/scorer/coach/vision/voice), persistent EN/FR toggle synced to `profiles.locale`. **September (security hardening):** Gemini key removed from both bundles — all AI calls behind `netlify/functions/ai-*`, voice via server-minted ephemeral tokens, scores server-authoritative (trigger + `ai-evaluate` write), per-IP rate limits, bundle gate scans for key-shaped strings; **Fecal Scan** (RAG-grounded stool scoring against the Royal Canin charts) and the scoped, self-seeding knowledge base. **Scenario Studio (Sept 25):** scenario building as its own admin destination — guided 7-step builder, A2UI assistant (proposals only, re-validated on confirm), prompt/retrieval inspector, native Test drive, dog/cat species (column applied 2026-09-27), Scenario Author role; Knowledge + AI tuning promoted to their own nav items. **Objections + animal-first (Oct 12):** team-authored objections (Studio Objections tab, `scenario_objections`, migration applied 2026-10-12), "Add to library" for trainee scenarios (`copied_from`), Animal/Objection library filters, trainee app asks Dog | Cat before the objection and its Library tab finally lists the published library; fixed a hooks-order crash that blanked the admin after sign-in (regression-tested in `admin/src/__tests__/AppSignIn.test.tsx`). **Categories (Oct 12, same branch):** Category → Objection → Scenario with categories as knowledge containers (Studio Categories tab, inherited knowledge, upload from the category), white line pet icons instead of emoji (admin `noEmoji` test), Change password + temporary passwords. **Scoring per scenario (Oct 13):** the scorer and coach read the objection's coaching as an answer key, per-scenario "What a great answer includes" (`success_criteria`, migration applied 2026-10-13), French trainee hints for team objections, advisory readiness warnings in the Studio, and difficulty shown beside every score (History, scorecard, admin Sessions + Insights) with scoring kept identical at every level; the trainee Create screen's Ready-made tab redesign (ViewTabs, ChipScroller, whole-card targets). **Audit 2026-09-27** (six adversarial reviews): species-scoped knowledge seeds + cat framing of retrieved research, minimal public snapshot, bounded scenario prose on every AI call, optimistic-concurrency saves, framed-only preview mode, assistant apply-time diffing. **`npm test` — ~2,690 tests / 186 files** (incl. schema-parity + catalog guards + EN prompt byte-parity + function tests; pre-deploy `npm run verify:db`). Production build: `npm run build`.

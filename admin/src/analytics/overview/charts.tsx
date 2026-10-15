@@ -139,11 +139,12 @@ function topRoundedRect(x: number, y: number, w: number, h: number, r: number): 
  * end; a lower segment leaves a 2px surface gap above itself when another
  * segment sits on it.
  */
-function stackSegment(position: 'bottom' | 'top', aboveKey?: string) {
+function stackSegment(position: 'bottom' | 'top', aboveKey?: string | readonly string[]) {
+  const above = aboveKey == null ? [] : typeof aboveKey === 'string' ? [aboveKey] : aboveKey;
   return function Segment(props: BarShapeProps) {
     const { x, y, width, height, fill, payload } = props;
     if (!(height > 0) || !(width > 0)) return <g />;
-    const covered = position === 'bottom' && aboveKey != null && Number(payload?.[aboveKey] ?? 0) > 0;
+    const covered = position === 'bottom' && above.some((k) => Number(payload?.[k] ?? 0) > 0);
     const gap = covered ? Math.min(2, height) : 0;
     const h = height - gap;
     if (h <= 0) return <g />;
@@ -167,8 +168,10 @@ function ActivityTip({
       <div style={{ fontWeight: 800, color: COLOR.ink, marginBottom: 4 }}>{bucketTitle(p.label, granularity)}</div>
       <TipRow color={CHART.primary} label="Finished" value={p.finished} />
       <TipRow color={CHART.muted} label="Left early" value={p.leftEarly} />
+      {p.endingUnknown > 0 && <TipRow color={ENDING_UNKNOWN_FILL} label="Ending not recorded" value={p.endingUnknown} />}
       <div style={{ marginTop: 4, color: COLOR.inkMute }}>
-        {p.trainees} trainee{p.trainees === 1 ? '' : 's'} practised
+        {p.trainees} trainee{p.trainees === 1 ? '' : 's'}
+        {p.devices > 0 && ` and ${p.devices} anonymous device${p.devices === 1 ? '' : 's'}`} practised
       </div>
     </div>
   );
@@ -184,7 +187,13 @@ function TipRow({ color, label, value }: { color: string; label: string; value: 
   );
 }
 
-/** Sessions per bucket, finished (primary) stacked under left early (muted). */
+/** The third, lightest segment: sessions whose ending wasn't recorded (rebuilt anonymous practice). */
+export const ENDING_UNKNOWN_FILL = 'oklch(0.89 0.012 40)';
+
+/**
+ * Sessions per bucket, finished (primary) stacked under left early (muted),
+ * with "ending not recorded" (lightest) on top when there is any.
+ */
 export function ActivityBars({
   points,
   granularity,
@@ -194,6 +203,7 @@ export function ActivityBars({
   granularity: 'hour' | 'day' | 'week';
   height?: number;
 }) {
+  const anyUnknown = points.some((p) => p.endingUnknown > 0);
   return (
     <div style={{ height }} role="img" aria-label="Sessions per period, finished and left early. Use View as table for the numbers.">
       <ResponsiveContainer width="100%" height="100%">
@@ -224,7 +234,7 @@ export function ActivityBars({
             stackId="s"
             fill={CHART.primary}
             maxBarSize={24}
-            shape={stackSegment('bottom', 'leftEarly')}
+            shape={stackSegment('bottom', ['leftEarly', 'endingUnknown'])}
             isAnimationActive={false}
           />
           <Bar
@@ -233,9 +243,20 @@ export function ActivityBars({
             stackId="s"
             fill={CHART.muted}
             maxBarSize={24}
-            shape={stackSegment('top')}
+            shape={anyUnknown ? stackSegment('bottom', 'endingUnknown') : stackSegment('top')}
             isAnimationActive={false}
           />
+          {anyUnknown && (
+            <Bar
+              dataKey="endingUnknown"
+              name="Ending not recorded"
+              stackId="s"
+              fill={ENDING_UNKNOWN_FILL}
+              maxBarSize={24}
+              shape={stackSegment('top')}
+              isAnimationActive={false}
+            />
+          )}
         </BarChart>
       </ResponsiveContainer>
     </div>

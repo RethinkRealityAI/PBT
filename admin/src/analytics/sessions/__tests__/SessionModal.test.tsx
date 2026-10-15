@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { SessionModal } from '../../../screens/SessionModal';
 import type { AdminSession } from '../../../data/types';
+import { deviceTag } from '../../lib/who';
 
 function adminSession(over: Partial<AdminSession> = {}): AdminSession {
   return {
@@ -30,8 +31,6 @@ function adminSession(over: Partial<AdminSession> = {}): AdminSession {
     mode: 'text',
     completed: true,
     ended_reason: 'completed',
-    flagged: false,
-    flag_reason: null,
     model_id: 'gemini-3-flash-preview',
     turns: 2,
     created_at: new Date().toISOString(),
@@ -94,5 +93,64 @@ describe('SessionModal', () => {
     );
     expect(screen.queryByText(/user_exit/)).toBeNull();
     expect(screen.getAllByText('Left early').length).toBeGreaterThan(0);
+  });
+
+  it('heads an anonymous session as a device, in its language, with no profile link', () => {
+    const onView = vi.fn();
+    render(
+      <SessionModal
+        session={adminSession({ user_id: null, anon_session_id: 'dev-4f2a-0001', locale: 'fr' })}
+        user={null}
+        onClose={() => {}}
+        onViewTrainee={onView}
+      />,
+    );
+    expect(screen.getByText('Anonymous trainee')).toBeInTheDocument();
+    expect(screen.getByText(`device ${deviceTag('dev-4f2a-0001')}`)).toBeInTheDocument();
+    expect(screen.getAllByText(/Français/).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /View trainee profile/ })).toBeNull();
+    expect(screen.queryByText('Unknown trainee')).toBeNull();
+    // An app-recorded anonymous session is scored like any other.
+    expect(screen.getAllByText('72').length).toBeGreaterThan(0);
+  });
+
+  it('explains a rebuilt session and never shows an empty transcript or a score as data', () => {
+    render(
+      <SessionModal
+        session={adminSession({
+          user_id: null,
+          anon_session_id: 'dev-4f2a-0001',
+          origin: 'reconstructed',
+          scenario: { pushback: { id: 'cost' } },
+          scenario_summary: null,
+          transcript: [],
+          score_report: null,
+          score_overall: null,
+          score_unavailable: false,
+          difficulty: null,
+          driver: null,
+          model_id: null,
+          turns: null,
+          completed: false,
+          ended_reason: null,
+        })}
+        user={null}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Rebuilt from app activity. This anonymous session was played before 15 October 2026',
+    );
+    expect(screen.getAllByText('Ending not recorded').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Left early')).toBeNull();
+    expect(screen.getAllByText('Not recorded').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Scoring failed')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Transcript' }));
+    expect(screen.getByText('No conversation was stored')).toBeInTheDocument();
+    expect(screen.queryByText(/Transcript \(0 messages\)/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Scoring' }));
+    expect(screen.getByText('No score was stored')).toBeInTheDocument();
   });
 });

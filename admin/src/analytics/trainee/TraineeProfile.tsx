@@ -497,7 +497,7 @@ function progressionFootnote(m: Model, inWindow: string): ReactNode {
     parts.push(`Not shown: ${bits.join(' and ')}.`);
   }
   parts.push('The line averages each session with the four before it.');
-  if (m.teamAvg != null) parts.push(`Team average covers everyone’s scored sessions ${inWindow}.`);
+  if (m.teamAvg != null) parts.push(`Team average covers every scored session ${inWindow}, anonymous practice included.`);
   return parts.join(' ');
 }
 

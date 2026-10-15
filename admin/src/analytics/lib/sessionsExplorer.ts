@@ -7,13 +7,28 @@
  * decided): a session FINISHED when `completed`; it has a real score only
  * when `isScored`. A failed scoring attempt is a finished session with no
  * score — it is never shown or exported as a 0.
+ *
+ * Anonymous sessions (no account) are listed like any other; they are named
+ * "Anonymous · Device 4F2A" (`./who.ts`), never as a trainee. A session that
+ * didn't finish and recorded no reason reads "Ending not recorded" — never
+ * "Left early".
  */
 import { objectionLabel } from './objectionNames';
 import type { OwnerMood, ScenarioSource, SessionSummary } from '../../../../src/shared/analytics/contract';
 import { ENDED_REASON_LABELS, MODE_LABELS, humanize, labelOf } from '../../lib/labels';
 import { difficultyLabel } from '../../lib/difficulty';
-import { SCENARIO_SOURCE_LABELS, SKILL_KEYS, SKILL_LABELS, isScored } from './metrics';
+import { SCENARIO_SOURCE_LABELS, SKILL_KEYS, SKILL_LABELS, endingUnknown, isScored, leftEarly } from './metrics';
 import type { CsvValue } from './csv';
+import {
+  REBUILT_TAG,
+  anonymousName,
+  deviceLabel,
+  languageKey,
+  matchesWho,
+  sessionLanguage,
+  speciesOf,
+  type WhoFilter,
+} from './who';
 
 /** Re-exported for the tabs that import it from here; defined once in `period.ts`. */
 export { inWindowWords } from './period';
@@ -23,36 +38,43 @@ export { inWindowWords } from './period';
 /** Below this a scored session counts as a low score (the "Needs work" band). */
 export const LOW_SCORE = 55;
 
-export type OutcomeFilter = 'all' | 'finished' | 'left' | 'failed' | 'low';
+export type OutcomeFilter = 'all' | 'finished' | 'left' | 'unknown' | 'failed' | 'low';
 
-export const OUTCOME_FILTERS: readonly OutcomeFilter[] = ['all', 'finished', 'left', 'failed', 'low'];
+export const OUTCOME_FILTERS: readonly OutcomeFilter[] = ['all', 'finished', 'left', 'unknown', 'failed', 'low'];
 
 export const OUTCOME_FILTER_LABELS: Record<OutcomeFilter, string> = {
   all: 'All',
   finished: 'Finished',
   left: 'Left early',
+  unknown: 'Ending not recorded',
   failed: 'Scoring failed',
   low: `Low score (under ${LOW_SCORE})`,
 };
 
 /** What happened to one session, as its row pill says it. */
-export type SessionOutcome = 'finished' | 'left' | 'failed';
+export type SessionOutcome = 'finished' | 'left' | 'unknown' | 'failed';
 
 export function sessionOutcome(s: SessionSummary): SessionOutcome {
-  if (!s.completed) return 'left';
+  if (!s.completed) return endingUnknown(s) ? 'unknown' : 'left';
   return s.score_unavailable ? 'failed' : 'finished';
 }
 
+/** Tooltip for "Ending not recorded". */
+export const ENDING_UNKNOWN_HELP =
+  'It didn’t reach the scorecard, and the app recorded no reason — it may have been closed or left in the background.';
+
 /**
- * The words on a row's outcome: "Finished", "Scoring failed", or why the
- * session ended early ("Left early", "Timed out", "Ended by an error").
+ * The words on a row's outcome: "Finished", "Scoring failed", why the
+ * session ended early ("Left early", "Timed out", "Ended by an error"), or
+ * "Ending not recorded" when nothing says how it ended.
  */
 export function outcomeWords(s: SessionSummary): string {
   const o = sessionOutcome(s);
   if (o === 'finished') return 'Finished';
   if (o === 'failed') return 'Scoring failed';
+  if (o === 'unknown') return 'Ending not recorded';
   // A row that says `completed` as its reason but isn't completed is still early.
-  if (!s.ended_reason || s.ended_reason === 'completed') return 'Left early';
+  if (s.ended_reason === 'completed') return 'Left early';
   return labelOf(ENDED_REASON_LABELS, s.ended_reason, 'Left early');
 }
 
@@ -63,7 +85,9 @@ export function matchesOutcome(s: SessionSummary, f: OutcomeFilter): boolean {
     case 'finished':
       return s.completed;
     case 'left':
-      return !s.completed;
+      return leftEarly(s);
+    case 'unknown':
+      return endingUnknown(s);
     case 'failed':
       return s.completed && s.score_unavailable;
     case 'low':
@@ -71,9 +95,12 @@ export function matchesOutcome(s: SessionSummary, f: OutcomeFilter): boolean {
   }
 }
 
-/** Count per outcome chip. Finished + Left early = All; the last two are subsets of Finished. */
+/**
+ * Count per outcome chip. Finished + Left early + Ending not recorded = All;
+ * the last two chips are subsets of Finished.
+ */
 export function outcomeCounts(rows: readonly SessionSummary[]): Record<OutcomeFilter, number> {
-  const out: Record<OutcomeFilter, number> = { all: 0, finished: 0, left: 0, failed: 0, low: 0 };
+  const out: Record<OutcomeFilter, number> = { all: 0, finished: 0, left: 0, unknown: 0, failed: 0, low: 0 };
   for (const s of rows) for (const f of OUTCOME_FILTERS) if (matchesOutcome(s, f)) out[f]++;
   return out;
 }
@@ -124,10 +151,11 @@ export function objectionIfDifferent(s: SessionSummary): string | null {
   return label;
 }
 
-/** "Dog · Labrador Retriever · Skeptical owner · Built-in". */
+/** "Dog · Labrador Retriever · Skeptical owner · Built-in" (a rebuilt session stored none of it). */
 export function scenarioContext(s: SessionSummary): string {
+  const species = speciesOf(s);
   return [
-    SPECIES_LABELS[s.species] ?? null,
+    species ? SPECIES_LABELS[species] : null,
     s.breed?.trim() || null,
     s.persona?.trim() ? `${s.persona.trim()} owner` : null,
     SOURCE_SHORT[s.scenario_source] || null,
@@ -150,6 +178,10 @@ export function fmtLength(seconds: number | null | undefined): string {
 
 export interface SessionFilters {
   outcome: OutcomeFilter;
+  /** Signed-in trainees, anonymous sessions, or both. */
+  who: WhoFilter;
+  /** 'all', a language key ('en', 'fr') or 'none' (not recorded). */
+  language: string;
   mode: 'all' | 'text' | 'voice';
   /** 'all' or a level 1–4, as a string (it comes from a <select>). */
   difficulty: string;
@@ -161,6 +193,8 @@ export interface SessionFilters {
 
 export const NO_FILTERS: SessionFilters = {
   outcome: 'all',
+  who: 'all',
+  language: 'all',
   mode: 'all',
   difficulty: 'all',
   objection: 'all',
@@ -172,27 +206,62 @@ export function activeFilterCount(f: SessionFilters): number {
   return (Object.keys(NO_FILTERS) as Array<keyof SessionFilters>).filter((k) => f[k] !== NO_FILTERS[k]).length;
 }
 
+/**
+ * Filters another tab asks the Sessions tab to open with ("see Sessions →
+ * Who: Anonymous"). Read once when the tab mounts (`sessionFilterPreset`),
+ * then cleared (`clearSessionFilterPreset`) so a later visit starts clean.
+ */
+let preset: Partial<SessionFilters> | null = null;
+
+export function presetSessionFilters(f: Partial<SessionFilters>): void {
+  preset = { ...f };
+}
+
+/** The filters the Sessions tab should start from (no filters unless another tab asked). */
+export function sessionFilterPreset(): SessionFilters {
+  return { ...NO_FILTERS, ...(preset ?? {}) };
+}
+
+export function clearSessionFilterPreset(): void {
+  preset = null;
+}
+
 /** Every filter but the outcome chip — the chips count within these. */
 export function matchesSelects(s: SessionSummary, f: SessionFilters): boolean {
+  if (!matchesWho(s, f.who)) return false;
+  if (f.language !== 'all' && languageKey(s.locale) !== f.language) return false;
   if (f.mode !== 'all' && s.mode !== f.mode) return false;
   if (f.difficulty !== 'all' && String(s.difficulty ?? '') !== f.difficulty) return false;
   if (f.objection !== 'all' && (s.pushback_id ?? '') !== f.objection) return false;
-  if (f.species !== 'all' && s.species !== f.species) return false;
+  // A rebuilt session's animal was never stored: it matches neither Dog nor Cat.
+  if (f.species !== 'all' && speciesOf(s) !== f.species) return false;
   if (f.source !== 'all' && s.scenario_source !== f.source) return false;
   return true;
 }
 
+/**
+ * Who a session belongs to, as a name: the trainee's, or "Anonymous ·
+ * Device 4F2A" — never a lookup with no account behind it.
+ */
+export function whoName(s: SessionSummary, nameOf: (userId: string) => string): string {
+  return s.user_id ? nameOf(s.user_id) : anonymousName(s.anon_session_id);
+}
+
 /** Everything a search box should find a session by, lower-cased. */
 export function searchText(s: SessionSummary, traineeName: string): string {
+  const species = speciesOf(s);
   return [
     traineeName,
+    s.user_id ? null : 'anonymous no account',
+    s.locale ? sessionLanguage(s) : null,
+    s.reconstructed ? `${REBUILT_TAG} rebuilt from app activity` : null,
     s.scenario_title,
     s.scenario_summary,
     s.pushback_id ? objectionLabel(s.pushback_id) : null,
     s.breed,
     s.persona,
     s.difficulty != null ? difficultyLabel(s.difficulty) : null,
-    SPECIES_LABELS[s.species],
+    species ? SPECIES_LABELS[species] : null,
     s.scenario_source !== 'unknown' ? SCENARIO_SOURCE_LABELS[s.scenario_source] : null,
   ]
     .filter(Boolean)
@@ -219,7 +288,7 @@ export function filterSessions(
   query: string,
   nameOf: (userId: string) => string,
 ): { rows: SessionSummary[]; chipBase: SessionSummary[] } {
-  const chipBase = rows.filter((s) => matchesSelects(s, f) && matchesQuery(s, nameOf(s.user_id), query));
+  const chipBase = rows.filter((s) => matchesSelects(s, f) && matchesQuery(s, whoName(s, nameOf), query));
   return { rows: chipBase.filter((s) => matchesOutcome(s, f.outcome)), chipBase };
 }
 
@@ -275,7 +344,8 @@ export function localStamp(iso: string): string {
  * The filtered sessions as a spreadsheet: plain-English headers, words not
  * ids, a blank score when there is no real one (never a stand-in 0), and the
  * five skills. `emailOf` adds an Email column — pass it only when the caller
- * may see emails.
+ * may see emails. An anonymous session's "Who" carries the short device tag
+ * and nothing more (no device id, no name, no email).
  */
 export function sessionsCsv(
   rows: readonly SessionSummary[],
@@ -283,8 +353,11 @@ export function sessionsCsv(
 ): { header: string[]; rows: CsvValue[][] } {
   const header = [
     'Date and time',
+    'Who',
     'Trainee',
     ...(opts.emailOf ? ['Email'] : []),
+    'Language',
+    'Recorded as',
     'Scenario',
     'Objection',
     'Animal',
@@ -307,13 +380,17 @@ export function sessionsCsv(
   ];
   const out = rows.map((s): CsvValue[] => {
     const scored = isScored(s);
+    const species = speciesOf(s);
     return [
       localStamp(s.created_at),
-      opts.nameOf(s.user_id),
-      ...(opts.emailOf ? [opts.emailOf(s.user_id)] : []),
+      s.user_id ? 'Signed-in trainee' : `Anonymous · ${deviceLabel(s.anon_session_id)}`,
+      s.user_id ? opts.nameOf(s.user_id) : '',
+      ...(opts.emailOf ? [s.user_id ? opts.emailOf(s.user_id) : ''] : []),
+      sessionLanguage(s),
+      s.reconstructed ? 'Rebuilt from app activity' : 'Saved by the app',
       sessionTitle(s),
       s.pushback_id ? objectionLabel(s.pushback_id) : '',
-      SPECIES_LABELS[s.species] ?? '',
+      species ? SPECIES_LABELS[species] : '',
       s.breed ?? '',
       s.persona ?? '',
       s.owner_driver ? humanize(s.owner_driver) : '',

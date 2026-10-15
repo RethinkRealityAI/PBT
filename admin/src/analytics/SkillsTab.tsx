@@ -7,12 +7,13 @@
  *   trend        average score over time against the "Solid" line
  *   objection ×  which objection the team handles worst, on which skill
  *   difficulty · communication-style matchups
- *   distribution · animal & scenario source
+ *   distribution · language, who practised, animal & scenario source
  *   how owners felt · what trainees said (feedback.read)
  *
  * Every average is over scored sessions only (`isScored`); what's left out is
  * said in the panel's footnote. Numbers come from `lib/*` so they agree with
- * the Overview and a trainee's profile.
+ * the Overview and a trainee's profile. Scored anonymous sessions count in
+ * every average (they are real practice); rebuilt ones have no score.
  */
 import { useMemo } from 'react';
 import type { AnalyticsTabProps } from './AnalyticsDestination';
@@ -64,6 +65,7 @@ import {
 } from './skills/Panels';
 import { useObjectionTitles } from './objectionTitles';
 import { TileRow } from './overview/TileRow';
+import { languageKey, languageOrder, peopleWords, speciesOf } from './lib/who';
 import './overview/styles';
 
 export function SkillsTab(props: AnalyticsTabProps) {
@@ -150,7 +152,9 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
     const matchup = driverMatchup(current, traineeDriver);
     // Same bar as the grid's cells (2+), so the sentence names a cell the reader can see.
     const pairing = hardestPairing(matchup, 2);
-    const noStyle = scored.filter((s) => s.owner_driver && !traineeDriver(s.user_id)).length;
+    // Signed-in trainees with no quiz result, and anonymous sessions (no trainee on record) — both left out.
+    const noStyle = scored.filter((s) => s.user_id && s.owner_driver && !traineeDriver(s.user_id)).length;
+    const anonStyle = scored.filter((s) => !s.user_id && s.owner_driver).length;
 
     const moodCur = moodSplit(current);
     const moodPrev = comparable ? moodSplit(previous) : null;
@@ -190,12 +194,17 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
       matchupHasData: [...matchup.values()].some((v) => v.scored >= 2),
       pairing,
       noStyle,
+      anonStyle,
       histogram: scoreHistogram(current),
-      animals: splitBy(current, (s) => s.species, ['dog', 'cat']),
+      languages: splitBy(current, (s) => languageKey(s.locale), languageOrder(current)),
+      who: splitBy(current, (s) => (s.user_id ? 'signed_in' : 'anonymous'), ['signed_in', 'anonymous']),
+      // A rebuilt session never stored its animal: left out, not counted as a dog.
+      animals: splitBy(current, (s) => speciesOf(s), ['dog', 'cat']),
       sources: splitBy(current, (s) => s.scenario_source, ['library', 'studio', 'self-built', 'unknown']),
       moodCur,
       wonDelta,
       shift: sentimentShift(current),
+      rebuiltUnfinished: current.filter((s) => s.reconstructed && !s.completed).length,
       fbCur: feedbackSummary(fb.current),
       fbPrev: comparable ? feedbackSummary(fb.previous) : null,
       comments,
@@ -222,11 +231,17 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
   const preSkills = cur.scored - m.skillsCur.count;
   const hasPrevSkills = m.skillsPrev != null && SKILL_KEYS.some((k) => m.skillsPrev?.avg[k] != null);
 
+  // What the scores rest on, honestly: rebuilt anonymous sessions are counted
+  // once, on their own, rather than inside "left early".
+  const appLeft = cur.leftEarly + cur.endingUnknown - m.rebuiltUnfinished;
   const exclusions = [
     cur.scoringFailed > 0
       ? `${cur.scoringFailed} finished session${cur.scoringFailed === 1 ? '' : 's'} couldn’t be scored and ${cur.scoringFailed === 1 ? 'is' : 'are'} left out of every figure here.`
       : null,
-    cur.leftEarly > 0 ? `${cur.leftEarly} session${cur.leftEarly === 1 ? '' : 's'} left early ${cur.leftEarly === 1 ? 'has' : 'have'} no score.` : null,
+    appLeft > 0 ? `${appLeft} session${appLeft === 1 ? '' : 's'} left early ${appLeft === 1 ? 'has' : 'have'} no score.` : null,
+    cur.rebuilt > 0
+      ? `${cur.rebuilt} anonymous session${cur.rebuilt === 1 ? '' : 's'} from before 15 Oct 2026 ${cur.rebuilt === 1 ? 'was' : 'were'} rebuilt from app activity and kept no score.`
+      : null,
   ]
     .filter(Boolean)
     .join(' ');
@@ -296,7 +311,7 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                   delta={d?.scored}
                   compareLabel={tileCompare(d?.scored)}
                   trend={m.extras.scored}
-                  hint={`What every figure on this page rests on · ${cur.activeTrainees} trainee${cur.activeTrainees === 1 ? '' : 's'}`}
+                  hint={`What every figure on this page rests on · ${peopleWords(cur.activeTrainees, cur.anonDevices)}`}
                   onClick={() => onOpen('sessions')}
                 />
               </TileRow>
@@ -404,6 +419,8 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                       Cells with fewer than 2 scored sessions show “—”.
                       {m.noStyle > 0 &&
                         ` ${m.noStyle} session${m.noStyle === 1 ? '' : 's'} by trainees without a quiz result ${m.noStyle === 1 ? 'is' : 'are'} left out.`}
+                      {m.anonStyle > 0 &&
+                        ` ${m.anonStyle} anonymous session${m.anonStyle === 1 ? ' is' : 's are'} left out — no trainee style is on record for them.`}
                     </>
                     )
                   }
@@ -433,7 +450,13 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
 
               <SplitRow ratio="minmax(0, 1fr) minmax(0, 1fr)">
                 <DistributionPanel bins={m.histogram} />
-                <SplitsPanel animals={m.animals} sources={m.sources} />
+                <SplitsPanel
+                  languages={m.languages}
+                  who={m.who}
+                  animals={m.animals}
+                  sources={m.sources}
+                  rebuilt={cur.rebuilt}
+                />
               </SplitRow>
 
               {canFeedback ? (

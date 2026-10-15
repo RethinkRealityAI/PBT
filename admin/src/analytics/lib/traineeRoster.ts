@@ -9,7 +9,7 @@
 import type { SessionSummary } from '../../../../src/shared/analytics/contract';
 import { SYSTEM_ROLES } from '../../../../src/shared/access/permissions';
 import { humanize } from '../../lib/labels';
-import { rangeWords, windows, type Range } from './period';
+import { rangeWords, splitByPeriod, windows, type Range } from './period';
 import { SKILL_KEYS, SKILL_LABELS, sessionTime } from './metrics';
 import { STATUS_LABELS, traineeStatus, type TraineeRow, type TraineeStatus } from './trainees';
 import type { CsvValue } from './csv';
@@ -151,6 +151,19 @@ export function rosterSummary(
     perActive: practising > 0 ? curSessions.length / practising : null,
     perActivePrev,
   };
+}
+
+/**
+ * Sessions in the window played without an account. They belong to no one
+ * on the roster; the roster says how many there were and where to see them.
+ */
+export function anonymousSessionsInWindow(allSessions: readonly SessionSummary[], range: Range, now = Date.now()): number {
+  // The same window split the Sessions tab lists, so "see Sessions" shows exactly these.
+  return splitByPeriod(
+    allSessions.filter((s) => !s.user_id),
+    range,
+    now,
+  ).current.length;
 }
 
 // ─── CSV ───────────────────────────────────────────────────────────────

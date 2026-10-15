@@ -15,6 +15,9 @@ const CSS = `
   }
   .pbt-ov-two { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
   @container (max-width: 520px) { .pbt-ov-two { grid-template-columns: 1fr; } }
+  /* Short lists (the Skills tab's score-by-group splits) stay two-up down to a narrower panel. */
+  @container (max-width: 520px) { .pbt-ov-two.pbt-ov-two-tight { grid-template-columns: 1fr 1fr; } }
+  @container (max-width: 380px) { .pbt-ov-two.pbt-ov-two-tight { grid-template-columns: 1fr; } }
   .pbt-ov-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: center; }
   .pbt-ov-strip > * + * { border-left: 0.5px solid rgba(60,20,15,0.07); }
   @container (max-width: 820px) {

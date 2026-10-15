@@ -1,6 +1,7 @@
 /**
- * The Skills tab's smaller panels: difficulty, score distribution, animal &
- * scenario-source splits, how owners felt, and what trainees said.
+ * The Skills tab's smaller panels: difficulty, score distribution, the
+ * language / who / animal / scenario-source splits, how owners felt, and
+ * what trainees said.
  */
 import type { ReactNode } from 'react';
 import { COLOR } from '../../lib/tokens';
@@ -13,6 +14,7 @@ import { sentimentWord, type FeedbackSummary, type SplitRowStats } from '../lib/
 import { SCENARIO_SOURCE_HINTS, SCENARIO_SOURCE_LABELS } from '../lib/metrics';
 import type { ScenarioSource } from '../../../../src/shared/analytics/contract';
 import { Columns } from '../overview/charts';
+import { LANGUAGE_NONE, LANGUAGE_NONE_HELP, WHO_FILTER_LABELS, languageLabel } from '../lib/who';
 import '../overview/styles';
 
 function fmtScore(v: number | null): string {
@@ -115,43 +117,80 @@ export function DistributionPanel({ bins }: { bins: number[] }) {
   );
 }
 
-// ─── Animal & source ───────────────────────────────────────────────────
+// ─── Language, who, animal & source ────────────────────────────────────
 
-function splitRows(rows: SplitRowStats[], label: (key: string) => ReactNode, sub?: (key: string) => string) {
+function splitRows(rows: SplitRowStats[], label: (key: string) => ReactNode) {
   return rows.map((r) => ({
     key: r.key,
     label: label(r.key),
     value: r.avgScore ?? 0,
     display: r.avgScore == null ? '—' : Math.round(r.avgScore),
-    sub: `${r.scored} scored${sub ? ` · ${sub(r.key)}` : ''}`,
+    // Say what the average rests on — and how many sessions had no score at all.
+    sub: r.scored === r.sessions ? `${r.scored} scored` : `${r.scored} scored of ${r.sessions}`,
   }));
 }
 
-export function SplitsPanel({ animals, sources }: { animals: SplitRowStats[]; sources: SplitRowStats[] }) {
+function SplitList({ title, rows }: { title: string; rows: ReturnType<typeof splitRows> }) {
   return (
-    <Panel title="Animal & scenario source" subtitle="Average score — do some kinds of scenario go better than others?">
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: COLOR.inkMute, marginBottom: 10 }}>{title}</div>
+      <BarList rows={rows} max={100} emptyText="No sessions." />
+    </div>
+  );
+}
+
+const WHO_HINTS: Record<string, string> = {
+  signed_in: 'Trainees practising with an account',
+  anonymous: 'Practice without an account — counted by session, never as a person',
+};
+
+export function SplitsPanel({
+  languages,
+  who,
+  animals,
+  sources,
+  rebuilt,
+}: {
+  languages: SplitRowStats[];
+  who: SplitRowStats[];
+  animals: SplitRowStats[];
+  sources: SplitRowStats[];
+  /** Rebuilt anonymous sessions in the window (counted, never averaged, no animal). */
+  rebuilt: number;
+}) {
+  return (
+    <Panel
+      title="Score by group"
+      subtitle="Average score — does practice go better in one language, with an account, or for one kind of scenario?"
+      footnote={
+        rebuilt > 0
+          ? `${rebuilt} anonymous session${rebuilt === 1 ? '' : 's'} from before 15 Oct 2026 ${rebuilt === 1 ? 'was' : 'were'} rebuilt from app activity: ${rebuilt === 1 ? 'it shows' : 'they show'} in the “of …” counts, but ${rebuilt === 1 ? 'has' : 'have'} no score or animal.`
+          : undefined
+      }
+    >
       <div className="pbt-ov-cq">
-        <div className="pbt-ov-two">
-          <div>
-            <div style={{ fontSize: 11.5, fontWeight: 800, color: COLOR.inkMute, marginBottom: 10 }}>By animal</div>
-            <BarList
-              rows={splitRows(animals, (k) => (k === 'cat' ? 'Cats' : 'Dogs'))}
-              max={100}
-              emptyText="No scored sessions."
-            />
-          </div>
-          <div>
-            <div style={{ fontSize: 11.5, fontWeight: 800, color: COLOR.inkMute, marginBottom: 10 }}>By where the scenario came from</div>
-            <BarList
-              rows={splitRows(sources, (k) => (
-                <span title={SCENARIO_SOURCE_HINTS[k as ScenarioSource]}>
-                  {SCENARIO_SOURCE_LABELS[k as ScenarioSource] ?? k}
-                </span>
-              ))}
-              max={100}
-              emptyText="No scored sessions."
-            />
-          </div>
+        <div className="pbt-ov-two pbt-ov-two-tight" style={{ rowGap: 24 }}>
+          <SplitList
+            title="By language"
+            rows={splitRows(languages, (k) =>
+              k === LANGUAGE_NONE ? <span title={LANGUAGE_NONE_HELP}>{languageLabel(k)}</span> : languageLabel(k),
+            )}
+          />
+          <SplitList
+            title="By who practised"
+            rows={splitRows(who, (k) => (
+              <span title={WHO_HINTS[k]}>{WHO_FILTER_LABELS[k as 'signed_in' | 'anonymous'] ?? k}</span>
+            ))}
+          />
+          <SplitList title="By animal" rows={splitRows(animals, (k) => (k === 'cat' ? 'Cats' : 'Dogs'))} />
+          <SplitList
+            title="By where the scenario came from"
+            rows={splitRows(sources, (k) => (
+              <span title={SCENARIO_SOURCE_HINTS[k as ScenarioSource]}>
+                {SCENARIO_SOURCE_LABELS[k as ScenarioSource] ?? k}
+              </span>
+            ))}
+          />
         </div>
       </div>
     </Panel>

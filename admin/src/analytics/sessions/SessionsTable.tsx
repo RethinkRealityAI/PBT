@@ -6,6 +6,10 @@
  *
  * The table keeps a minimum width and scrolls inside its own container on
  * narrow screens; nothing else on the page moves sideways.
+ *
+ * An anonymous session (no account) reads "Anonymous" with its short device
+ * tag — no profile to open; a rebuilt one carries a "Rebuilt" tag and no
+ * score. The language the session was played in sits under who played it.
  */
 import type { CSSProperties, ReactNode } from 'react';
 import type { SessionSummary } from '../../../../src/shared/analytics/contract';
@@ -17,15 +21,19 @@ import { MODE_LABELS, labelOf } from '../../lib/labels';
 import { isScored } from '../lib/metrics';
 import { useElementWidth } from '../engagement/useElementWidth';
 import {
+  ENDING_UNKNOWN_HELP,
   OWNER_ENDING_LABELS,
   fmtLength,
   objectionIfDifferent,
   outcomeWords,
   scenarioContext,
+  sessionOutcome,
   sessionTitle,
   type SortDir,
   type SortKey,
 } from '../lib/sessionsExplorer';
+import { LANGUAGE_NONE, REBUILT_SCORE_HELP, languageKey, languageLabel } from '../lib/who';
+import { AnonAvatar, DeviceTag, RebuiltTag } from '../who';
 
 export interface TableRowPerson {
   name: string;
@@ -141,7 +149,7 @@ export function SessionsTable({
       <table
         style={{
           width: '100%',
-          minWidth: compact ? 900 : 1100,
+          minWidth: compact ? 920 : 1100,
           borderCollapse: 'separate',
           borderSpacing: 0,
           tableLayout: 'fixed',
@@ -151,7 +159,8 @@ export function SessionsTable({
           Practice sessions. Select a scenario to open the session.
         </caption>
         <colgroup>
-          <col style={{ width: compact ? 156 : 168 }} />
+          {/* Room for "Device 4F2A · Français" under a name. */}
+          <col style={{ width: compact ? 178 : 196 }} />
           <col />
           <col style={{ width: 110 }} />
           <col style={{ width: 118 }} />
@@ -164,7 +173,7 @@ export function SessionsTable({
         </colgroup>
         <thead>
           <tr>
-            <Plain>Trainee</Plain>
+            <Plain>Who</Plain>
             <Plain>Scenario</Plain>
             <Plain>Outcome</Plain>
             <Plain>Difficulty</Plain>
@@ -178,11 +187,14 @@ export function SessionsTable({
         </thead>
         <tbody>
           {rows.map((s) => {
-            const p = personOf(s.user_id);
+            const userId = s.user_id;
+            const p = userId ? personOf(userId) : null;
             const title = sessionTitle(s);
             const objection = objectionIfDifferent(s);
             const at = new Date(s.created_at);
             const scored = isScored(s);
+            const lang = languageKey(s.locale);
+            const context = scenarioContext(s);
             return (
               <tr
                 key={s.id}
@@ -192,31 +204,62 @@ export function SessionsTable({
               >
                 <td style={td}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-                    <Avatar name={p.name} driver={asDriver(p.driver)} size={26} />
-                    {p.known ? (
-                      <button
-                        type="button"
-                        className="pbt-link"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenTrainee(s.user_id);
-                        }}
-                        title={`Open ${p.name}’s profile`}
-                        style={{
-                          fontSize: 12.5,
-                          color: COLOR.ink,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          minWidth: 0,
-                          textAlign: 'left',
-                        }}
-                      >
-                        {p.name}
-                      </button>
-                    ) : (
-                      <span style={{ fontWeight: 650, color: COLOR.inkMute, fontSize: 12.5 }}>{p.name}</span>
-                    )}
+                    {p ? <Avatar name={p.name} driver={asDriver(p.driver)} size={26} /> : <AnonAvatar size={26} />}
+                    <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                      {p && userId && p.known ? (
+                        <button
+                          type="button"
+                          className="pbt-link"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenTrainee(userId);
+                          }}
+                          title={`Open ${p.name}’s profile`}
+                          style={{
+                            fontSize: 12.5,
+                            color: COLOR.ink,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '100%',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {p.name}
+                        </button>
+                      ) : (
+                        <span
+                          style={{
+                            fontWeight: 650,
+                            color: p ? COLOR.inkMute : COLOR.inkSoft,
+                            fontSize: 12.5,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '100%',
+                          }}
+                        >
+                          {p ? p.name : 'Anonymous'}
+                        </span>
+                      )}
+                      {(!p || lang !== LANGUAGE_NONE) && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: COLOR.inkMute,
+                            marginTop: 1,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '100%',
+                          }}
+                        >
+                          {!p && <DeviceTag anonId={s.anon_session_id} />}
+                          {!p && lang !== LANGUAGE_NONE && ' · '}
+                          {lang !== LANGUAGE_NONE && <span title="The app language this session was played in">{languageLabel(lang)}</span>}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </td>
                 <td style={td}>
@@ -253,13 +296,31 @@ export function SessionsTable({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {objection && <span style={{ color: COLOR.inkSoft, fontWeight: 650 }}>{objection} · </span>}
-                    {scenarioContext(s)}
+                    {s.reconstructed && (
+                      <span style={{ marginRight: 6 }}>
+                        <RebuiltTag />
+                      </span>
+                    )}
+                    {objection && (
+                      <span style={{ color: COLOR.inkSoft, fontWeight: 650 }}>
+                        {objection}
+                        {context ? ' · ' : ''}
+                      </span>
+                    )}
+                    {context}
                   </div>
                 </td>
-                <td style={{ ...td, overflow: 'hidden' }} title={s.completed ? undefined : outcomeWords(s)}>
+                <td
+                  style={{ ...td, overflow: 'hidden' }}
+                  title={s.completed ? undefined : sessionOutcome(s) === 'unknown' ? ENDING_UNKNOWN_HELP : outcomeWords(s)}
+                >
                   {s.completed ? (
                     <StatusPill tone="success">Finished</StatusPill>
+                  ) : sessionOutcome(s) === 'unknown' ? (
+                    // Not an outcome — the ending wasn't recorded. Plain words that may wrap.
+                    <span style={{ display: 'block', fontSize: 11.5, fontWeight: 650, color: COLOR.inkMute, lineHeight: 1.3 }}>
+                      {outcomeWords(s)}
+                    </span>
                   ) : (
                     <StatusPill tone={s.ended_reason === 'error' ? 'danger' : 'neutral'}>{outcomeWords(s)}</StatusPill>
                   )}
@@ -308,6 +369,10 @@ export function SessionsTable({
                 <td style={td}>
                   {scored ? (
                     <ScoreBadge score={s.score_overall} />
+                  ) : s.reconstructed ? (
+                    <span title={REBUILT_SCORE_HELP} style={{ cursor: 'help' }}>
+                      <Muted>—</Muted>
+                    </span>
                   ) : s.completed && s.score_unavailable ? (
                     <span title="The scorer failed — this session is left out of every average">
                       <Muted>—</Muted>

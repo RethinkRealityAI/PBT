@@ -10,7 +10,7 @@ import { COLOR } from '../../lib/tokens';
 import { CHART, GhostButton, Legend, Panel } from '../ui';
 import type { TrendPoint } from '../lib/metrics';
 import { inWindowWords, type Range } from '../lib/period';
-import { ActivityBars, MiniTable, SOLID, SOLID_LINE, ScoreLine, TableToggle, bucketTitle } from './charts';
+import { ActivityBars, ENDING_UNKNOWN_FILL, MiniTable, SOLID, SOLID_LINE, ScoreLine, TableToggle, bucketTitle } from './charts';
 
 type Granularity = 'hour' | 'day' | 'week';
 
@@ -61,6 +61,8 @@ export function PracticeActivityPanel({
 }) {
   const [table, setTable] = useState(false);
   const total = points.reduce((a, p) => a + p.sessions, 0);
+  const anyUnknown = points.some((p) => p.endingUnknown > 0);
+  const anyDevices = points.some((p) => p.devices > 0);
   return (
     <Panel
       title="Practice activity"
@@ -73,6 +75,7 @@ export function PracticeActivityPanel({
                 items={[
                   { label: 'Finished', color: CHART.primary },
                   { label: 'Left early', color: CHART.muted },
+                  ...(anyUnknown ? [{ label: 'Ending not recorded', color: ENDING_UNKNOWN_FILL }] : []),
                 ]}
               />
             )}
@@ -97,7 +100,9 @@ export function PracticeActivityPanel({
             { key: 'sessions', label: 'Sessions' },
             { key: 'finished', label: 'Finished' },
             { key: 'left', label: 'Left early' },
+            ...(anyUnknown ? [{ key: 'unknown', label: 'Ending not recorded' }] : []),
             { key: 'trainees', label: 'Trainees' },
+            ...(anyDevices ? [{ key: 'devices', label: 'Anonymous devices' }] : []),
           ]}
           rows={points
             .slice()
@@ -108,7 +113,9 @@ export function PracticeActivityPanel({
               sessions: p.sessions,
               finished: p.finished,
               left: p.leftEarly,
+              unknown: p.endingUnknown,
               trainees: p.trainees,
+              devices: p.devices,
             }))}
         />
       ) : (

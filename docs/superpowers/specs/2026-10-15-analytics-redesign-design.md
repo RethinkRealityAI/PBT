@@ -202,3 +202,41 @@ Unit tests for every pure helper (`admin/src/analytics/lib/__tests__`,
 `adminSessions`, `adminListPaging`, `paging`), the label-exhaustiveness and
 no-emoji guards, and screenshots of every tab against the seeded mock at
 1440 / 1280 / 900 / 820 px with no horizontal overflow and no console errors.
+
+## 9. Anonymous sessions and language (follow-up, 2026-10-15)
+
+**Problem.** PBT is anonymous-first, but only signed-in sessions reached
+`training_sessions`: the app upserts its own row under RLS, and an anonymous
+trainee has no row it may write. An anonymous session left only app-usage
+events and AI-call telemetry. On 1 October 2026, 79 anonymous devices (mostly
+French, per the product owner) opened ~60 text and ~90 voice sessions that
+Analytics → Sessions could not see; the 5 ratings in Feedback were all
+anonymous and pointed at sessions that did not exist.
+
+**Recording (from this release).** Migration
+`20261015000000_anonymous_sessions.sql` makes `user_id` nullable and adds
+`anon_session_id` (the random per-device id in `pbt:session_id`), `locale`
+and `origin`. Only the server writes anonymous rows: `session-save` (the
+conversation when it ends or is left — no score) and `ai-evaluate` (the
+score, with `anonSessionId`). Both refuse rows owned by an account or another
+device and write nothing with `allowTelemetry: false` or in a preview. On
+sign-in, the backfill claims the device's anonymous rows among its local
+sessions (`session-save` `claim: true`) so a complete row keeps its verified
+score. The Terms say so (en + fr; no version bump — see CLAUDE.md
+"Outstanding work" 0(i)).
+
+**History.** The migration rebuilds one `origin = 'reconstructed'` row per
+anonymous TEXT session the app announced with `session_open` (~115 rows, 60 on
+1 Oct): when, objection, mode, device, duration, and whether it reached the
+scorecard (a `stats` screen view on the same device before its next session,
+within 90 minutes) or was left (`session_abandon`); otherwise the ending is
+unknown. Transcripts and scores were never stored and cannot be recovered;
+anonymous voice sessions logged no `session_open` and cannot be rebuilt.
+
+**Display.** An anonymous session counts as a session (and its score in every
+average) but never as a person; people are reported as signed-in trainees +
+anonymous devices. Sessions gains Who and Language filters, a hashed device
+tag, "Rebuilt" and "Ending not recorded"; Skills gains a "Score by group"
+panel (language, who, animal, source); Trainees links its anonymous count to
+Sessions; Feedback (moved to Monitor) gains a Who column and opens the rated
+session. Rules: `admin/src/analytics/lib/who.ts`.
