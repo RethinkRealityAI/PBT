@@ -60,6 +60,7 @@ import {
   activityTimeline,
   clockTime,
   dayLabel,
+  gettingStartedNote,
   difficultyBreakdown,
   objectionBreakdown,
   peakPractice,
@@ -226,6 +227,31 @@ function ProfileBody({
         <CoachingNotesPanel notes={m.notes} />
       </div>
 
+      {hasSessions && cmp && m.cur.sessions === 0 && m.lastSessionAt != null && (
+        <div
+          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+            padding: '12px 16px 12px 18px',
+            borderRadius: 16,
+            background: COLOR.warnSoft,
+            border: '0.5px solid oklch(0.88 0.08 70)',
+            fontSize: 13,
+            color: 'oklch(0.38 0.08 60)',
+          }}
+        >
+          <span>
+            <strong>No sessions in the {words}.</strong> Their last was {relativeDay(m.lastSessionAt, now).toLowerCase()}, on{' '}
+            {dayLabel(m.lastSessionAt, now)} — the score chart and skill profile below show all time instead.
+          </span>
+          <GhostButton onClick={() => onRange('all')}>Show all time</GhostButton>
+        </div>
+      )}
+
       {hasSessions && (
         <div className="pbt-tp-kpis">
           <StatTile
@@ -345,10 +371,9 @@ function ProfileBody({
               <EmptyState
                 title="No practice sessions yet"
                 subtitle={`Joined ${relativeDay(new Date(detail.profile.created_at).getTime(), now).toLowerCase()}. Scores, skills and their practice habit appear here after the first session.`}
-                action={range !== 'all' ? <GhostButton onClick={() => onRange('all')}>Show all time</GhostButton> : undefined}
               />
             </Glass>
-            {detail.activity && <CalendarPanel model={m} now={now} showAppDays />}
+            {detail.activity && detail.activity.active_days.length > 0 && <CalendarPanel model={m} now={now} showAppDays />}
           </div>
           <div className="pbt-tp-stack">
             <OptionalPanels detail={detail} now={now} />
@@ -414,7 +439,17 @@ function buildModel(detail: TraineeDetail, teamRows: SessionSummary[], range: Ra
     status: traineeStatus(lastSessionAt, now),
     isNew: now - new Date(detail.profile.created_at).getTime() <= NEW_DAYS * DAY_MS,
     streak: streaks(sessions.map(sessionTime), now),
-    notes: coachingNotes({ sessions, teamSkills, objectionLabel: (id) => pushbackLabel(id), now }),
+    notes: [
+      ...coachingNotes({ sessions, teamSkills, objectionLabel: (id) => pushbackLabel(id), now }),
+      ...[
+        gettingStartedNote({
+          sessions: sessions.length,
+          activity: detail.activity,
+          joinedAt: new Date(detail.profile.created_at).getTime(),
+          now,
+        }),
+      ].filter((n): n is NonNullable<typeof n> => n != null),
+    ],
     progression,
     skills,
     skillsFellBack,
@@ -885,8 +920,6 @@ function SmallFact({ label, value, sub }: { label: string; value: ReactNode; sub
 
 // ─── Recent sessions ───────────────────────────────────────────────────
 
-const SESSION_GRID = '86px minmax(0, 1fr) 116px 64px 84px';
-
 function RecentSessionsPanel({
   sessions,
   now,
@@ -909,9 +942,9 @@ function RecentSessionsPanel({
       <div className="pbt-tq">
         <div
           aria-hidden="true"
+          className="pbt-sess-grid"
           style={{
             display: 'grid',
-            gridTemplateColumns: SESSION_GRID,
             gap: 12,
             padding: '0 0 8px',
             borderBottom: `1px solid ${COLOR.border}`,
@@ -954,9 +987,8 @@ function SessionRow({ s, now, onOpen }: { s: SessionSummary; now: number; onOpen
   return (
     <button
       type="button"
-      className="pbt-session-row"
+      className="pbt-session-row pbt-sess-grid"
       onClick={onOpen}
-      style={{ gridTemplateColumns: SESSION_GRID }}
       aria-label={`${dayLabel(t, now)}: ${title}`}
     >
       <span style={{ minWidth: 0 }}>

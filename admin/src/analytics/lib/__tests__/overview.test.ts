@@ -22,6 +22,8 @@ describe('trendExtras', () => {
     expect(t.resolvedRate[last]).toBe(50);
     expect(t.finishRate[last]).toBeCloseTo(66.67, 1);
     expect(t.scored[last]).toBe(2);
+    expect(t.passRate[last]).toBe(100);
+    expect(t.passRate[0]).toBeNull();
     expect(t.resolvedRate[0]).toBeNull();
     expect(t.finishRate[0]).toBeNull();
   });

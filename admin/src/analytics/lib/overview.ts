@@ -26,16 +26,21 @@ export function trendExtras(
   finishRate: Array<number | null>;
   /** Scored sessions per bucket (what each average-score point rests on). */
   scored: number[];
+  /** Share of scored sessions at 70+ per bucket. */
+  passRate: Array<number | null>;
 } {
   const { list } = buckets(range, now);
-  const acc = list.map(() => ({ seconds: 0, sessions: 0, finished: 0, mood: 0, green: 0, scored: 0 }));
+  const acc = list.map(() => ({ seconds: 0, sessions: 0, finished: 0, mood: 0, green: 0, scored: 0, passed: 0 }));
   for (const s of rows) {
     const i = bucketIndex(list, sessionTime(s));
     if (i < 0) continue;
     const a = acc[i];
     a.sessions++;
     if (s.duration_seconds != null && s.duration_seconds > 0) a.seconds += s.duration_seconds;
-    if (isScored(s)) a.scored++;
+    if (isScored(s)) {
+      a.scored++;
+      if ((s.score_overall as number) >= 70) a.passed++;
+    }
     if (s.completed) {
       a.finished++;
       if (s.owner_mood_end != null) {
@@ -49,6 +54,7 @@ export function trendExtras(
     resolvedRate: acc.map((a) => pct(a.green, a.mood)),
     finishRate: acc.map((a) => pct(a.finished, a.sessions)),
     scored: acc.map((a) => a.scored),
+    passRate: acc.map((a) => pct(a.passed, a.scored)),
   };
 }
 

@@ -5,6 +5,7 @@ import {
   actionCount,
   dayLabel,
   dayPart,
+  gettingStartedNote,
   difficultyBreakdown,
   objectionBreakdown,
   peakPractice,
@@ -220,5 +221,22 @@ describe('activity in words', () => {
   it('counts an action', () => {
     expect(actionCount({ actions: [{ action: 'fecal_scan', count: 3, visitors: 1 }] }, 'fecal_scan')).toBe(3);
     expect(actionCount(null, 'fecal_scan')).toBe(0);
+  });
+});
+
+describe('gettingStartedNote', () => {
+  const joinedAt = NOW - 40 * DAY_MS;
+  it('tells "never opened the app" apart from "opens it but never starts"', () => {
+    expect(gettingStartedNote({ sessions: 0, activity: { active_days: [], last_seen: null }, joinedAt, now: NOW })?.text).toMatch(
+      /^Hasn’t opened the app since joining 1 month ago/,
+    );
+    const stuck = gettingStartedNote({ sessions: 0, activity: { active_days: ['2026-10-01', '2026-10-03'], last_seen: null }, joinedAt, now: NOW });
+    expect(stuck).toMatchObject({ tone: 'focus' });
+    expect(stuck?.text).toMatch(/on 2 days but never started a session/);
+  });
+
+  it('says nothing once they practise, or when activity is hidden', () => {
+    expect(gettingStartedNote({ sessions: 3, activity: { active_days: [], last_seen: null }, joinedAt, now: NOW })).toBeNull();
+    expect(gettingStartedNote({ sessions: 0, activity: null, joinedAt, now: NOW })).toBeNull();
   });
 });

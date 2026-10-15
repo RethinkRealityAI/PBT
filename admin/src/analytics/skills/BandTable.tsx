@@ -21,8 +21,10 @@ export const BAND_TINT = {
   needsWork: 'oklch(0.925 0.06 25)',
 } as const;
 
+/** Tint for a score as PRINTED (rounded), so a cell reading "70" is never tinted "Developing". */
 export function bandTint(score: number | null): string {
   if (score == null) return CHART.track;
+  score = Math.round(score);
   return score >= 85 ? BAND_TINT.strong : score >= 70 ? BAND_TINT.solid : score >= 55 ? BAND_TINT.developing : BAND_TINT.needsWork;
 }
 
@@ -46,10 +48,8 @@ export function BandLegend() {
 }
 
 const TH: CSSProperties = {
-  fontSize: 10.5,
-  fontWeight: 800,
-  letterSpacing: '0.05em',
-  textTransform: 'uppercase',
+  fontSize: 11,
+  fontWeight: 750,
   color: COLOR.inkMute,
   padding: '0 4px 8px',
   textAlign: 'center',
@@ -74,7 +74,7 @@ function Cell({
         background: bandTint(value),
         borderRadius: 7,
         height: 34,
-        minWidth: 58,
+        minWidth: 50,
         textAlign: 'center',
         fontSize: strong ? 13.5 : 12.5,
         fontWeight: strong ? 850 : 700,
@@ -102,13 +102,13 @@ export function ObjectionSkillTable({
 }) {
   return (
     <div style={{ overflowX: 'auto', margin: '0 -4px', padding: '0 4px' }}>
-      <table className="pbt-sk-table" style={{ borderCollapse: 'separate', borderSpacing: 4, width: '100%', minWidth: 640 }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 4, width: '100%', minWidth: 560 }}>
         <caption style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
           Average skill scores per objection
         </caption>
         <thead>
           <tr>
-            <th scope="col" style={{ ...TH, textAlign: 'left', paddingLeft: 0 }}>
+            <th scope="col" style={{ ...TH, textAlign: 'left', paddingLeft: 0, whiteSpace: 'nowrap' }}>
               Objection
             </th>
             {SKILL_KEYS.map((k) => (
@@ -135,9 +135,9 @@ export function ObjectionSkillTable({
                   fontWeight: 650,
                   color: COLOR.inkSoft,
                   paddingRight: 10,
-                  maxWidth: 230,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+                  minWidth: 120,
+                  maxWidth: 220,
+                  lineHeight: 1.3,
                 }}
                 title={r.label}
               >

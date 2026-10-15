@@ -474,3 +474,33 @@ export function activityTimeline(
 export function actionCount(activity: Pick<TraineeActivity, 'actions'> | null, action: string): number {
   return activity?.actions.find((a) => a.action === action)?.count ?? 0;
 }
+
+// ─── A note the session data can't give ────────────────────────────────
+
+/**
+ * For someone who hasn't practised yet, what their app use says — the
+ * difference between "never opened it" (check the invite reached them) and
+ * "keeps opening it but never starts" (they may be stuck). Null otherwise,
+ * or when app activity isn't visible to this viewer.
+ */
+export function gettingStartedNote(input: {
+  sessions: number;
+  activity: Pick<TraineeActivity, 'active_days' | 'last_seen'> | null;
+  joinedAt: number;
+  now?: number;
+}): { tone: 'watch' | 'focus'; text: string } | null {
+  if (input.sessions > 0 || !input.activity) return null;
+  const now = input.now ?? Date.now();
+  const days = input.activity.active_days.length;
+  const since = relativeDay(input.joinedAt, now).toLowerCase();
+  if (days === 0) {
+    return {
+      tone: 'watch',
+      text: `Hasn’t opened the app since joining ${since} — check their invitation reached them and they can sign in.`,
+    };
+  }
+  return {
+    tone: 'focus',
+    text: `Has opened the app on ${days} day${days === 1 ? '' : 's'} but never started a session — a quick walkthrough of their first scenario may help.`,
+  };
+}

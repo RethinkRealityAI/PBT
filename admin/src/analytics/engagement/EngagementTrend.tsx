@@ -26,16 +26,25 @@ export function EngagementTrend({ report }: { report: EngagementReport }) {
   const [asTable, setAsTable] = useState(false);
   const words = METRIC_WORDS[metric];
 
-  const data = useMemo(
-    () =>
-      report.trend.map((b) => ({
+  // The newest hour or day is still under way: draw its segment dashed so a
+  // half-finished today doesn't read as a collapse. (A weekly bucket is the
+  // trailing seven days — complete enough to draw solid.)
+  const partialLast = report.granularity !== 'week' && report.trend.length > 1;
+  const data = useMemo(() => {
+    const n = report.trend.length;
+    return report.trend.map((b, i) => {
+      const value = metric === 'visitors' ? b.visitors : b.screen_views;
+      const last = i === n - 1;
+      return {
         start: b.start,
         label: bucketLabel(b.start, report.granularity),
-        long: bucketLabel(b.start, report.granularity, true),
-        value: metric === 'visitors' ? b.visitors : b.screen_views,
-      })),
-    [report.trend, report.granularity, metric],
-  );
+        long: `${bucketLabel(b.start, report.granularity, true)}${partialLast && last ? ' (so far)' : ''}`,
+        value,
+        solid: partialLast && last ? null : value,
+        partial: partialLast && i >= n - 2 ? value : null,
+      };
+    });
+  }, [report.trend, report.granularity, metric, partialLast]);
   const peak = data.reduce<(typeof data)[number] | null>((best, d) => (d.value > (best?.value ?? 0) ? d : best), null);
   const fmt = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? words.one : words.many}`;
 
@@ -69,11 +78,14 @@ export function EngagementTrend({ report }: { report: EngagementReport }) {
           </button>
         </>
       }
-      footnote={
+      footnote={[
         metric === 'visitors'
-          ? 'Each bucket counts a person once, however many screens they opened. Signed-out visitors are counted by device.'
-          : undefined
-      }
+          ? 'Each bucket counts a person once, however many screens they opened; signed-out visitors are counted by device.'
+          : null,
+        partialLast ? `The dashed end is the current ${report.granularity}, still in progress.` : null,
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       {asTable ? (
         <div style={{ maxHeight: 260, overflow: 'auto', borderRadius: 10, border: `0.5px solid ${CHART.grid}` }}>
@@ -123,15 +135,22 @@ export function EngagementTrend({ report }: { report: EngagementReport }) {
                 width={44}
               />
               <Tooltip
-                contentStyle={tooltipStyle}
                 cursor={{ stroke: 'rgba(60,20,15,0.18)', strokeWidth: 1 }}
-                labelFormatter={(_l, payload) => (payload?.[0]?.payload as { long?: string } | undefined)?.long ?? ''}
-                formatter={(v: number) => [fmt(v), '']}
-                separator=""
+                content={({ active, payload }) => {
+                  const d = payload?.[0]?.payload as { long: string; value: number } | undefined;
+                  if (!active || !d) return null;
+                  return (
+                    <div style={tooltipStyle}>
+                      <div style={{ color: COLOR.inkMute, fontSize: 11, marginBottom: 2 }}>{d.long}</div>
+                      <div style={{ color: COLOR.ink, fontWeight: 750 }}>{fmt(d.value)}</div>
+                    </div>
+                  );
+                }}
               />
               <Area
                 type="monotone"
-                dataKey="value"
+                dataKey="solid"
+                name="solid"
                 stroke={CHART.primary}
                 strokeWidth={2}
                 fill={CHART.primary}
@@ -139,7 +158,23 @@ export function EngagementTrend({ report }: { report: EngagementReport }) {
                 dot={false}
                 activeDot={{ r: 4, stroke: '#fff', strokeWidth: 2 }}
                 isAnimationActive={false}
+                connectNulls={false}
               />
+              {partialLast && (
+                <Area
+                  type="monotone"
+                  dataKey="partial"
+                  name="partial"
+                  stroke={CHART.primary}
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  fill={CHART.primary}
+                  fillOpacity={0.04}
+                  dot={false}
+                  activeDot={{ r: 4, stroke: '#fff', strokeWidth: 2 }}
+                  isAnimationActive={false}
+                />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>

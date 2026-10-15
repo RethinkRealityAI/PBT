@@ -47,7 +47,7 @@ export function ContextPanel({ context }: { context: EngagementReport['context']
           Device details are collected from the next trainee-app release onward.
         </div>
       ) : (
-        <AutoGrid min={240} gap={22}>
+        <AutoGrid min={196} gap={22}>
           {dims.map((d) => (
             <div key={d.key} style={{ minWidth: 0 }}>
               <Eyebrow style={{ marginBottom: 8 }}>{d.title}</Eyebrow>

@@ -38,6 +38,11 @@ if (typeof document !== 'undefined' && !document.getElementById('pbt-trainee-css
     .pbt-roster-row:hover { background: rgba(60,20,15,0.035); }
     .pbt-rq { container: rq / inline-size; }
     @container rq (max-width: 960px) {
+      .pbt-rq-scroll {
+        background:
+          linear-gradient(to left, rgba(253,251,250,0), rgb(253,251,250) 70%) right / 28px 100% no-repeat local,
+          radial-gradient(farthest-side at 100% 50%, rgba(60,20,15,0.14), rgba(60,20,15,0)) right / 14px 100% no-repeat scroll;
+      }
       .pbt-roster-sticky { position: sticky; left: 0; z-index: 1; background: rgb(252,250,249); box-shadow: 1px 0 0 ${COLOR.border}; }
       .pbt-roster-row:hover .pbt-roster-sticky { background: rgb(249,245,243); }
     }
@@ -51,6 +56,9 @@ if (typeof document !== 'undefined' && !document.getElementById('pbt-trainee-css
       padding: 10px 10px; margin: 0 -10px; border-radius: 12px; cursor: pointer; transition: background 0.14s ease; }
     .pbt-session-row:hover { background: rgba(60,20,15,0.04); }
     .pbt-session-row:focus-visible { outline: 2px solid ${COLOR.brand}; outline-offset: 1px; }
+    /* After .pbt-session-row: its \`all: unset\` would otherwise reset the columns. */
+    .pbt-sess-grid { grid-template-columns: 86px minmax(0, 1fr) 116px 64px 84px; }
+    @container tq (max-width: 620px) { .pbt-sess-grid { grid-template-columns: 78px minmax(0, 1fr) 84px; } }
     @media (prefers-reduced-motion: reduce) { .pbt-roster-row, .pbt-session-row { transition: none !important; } }
   `;
   document.head.appendChild(s);

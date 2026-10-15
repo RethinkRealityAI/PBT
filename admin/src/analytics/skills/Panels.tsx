@@ -26,7 +26,16 @@ function fmtScore(v: number | null): string {
 
 // ─── Difficulty ─────────────────────────────────────────────────────────
 
-export function DifficultyPanel({ buckets, unknown }: { buckets: DifficultyScoreBucket[]; unknown: number }) {
+export function DifficultyPanel({
+  buckets,
+  unknown,
+  leftEarly,
+}: {
+  buckets: DifficultyScoreBucket[];
+  unknown: number;
+  /** Per level: every session played at it (finished or not) and the share left early. */
+  leftEarly: Map<number, { sessions: number; leftEarlyPct: number | null }>;
+}) {
   const any = buckets.some((b) => b.count > 0);
   return (
     <Panel
@@ -50,7 +59,7 @@ export function DifficultyPanel({ buckets, unknown }: { buckets: DifficultyScore
             return (
               <div
                 key={level}
-                style={{ display: 'grid', gridTemplateColumns: '128px minmax(0, 1fr) 30px 78px', gap: 12, alignItems: 'center' }}
+                style={{ display: 'grid', gridTemplateColumns: '128px minmax(0, 1fr) 30px 92px', gap: 12, alignItems: 'center' }}
               >
                 <AdminDifficultyMeter level={level} />
                 <div style={{ height: 10, borderRadius: 4, background: CHART.track }}>
@@ -59,8 +68,14 @@ export function DifficultyPanel({ buckets, unknown }: { buckets: DifficultyScore
                 <span style={{ fontSize: 13, fontWeight: 800, color: b.avgScore == null ? COLOR.inkMute : COLOR.ink, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                   {fmtScore(b.avgScore)}
                 </span>
-                <span style={{ fontSize: 11, color: COLOR.inkMute, whiteSpace: 'nowrap' }}>
-                  {b.count} session{b.count === 1 ? '' : 's'}
+                <span style={{ fontSize: 11, color: COLOR.inkMute, whiteSpace: 'nowrap', lineHeight: 1.35 }}>
+                  {b.count} scored
+                  {(() => {
+                    const le = leftEarly.get(level);
+                    return le && le.sessions > 0 && le.leftEarlyPct != null ? (
+                      <span style={{ display: 'block' }}>{Math.round(le.leftEarlyPct)}% left early</span>
+                    ) : null;
+                  })()}
                 </span>
               </div>
             );

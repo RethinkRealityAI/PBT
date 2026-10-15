@@ -58,6 +58,10 @@ export function ScoreProgression({
   const last = points[points.length - 1]?.t ?? now;
   const pad = Math.max((last - first) * 0.03, 12 * 3_600_000);
   const lastIndex = points.length - 1;
+  // Keep the line's end label clear of the team label when they sit close.
+  const lastRolling = points[lastIndex]?.rolling ?? null;
+  const labelDy =
+    teamAvg != null && lastRolling != null && Math.abs(lastRolling - teamAvg) < 7 ? (lastRolling >= teamAvg ? -11 : 15) : 4;
   return (
     <div style={{ height: 268, marginLeft: -6 }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -140,7 +144,7 @@ export function ScoreProgression({
               return (
                 <g key={`r-${index}`}>
                   <circle cx={cx} cy={cy} r={3.5} fill={ROLLING_LINE} stroke="#fff" strokeWidth={2} />
-                  <text x={cx + 9} y={cy + 4} fontSize={11.5} fontWeight={800} fill={COLOR.ink}>
+                  <text x={cx + 7} y={cy + labelDy} fontSize={11.5} fontWeight={800} fill={COLOR.ink}>
                     {Math.round(payload.rolling)}
                   </text>
                 </g>
