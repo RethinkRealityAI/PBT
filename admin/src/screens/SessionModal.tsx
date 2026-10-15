@@ -395,7 +395,7 @@ function SessionHeader({
           {/* The level beside the score it qualifies (same scoring standard
               at every level). Not beside a scoring-failure placeholder. */}
           {!session.score_unavailable && <AdminDifficultyMeter level={sessionDifficulty(session)} />}
-          <ScoreBadge score={score} size="lg" />
+          {score != null && <ScoreBadge score={score} size="lg" />}
           <ModalCloseButton onClose={onClose} />
         </div>
       </div>

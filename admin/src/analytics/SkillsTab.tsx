@@ -360,7 +360,7 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
               <Panel
                 title="Objection × skill"
                 subtitle="Average per skill for each objection practised — which objection, and which part of the answer, to coach"
-                actions={<BandLegend />}
+                actions={m.objections.rows.length > 0 ? <BandLegend /> : undefined}
                 footnote={
                   m.objections.thin.length > 0 ? (
                     <>
@@ -414,10 +414,16 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                         <strong style={{ color: COLOR.ink }}>{Math.round(m.pairing.avgScore)}</strong> ({m.pairing.scored} sessions).
                       </div>
                     )}
-                    <MatchupGrid
-                      drivers={DRIVER_KEYS}
-                      cell={(t: DriverKey, o: DriverKey) => m.matchup.get(`${t}|${o}`)}
-                    />
+                    {[...m.matchup.values()].some((v) => v.scored >= 2) ? (
+                      <MatchupGrid
+                        drivers={DRIVER_KEYS}
+                        cell={(t: DriverKey, o: DriverKey) => m.matchup.get(`${t}|${o}`)}
+                      />
+                    ) : (
+                      <div style={{ fontSize: 12.5, color: COLOR.inkMute, lineHeight: 1.5 }}>
+                        Not enough sessions yet — each pairing needs 2 or more scored sessions {inWindow(range)}.
+                      </div>
+                    )}
                   </div>
                 </Panel>
               </SplitRow>

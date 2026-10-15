@@ -94,7 +94,7 @@ export function EngagementTrend({
         metric === 'visitors'
           ? 'Each bucket counts a person once, however many screens they opened; signed-out visitors are counted by device.'
           : null,
-        partialLast ? `The dashed end is the current ${report.granularity}, still in progress.` : null,
+        partialLast && !asTable ? `The dashed end is the current ${report.granularity}, still in progress.` : null,
       ]
         .filter(Boolean)
         .join(' ')}

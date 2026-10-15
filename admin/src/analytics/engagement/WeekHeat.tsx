@@ -143,7 +143,7 @@ function BlockTable({ heatmap }: { heatmap: EngagementReport['heatmap'] }) {
               Day
             </th>
             {BLOCKS.map((b) => (
-              <th key={b} scope="col" style={th}>
+              <th key={b} scope="col" style={{ ...th, textTransform: 'none', letterSpacing: '0.02em' }}>
                 {hourTick(b)}–{hourTick((b + 3) % 24)}
               </th>
             ))}
