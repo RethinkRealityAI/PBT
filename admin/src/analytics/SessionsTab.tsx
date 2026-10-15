@@ -186,8 +186,9 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                   aria-label="Summary of the sessions shown"
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-                    gap: 0,
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+                    borderRadius: 18,
+                    overflow: 'hidden',
                   }}
                 >
                   {[
@@ -207,7 +208,7 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                       sub:
                         stats.scored === 0
                           ? 'No scored sessions'
-                          : `${stats.scored} scored${stats.scoringFailed ? ` · ${stats.scoringFailed} failed, left out` : ''}`,
+                          : `${stats.scored} scored${stats.scoringFailed ? ` · ${stats.scoringFailed} failed` : ''}`,
                     },
                     {
                       label: 'Median length',
@@ -221,13 +222,15 @@ export function SessionsTab({ range, onRange, query, onQuery, recordId, onOpen }
                         ? `In ${filtered.filter((s) => (s.hints_used ?? 0) > 0).length} sessions`
                         : 'Not available',
                     },
-                  ].map((f, i) => (
+                  ].map((f) => (
                     <div
                       key={f.label}
                       style={{
-                        padding: '14px 20px',
-                        borderLeft: i === 0 ? 'none' : '0.5px solid rgba(60,20,15,0.07)',
+                        padding: '14px 18px',
                         minWidth: 0,
+                        // Hairlines left and above each cell; the strip clips the
+                        // outer ones, so a wrapped row never starts with a stray rule.
+                        boxShadow: '-1px 0 0 rgba(60,20,15,0.07), 0 -1px 0 rgba(60,20,15,0.07)',
                       }}
                     >
                       <Fact label={f.label} value={f.value} sub={f.sub} />

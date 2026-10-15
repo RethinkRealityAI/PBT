@@ -31,9 +31,6 @@ if (typeof document !== 'undefined' && !document.getElementById('pbt-trainee-css
     @container tp (min-width: 900px) {
       .pbt-tp-split, .pbt-tp-cols { grid-template-columns: minmax(0, 1.62fr) minmax(320px, 1fr); }
     }
-    @container tp (min-width: 1000px) {
-      .pbt-tp-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-    }
     .pbt-tq { container: tq / inline-size; min-width: 0; }
     @container tq (max-width: 620px) { .pbt-tq-hide { display: none !important; } }
     @container tq (max-width: 440px) { .pbt-tq-hide-xs { display: none !important; } }

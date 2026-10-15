@@ -7,6 +7,7 @@
 import type { SessionSummary } from '../../../../src/shared/analytics/contract';
 import { COLOR } from '../../lib/tokens';
 import { difficultyLabel } from '../../lib/difficulty';
+import { pushbackLabel } from '../../lib/labels';
 import { ChipFilter, SelectFilter } from '../ui';
 import {
   OUTCOME_FILTERS,
@@ -39,7 +40,13 @@ export function SessionFilterBar({
   const counts = outcomeCounts(chipBase);
   const set = <K extends keyof SessionFilters>(k: K, v: SessionFilters[K]) => onChange({ ...filters, [k]: v });
   const objections = objectionOptions(rows);
-  const sources = (['library', 'studio', 'self-built'] as const).filter((k) => rows.some((s) => s.scenario_source === k));
+  // A choice made in another window stays selectable (and visibly selected) here.
+  if (filters.objection !== 'all' && !objections.some((o) => o.value === filters.objection)) {
+    objections.push({ value: filters.objection, label: pushbackLabel(filters.objection), count: 0 });
+  }
+  const sources = (['library', 'studio', 'self-built', 'unknown'] as const).filter(
+    (k) => k === filters.source || (k !== 'unknown' && rows.some((s) => s.scenario_source === k)),
+  );
 
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 18px' }}>
