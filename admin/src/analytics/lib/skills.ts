@@ -9,7 +9,7 @@
  *
  * Pure; unit-tested in `__tests__/skills.test.ts`.
  */
-import type { ScenarioSource, SessionSummary } from '../../../../src/shared/analytics/contract';
+import type { SessionSummary } from '../../../../src/shared/analytics/contract';
 import { mean } from './period';
 import {
   SKILL_KEYS,
@@ -142,20 +142,6 @@ export function hardestPairing(
 }
 
 // ─── Splits ────────────────────────────────────────────────────────────
-
-export const SOURCE_LABELS: Record<ScenarioSource, string> = {
-  library: 'Ready-made library',
-  studio: 'Team scenarios',
-  'self-built': 'Built by the trainee',
-  unknown: 'Not recorded',
-};
-
-export const SOURCE_HINTS: Record<ScenarioSource, string> = {
-  library: 'The built-in scenarios',
-  studio: 'Published from the Scenario Studio',
-  'self-built': 'Made on the trainee’s own Build screen',
-  unknown: 'Older sessions that didn’t store it',
-};
 
 export interface SplitRowStats {
   key: string;

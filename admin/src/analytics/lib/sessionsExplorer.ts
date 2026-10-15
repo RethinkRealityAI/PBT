@@ -12,14 +12,11 @@ import { objectionLabel } from './objectionNames';
 import type { OwnerMood, ScenarioSource, SessionSummary } from '../../../../src/shared/analytics/contract';
 import { ENDED_REASON_LABELS, MODE_LABELS, humanize, labelOf } from '../../lib/labels';
 import { difficultyLabel } from '../../lib/difficulty';
-import { SKILL_KEYS, SKILL_LABELS, isScored } from './metrics';
+import { SCENARIO_SOURCE_LABELS, SKILL_KEYS, SKILL_LABELS, isScored } from './metrics';
 import type { CsvValue } from './csv';
-import { rangeWords, type Range } from './period';
 
-/** "in the last 28 days", or "so far" for all time — reads after any sentence. */
-export function inWindowWords(range: Range): string {
-  return range === 'all' ? 'so far' : `in the ${rangeWords(range)}`;
-}
+/** Re-exported for the tabs that import it from here; defined once in `period.ts`. */
+export { inWindowWords } from './period';
 
 // ─── Outcomes ──────────────────────────────────────────────────────────
 
@@ -90,15 +87,7 @@ export const OWNER_ENDING_LABELS: Record<OwnerMood, string> = {
   red: 'Still upset',
 };
 
-/** Where the scenario came from — the filter's words. */
-export const SOURCE_LABELS: Record<ScenarioSource, string> = {
-  library: 'Built-in library',
-  studio: 'Scenario Studio',
-  'self-built': 'Built by the trainee',
-  unknown: 'Not recorded',
-};
-
-/** The same, short enough for a table row's muted line. */
+/** Where the scenario came from (`SCENARIO_SOURCE_LABELS` in `metrics.ts`), short enough for a table row's muted line. */
 export const SOURCE_SHORT: Record<ScenarioSource, string> = {
   library: 'Built-in',
   studio: 'Studio',
@@ -204,7 +193,7 @@ export function searchText(s: SessionSummary, traineeName: string): string {
     s.persona,
     s.difficulty != null ? difficultyLabel(s.difficulty) : null,
     SPECIES_LABELS[s.species],
-    s.scenario_source !== 'unknown' ? SOURCE_LABELS[s.scenario_source] : null,
+    s.scenario_source !== 'unknown' ? SCENARIO_SOURCE_LABELS[s.scenario_source] : null,
   ]
     .filter(Boolean)
     .join(' ')
@@ -328,7 +317,7 @@ export function sessionsCsv(
       s.breed ?? '',
       s.persona ?? '',
       s.owner_driver ? humanize(s.owner_driver) : '',
-      SOURCE_LABELS[s.scenario_source],
+      SCENARIO_SOURCE_LABELS[s.scenario_source],
       s.difficulty != null ? difficultyLabel(s.difficulty) : '',
       s.mode ? labelOf(MODE_LABELS, s.mode) : '',
       outcomeWords(s),

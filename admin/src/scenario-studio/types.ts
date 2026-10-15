@@ -80,5 +80,11 @@ export interface CopilotPanelProps {
   onPendingConsumed: () => void;
   /** 'docked' = right column; 'drawer' = slide-over on narrow screens. */
   variant: 'docked' | 'drawer';
+  /**
+   * Docked: fold the column to its rail ("Hide assistant"). Drawer: close
+   * the slide-over ("Close assistant"). No button without it.
+   */
   onClose?: () => void;
+  /** The id of the element the hide / close button folds away (`aria-controls`). */
+  controlsId?: string;
 }

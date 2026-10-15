@@ -7,20 +7,23 @@
  * destinations**, where closely-related screens are tabs of one destination
  * rather than separate entries:
  *
- *   Monitor   Analytics [overview|trainees|sessions|skills|engagement|quality|analyzer]
+ *   Monitor   Analytics [overview|trainees|sessions|skills|engagement|quality|analyzer] · Feedback [sessions|reports]
  *   People    People   [users|members|roles|invites]
- *   Content   Scenario Studio [studio|categories|trainee] · Knowledge · AI tuning · Feedback [sessions|reports]
+ *   Content   Scenario Studio [studio|categories|trainee] · Knowledge · AI tuning
  *   Platform  Email    [templates|settings|log] · Flags · Audit · Preview
  *
  * Monitor used to be three destinations — Overview, Analytics [insights|
  * traffic|quality] and Activity [sessions|analyzer] — that repeated each
  * other (the same average score, finish rate and "needs review" list on two
- * screens) and had nowhere to look at ONE trainee. It is now a single
+ * screens) and had nowhere to look at ONE trainee. They are now a single
  * Analytics destination: the Overview tab is the landing page, Trainees adds
  * per-person analytics (with a profile at `#/analytics/trainees/<user id>`),
  * Skills is the old Insights, Engagement the old Traffic. Old `#/overview`,
  * `#/activity/…`, `#/analytics/insights` and `#/analytics/traffic` links are
- * rewritten by `legacyRoute()` below, so bookmarks keep working.
+ * rewritten by `legacyRoute()` below, so bookmarks keep working. Feedback
+ * (session ratings + platform reports) moved into Monitor from Content,
+ * right after Analytics — it is something you watch, not content you write;
+ * its key and `#/feedback/…` URLs did not change.
  *
  * Content used to be a single "Library" destination with four unrelated jobs
  * (trainee scenarios, the builder, knowledge, simulation) behind one icon.
@@ -105,6 +108,19 @@ export const NAV_SECTIONS: NavSection[] = [
           { key: 'analyzer', label: 'Pet Analyzer', requires: 'analyzer.read' },
         ],
       },
+      // What trainees told us (post-session ratings, bug reports): it is
+      // something you watch, not content you author — so it sits under
+      // Monitor, next to Analytics. Key and URLs (`#/feedback/…`) unchanged.
+      {
+        key: 'feedback',
+        label: 'Feedback',
+        icon: '☆',
+        requires: 'feedback.read',
+        tabs: [
+          { key: 'sessions', label: 'Session feedback', requires: 'feedback.read' },
+          { key: 'reports', label: 'Platform reports', requires: 'reports.read' },
+        ],
+      },
     ],
   },
   {
@@ -146,16 +162,6 @@ export const NAV_SECTIONS: NavSection[] = [
       },
       { key: 'knowledge', label: 'Knowledge', icon: '▤', requires: 'knowledge.read' },
       { key: 'tuning', label: 'AI tuning', icon: '◎', requires: 'simulation.read' },
-      {
-        key: 'feedback',
-        label: 'Feedback',
-        icon: '☆',
-        requires: 'feedback.read',
-        tabs: [
-          { key: 'sessions', label: 'Session feedback', requires: 'feedback.read' },
-          { key: 'reports', label: 'Platform reports', requires: 'reports.read' },
-        ],
-      },
     ],
   },
   {

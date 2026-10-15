@@ -40,7 +40,7 @@ export type UserAction =
 
 export interface AdminSession {
   id: string;
-  user_id: string;
+  user_id: string | null;
   scenario: Record<string, unknown> | null;
   scenario_summary: string | null;
   pushback_id: string | null;
@@ -66,8 +66,18 @@ export interface AdminSession {
   mode: 'text' | 'voice' | null;
   completed: boolean;
   ended_reason: string | null;
-  flagged: boolean;
-  flag_reason: string | null;
+  /**
+   * Anonymous sessions (no account): `user_id` is null and the random
+   * per-device id groups one device's sessions. Never a name or an email.
+   */
+  anon_session_id?: string | null;
+  /** App language the session was played in; null before 2026-10-15. */
+  locale?: string | null;
+  /**
+   * 'reconstructed' = rebuilt from app activity for an anonymous session
+   * before 2026-10-15 (no transcript, no score were ever stored).
+   */
+  origin?: 'app' | 'reconstructed' | null;
   model_id: string | null;
   turns: number | null;
   created_at: string;

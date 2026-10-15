@@ -106,6 +106,7 @@ long-lived key). `npm run check:bundle` fails if a key-shaped string
 | `suggestField` (admin `scenarioAi`)       | `admin-scenario-ai`   | `gemini-3-flash-preview`                | Legacy per-field wizard (admin, `scenarios.write`) — no UI calls it since the Scenario Studio |
 | `askScenarioAgent` (admin `scenario-studio/api`) | `admin-scenario-agent` | `gemini-3-flash-preview` (JSON, low thinking) | Scenario Studio assistant (admin, `scenarios.write`) — proposals only, never writes |
 | `inspectScenario` (admin `scenario-studio/api`)  | `admin-scenario-inspect` | — (no model call)                   | Exact customer prompt + retrieved passages for a draft (admin, `scenarios.read`) |
+| `recordAnonymousSession` (useTextChat) / `claimAnonymousSessions` (backfill) | `session-save` | — (no model call) | Records an ANONYMOUS session (owned by the device id); on sign-in, hands this device's anonymous rows to the account |
 
 Wire contract: `src/shared/ai/contract.ts` (read its header — it states what the
 server trusts). Transport: `src/services/aiApi.ts::postAi` attaches the Supabase
@@ -131,7 +132,22 @@ telemetry). Model IDs live in `src/shared/ai/models.ts`.
   only with `preview: true` (the Studio Test drive), and never sent to the
   customer prompt (roleplay, voice, inspector) or the public snapshot.
 - Anonymous callers are allowed by design (anonymous-first product); they get
-  the same AI behaviour with no persistence.
+  the same AI behaviour, and their sessions ARE recorded — without identifying
+  details (migration `20261015000000_anonymous_sessions.sql`): a
+  `training_sessions` row with `user_id` NULL, owned by `anon_session_id` (the
+  random per-device id in `pbt:session_id`). Only the server writes those rows
+  (service role; RLS `auth.uid() = user_id` is never true for a NULL owner):
+  `session-save` the conversation (no score), `ai-evaluate` the score
+  (`anonSessionId` in the body, read only for an anonymous caller). Both
+  refuse a row owned by an account or by another device
+  (`_shared/anonSessions.ts::checkSessionOwner`) and write nothing with
+  `allowTelemetry: false` (the trainee's "Allow training data use" opt-out —
+  anonymous practice is recorded for the training team, so the opt-out
+  decides) or `preview: true`. On sign-in the backfill first CLAIMS this
+  device's anonymous rows among its local sessions (`session-save`
+  `claim: true`, signed-in only), so a complete one keeps its verified score
+  instead of being re-uploaded. The Terms' "Anonymous by default" section says
+  so (en + fr).
 
 Local dev: run `netlify dev` (serves the functions); `vite` alone has no AI.
 
@@ -602,6 +618,16 @@ editable `scenario_overrides` column exactly once (unit-tested).
   `cleanup.sql` hard-deletes everything (admin deletes are soft) and must
   show zero rows. Fixtures: `scripts/e2e/fixtures.mjs` ("QA E2E", markers
   BRIGHTBITE / RIVULET).
+- **Layout** (2026-10-15): the builder's assistant column folds to a 56 px
+  rail ("Hide assistant"; remembered in `pbt:admin:studio_assistant_collapsed`;
+  a reply while folded shows a dot, never springs it open) and is a drawer
+  from a floating "Assistant" button below the docking width. Choice tiles
+  sit side by side (Dog | Cat, 2 × 2 drivers / difficulty, compact knowledge
+  rows — `stepParts.tsx` `ColumnsGrid`/`FourUpGrid`, `OptionTile
+  layout="row"`). An empty gallery filter offers the scenario that fits it
+  ("Create a cat scenario in Weight management", builder pre-filled with the
+  animal and objection; `galleryEmpty.ts`, `scenarios.write` only; never
+  under From trainees) with "Show all scenarios" as the secondary action.
 - UI vocabulary: `ui.tsx` (never put step content inside `<Glass>` or any
   transformed ancestor — `backdrop-filter`/`transform` trap in-place
   `position: fixed` modals; `.pbt-studio-in` uses fill-mode `backwards` for
@@ -612,7 +638,7 @@ editable `scenario_overrides` column exactly once (unit-tested).
 
 - Supabase client lazy-loaded from env vars; missing env = banner hidden, app still works.
 - `AccountUpgradeModal` does sign-up (no verification) and sign-in.
-- On sign-up: snapshot of `localStorage` profile + sessions uploaded to `profiles` + `training_sessions` tables.
+- On sign-up: snapshot of `localStorage` profile + sessions uploaded to `profiles` + `training_sessions` tables (after claiming this device's anonymous server rows — see "AI integration" → trust boundary).
 - `useCloudSync` debounce-mirrors profile changes (incl. `theme` + `locale`)
   once signed in; cloud `locale` applies on a fresh device only when no
   explicit local choice exists.
@@ -722,7 +748,7 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations (27 files, all hand-run; all applied to production —
+Migrations (28 files, all hand-run; all applied to production —
 `npm run verify:db` proves the live project has every relation AND column
 the code uses). Each
 file's header explains it in full:
@@ -812,6 +838,16 @@ file's header explains it in full:
   ON, guarded on its old "(planned)" description); refreshes the voice /
   journey-strip / greeting-override descriptions and the Content Manager
   role's "simulation tuning" description (each guarded on the old text).
+- `20261015000000_anonymous_sessions.sql` — anonymous sessions in
+  `training_sessions`: `user_id` nullable, `anon_session_id` (8–64 chars;
+  CHECK one owner), `locale` (regex CHECK), `origin` ('app' |
+  'reconstructed'), partial index on `anon_session_id`; then an idempotent
+  BACKFILL rebuilding one 'reconstructed' row per anonymous TEXT session the
+  app announced with a `session_open` event (when, objection, mode, device,
+  scorecard reached or `session_abandon`; no transcript, no score — never
+  stored). Anonymous voice sessions before it logged no `session_open` and
+  can't be rebuilt. Must be applied BEFORE deploying `admin-sessions` (it
+  selects the new columns).
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -829,7 +865,9 @@ pill bar. Related screens are tabs of one destination (Analytics =
 overview/trainees/sessions/skills/engagement/quality/analyzer, People =
 users/admins/roles/invites, Scenario Studio = studio/categories/trainee-built,
 …); Knowledge and AI tuning (the old "Simulation" screen) are destinations of
-their own. Old `#/library/…`, `#/overview`, `#/activity/…`,
+their own. Monitor holds Analytics and **Feedback** (Session feedback ·
+Platform reports — moved from Content on 2026-10-15; `#/feedback/…` URLs
+unchanged). Old `#/library/…`, `#/overview`, `#/activity/…`,
 `#/analytics/insights` and `#/analytics/traffic` hashes are rewritten by
 `legacyRoute()`. The rail collapses to icons and becomes a drawer under
 900px. Location is in the URL hash (`#/people/roles`; an optional third
@@ -1004,7 +1042,7 @@ Telemetry capture in the consumer app:
   (`recordCall()` / `withTelemetry` are unused: AI calls are recorded
   server-side by `recordCallServer` in `netlify/functions/_shared/ai.ts`)
 - `src/services/geminiService.ts` — wraps `generateRoleplayMessage` / `evaluateConversation` with timing + tokens + refusal heuristics; takes a `{ sessionId }` option so rows attribute to a `training_sessions` id
-- `src/features/chat/useTextChat.ts` — allocates session id at `open()`, persists `completed`/`abandoned` + `rag_documents` row to Supabase, exposes `abandon()` (called by `ChatAbandonWatcher` in `App.tsx` when user leaves chat mid-flight)
+- `src/features/chat/useTextChat.ts` — allocates session id at `open()`, persists `completed`/`abandoned` (+ the app `locale`) + `rag_documents` row to Supabase when signed in, or posts the session to `session-save` when anonymous; exposes `abandon()` (called by `ChatAbandonWatcher` in `App.tsx` when user leaves chat mid-flight)
 - `src/features/scenarios/persistScenario.ts` — writes `user_scenarios` on Save
 - `src/features/pet-analyzer/useSavedPets.ts` — writes `analyzer_events` on save (incl. Pet Vision provenance)
 - `src/features/pet-analyzer/usePetVision.ts` + `src/services/petVisionService.ts` — multimodal photo analysis (results-only; raw image never stored)
@@ -1040,6 +1078,7 @@ Active keys:
 - `pbt:admin_nav_collapsed`, `pbt:admin:knowledge_auto_suggest` (admin portal UI preferences)
 - `pbt:admin:studio_drafts:<userId>` (Scenario Studio unsaved work + assistant transcripts, per admin account; ≤20 entries, 14-day expiry)
 - `pbt:train_species` (`'dog' | 'cat'`, default dog — the trainee's chosen animal, shared by Create and Home; `useTrainingSpecies`)
+- `pbt:admin:studio_assistant_collapsed` (admin portal: the Scenario Studio builder's assistant folded to a rail)
 
 ## Adding new content
 

@@ -17,6 +17,10 @@
  * Hence the explicit assertion below rather than a general shape check.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+const { postAi } = vi.hoisted(() => ({ postAi: vi.fn() }));
+vi.mock('../../../services/aiApi', () => ({ postAi }));
+
 import { backfillLocalDataToCloud } from '../backfillLocalData';
 import { writeStorage } from '../../../lib/storage';
 import { SESSIONS_KEY } from '../../../lib/sessionsKey';
@@ -90,6 +94,10 @@ function fakeSupabase() {
 beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
+  postAi.mockReset();
+  // Default: the claim endpoint is unreachable — the backfill must behave
+  // exactly as before (upload everything).
+  postAi.mockRejectedValue(new Error('offline'));
 });
 
 describe('backfillLocalDataToCloud → training_sessions', () => {
@@ -160,5 +168,39 @@ describe('backfillLocalDataToCloud → training_sessions', () => {
     const [row] = (upserts['rag_documents'] ?? []).flat() as Record<string, unknown>[];
     const metadata = row.metadata as Record<string, unknown>;
     expect(metadata.score_overall).toBe(88);
+  });
+});
+
+
+describe('backfill claims sessions the server already recorded anonymously', () => {
+  const A = '44444444-4444-4444-8444-444444444444';
+  const B = '55555555-5555-4555-8555-555555555555';
+  const C = '66666666-6666-4666-8666-666666666666';
+
+  it('claims this device’s rows first and re-uploads only those the server lacks', async () => {
+    writeStorage(SESSIONS_KEY, [sessionRecord(A, scoreReport(80)), sessionRecord(B), sessionRecord(C)]);
+    // A was recorded in full (server-verified score kept); B was rebuilt from
+    // app activity (no transcript) — fill it; C was never on the server.
+    postAi.mockResolvedValueOnce({ claimed: [{ id: A, complete: true }, { id: B, complete: false }] });
+
+    const { sb, upserts } = fakeSupabase();
+    await backfillLocalDataToCloud(sb as never, USER_ID);
+
+    const [endpoint, body] = postAi.mock.calls[0];
+    expect(endpoint).toBe('/.netlify/functions/session-save');
+    expect(body).toMatchObject({ claim: true, sessionIds: [A, B, C] });
+    expect(typeof body.anonSessionId).toBe('string');
+
+    const rows = (upserts['training_sessions'] ?? []).flat() as Record<string, unknown>[];
+    expect(rows.map((r) => r.id)).toEqual([B, C]);
+    expect(rows.every((r) => r.origin === 'app' && r.user_id === USER_ID)).toBe(true);
+  });
+
+  it('uploads everything when the claim is unreachable', async () => {
+    writeStorage(SESSIONS_KEY, [sessionRecord(A), sessionRecord(B)]);
+    const { sb, upserts } = fakeSupabase();
+    await backfillLocalDataToCloud(sb as never, USER_ID);
+    const rows = (upserts['training_sessions'] ?? []).flat() as Record<string, unknown>[];
+    expect(rows.map((r) => r.id)).toEqual([A, B]);
   });
 });

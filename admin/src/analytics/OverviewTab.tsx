@@ -69,7 +69,7 @@ export function OverviewTab(props: AnalyticsTabProps) {
         <ScreenShell>
           <EmptyState
             title="Your role can’t read training sessions"
-            subtitle="The Overview is built from the team’s sessions. Ask an owner to add “Sessions” access to your role."
+            subtitle="The Overview is built from the team’s sessions. Ask an owner to add “Training sessions” access to your role."
           />
         </ScreenShell>
       </>

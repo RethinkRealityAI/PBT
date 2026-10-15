@@ -10,6 +10,13 @@ import { fmtMoney } from '../../lib/format';
 import { AI_ALERTS, type AiHealth } from '../lib/attention';
 import './styles';
 
+/**
+ * The reply-speed aim: a reply slower than this feels like a stall to the
+ * person waiting on it. The ONE threshold behind "Typical AI reply … aim under
+ * 2s" here and "Replies slower than 2 seconds" on AI quality.
+ */
+export const REPLY_AIM_MS = 2000;
+
 function Cell({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: 'ok' | 'bad' | null }) {
   return (
     <div style={{ padding: '14px 20px', minWidth: 0 }}>
@@ -40,8 +47,8 @@ export function AiHealthStrip({ health, windowWords, onOpen }: { health: AiHealt
           <Cell
             label="Typical AI reply"
             value={median == null ? '—' : `${(median / 1000).toFixed(1)}s`}
-            sub={median == null ? 'no AI calls' : median <= 2000 ? 'quick — aim under 2s' : 'slower than the 2s aim'}
-            tone={median == null ? null : median <= 2000 ? 'ok' : 'bad'}
+            sub={median == null ? 'no AI calls' : median <= REPLY_AIM_MS ? 'quick — aim under 2s' : 'slower than the 2s aim'}
+            tone={median == null ? null : median <= REPLY_AIM_MS ? 'ok' : 'bad'}
           />
           <Cell
             label="AI failures"

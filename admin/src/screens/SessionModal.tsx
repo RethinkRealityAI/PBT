@@ -52,6 +52,7 @@ import { difficultyLabel, sessionDifficulty } from '../lib/difficulty';
 import { AdminDifficultyMeter } from '../primitives/DifficultyMeter';
 import type { SessionSummary } from '../../../src/shared/analytics/contract';
 import { toSessionSummary, type SessionRowLike } from '../../../src/shared/analytics/sessionSummary';
+import { SCENARIO_SOURCE_LABELS } from '../analytics/lib/metrics';
 
 type TabKey = 'overview' | 'transcript' | 'scoring';
 
@@ -135,13 +136,6 @@ const OWNER_ENDING: Record<string, { word: string; color: string; help: string }
   green: { word: 'Won over', color: COLOR.success, help: 'The owner ended the conversation convinced' },
   yellow: { word: 'Undecided', color: COLOR.warn, help: 'The owner ended receptive but not yet convinced' },
   red: { word: 'Still upset', color: COLOR.danger, help: 'The owner ended the conversation defensive' },
-};
-
-const SOURCE_WORDS: Record<string, string> = {
-  library: 'Built-in library',
-  studio: 'Scenario Studio',
-  'self-built': 'Built by the trainee',
-  unknown: 'Not recorded',
 };
 
 function scoreWord(score: number): string {
@@ -565,7 +559,10 @@ function OverviewTab({
           }
           sub={level != null ? 'Scored to the same standard at every level' : undefined}
         />
-        <FactCell label="Source" value={SOURCE_WORDS[facts?.scenario_source ?? 'unknown']} />
+        <FactCell
+          label="Source"
+          value={SCENARIO_SOURCE_LABELS[facts?.scenario_source ?? 'unknown'] ?? SCENARIO_SOURCE_LABELS.unknown}
+        />
       </FactGroup>
 
       {scoring?.critique && !session.score_unavailable && <Block label="Coach critique">{scoring.critique}</Block>}

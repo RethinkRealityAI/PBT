@@ -21,6 +21,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -79,9 +80,12 @@ import { StepRail, type RailStep } from './StepRail';
 import { useObjectionsContext } from './objections/ObjectionsContext';
 import { missingCoreFields } from './objections/objectionsModel';
 import {
+  ASSISTANT_RAIL_WIDTH,
   AssistantColumn,
   AssistantDrawer,
   AssistantLauncher,
+  readAssistantCollapsed,
+  writeAssistantCollapsed,
   type AssistantPanelProps,
 } from './AssistantDock';
 import { PetStep } from './steps/PetStep';
@@ -159,6 +163,11 @@ export interface StudioEditorProps {
    */
   speciesSupported?: boolean;
   initialStep?: StudioStepKey;
+  /**
+   * A new scenario started from the gallery's category filter: the Pushback
+   * step opens on that category (until an objection is picked).
+   */
+  initialCategoryId?: string | null;
   /** Open with the assistant showing. */
   openAssistant?: boolean;
   /** A first message for the assistant (the home composer's description). */
@@ -327,8 +336,20 @@ export function StudioEditor(props: StudioEditorProps) {
     canWrite && props.initialPrompt ? { id: 1, text: props.initialPrompt } : null,
   );
   const pendingSeq = useRef(1);
-  const [dockHidden, setDockHidden] = useState(false);
+  /**
+   * The docked assistant is folded to its rail. Starts from this browser's
+   * remembered choice — except when the admin came here to talk to it.
+   */
+  const [dockHidden, setDockHidden] = useState(() => !props.openAssistant && readAssistantCollapsed());
   const [drawerOpen, setDrawerOpen] = useState(Boolean(props.openAssistant && canWrite));
+  /** The rail's fold / unfold buttons — the only things that change the remembered choice. */
+  const foldDock = useCallback((folded: boolean) => {
+    setDockHidden(folded);
+    writeAssistantCollapsed(folded);
+  }, []);
+  const drawerId = useId();
+  // Stable: the drawer's focus / Escape effect re-runs when this changes.
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const [seenItems, setSeenItems] = useState(boot.transcript.items.length);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -345,7 +366,9 @@ export function StudioEditor(props: StudioEditorProps) {
   // The assistant waits for the real width: mounting it docked and then
   // re-mounting it in the drawer would start (and drop) its first reply twice.
   const assistantAvailable = canWrite && measuredWidth !== null;
-  const docked = assistantAvailable && layout === 'wide' && !dockHidden;
+  /** The assistant has its own column (open, or folded to the rail). */
+  const dockColumn = assistantAvailable && layout === 'wide';
+  const docked = dockColumn && !dockHidden;
 
   // ── Derived ──
   /**
@@ -937,8 +960,8 @@ export function StudioEditor(props: StudioEditorProps) {
   const gridColumns =
     layout === 'narrow'
       ? 'minmax(0, 1fr)'
-      : docked
-        ? `${RAIL_WIDTH}px minmax(0, 1fr) ${DOCK_WIDTH}px`
+      : dockColumn
+        ? `${RAIL_WIDTH}px minmax(0, 1fr) ${dockHidden ? ASSISTANT_RAIL_WIDTH : DOCK_WIDTH}px`
         : `${RAIL_WIDTH}px minmax(0, 1fr)`;
 
   // A brand-new scenario with no animal yet shows a paw, not a dog it isn't.
@@ -1018,7 +1041,7 @@ export function StudioEditor(props: StudioEditorProps) {
       case 'pet':
         return <PetStep {...stepProps} />;
       case 'pushback':
-        return <PushbackStep {...stepProps} />;
+        return <PushbackStep {...stepProps} initialCategoryId={props.initialCategoryId ?? null} />;
       case 'customer':
         return <CustomerStep {...stepProps} />;
       case 'knowledge':
@@ -1323,20 +1346,26 @@ export function StudioEditor(props: StudioEditorProps) {
             </div>
           </main>
 
-          {docked && (
-            <AssistantColumn panel={panel} top={headerHeight + 12} onClose={() => setDockHidden(true)} />
+          {dockColumn && (
+            <AssistantColumn
+              panel={panel}
+              top={headerHeight + 12}
+              collapsed={dockHidden}
+              hasNews={hasNews}
+              onCollapse={() => foldDock(true)}
+              onExpand={() => foldDock(false)}
+            />
           )}
         </div>
       </div>
 
+      {/* Below the docking width the assistant never stacks under the step
+          (a very long page): it slides over from the right instead. */}
       {assistantAvailable && layout !== 'wide' && (
-        <AssistantDrawer open={drawerOpen} panel={panel} onClose={() => setDrawerOpen(false)} />
+        <AssistantDrawer id={drawerId} open={drawerOpen} panel={panel} onClose={closeDrawer} />
       )}
-      {assistantAvailable && !assistantVisible && (
-        <AssistantLauncher
-          hasNews={hasNews}
-          onOpen={() => (layout === 'wide' ? setDockHidden(false) : setDrawerOpen(true))}
-        />
+      {assistantAvailable && layout !== 'wide' && !drawerOpen && (
+        <AssistantLauncher hasNews={hasNews} controls={drawerId} onOpen={() => setDrawerOpen(true)} />
       )}
     </SectionTabsProvider>
   );

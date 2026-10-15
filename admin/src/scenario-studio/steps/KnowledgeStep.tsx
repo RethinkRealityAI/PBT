@@ -48,7 +48,7 @@ import { knowledgeOf, knowledgeSummaryText } from '../objections/categoriesModel
 import { DocumentPicker } from './DocumentPicker';
 import { KnowledgePreview } from './KnowledgePreview';
 import { KnowledgeUpload } from './KnowledgeUpload';
-import { Caption, FitGrid, Group, StepBody, linkButton } from './stepParts';
+import { Caption, Group, StepBody, linkButton } from './stepParts';
 
 interface ModeTile {
   key: KnowledgeMode;
@@ -206,10 +206,13 @@ export function KnowledgeStep({ draft, patch, canWrite, knowledge, goTo }: StepP
 
       <StudioSection title="Where should the AI look?">
         <Group label="Where should the AI look?">
-          <FitGrid min={200}>
+          {/* One choice per row, icon beside the words: three tiles never
+              leave an orphan, and the long descriptions get the full width. */}
+          <div style={{ display: 'grid', gap: 10 }}>
             {tiles.map((m) => (
               <OptionTile
                 key={m.key}
+                layout="row"
                 selected={mode === m.key}
                 onSelect={() => choose(m.key)}
                 disabled={!canWrite}
@@ -236,7 +239,7 @@ export function KnowledgeStep({ draft, patch, canWrite, knowledge, goTo }: StepP
                 }
               />
             ))}
-          </FitGrid>
+          </div>
         </Group>
 
         {notice && (

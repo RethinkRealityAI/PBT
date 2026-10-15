@@ -9,13 +9,8 @@ import { DIFFICULTY_LEVELS, type DifficultyScoreBucket } from '../../lib/difficu
 import { AdminDifficultyMeter } from '../../primitives/DifficultyMeter';
 import { BarList, CHART, DeltaChip, Panel, ShareBar } from '../ui';
 import type { Delta } from '../lib/period';
-import {
-  SOURCE_HINTS,
-  SOURCE_LABELS,
-  sentimentWord,
-  type FeedbackSummary,
-  type SplitRowStats,
-} from '../lib/skills';
+import { sentimentWord, type FeedbackSummary, type SplitRowStats } from '../lib/skills';
+import { SCENARIO_SOURCE_HINTS, SCENARIO_SOURCE_LABELS } from '../lib/metrics';
 import type { ScenarioSource } from '../../../../src/shared/analytics/contract';
 import { Columns } from '../overview/charts';
 import '../overview/styles';
@@ -149,7 +144,9 @@ export function SplitsPanel({ animals, sources }: { animals: SplitRowStats[]; so
             <div style={{ fontSize: 11.5, fontWeight: 800, color: COLOR.inkMute, marginBottom: 10 }}>By where the scenario came from</div>
             <BarList
               rows={splitRows(sources, (k) => (
-                <span title={SOURCE_HINTS[k as ScenarioSource]}>{SOURCE_LABELS[k as ScenarioSource] ?? k}</span>
+                <span title={SCENARIO_SOURCE_HINTS[k as ScenarioSource]}>
+                  {SCENARIO_SOURCE_LABELS[k as ScenarioSource] ?? k}
+                </span>
               ))}
               max={100}
               emptyText="No scored sessions."

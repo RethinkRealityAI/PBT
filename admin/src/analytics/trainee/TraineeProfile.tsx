@@ -35,7 +35,16 @@ import {
 import { useSessionSummaries, useTraineeDetail } from '../data';
 import { useObjectionTitles } from '../objectionTitles';
 import { BarList, CHART, GhostButton, Legend, Panel, ShareBar, StatTile } from '../ui';
-import { compareWords, pctDelta, pointsDelta, rangeWords, splitByPeriod, windows, type Range } from '../lib/period';
+import {
+  compareWords,
+  inWindowWords,
+  pctDelta,
+  pointsDelta,
+  rangeWords,
+  splitByPeriod,
+  windows,
+  type Range,
+} from '../lib/period';
 import {
   SKILL_HINTS,
   SKILL_KEYS,
@@ -328,7 +337,7 @@ function ProfileBody({
               actions={
                 m.progression.points.length > 0 ? <ViewToggle value={chartView} onChange={setChartView} /> : undefined
               }
-              footnote={progressionFootnote(m, words)}
+              footnote={progressionFootnote(m, inWindowWords(range))}
             >
               {m.progression.points.length === 0 ? (
                 <EmptyState
@@ -477,7 +486,7 @@ function buildModel(detail: TraineeDetail, teamRows: SessionSummary[], range: Ra
   };
 }
 
-function progressionFootnote(m: Model, words: string): ReactNode {
+function progressionFootnote(m: Model, inWindow: string): ReactNode {
   const parts: string[] = [];
   const { leftEarly, failed } = m.progression;
   if (leftEarly || failed) {
@@ -488,7 +497,7 @@ function progressionFootnote(m: Model, words: string): ReactNode {
     parts.push(`Not shown: ${bits.join(' and ')}.`);
   }
   parts.push('The line averages each session with the four before it.');
-  if (m.teamAvg != null) parts.push(`Team average covers everyone’s scored sessions in the ${words}.`);
+  if (m.teamAvg != null) parts.push(`Team average covers everyone’s scored sessions ${inWindow}.`);
   return parts.join(' ');
 }
 

@@ -47,6 +47,7 @@ import {
   type StudioEntry,
 } from './studioModel';
 import { objectionLabel } from './objections/objectionsModel';
+import { emptyGalleryState, type EmptyGalleryState, type GalleryCreatePlan } from './galleryEmpty';
 
 /** Species choice on the composer; null = let the assistant decide. */
 export type ComposerSpecies = ScenarioSpecies | null;
@@ -76,6 +77,17 @@ export const STARTER_PROMPTS: Array<{ text: string; species: ScenarioSpecies }> 
 
 const PAGE = 24;
 
+/** What a new scenario starts with. */
+export interface CreateArgs {
+  species: ComposerSpecies;
+  /** Goes to the assistant when present. */
+  prompt: string | null;
+  /** Start from this objection (the gallery's "Add a … scenario"). */
+  pushbackId?: string | null;
+  /** Open the Pushback step on this category (the gallery's "Create a scenario in …"). */
+  categoryId?: string | null;
+}
+
 export interface StudioHomeProps {
   entries: StudioEntry[];
   /** The first load is still in flight. */
@@ -83,8 +95,8 @@ export interface StudioHomeProps {
   canWrite: boolean;
   query: string;
   onQuery: (q: string) => void;
-  /** Start a new scenario; `prompt` goes to the assistant when present. */
-  onCreate: (args: { species: ComposerSpecies; prompt: string | null }) => void;
+  /** Start a new scenario. */
+  onCreate: (args: CreateArgs) => void;
   onOpen: (entry: StudioEntry) => void;
   onDuplicate: (entry: StudioEntry) => void;
   /** "Add to library" on a trainee's scenario: open an unsaved, hidden admin copy. */
@@ -139,6 +151,7 @@ export function StudioHome(props: StudioHomeProps) {
           canWrite={canWrite}
           query={query}
           onClearQuery={() => onQuery('')}
+          onCreate={props.onCreate}
           onOpen={props.onOpen}
           onDuplicate={props.onDuplicate}
           onAddToLibrary={props.onAddToLibrary}
@@ -485,6 +498,7 @@ function Gallery({
   canWrite,
   query,
   onClearQuery,
+  onCreate,
   onOpen,
   onDuplicate,
   onAddToLibrary,
@@ -498,6 +512,7 @@ function Gallery({
   canWrite: boolean;
   query: string;
   onClearQuery: () => void;
+  onCreate: StudioHomeProps['onCreate'];
   onOpen: (entry: StudioEntry) => void;
   onDuplicate: (entry: StudioEntry) => void;
   onAddToLibrary: (entry: StudioEntry) => void;
@@ -519,8 +534,6 @@ function Gallery({
     [entries, filter, animal, category, objection, query, objections, categories],
   );
   const shown = facets.shown;
-  const filtered =
-    filter !== 'all' || animal !== 'all' || category !== ALL_CATEGORIES || objection !== ALL_OBJECTIONS;
   const showAll = () => {
     setFilter('all');
     setAnimal('all');
@@ -631,12 +644,29 @@ function Gallery({
         </div>
       ) : shown.length === 0 ? (
         <EmptyGallery
-          filter={filter}
-          filtered={filtered}
-          query={query}
-          canWrite={canWrite}
+          state={emptyGalleryState({
+            selection: { status: filter, animal, category, objection },
+            query,
+            canWrite,
+            entries,
+            draftsMatching: facets.status.drafts,
+            team: objections,
+            categories,
+          })}
+          onCreate={(plan) =>
+            onCreate({
+              species: plan.species,
+              prompt: null,
+              pushbackId: plan.pushbackId,
+              categoryId: plan.categoryId,
+            })
+          }
           onClearQuery={onClearQuery}
           onShowAll={showAll}
+          onShowDrafts={() => {
+            setFilter('drafts');
+            setLimit(PAGE);
+          }}
         />
       ) : (
         <>
@@ -887,49 +917,34 @@ function TraineeActions({
   );
 }
 
+/**
+ * Nothing to show. The words and the actions come from `emptyGalleryState`:
+ * when it fits, the primary action starts the very scenario the filters were
+ * looking for ("Create your first cat scenario"); "Show all scenarios" stays
+ * as the quiet way back.
+ */
 function EmptyGallery({
-  filter,
-  filtered,
-  query,
-  canWrite,
+  state,
+  onCreate,
   onClearQuery,
   onShowAll,
+  onShowDrafts,
 }: {
-  filter: GalleryFilter;
-  /** Any of the status / animal / objection filters is narrowing the list. */
-  filtered: boolean;
-  query: string;
-  canWrite: boolean;
+  state: EmptyGalleryState;
+  onCreate: (plan: GalleryCreatePlan) => void;
   onClearQuery: () => void;
   onShowAll: () => void;
+  onShowDrafts: () => void;
 }) {
-  let title: string;
-  let body: string;
-  if (query.trim()) {
-    title = `Nothing matches “${query.trim()}”`;
-    body = 'Try a breed, a pushback or a driver — or clear the search.';
-  } else if (filtered && filter === 'all') {
-    title = 'No scenarios match these filters';
-    body = 'Try another animal or objection — or show everything.';
-  } else if (filter === 'drafts') {
-    title = 'No drafts right now';
-    body = canWrite
-      ? 'Every scenario is live. Describe a new one above to start a draft.'
-      : 'Every scenario is live.';
-  } else if (filter === 'trainee') {
-    title = 'No trainee-built scenarios yet';
-    body = 'When a trainee builds their own scenario in the app, it shows up here.';
-  } else if (filter === 'live') {
-    title = 'Nothing is live';
-    body = 'Trainees can’t start a session until at least one scenario is published.';
-  } else {
-    title = 'No scenarios yet';
-    body = canWrite ? 'Describe your first one above.' : 'Nothing has been built yet.';
-  }
+  const { create, draftsWaiting } = state;
+  const hasPrimary = create !== null || draftsWaiting > 0;
+  // Never a dead end: with no primary action, the way back is the button.
+  const backTone = hasPrimary ? 'ghost' : 'secondary';
   return (
     <div
+      role="status"
       style={{
-        padding: '36px 20px',
+        padding: '32px 20px',
         borderRadius: 20,
         border: `1px dashed rgba(60,20,15,0.16)`,
         background: 'rgba(255,255,255,0.45)',
@@ -939,18 +954,50 @@ function EmptyGallery({
         justifyItems: 'center',
       }}
     >
-      <AssistMark size={30} />
-      <div style={{ fontSize: 15, fontWeight: 750, color: COLOR.ink }}>{title}</div>
-      <div style={{ fontSize: 13, color: COLOR.inkMute, maxWidth: 420 }}>{body}</div>
-      {query.trim() ? (
-        <Button tone="secondary" size="sm" onClick={onClearQuery}>
-          Clear search
-        </Button>
-      ) : filtered ? (
-        <Button tone="secondary" size="sm" onClick={onShowAll}>
-          Show all scenarios
-        </Button>
-      ) : null}
+      {create?.species ? <PetBadge species={create.species} size={34} /> : <AssistMark size={30} />}
+      <div style={{ fontSize: 15, fontWeight: 750, color: COLOR.ink, overflowWrap: 'anywhere' }}>
+        {state.title}
+      </div>
+      <div style={{ fontSize: 13, color: COLOR.inkMute, maxWidth: 440, lineHeight: 1.5 }}>{state.body}</div>
+      {(hasPrimary || state.clearSearch || state.showAll) && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            marginTop: 6,
+            maxWidth: '100%',
+          }}
+        >
+          {create && (
+            <Button
+              tone="primary"
+              onClick={() => onCreate(create)}
+              // Objection names can be long: let the label wrap on a phone
+              // rather than push the card wider than the screen.
+              style={{ whiteSpace: 'normal', maxWidth: '100%', textAlign: 'center' }}
+            >
+              <span aria-hidden>+</span> {create.label}
+            </Button>
+          )}
+          {!create && draftsWaiting > 0 && (
+            <Button tone="primary" onClick={onShowDrafts}>
+              {draftsWaiting === 1 ? 'Show the draft' : `Show the ${draftsWaiting} drafts`}
+            </Button>
+          )}
+          {state.clearSearch && (
+            <Button tone="secondary" onClick={onClearQuery}>
+              Clear search
+            </Button>
+          )}
+          {state.showAll && (
+            <Button tone={state.clearSearch ? 'ghost' : backTone} onClick={onShowAll}>
+              Show all scenarios
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

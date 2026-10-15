@@ -80,7 +80,7 @@ export function SkillsTab(props: AnalyticsTabProps) {
         <ScreenShell>
           <EmptyState
             title="Your role can’t read training sessions"
-            subtitle="Skills are worked out from the team’s scored sessions. Ask an owner to add “Sessions” access to your role."
+            subtitle="Skills are worked out from the team’s scored sessions. Ask an owner to add “Training sessions” access to your role."
           />
         </ScreenShell>
       </>

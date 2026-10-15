@@ -447,6 +447,36 @@ describe('CopilotPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('the docked variant folds away with "Hide assistant" (and has no button without onClose)', () => {
+    const onClose = vi.fn();
+    const panel = (close?: () => void) => (
+      <CopilotPanel
+        scenarioId="admin:t1"
+        draft={emptyAdminDraft('admin:t1')}
+        step="pet"
+        canWrite
+        knowledge={{ docs: [], loading: false, error: null, refetch: () => {} }}
+        onPatch={() => {}}
+        onGoToStep={() => {}}
+        transcript={EMPTY_TRANSCRIPT}
+        onTranscriptChange={() => {}}
+        pendingPrompt={null}
+        onPendingConsumed={() => {}}
+        variant="docked"
+        onClose={close}
+        controlsId="dock-1"
+      />
+    );
+    const { rerender } = render(panel(onClose));
+    const hide = screen.getByRole('button', { name: 'Hide assistant' });
+    expect(hide).toHaveAttribute('aria-expanded', 'true');
+    expect(hide).toHaveAttribute('aria-controls', 'dock-1');
+    fireEvent.click(hide);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    rerender(panel());
+    expect(screen.queryByRole('button', { name: 'Hide assistant' })).not.toBeInTheDocument();
+  });
+
   it('a reply that lands after switching scenarios is not written into the new one', async () => {
     let resolve: (r: ScenarioAgentResponse) => void = () => {};
     askScenarioAgent.mockImplementationOnce(() => new Promise((r) => (resolve = r)));

@@ -24,7 +24,7 @@ import {
 } from '../../../../src/shared/ai/scenarioAgent';
 import { DIFFICULTY_LABELS, PERSONAS } from '../../../../src/shared/scenarios/enums';
 import { SCENARIO_LIMITS } from '../../../../src/shared/scenarios/limits';
-import { BuiltInHint, Caption, FitGrid, Group, StepBody } from './stepParts';
+import { BuiltInHint, Caption, ColumnsGrid, Group, StepBody } from './stepParts';
 
 /** "2 · Skeptical" */
 export function difficultyName(level: number | null | undefined): string {
@@ -103,10 +103,12 @@ export function CustomerStep({ draft, patch, canWrite, base, source, askAssistan
         }
       >
         <Group label="ECHO driver">
-          <FitGrid min={260}>
+          {/* 2 × 2 (never 3 + 1), stacked only when the step is phone-narrow. */}
+          <ColumnsGrid max={2} min={220}>
             {DRIVER_KEYS.map((d) => (
               <OptionTile
                 key={d}
+                layout="row"
                 selected={driver === d}
                 onSelect={() => patch({ suggested_driver: d })}
                 disabled={!canWrite}
@@ -116,7 +118,7 @@ export function CustomerStep({ draft, patch, canWrite, base, source, askAssistan
                 description={DRIVER_BLURBS[d]}
               />
             ))}
-          </FitGrid>
+          </ColumnsGrid>
         </Group>
         <BuiltInHint
           base={base}
@@ -191,7 +193,7 @@ export function CustomerStep({ draft, patch, canWrite, base, source, askAssistan
               />
             </div>
           )}
-          <FitGrid min={260}>
+          <ColumnsGrid max={2} min={220}>
             {SCENARIO_LIMITS.difficultyLevels.map((level) => (
               <OptionTile
                 key={level}
@@ -203,7 +205,7 @@ export function CustomerStep({ draft, patch, canWrite, base, source, askAssistan
                 description={DIFFICULTY_BLURBS[level]}
               />
             ))}
-          </FitGrid>
+          </ColumnsGrid>
         </Group>
         <Caption>
           At every level the owner <em>does</em> soften when the trainee earns it — a harder owner just

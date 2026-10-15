@@ -12,12 +12,32 @@
  *
  * Pure; dates come in through `now` so everything is unit-tested.
  */
-import type { SessionSummary, SkillKey, SkillScores } from '../../../../src/shared/analytics/contract';
+import type { ScenarioSource, SessionSummary, SkillKey, SkillScores } from '../../../../src/shared/analytics/contract';
 import { SKILL_KEYS } from '../../../../src/shared/analytics/contract';
 import { bucketIndex, buckets, mean, median, pct, type Range } from './period';
 
 export { SKILL_KEYS };
 export type { SkillKey, SkillScores };
+
+/**
+ * Where a session's scenario came from — the ONE set of words the Sessions
+ * filter and table, the CSV export, the Skills split and the session modal
+ * all use.
+ */
+export const SCENARIO_SOURCE_LABELS: Record<ScenarioSource, string> = {
+  library: 'Built-in library',
+  studio: 'Scenario Studio',
+  'self-built': 'Built by the trainee',
+  unknown: 'Not recorded',
+};
+
+/** One line on each source, for tooltips. */
+export const SCENARIO_SOURCE_HINTS: Record<ScenarioSource, string> = {
+  library: 'The ready-made scenarios that ship with the app',
+  studio: 'Published by your team from the Scenario Studio',
+  'self-built': 'Made on the trainee’s own Build screen',
+  unknown: 'Older sessions that didn’t store it',
+};
 
 export const SKILL_LABELS: Record<SkillKey, string> = {
   acknowledge: 'Acknowledge',

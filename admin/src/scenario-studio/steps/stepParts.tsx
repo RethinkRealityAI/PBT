@@ -42,6 +42,48 @@ export function FitGrid({ min, gap = 10, children }: { min: number; gap?: number
   );
 }
 
+/**
+ * At most `max` equal columns, each at least `min` px wide — fewer (down to
+ * one) only when the step is too narrow for them. For sets that read badly
+ * with an orphan (four drivers as 3 + 1): they show as 2 × 2 or stacked.
+ */
+export function maxColumnsTemplate(max: number, min: number, gap = 10): string {
+  const share = `calc((100% - ${(max - 1) * gap}px) / ${max})`;
+  return `repeat(auto-fit, minmax(min(100%, max(${min}px, ${share})), 1fr))`;
+}
+
+export function ColumnsGrid({
+  max,
+  min,
+  gap = 10,
+  children,
+}: {
+  max: number;
+  min: number;
+  gap?: number;
+  children: ReactNode;
+}) {
+  return <div style={{ display: 'grid', gridTemplateColumns: maxColumnsTemplate(max, min, gap), gap }}>{children}</div>;
+}
+
+/**
+ * Four tiles as one row of four, a 2 × 2, or (phone-narrow) a 2 × 2 of
+ * small ones — never the 3 + 1 an auto-fit grid leaves at in-between widths.
+ * Two pairs, each its own two-column grid, side by side when they fit.
+ */
+export function FourUpGrid({ children, min = 120, gap = 10 }: { children: ReactNode[]; min?: number; gap?: number }) {
+  const pairs = [children.slice(0, 2), children.slice(2, 4)];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: maxColumnsTemplate(2, 2 * min + gap, gap), gap }}>
+      {pairs.map((pair, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: maxColumnsTemplate(2, min, gap), gap }}>
+          {pair}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Equality for draft values, treating blank strings and null alike. */
 export function sameDraftValue(a: unknown, b: unknown): boolean {
   const norm = (v: unknown) => {

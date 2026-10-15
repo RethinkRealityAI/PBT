@@ -9,7 +9,7 @@ import { EmptyState } from '../../primitives';
 import { COLOR } from '../../lib/tokens';
 import { CHART, GhostButton, Legend, Panel } from '../ui';
 import type { TrendPoint } from '../lib/metrics';
-import { rangeWords, type Range } from '../lib/period';
+import { inWindowWords, type Range } from '../lib/period';
 import { ActivityBars, MiniTable, SOLID, SOLID_LINE, ScoreLine, TableToggle, bucketTitle } from './charts';
 
 type Granularity = 'hour' | 'day' | 'week';
@@ -29,7 +29,7 @@ export function chartWindowWords(range: Range, words: string, since?: string | n
 
 /** "in the last 28 days" — or "so far" for all time ("No practice so far"). */
 export function inWindow(range: Range): string {
-  return range === 'all' ? 'so far' : `in the ${rangeWords(range)}`;
+  return inWindowWords(range);
 }
 
 function WidenEmpty({ title, subtitle, onWiden }: { title: string; subtitle: string; onWiden?: () => void }) {

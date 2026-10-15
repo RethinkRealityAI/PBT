@@ -23,10 +23,17 @@ import type { SessionRecord, ChatMessage, ScoreReport } from '../../services/typ
 import { SESSIONS_KEY } from '../../lib/sessionsKey';
 import type { Scenario } from '../../data/scenarios';
 import {
+  getOrCreateSessionId,
   readStorage,
   writeStorage,
   type StorageKeyDef,
 } from '../../lib/storage';
+import { postAi } from '../../services/aiApi';
+import {
+  AI_ENDPOINTS,
+  type SessionClaimRequest,
+  type SessionClaimResponse,
+} from '../../shared/ai/contract';
 import type { DriverKey } from '../../design-system/tokens';
 import { normalizeDimensions } from '../../data/knowledge/scoringRubric';
 import { parseDifficulty } from '../../shared/scenarios/difficulty';
@@ -138,6 +145,28 @@ function warnIfSingleRoleTranscript(
 }
 
 /**
+ * Hand this device's anonymous server rows for `ids` to the signed-in account
+ * (`session-save` claim). Returns the ids that are already complete on the
+ * server. Best-effort: on any failure nothing is claimed and the backfill
+ * behaves as before.
+ */
+async function claimAnonymousSessions(ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  try {
+    const body: SessionClaimRequest = {
+      claim: true,
+      anonSessionId: getOrCreateSessionId(),
+      sessionIds: ids,
+    };
+    const res = await postAi<SessionClaimResponse>(AI_ENDPOINTS.sessionSave, body);
+    return new Set((res.claimed ?? []).filter((c) => c.complete).map((c) => c.id));
+  } catch (err) {
+    console.warn('[backfill] claiming anonymous sessions failed', err);
+    return new Set();
+  }
+}
+
+/**
  * Run the backfill for the currently-signed-in user. Safe to call on every
  * sign-in — no-ops when there's nothing local to send.
  */
@@ -151,7 +180,14 @@ export async function backfillLocalDataToCloud(
   // ── Sessions → training_sessions ─────────────────────────
   if (sessions.length > 0) {
     try {
-      const sessionRows = sessions.map((s) => {
+      // Sessions played before signing in may already be on the server as
+      // ANONYMOUS rows (the server records anonymous practice — see
+      // `session-save`). Claim this device's rows first: a complete one keeps
+      // its server-written scenario, transcript and verified score, so it is
+      // not re-uploaded from this lossier local copy; a row rebuilt from app
+      // activity (no transcript) is filled from the local copy below.
+      const complete = await claimAnonymousSessions(sessions.map((s) => s.id));
+      const sessionRows = sessions.filter((s) => !complete.has(s.id)).map((s) => {
         warnIfSingleRoleTranscript(`session ${s.id}`, s.transcript);
         return {
           id: s.id,
@@ -198,11 +234,15 @@ export async function backfillLocalDataToCloud(
           scenario_summary: s.scenarioSummary,
           turns: s.transcript.length,
           created_at: s.createdAt,
+          // Recorded by the app (a claimed row rebuilt from activity stops
+          // being "reconstructed" once its transcript lands).
+          origin: 'app',
         };
       });
-      const { error: sessErr } = await sb
-        .from('training_sessions')
-        .upsert(sessionRows, { onConflict: 'id' });
+      const { error: sessErr } =
+        sessionRows.length > 0
+          ? await sb.from('training_sessions').upsert(sessionRows, { onConflict: 'id' })
+          : { error: null };
       if (sessErr) {
         console.warn('[backfill] training_sessions upsert failed', sessErr);
       } else {

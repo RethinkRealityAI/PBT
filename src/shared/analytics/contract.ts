@@ -40,7 +40,22 @@ export type OwnerMood = 'red' | 'yellow' | 'green';
  */
 export interface SessionSummary {
   id: string;
-  user_id: string;
+  /** The trainee's account — null for an ANONYMOUS session (no account). */
+  user_id: string | null;
+  /**
+   * An anonymous session's random per-device id (`pbt:session_id`) — groups
+   * one device's sessions; never a name or an email. Null when signed in.
+   */
+  anon_session_id: string | null;
+  /** App language the session was played in ('en', 'fr'); null before 2026-10-15. */
+  locale: string | null;
+  /**
+   * Rebuilt from app-usage events for an anonymous session played before
+   * anonymous sessions were recorded (2026-10-15): when, which objection, the
+   * mode and whether it reached the scorecard are known; the transcript and
+   * the score were never stored.
+   */
+  reconstructed: boolean;
   /** Row creation — in practice the END of the session (the scorer writes the row). */
   created_at: string;
   /** created_at − duration, when a duration was stored. */

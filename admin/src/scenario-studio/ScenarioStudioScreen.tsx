@@ -51,7 +51,7 @@ import { useObjections } from './objections/useObjections';
 import { ObjectionsProvider } from './objections/ObjectionsContext';
 import { clearLocalDraft, listLocalDrafts, readLocalDraft, setLocalDraftsOwner } from './localDrafts';
 import type { KnowledgeState } from './types';
-import { StudioHome, type ComposerSpecies, type ResumableDraft } from './StudioHome';
+import { StudioHome, type CreateArgs, type ResumableDraft } from './StudioHome';
 import { StudioEditor } from './StudioEditor';
 import { fetchScenarioCapabilities } from './api';
 import { setSimulatorSessionsOwner } from './simulator/simulatorSession';
@@ -68,6 +68,8 @@ interface OpenState {
   step?: StudioStepKey;
   openAssistant?: boolean;
   prompt?: string | null;
+  /** A new scenario started from a category filter: the Pushback step opens on it. */
+  categoryId?: string | null;
   resume?: boolean;
   /** Re-opening the same scenario remounts a fresh editor. */
   nonce: number;
@@ -199,14 +201,18 @@ export function ScenarioStudioScreen({
     window.setTimeout(() => scrollPageTo(top), 0);
   }
 
-  function onCreate({ species, prompt }: { species: ComposerSpecies; prompt: string | null }) {
+  function onCreate({ species, prompt, pushbackId = null, categoryId = null }: CreateArgs) {
     const id = newAdminScenarioId();
+    const seed = emptyAdminDraft(id, species);
+    // Started from the gallery's filters: the objection they were looking at.
+    if (pushbackId) seed.pushback_id = pushbackId;
     openEditor({
       id,
-      seed: emptyAdminDraft(id, species),
+      seed,
       step: 'pet',
       openAssistant: Boolean(prompt),
       prompt,
+      categoryId: pushbackId ? null : categoryId,
     });
   }
 
@@ -400,6 +406,7 @@ export function ScenarioStudioScreen({
           }
           speciesSupported={capabilities.species}
           initialStep={open.step}
+          initialCategoryId={open.categoryId ?? null}
           openAssistant={open.openAssistant}
           initialPrompt={open.prompt ?? null}
           resumeLocal={open.resume}

@@ -13,7 +13,7 @@ import { useAccess } from '../../primitives/access';
 import { COLOR } from '../../lib/tokens';
 import { useEngagement, useSessionSummaries, useTraineeDirectory } from '../data';
 import { AutoGrid, ChipFilter, DeltaChip, FreshnessNote, GhostButton, StatTile } from '../ui';
-import { compareWords, pctDelta, rangeWords, windows } from '../lib/period';
+import { compareWords, inWindowWords, pctDelta, windowNoun, windows } from '../lib/period';
 import { STATUS_HELP, STATUS_LABELS, rollupTrainees, statusCounts, type TraineeRow } from '../lib/trainees';
 import {
   MOMENTUM_THRESHOLD,
@@ -156,7 +156,7 @@ export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }:
                   unit={`of ${rows.length}`}
                   delta={range === 'all' ? undefined : pctDelta(summary.practising, summary.practisingPrev)}
                   compareLabel={compare}
-                  hint={`Trainees with at least one session in the ${rangeWords(range)}`}
+                  hint={`Trainees with at least one session ${inWindowWords(range)}`}
                 />
                 <StatTile
                   label="At risk"
@@ -189,7 +189,7 @@ export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }:
                         : pctDelta(summary.perActive, summary.perActivePrev)
                   }
                   compareLabel={compare}
-                  hint={`Average for people who practised in the ${rangeWords(range)}`}
+                  hint={`Average for people who practised ${inWindowWords(range)}`}
                 />
               </AutoGrid>
 
@@ -295,7 +295,7 @@ export function TraineeRoster({ range, onRange, query, onQuery, onOpen, onNav }:
                 }}
               >
                 Status, streaks and score momentum use every session a trainee has ever done; sessions, average score
-                and skills cover the {rangeWords(range)}. Averages count scored sessions only — sessions left early or
+                and skills cover {windowNoun(range)}. Averages count scored sessions only — sessions left early or
                 where scoring failed are excluded. {counts.new > 0 && `${counts.new} joined in the last 14 days.`}
               </div>
             </>

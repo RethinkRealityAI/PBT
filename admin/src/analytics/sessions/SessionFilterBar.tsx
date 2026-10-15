@@ -12,12 +12,12 @@ import { ChipFilter, SelectFilter } from '../ui';
 import {
   OUTCOME_FILTERS,
   OUTCOME_FILTER_LABELS,
-  SOURCE_LABELS,
   objectionOptions,
   outcomeCounts,
   type OutcomeFilter,
   type SessionFilters,
 } from '../lib/sessionsExplorer';
+import { SCENARIO_SOURCE_LABELS } from '../lib/metrics';
 
 export function SessionFilterBar({
   rows,
@@ -96,7 +96,7 @@ export function SessionFilterBar({
           label="Source"
           value={filters.source}
           onChange={(v) => set('source', v as SessionFilters['source'])}
-          options={[{ value: 'all', label: 'Any' }, ...sources.map((k) => ({ value: k, label: SOURCE_LABELS[k] }))]}
+          options={[{ value: 'all', label: 'Any' }, ...sources.map((k) => ({ value: k, label: SCENARIO_SOURCE_LABELS[k] }))]}
         />
         {active > 0 && (
           <button

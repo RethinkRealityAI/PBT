@@ -14,7 +14,7 @@
  * scenario reads its CATEGORY's knowledge (shown under the chips) unless it
  * picks its own on the Knowledge step.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { StepProps } from '../types';
 import {
   AssistButton,
@@ -77,7 +77,21 @@ const BACKSTORY_PLACEHOLDER: Record<ScenarioSpecies, string> = {
   cat: 'e.g. Milo is a 9-year-old neutered Domestic Shorthair with a history of urinary crystals. The vet recommended a urinary diet; the owner free-feeds and has two other cats.',
 };
 
-export function PushbackStep({ draft, patch, canWrite, base, askAssistant, knowledge }: StepProps) {
+export function PushbackStep({
+  draft,
+  patch,
+  canWrite,
+  base,
+  askAssistant,
+  knowledge,
+  initialCategoryId = null,
+}: StepProps & {
+  /**
+   * The category to open on while no objection is picked yet — a scenario
+   * started from the gallery's category filter ("Create a scenario in …").
+   */
+  initialCategoryId?: string | null;
+}) {
   const notesId = useFieldId();
   const backstoryId = useFieldId();
   const objectionsApi = useObjectionsContext();
@@ -106,10 +120,15 @@ export function PushbackStep({ draft, patch, canWrite, base, askAssistant, knowl
   // pre-selected); a chip the admin clicks wins until the objection changes
   // from elsewhere (the assistant, a revert), which re-selects its category.
   const draftCategoryId = objectionCategoryId(pushbackId, team);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(() => (pushbackId ? null : initialCategoryId));
   /** A category created from this step — offered even before it holds an objection. */
   const [created, setCreated] = useState<string | null>(null);
+  // Only a CHANGE of objection resets the chip — not the first render, which
+  // may be opening on the category the scenario was started from.
+  const shownPushback = useRef(pushbackId);
   useEffect(() => {
+    if (shownPushback.current === pushbackId) return;
+    shownPushback.current = pushbackId;
     setPicked(null);
   }, [pushbackId]);
   const choices = pushbackChoicesFor(species, team, categories, [draftCategoryId, created, picked]);
@@ -272,6 +291,7 @@ export function PushbackStep({ draft, patch, canWrite, base, askAssistant, knowl
           <div style={{ marginTop: 10, display: 'grid' }}>
             <OptionTile
               compact
+              layout="row"
               selected={pushbackId === 'custom'}
               onSelect={() => choose({ id: 'custom' })}
               disabled={!canWrite}
