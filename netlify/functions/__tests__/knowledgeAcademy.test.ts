@@ -275,7 +275,10 @@ describe('manifest + snapshot helpers', () => {
     expect(() => validateManifest({ ...manifest(), publish: 'yes' })).toThrow(/publish/);
   });
 
-  it('reads nothing from a directory without a bundle', async () => {
+  it('reads the shipped bundle from the repo (gate closed in this PR)', async () => {
+    const b = await readAcademyBundleFromDisk([path.resolve(__dirname, '../../..')]);
+    expect(b).not.toBeNull();
+    expect(b!.manifest.articles.length).toBeGreaterThan(0);
     expect(await readAcademyBundleFromDisk(['/nonexistent'])).toBeNull();
   });
 

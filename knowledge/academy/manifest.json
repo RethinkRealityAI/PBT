@@ -1,0 +1,4277 @@
+{
+  "permission": {
+    "status": "pending",
+    "reference": "",
+    "grantedBy": "",
+    "date": ""
+  },
+  "publish": false,
+  "fetcher": {
+    "userAgent": "PBT-KnowledgeFetcher/1.0 (Pushback Training knowledge import; contact dapo@rethinkreality.ai)",
+    "minDelayMs": 1500
+  },
+  "articles": [
+    {
+      "slug": "10-most-common-pet-owner-preconceived-ideas",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The ten most common owner preconceptions about pet food — direct pushback material.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "2022-isfm-consensus-guidelines-on-management",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Hospitalised inappetent cats and tube feeding — in-hospital care, not an owner conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "4-steps-to-a-successful-weight-management-conversation-with-pet-owners",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Four-step structure for a weight-management conversation with an owner.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "a-dietary-supplement-containing-nucleotides-oligosaccharides-vitamin-e",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow research abstract on a supplement — not conversation material.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "a-friendly-approach-to-the-senior-cat-consult",
+      "approved": true,
+      "focus": "aging",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Running a senior cat consult — owner communication and nutrition.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "a-new-generic-feline-quality-of-life-felqol-questionnaire-part-2",
+      "approved": false,
+      "focus": "aging",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Quality-of-life questionnaire validation — research method, not diet or client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "a-novel-therapeutic-diet-in-overweight-insulin-treated-diabetic-cats",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Therapeutic diet trial in overweight diabetic cats — evidence for a prescribed diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "a-randomised-controlled-study-demonstrates-that-diet-can-contribute-to-the-clinical-management",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "RCT: a diet reduced drug needs and signs in cats with atopic skin syndrome.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "a-survey-on-workload-and-wellbeing",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Team workload and wellbeing — not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "acute-feline-pancreatitis",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Medical management of acute pancreatitis — clinical procedure-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "adverse-skin-reactions-to-food",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Skin reactions to food in dogs — diet trials and hydrolysed diets.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "an-extensively-hydrolysed-protein-based-extruded-diet",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Extensively hydrolysed diet in difficult chronic enteritis — evidence for a prescribed diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "an-overview-of-adverse-food-reactions-in-dogs",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Overview of food reactions in dogs — diagnosis and dietary management.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "association-between-birth-weight-and-mortality-over-the-two-first-months",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Neonatal mortality research — reproduction/neonatology.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "association-between-birth-weight-and-risk-of-overweight-in-labrador-dogs",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Labrador overweight risk evidence — supports early weight conversations for at-risk breeds.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "atopic-dermatitis-in-cats-demystified",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Feline atopic dermatitis work-up and drugs — diet is a minor part.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "behavioural-and-cognitive-changes-in-aged-pet-dogs",
+      "approved": false,
+      "focus": "aging",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow behaviour research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "being-a-good-vet-part-1",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Early-career professional development — careers (part 2, on owner communication, is approved).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "being-a-good-vet-part-2",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The art of communicating with pet owners (approved despite the careers series: this part is owner communication).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "being-friendly-to-cats-is-it-worth-the-effort",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Cat-friendly handling and the cat owner's experience.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "biomarkers-for-evaluation-of-renal-function",
+      "approved": false,
+      "focus": "urinary",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Renal laboratory biomarkers — diagnostics, not diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "birth-weight-as-a-risk-factor-for-neonatal-puppy-mortality",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Neonatal mortality research — reproduction/neonatology.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "birth-weight-in-the-feline-species",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Feline birth-weight research — reproduction/neonatology.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "cad-prevention",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Atopic dermatitis prevention summary — no diet or client angle worth a passage.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "calcium-and-phosphorus-getting-the-balance-right",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Calcium and phosphorus in growth — breeder and home-made puppy-diet pushback.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "calculating-the-energy-content-of-pet-food",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "How food energy content is calculated — the calorie maths behind feeding amounts.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "canine-atopic-dermatitis-and-the-owner",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Keeping owners of atopic dogs engaged — communication, compliance and cost.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "canine-diabetes-mellitus-whats-new",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Medical management of canine diabetes (insulin, monitoring).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "canine-feeding-behavior",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "How dogs eat — feeding behaviour behind feeding advice.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "canine-genetics-and-obesity",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Breed and genetic obesity risk (e.g. Labradors) — answers \"it's just the breed\" pushback.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "canine-microbiome-dysbiosis",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The canine microbiome and dysbiosis — diet, fibre and probiotic questions.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "canine-osteoarthritis-therapies-a-scientific-review",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Osteoarthritis drug and therapy review — weight is a minor part.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "canine-pancreatitis",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Medical management of canine pancreatitis — clinical procedure-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "canine-protein-losing-enteropathies",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Protein-losing enteropathy work-up and treatment — specialist clinical content.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "canine-pruritus-causes-and-therapies",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Pruritus causes and drugs — not diet-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "cats-and-dietary-fiber",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Dietary fibre for cats — GI and hairball/constipation diet questions.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "choosing-the-right-price-for-your-services",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Pricing veterinary services — background for cost objections.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "circularity-in-the-operating-theatre",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Sustainability in the operating theatre — surgery/sustainability.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "co-morbidity-of-overweight-and-obesity-in-dogs-and-cats",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Diseases linked to excess weight — the health case behind a weight-loss recommendation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "common-pitfalls-and-tips-for-better-team-communication",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Internal team communication — not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "communication-is-a-clinical-skill-part-1",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Communication as a clinical skill — foundations of the consult conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "communication-is-a-clinical-skill-part-2",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Communication as a clinical skill — part 2.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "communication-is-a-clinical-skill-part-3",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Communication as a clinical skill — part 3.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "communication-is-a-clinical-skill-part-4",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Communication as a clinical skill — part 4.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "communication-is-a-clinical-skill-part-5",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Communication as a clinical skill — part 5.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "comparison-of-the-effects-of-different-kibble-shape-on-voluntary-food-intake",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow food-science research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "comparison-of-voluntary-food-intake-and-palatability-of-commercial-diets",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Intake and palatability of weight-management diets — answers \"my pet won't eat diet food\".",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "consolidation-in-the-veterinary-profession",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Industry consolidation — practice business, not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "continuous-glucose-monitoring-in-diabetic-cats",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Glucose monitoring technique — clinical procedure.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "coping-with-mistakes-in-an-effective-way",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Professional wellbeing after mistakes — not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "copy-of-neonatal-pediatric-nutrition",
+      "approved": true,
+      "focus": "aging",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "\"Gracefully grey\": the vet technician's role in senior and geriatric pet care, including nutrition.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "covid-19-intensive-financial-care",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: COVID-19 practice finances — dated, not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "covid-19-putting-the-team-first",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: COVID-19 team management — dated, not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "critically-appraised-topic-on-adverse-food-reactions",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Critically appraised evidence on adverse food reactions — diagnosis and diet trials.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "critically-appraised-topic-on-adverse-food-reactions-of-companion-animals",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Critically appraised evidence on adverse food reactions in dogs and cats.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "critically-appraised-topic-on-adverse-food-reactions-of-companion-animals-time-to-flare",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Evidence on how fast signs flare after a food challenge — sets owner expectations in a food trial.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "daily-rhythms-in-food-intake-and-locomotor-activity",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow feeding-rhythm research in a cat colony.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "dealing-with-the-sick-newborn-puppy",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Sick neonate medicine — emergency/neonatology.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "definition-and-aetiology-of-canine-adverse-food-reactions",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "What canine adverse food reactions are and why they occur.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "definition-and-aetiology-of-canine-atopic-dermatitis",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Atopic dermatitis aetiology — not diet-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "dha-for-puppies",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "DHA in puppy diets — growth-diet questions.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "diagnosis-of-adverse-food-reaction",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Diagnosing adverse food reactions — why an elimination diet is needed.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "diagnostic-methods-for-adverse-food-reactions-in-dogs",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Diagnostic methods for food reactions — why tests don't replace an elimination diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "diet-and-canine-dilated-cardiomyopathy",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Diet-associated DCM (grain-free/BEG diets) — evidence for the grain-free conversation (approved despite the Cardiology theme: it is about diet).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "diet-induced-remission-in-chronic-enteropathy",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Evidence that diet alone can induce remission in chronic enteropathy.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "dietary-challenge-in-dermatology",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The dietary challenge step that confirms a food reaction.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "dietary-fiber-the-clinicians-secret-weapon",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Dietary fibre in GI disease management — the case for fibre-enriched diets.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "dietary-supplementation-of-nucleotides-and-oligosaccharides-in-kittens",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow supplement research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "dietary-supplementation-with-nucleotides",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow supplement research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "digestive-sensitivity-varies-according-to-size-of-dogs",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Digestive sensitivity differs with dog size — the rationale for size-specific diets.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "discussing-veterinary-fees-with-pet-owners",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Discussing fees with owners — cost-objection conversations.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "dog-walking--one-health-one-welfare",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Exercise and dog walking as part of weight management.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "dogs-and-veterinarians-in-todays-society",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: General essay on dogs in society — no diet or conversation focus.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "early-detection-of-ckd",
+      "approved": false,
+      "focus": "aging",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Very short CKD screening summary — diagnostics.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "effect-of-potassium-citrate-on-calcium-oxalate-relative-supersaturation-rss",
+      "approved": false,
+      "focus": "urinary",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow urinary-chemistry abstract; the sodium-chloride study covers the diet rationale.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "efficacy-of-a-diet-containing-caseinate-hydrolysate-on-signs-of-stress-in-dogs",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow behaviour-diet research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "estimation-of-energy-expenditure-using-the-oral-13c-bicarbonate",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Research method for energy expenditure.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "everyday-challenges",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Difficult everyday consult situations, including owner objections and \"Dr Google\".",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "evidence-for-an-interaction-between-linoleic-acid-intake",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow skin-barrier research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "faqs-about-cat-nutrition",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Frequently asked cat-nutrition questions — owner pushback material.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "fecal-score-charts",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Fecal score chart page — the Fecal Scan already carries the charts; not a training passage.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "feline-cutaneous-adverse-food-reactions",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Food reactions in cats — diagnosis by elimination diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "feline-developmental-stages",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Kitten developmental stages — content for kitten consults.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "feline-esophagitis",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Oesophagitis medicine — clinical procedure-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "feline-exocrine-pancreatic-insufficiency",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: EPI medicine — specialist clinical content.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "financial-strategy-to-recover-from-covid-19",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: COVID-19 practice finances — dated, not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "food-elimination-trial-tips-for-pet-owners",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Owner-facing tips for completing a food elimination trial.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "gluten-in-human-and-canine-health",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Gluten in dogs versus people — answers \"grains are bad\" pushback.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "grain-free-diets-good-or-bad",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Grain-free diets: evidence and myths — grain-free pushback.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "growth-chart-for-veterinarians",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Growth charts for veterinarians — tracking healthy growth in puppies.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "growth-charts-in-puppies",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Research abstract; the growth-chart articles cover it for consults.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "home-made-diets-and-gastrointestinal-cases",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Home-made diets in GI cases — answers owners who want to cook instead of feeding a GI diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "homemade-diets-good-or-bad",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Home-made diets: benefits and risks — answers owners who want to cook.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-i-approach-a-meaningful-euthanasia-appointment",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: End-of-life appointments — not nutrition.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-i-approach-effective-client-communication",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Effective client communication in practice.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-i-approach-feline-atopic-skin-syndrome",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Feline atopic skin syndrome work-up and drugs — diet is a minor part.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-i-approach-feline-idiopathic-cystitis",
+      "approved": true,
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Feline idiopathic cystitis — water, diet and environment in management.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-i-approach-pet-obesity",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Owner-conversation playbook for obesity: assessing BCS with the client, small first changes, rechecks, celebrating progress.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-i-approach-urolithiasis-and-specific-gravity-in-cats",
+      "approved": true,
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Diet, water intake and urine specific gravity in preventing feline urolithiasis.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-i-approach-working-successfully-with-breeders",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Working with breeders — breeder-advice pushback.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-i-use-c-reactive-protein-in-daily-practice",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Laboratory test use — diagnostics.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-to-answer-common-pet-owner-questions-about-cad-and-afr",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Answers to owners' common questions about atopic dermatitis and food reactions.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-to-assess-the-patient-with-gastrointestinal-issues",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Short guide to assessing a GI patient, including diet history.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-to-attract-clients-to-your-clinic",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Clinic marketing — not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-to-beat-dr-google-in-nutrition",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Answering internet nutrition myths (\"Dr Google\") with owners.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-to-do-a-food-trial",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "How to run a food trial — the steps an owner has to commit to.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-to-do-an-elimination-diet-for-pets",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Step-by-step elimination diet guide.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-to-offer-a-great-experience-part-1",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Offering a great owner experience, part 1.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "how-to-treat-canine-pododermatitis",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Pododermatitis treatment — not diet-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "hypertriglyceridemia-associated-proteinuria-in-miniature-schnauzers",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Specialist renal/lipid medicine.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "impact-of-compensatory-growth-on-survival-in-newborn-kittens",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Neonatal survival research — neonatology.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "improving-diet-palatability-for-cats-with-ckd",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Getting CKD cats to accept a renal diet — palatability and transition tips.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "improving-the-cat-owner-experience",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Improving the cat owner's experience of the clinic.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "incidence-rate-of-otitis-externa-episodes-in-atopic-dogs",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Otitis epidemiology — not diet-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "increasing-dietary-potassium-chloride-promotes-urine-dilution",
+      "approved": false,
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Near-duplicate of the sodium-chloride urine-dilution study.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "increasing-dietary-sodium-chloride-promotes-urine-dilution",
+      "approved": true,
+      "focus": "urinary",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Evidence that dietary sodium chloride dilutes urine and lowers struvite/oxalate risk — urinary diet rationale.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "individualized-pet-nutrition",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Individualised nutrition — why one food does not fit every pet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "inflationary-pressure-pricing-strategy",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Pricing under inflation — cost conversations with owners.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "influence-of-breed-size-age-fecal-quality-and-enteropathogen-shedding",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Enteropathogen shedding research — infectious disease.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "issue-1-chapter-3b",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Offering a great owner experience, part 2 — follow-up.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "issue-2-chapter-4",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Understanding the business, part 2 — discussing fees and recommending products without discomfort.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "issue-24-3-article-c",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The BARF (raw feeding) trend — advantages, drawbacks and risks; raw-food pushback.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "issue-24-3-article-f",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The psychology of managing the owner — why owners decide as they do.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "issue-26-2-article-a",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Why focus on feline medicine — practice strategy, not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "key-challenges-in-the-veterinary-profession",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Profession-wide challenges — not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "kitten-behavioral-health-recommendations-for-success",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Kitten behaviour — not nutrition.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "lewisburg-pet-health-and-nutrition-center",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Profile of a research facility — no conversation material.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "linoleate-enriched-diet",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow skin-lipid research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "living-with-compassion-fatigue",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Professional wellbeing — not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "long-term-management-of-cad-and-cafr",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Long-term management of atopic dermatitis and food reactions, including diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "longitudinal-changes-in-bodyweight-body-condition-and-muscle-condition",
+      "approved": true,
+      "focus": "aging",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "How body weight, BCS and muscle change as cats age.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "looking-to-the-future",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Early-career planning — careers.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "low-and-very-low-birth-weight-in-puppies",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Neonatal birth-weight research — neonatology.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "maintaining-body-condition-in-older-pets",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Keeping older pets at a healthy body condition — short owner-facing guidance.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "making-your-practice-more-feline-centric",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Clinic set-up for cats — practice operations, not a conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "malassezia-dermatitis-and-otitis-in-dogs",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Malassezia work-up and treatment — not diet-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "management-of-diarrhea",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Dietary management of diarrhoea.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "management-of-low-birth-weight-in-canine-and-feline-species",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Breeder neonatal management — reproduction/neonatology.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "managing-body-composition-in-senior-pets",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Managing weight and muscle in senior pets — diet and feeding guidance.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "maternal-behavior-in-bitches",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Maternal behaviour — reproduction.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "mature-annual-consultation-form",
+      "approved": false,
+      "focus": "aging",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: 73-word form — too thin to ground a passage.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "metabolisable-energy-content-in-canine-and-feline-foods",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow energy-prediction research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "miliary-dermatitis-in-cats",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Miliary dermatitis work-up — not diet-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "milk-replacers-for-veterinarians",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Milk replacers for orphaned puppies and kittens.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "muscle-condition-score",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Muscle condition scoring — assessing body composition beyond weight.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "myths-in-cat-nutrition",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Common cat-nutrition myths — direct material for owner pushback.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "natural-and-artificial-hyperimmune-solutions-impact-on-puppies-health",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Neonatal immunity research — reproduction/neonatology.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "neonatal-pediatric-nutrition",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Feeding plans for newborn puppies and kittens.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "nutrition-of-aging-cats",
+      "approved": true,
+      "focus": "aging",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Feeding ageing cats — senior diet questions.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "nutritional-assessment-form",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Nutrition-history form (diet, treats, feeding) for weight and diet consults.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "nutritional-components-can-influence-hair-coat-colouration-in-white-dogs",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow coat-colour research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "nutritional-considerations-for-the-aging-cat",
+      "approved": true,
+      "focus": "aging",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Nutrition for ageing cats — energy, protein and diet changes.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "nutritional-management-of-cats-with-chronic-kidney-disease",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Nutritional management of feline CKD — renal diet choices and transitions.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "nutritional-recommendation-and-diet-transition",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Making a nutritional recommendation and transitioning diets.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "optimal-puppy-growth-for-a-healthy-start-in-life",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Feeding for optimal puppy growth — puppy consult and breeder-advice material.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "overweight-and-obese-body-condition-in-4-9-million-dogs",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Prevalence of overweight in ~4.9M dogs and ~1.3M cats — \"most pets in practice are overweight\".",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "overweight-and-obesity-in-older-pets",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Overweight in senior pets — weight conversations for older dogs and cats.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "pet-obesity-new-challenges-new-solutions",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Causes and risks of pet obesity and practical weight-loss plans — grounds weight-denial conversations.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "petfood-how-to-prevent-insect-infestation",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Pet-food storage pests — not a pushback topic.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "pets-and-pet-foods-questions-and-answers",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Questions and answers on pets and pet foods — owner pushback material.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "plasma-and-whole-blood-taurine-concentrations-in-dogs",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Taurine status in dogs — background to the grain-free/DCM conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "ple-in-dogs-causes-and-treatments",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Protein-losing enteropathy medicine — specialist clinical content.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "pocus-to-confirm-positioning-of-feeding-tubes",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Ultrasound for feeding tubes — imaging/procedure.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "practical-nutrition-for-working-dogs",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Feeding working and active dogs.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "protein-restriction-for-cats-with-chronic-kidney-disease",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Protein restriction in feline CKD — the evidence behind renal diets.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "proteinuria-renala-felina",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Proteinuria work-up — diagnostics.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "protocols-in-veterinary-practice-i",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Practice protocols — operations, not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "protocols-in-veterinary-practice-ii",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Practice protocols — operations, not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "psyllium-husk-powder-increases-defecation-frequency",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow fibre-supplement research abstract; the fibre articles cover it.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "puppy-behavioral-health-recommendations-for-success",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Puppy behaviour — not nutrition.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "puppy-growth-charts",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Monitoring puppy growth with growth charts — avoiding over-feeding in growth.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "quality-control-for-hydrolyzed-diets-for-cats-and-dogs",
+      "approved": true,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Quality control of hydrolysed diets — why a veterinary hydrolysed diet differs from an OTC \"limited ingredient\" food.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "quantification-of-vitamin-d3-in-commercial-dog-food",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow analytical research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "randomized-controlled-trial",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "RCT: dietary management outperforms metronidazole for acute colitis — evidence for a GI diet over drugs.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "reframing-obesity-in-veterinary-medicine",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Frames obesity as a disease and gives non-judgemental language for raising weight with owners.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "relative-impact-of-birth-weight-and-early-growth",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Neonatal growth research — neonatology.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "research-on-cad",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Atopic dermatitis research summary — not diet-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "risk-factors-associated-with-disturbances-of-calcium-homeostasis",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow CKD calcium research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "sarcopenia-and-weight-management-in-older-dogs",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Weight management that protects muscle in older dogs.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "seasonal-effects-on-locomotor-and-feeding-rhythms-in-indoor-cats",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow feeding-rhythm research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "solutia-reprezentata-de-telemedicina",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: COVID-19 telemedicine — dated, not a client conversation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "sterilization-balancing-benefits-and-risks",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Weight gain after neutering and how to adjust feeding — a common owner question.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "strategy-and-tools",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Clinic blogs and social media — marketing.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "successful-kitten-consults",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Running a successful kitten consult — owner education including nutrition.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "supplements-during-gestation",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Gestation supplements (video page) — reproduction.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "texture-analysis-of-wet-petfood",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Food-science texture analysis — not conversation material.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "th-breed-and-diet-based-disease-in-dogs",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Breed predispositions and diet-related disease in dogs — breed-specific diet questions.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "th-dietary-considerations-for-dogs-with-chronic-enteropathies",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Diet selection for dogs with chronic enteropathies (hydrolysed, novel protein, fibre).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "th-feeding-behavior-in-cats",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "How cats eat — feeding frequency, meal patterns and feeding advice.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "th-feline-feeding-toys",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Feeding toys and food puzzles for cats — feeding changes that support weight control.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "th-how-i-approach-the-cat-with-chronic-diarrhea",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Chronic diarrhoea in cats, including diet trials and GI diets.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "th-nutrition-for-the-diabetic-cat",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Diet in feline diabetes — the role of a prescribed diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "th-the-importance-of-the-pet-owner-experience",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Why the pet-owner experience matters.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-13c-bicarbonate-technique-as-a-tool-for-measurement-of-energy-expenditure",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Research method for energy expenditure.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-cat-friendly-practice-program",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Accreditation programme — practice operations.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-diagnosis-of-canine-atopic-dermatitis",
+      "approved": false,
+      "focus": "dermatitis",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Atopic dermatitis diagnosis — not diet-led.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-duration-of-the-growth-period",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "How long growth lasts by size — when to move from growth to adult food.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-feline-gut-kidney-axis-food-for-thought",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Gut-kidney physiology — specialist, little owner-conversation material.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-importance-of-nutrition-in-newborns",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Why nutrition in the first weeks matters for puppies and kittens.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-oral-13c-bicarbonate-technique-for-determination-of-energy-expenditure-in-dogs",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Research method for energy expenditure.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-role-of-the-vet-tech-in-canine-rehabilitation",
+      "approved": false,
+      "focus": "aging",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Physical rehabilitation — not nutrition.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-small-dog-trend-impact-of-size-on-pet-health",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: General small-dog health — no diet or conversation focus.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-smooth-consultation-part-1",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The smooth consultation — structuring the conversation, part 1.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-smooth-consultation-part-2",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The smooth consultation — part 2.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-smooth-consultation-part-3",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The smooth consultation — part 3.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-three-step-kitten-consultation",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "A three-step kitten consultation structure.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "the-water-requirements-and-drinking-habits-of-cats",
+      "approved": true,
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Cats' water needs and drinking habits — wet food and hydration questions.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "therapeutic-effects-of-an-alpha-casozepine-and-l-tryptophan",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow behaviour-diet research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "to-feed-or-not-to-feed-the-importance-of-nutrition-for-gastrointestinal-cases",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Why nutrition matters in GI cases — feeding versus fasting.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "topical-questions-on-treating-feline-diabetes-mellitus",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Medical management of feline diabetes (insulin).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "towards-establishing-no-observed-adverse-effect-levels",
+      "approved": false,
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow dietary-safety research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "treating-constipation-in-cats",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Constipation in cats with a strong dietary/fibre management component.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "understanding-the-business-part-1",
+      "approved": false,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Clinic income and expenditure — practice business (part 2, on fees, is approved).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "unexplained-weight-loss-in-the-cat",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Diagnostic work-up of weight loss — not weight management.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "untargeted-fecal-metabolome-analysis-in-obese-dogs-after-weight-loss",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Narrow metabolomics research abstract.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "use-of-reduced-energy-content-maintenance-diets",
+      "approved": false,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Duplicate page of the same study (approved under its longer slug).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "use-of-reduced-energy-content-maintenance-diets-for-modest-weight-reduction",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Evidence on 'light' maintenance diets for modest weight loss in cats and dogs.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "validation-of-a-fecal-scoring-scale-in-puppies",
+      "approved": false,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Fecal-scoring validation research — not conversation material.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "vet-tech-led-nutritional-conversations-in-the-clinic",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Nurse/technician-led nutrition conversations — the trainee's own role.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "veterinary-internships-in-the-usa",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Careers.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "vitamin-d-in-canine-health",
+      "approved": false,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Rejected on review: Vitamin D physiology — nutrient science without a pushback angle.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "weaning-diarrhea-in-puppies",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Weaning diarrhoea in puppies — breeder and new-owner feeding advice.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "weaning-diarrhea-in-puppies-and-kittens",
+      "approved": true,
+      "focus": "gi",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Weaning diarrhoea in puppies and kittens — feeding transitions at weaning.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "weight-management-healthy-weight-award",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Recognising owners who reach a healthy weight — keeps owners motivated.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "weight-management-hidden-costs-of-pet-obesity",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "The financial cost of obesity — counters cost objections to a weight-management diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "weight-management-tips-to-communicate-with-pet-owners",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Practical tips for raising weight with pet owners.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "wet-pet-food",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "When wet food is indicated — wet versus dry questions.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "whats-new-in-terms-of-weight-management",
+      "approved": true,
+      "focus": "weight",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Current evidence on weight-loss diets, targets and monitoring for dogs and cats.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "why-invest-in-communication-part-1",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Why invest in communication — the C-factor series, part 1.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "why-invest-in-communication-part-2",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Why invest in communication — part 2.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "why-invest-in-communication-part-3",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Why invest in communication — part 3.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "why-invest-in-communication-part-4",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Why invest in communication — part 4.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "why-invest-in-communication-part-5",
+      "approved": true,
+      "focus": "communication",
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Why invest in communication — part 5.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    },
+    {
+      "slug": "yes-cards",
+      "approved": true,
+      "focus": null,
+      "species": [
+        "dog",
+        "puppy",
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "reason": "Pet-food ingredients explained so vets can address owners' concerns.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-10-26"
+    }
+  ]
+}
