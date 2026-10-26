@@ -46,6 +46,7 @@ import {
 } from '../data/queries';
 import {
   UPLOAD_CATEGORIES,
+  academySourceUrl,
   deleteConsequences,
   docCitation,
   fetchDeletedKnowledge,
@@ -149,6 +150,32 @@ function SourcePill({ source }: { source: string }) {
     <StatusPill tone={built ? 'neutral' : 'info'} dot={false}>
       {sourceLabel(source)}
     </StatusPill>
+  );
+}
+
+/**
+ * A Royal Canin Academy article: which library it came from, and a one-click
+ * way back to the page (new tab). The link stops propagation so clicking it
+ * in a list row doesn't also open the row.
+ */
+function AcademySource({ url }: { url: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <StatusPill tone="info" dot={false}>
+        Royal Canin Academy
+      </StatusPill>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        data-testid="academy-source-link"
+        style={{ fontSize: 11.5, fontWeight: 700, color: COLOR.info, textDecoration: 'none' }}
+      >
+        Open source ↗
+      </a>
+    </span>
   );
 }
 
@@ -1137,6 +1164,7 @@ function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => vo
   const focus = resolveDocFocus(doc.metadata);
   const scope = resolveDocScope(doc.metadata);
   const citation = docCitation(doc.metadata);
+  const academyUrl = academySourceUrl(doc.metadata);
   const searchable = (doc.chunk_count ?? 0) > 0;
   return (
     <div
@@ -1166,6 +1194,11 @@ function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => vo
     >
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>{doc.title}</div>
+        {academyUrl && (
+          <div style={{ marginTop: 4 }}>
+            <AcademySource url={academyUrl} />
+          </div>
+        )}
         {!searchable && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
             <NotSearchablePill />
@@ -1539,6 +1572,7 @@ function DocumentModal({
           >
             <TypePill category={doc.category} />
             <SourcePill source={doc.source} />
+            {academySourceUrl(doc.metadata) && <AcademySource url={academySourceUrl(doc.metadata)!} />}
             {searchable ? (
               <StatusPill tone="success" dot={false}>
                 {`Searchable · ${doc.chunk_count} section${doc.chunk_count === 1 ? '' : 's'}`}

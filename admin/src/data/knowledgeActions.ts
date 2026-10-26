@@ -133,6 +133,30 @@ export function docCitation(metadata: Bag | null | undefined): string | null {
   return typeof citation === 'string' && citation.trim() ? citation.trim() : null;
 }
 
+/** Where Royal Canin Academy articles live — the only origin we link to. */
+const ACADEMY_ORIGIN = 'https://academy.royalcanin.com';
+
+/**
+ * The source page of a Royal Canin Academy article (`metadata.source.kind ===
+ * 'academy'`), or null for every other document. The URL comes from the
+ * database, so it is only returned when it really is an https page on the
+ * Academy — never a `javascript:` or off-site link behind an "Open source"
+ * button.
+ */
+export function academySourceUrl(metadata: Bag | null | undefined): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const source = metadata.source;
+  if (!source || typeof source !== 'object') return null;
+  const { kind, url } = source as Bag;
+  if (kind !== 'academy' || typeof url !== 'string') return null;
+  try {
+    const u = new URL(url);
+    return u.origin === ACADEMY_ORIGIN ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Filtering ──────────────────────────────────────────────────────────────
 
 export interface KnowledgeFilters {

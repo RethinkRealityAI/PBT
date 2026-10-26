@@ -6,6 +6,7 @@ const { postJson } = vi.hoisted(() => ({ postJson: vi.fn() }));
 vi.mock('../../lib/api', () => ({ postJson, apiFetch: vi.fn() }));
 
 import {
+  academySourceUrl,
   batchOutcomeMessage,
   categoryLabel,
   deleteConsequences,
@@ -367,5 +368,23 @@ describe('searchKnowledge', () => {
       species: 'dog',
       k: 4,
     });
+  });
+});
+
+describe('academySourceUrl', () => {
+  const meta = (source: unknown) => ({ source });
+  it('returns the Academy page for an academy document', () => {
+    expect(
+      academySourceUrl(meta({ kind: 'academy', url: 'https://academy.royalcanin.com/en/veterinary/x' })),
+    ).toBe('https://academy.royalcanin.com/en/veterinary/x');
+  });
+
+  it('refuses anything that is not an https page on the Academy', () => {
+    expect(academySourceUrl(meta({ kind: 'academy', url: 'javascript:alert(1)' }))).toBeNull();
+    expect(academySourceUrl(meta({ kind: 'academy', url: 'https://evil.example/en/veterinary/x' }))).toBeNull();
+    expect(academySourceUrl(meta({ kind: 'academy', url: 'http://academy.royalcanin.com/x' }))).toBeNull();
+    expect(academySourceUrl(meta({ kind: 'pdf', url: 'https://academy.royalcanin.com/x' }))).toBeNull();
+    expect(academySourceUrl(null)).toBeNull();
+    expect(academySourceUrl({})).toBeNull();
   });
 });
