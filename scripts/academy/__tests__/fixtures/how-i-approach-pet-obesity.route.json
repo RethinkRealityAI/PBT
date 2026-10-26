@@ -1,0 +1,1567 @@
+{
+ "name": "How I approach Pet obesity",
+ "fields": {
+  "ReadingTime": {
+   "value": "5 - 15 min"
+  },
+  "PublicationDate": {
+   "value": "2026-08-10T00:00:00Z"
+  },
+  "EditorialTag": {
+   "id": "d925a9cf-0d6d-4cbc-90c4-7c7b05f1c429",
+   "url": "/settings/taxonomy/editorial-tags/article",
+   "name": "Article",
+   "displayName": "Article",
+   "fields": {
+    "Value": {
+     "value": "Article"
+    },
+    "Text": {
+     "value": "Article"
+    }
+   }
+  },
+  "Title": {
+   "value": "How I approach... Pet obesity"
+  },
+  "BreadcrumbName": {
+   "value": "How I approach... Pet obesity"
+  },
+  "HideBreadcrumb": {
+   "value": false
+  },
+  "OpenGraphType": {
+   "value": ""
+  },
+  "OpenGraphSiteName": {
+   "value": ""
+  },
+  "OpenGraphAdmins": {
+   "value": ""
+  },
+  "OpenGraphAppId": {
+   "value": ""
+  },
+  "OpenGraphDescription": {
+   "value": "Learn about pet weight management consultation using pet obesity charts and practical tools to manage obesity and weight in animals. Learn more."
+  },
+  "OpenGraphImageUrl": {
+   "value": {
+    "src": "https://marspetcareaprimocdn.petcare.global/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c_DownloadAsPng.png",
+    "dam": "aprimo"
+   }
+  },
+  "OpenGraphTitle": {
+   "value": "Pet Obesity & Weight Management Guide | Royal Canin Academy"
+  },
+  "TwitterCardType": {
+   "id": "32f6a4e4-93dd-4a9c-aa60-cdedb0bedabb",
+   "url": "/sitecore/service/sitecore/system/settings/feature/experience-accelerator/sitemetadata/enums/twitter-card-types/summary-card-with-large-image",
+   "name": "Summary Card with Large Image",
+   "displayName": "Summary Card with Large Image",
+   "fields": {
+    "Value": {
+     "value": "summary_large_image"
+    }
+   }
+  },
+  "TwitterDescription": {
+   "value": "Learn about pet weight management consultation using pet obesity charts and practical tools to manage obesity and weight in animals. Learn more."
+  },
+  "TwitterImage": {
+   "value": {
+    "src": "https://marspetcareaprimocdn.petcare.global/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c_DownloadAsPng.png",
+    "dam": "aprimo"
+   }
+  },
+  "TwitterSite": {
+   "value": ""
+  },
+  "TwitterTitle": {
+   "value": "Pet Obesity & Weight Management Guide | Royal Canin Academy"
+  },
+  "MetaKeywords": {
+   "value": "pet obesity, weight management, client communication in pet obesity, weight management program, structured weight loss program, weight loss progress tracking, pet weight rechecks, client engagement, maintaining momentum in weight loss, weight loss milestones in pets, body condition score (BCS), BCS assessment, veterinary nutrition consultation"
+  },
+  "MetaTitle": {
+   "value": "Pet Obesity & Weight Management Guide | Royal Canin Academy"
+  },
+  "MetaDescription": {
+   "value": "Learn about pet weight management consultation using pet obesity charts and practical tools to manage obesity and weight in animals. Learn more."
+  },
+  "Page Type": {
+   "id": "33673bb7-8096-451b-8b40-59d63d508641",
+   "url": "/global-configuration/component-settings/page-structure/page-types/must-do",
+   "name": "Must Do",
+   "displayName": "Must Do",
+   "fields": {
+    "Page Type": {
+     "value": "Must Do"
+    }
+   }
+  },
+  "SitemapsFile": null,
+  "Priority": {
+   "value": ""
+  },
+  "EnableHrefLangTags": {
+   "value": true
+  },
+  "EnableSeoNoIndex": {
+   "value": false
+  },
+  "ExcludeSeoSitemaps": {
+   "value": false
+  },
+  "SitemapUpdated": {
+   "value": "2026-09-14T07:18:41Z"
+  },
+  "ArticleName": {
+   "value": "How I approach... Pet obesity"
+  },
+  "ArticleDescription": {
+   "value": "<p>Addressing the topic of pet obesity with an owner requires optimism, creativity, and often a redefinition of what &ldquo;success&rdquo; looks like in terms of weight management.&nbsp;</p>"
+  },
+  "ArticleImage": {
+   "value": {
+    "src": "https://marspetcareaprimocdn.petcare.global/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c_DownloadAsPng.png",
+    "dam": "aprimo"
+   }
+  },
+  "ImageAlt": {
+   "value": "A digital kitchen scale displays 24 grams of pet food next to a measuring scoop filled with kibble on a countertop"
+  },
+  "ArticlePageType": {
+   "id": "8a9df0b4-2955-447e-b0e6-9bf79615f8af",
+   "url": "/settings/taxonomy/pet/dog",
+   "name": "Dog",
+   "displayName": "Dog",
+   "fields": {
+    "Value": {
+     "value": "Dog"
+    },
+    "Text": {
+     "value": "Dog"
+    }
+   }
+  },
+  "ArticleTopics": [],
+  "Tags": [],
+  "Lifestage": [
+   {
+    "id": "c5de8b63-ee53-4811-b1d0-64fbd6e5c507",
+    "url": "/settings/taxonomy/lifestage/adult",
+    "name": "Adult",
+    "displayName": "Adult",
+    "fields": {
+     "Value": {
+      "value": "Adult"
+     },
+     "Text": {
+      "value": "Adult"
+     }
+    }
+   }
+  ],
+  "Species": [
+   {
+    "id": "2d30da53-691e-4b88-a188-5bc1c324c5a2",
+    "url": "/settings/taxonomy/species/cat",
+    "name": "Cat",
+    "displayName": "Cat",
+    "fields": {
+     "Value": {
+      "value": "Cat"
+     },
+     "Text": {
+      "value": "Cat"
+     }
+    }
+   },
+   {
+    "id": "093bd5ca-71f7-4186-ae68-8ea1629292ae",
+    "url": "/settings/taxonomy/species/dog",
+    "name": "Dog",
+    "displayName": "Dog",
+    "fields": {
+     "Value": {
+      "value": "Dog"
+     },
+     "Text": {
+      "value": "Dog"
+     }
+    }
+   }
+  ],
+  "Themes": [
+   {
+    "id": "3f943811-52bd-42bf-a3d3-dda60282998d",
+    "url": "/settings/taxonomy/themes/overweight-obesity",
+    "name": "Overweight Obesity",
+    "displayName": "Overweight Obesity",
+    "fields": {
+     "Value": {
+      "value": "Overweight / Obesity"
+     },
+     "Text": {
+      "value": "Overweight / Obesity"
+     }
+    }
+   },
+   {
+    "id": "11613889-500d-4fcc-b3cd-d57b6453b187",
+    "url": "/settings/taxonomy/themes/healthy-weight",
+    "name": "Healthy Weight",
+    "displayName": "Healthy Weight",
+    "fields": {
+     "Value": {
+      "value": "Healthy Weight"
+     },
+     "Text": {
+      "value": "Healthy Weight"
+     }
+    }
+   }
+  ]
+ },
+ "placeholders": {
+  "jss-main": [
+   {
+    "uid": "fd37b953-be3a-4078-b40b-2e4c9dbb5047",
+    "componentName": "PageHeader",
+    "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Page Header",
+    "restrictedPlaceHolder": null,
+    "params": {
+     "renderingId": "{578CC5CC-1EF3-4047-B269-B36390B54C26}"
+    },
+    "fields": {
+     "Headline": {
+      "value": "How I approach... Pet obesity"
+     },
+     "Image": {
+      "value": {
+       "src": "https://marspetcareaprimocdn.petcare.global/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c_DownloadAsPng.png",
+       "dam": "aprimo",
+       "fetchPriority": "high"
+      }
+     },
+     "ImageAlt": {
+      "value": "A digital kitchen scale displays 24 grams of pet food next to a measuring scoop filled with kibble on a countertop"
+     },
+     "LeadParagraph": {
+      "value": "<p>Written by <a href=\"#author\"><em>Kirsten M. Graham</em></a> </p>\n<p>Addressing the topic of pet obesity with an owner requires optimism, creativity, and often a redefinition of what &ldquo;success&rdquo; looks like in terms of weight management.&nbsp;</p>"
+     }
+    },
+    "placeholders": {
+     "page-header-content": [
+      {
+       "uid": "0cf82849-0721-4c13-bca5-a1b6bb3e4ae8",
+       "componentName": "EditorialTag",
+       "dataSource": "",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{18C8CED9-961C-4408-9D59-3B302ED70EE8}"
+       }
+      },
+      {
+       "uid": "4696d692-3b4c-4732-a1a5-da12b80d805b",
+       "componentName": "PublicationDate",
+       "dataSource": "",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{38A7AC0F-5218-43E8-8FD4-E6F4D0E8F10E}"
+       }
+      },
+      {
+       "uid": "82e0385c-73d8-4ab5-8f41-d479d106a710",
+       "componentName": "ReadingTime",
+       "dataSource": "",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{FD80670A-E728-40C9-8F46-2003245FB896}"
+       },
+       "fields": {}
+      },
+      {
+       "uid": "209cccaa-90c2-409e-8066-746589e4307f",
+       "componentName": "SocialShare",
+       "dataSource": "",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "Variation": "{CD21CE7C-2C94-4047-A05C-5A98EDDE9782}",
+        "renderingId": "{6D8F15E5-88D1-4BB7-8568-F76A2BD1112C}"
+       },
+       "fields": {}
+      }
+     ]
+    }
+   },
+   {
+    "uid": "2d53017c-b271-4b32-bbbb-e73183169d87",
+    "componentName": "Article",
+    "dataSource": "",
+    "restrictedPlaceHolder": null,
+    "params": {
+     "CacheClearingBehavior": "Clear on publish",
+     "renderingId": "{7957F048-2023-48EE-8A2C-B0658BA1757A}"
+    },
+    "placeholders": {
+     "article-content": [
+      {
+       "uid": "e4a4fe14-2b38-4c74-9af0-59b1a4790e1f",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Image Header",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "A digital kitchen scale displays 24 grams of pet food next to a measuring scoop filled with kibble on a countertop"
+        }
+       }
+      },
+      {
+       "uid": "21281951-b84b-416c-a6b3-de4e318db736",
+       "componentName": "LayoutContainerVariation",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/layout 1",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "columns": "1",
+        "renderingId": "{ECFA783B-53F5-4C29-BF90-FB4DCA12D7DB}"
+       },
+       "fields": {
+        "ShowBrackets": {
+         "value": false
+        },
+        "ReverseLayoutOnMobile": {
+         "value": false
+        },
+        "AlignContent": {
+         "id": "a3159d8e-f3d1-4c2d-b0e1-a23ad45dee44",
+         "url": "/global-configuration/component-settings/page-structure/layout-container/vertical-alignments/top",
+         "name": "Top",
+         "displayName": "Top",
+         "fields": {
+          "Value": {
+           "value": ""
+          }
+         }
+        },
+        "WrapperWidth": {
+         "id": "c50d09e3-fcc3-480c-82e7-cd74188f4fc7",
+         "url": "/presentation/styles/wrappers/large",
+         "name": "Large",
+         "displayName": "Large",
+         "fields": {
+          "Value": {
+           "value": "Large"
+          }
+         }
+        },
+        "BackgroundColour": {
+         "id": "9520901e-6b62-44c7-9836-b6a7f4b30233",
+         "url": "/presentation/styles/background-colours/white-smoke",
+         "name": "White Smoke",
+         "displayName": "White Smoke",
+         "fields": {
+          "Value": {
+           "value": "white-smoke"
+          }
+         }
+        }
+       },
+       "placeholders": {
+        "layout-container-column1": []
+       }
+      },
+      {
+       "uid": "3278b9d0-deb9-4d8a-82b2-3be39da86182",
+       "componentName": "ContentBlocksVariant",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Key points Updated",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "variant": "media-right-text-left",
+        "renderingId": "{595FD7EC-FE33-4B10-ACCB-057586FCEB8F}"
+       },
+       "fields": {
+        "Button1": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button1Style": null,
+        "Button2": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button2Style": null,
+        "Button3": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button3Style": null,
+        "ShowOrBetweenButtons": {
+         "value": false
+        },
+        "ShowReadMoreButton": {
+         "value": false
+        },
+        "TitleTag": {
+         "id": "5c0cc2ae-7b4d-4c6b-b1c6-411827ffb88f",
+         "url": "/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "OverlineStyle": null,
+        "AlignContent": null,
+        "Content": {
+         "value": "<p><svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"40px\" height=\"40px\" viewbox=\"0 0 40 40\" version=\"1.1\">\n<title>Group 15</title>\n<g id=\"✅-Validated-Mobile/Desktop\" stroke=\"none\" stroke-width=\"1\" fill=\"none\" fill-rule=\"evenodd\">\n<g id=\"rcCom_SOL_thinkingOfGetting_Dog_V001\" transform=\"translate(-340.000000, -1086.000000)\">\n<g id=\"ANCHORS\" transform=\"translate(-1.000000, 995.000000)\">\n<g id=\"Group-15\" transform=\"translate(341.000000, 91.000000)\">\n<circle id=\"Oval-Copy-5\" stroke=\"#666666\" stroke-width=\"2\" cx=\"20\" cy=\"20\" r=\"19\"></circle>\n<text id=\"1\" font-size=\"16\" font-weight=\"400\" fill=\"#E2001A\">\n<tspan x=\"16\" y=\"25\">1</tspan>\n</text>\n</g>\n</g>\n</g>\n</g>\n</svg></p>\n<p class=\"rc-large-body rc-padding-y--xs\"> </p>\n<p>Approach obesity cases with an open-minded, non-judgmental, and compassionate attitude, ensuring the client is an active member in the decision-making process. </p>\n<p><svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"40px\" height=\"40px\" viewbox=\"0 0 40 40\" version=\"1.1\">\n<title>Group 15</title>\n<g id=\"✅-Validated-Mobile/Desktop\" stroke=\"none\" stroke-width=\"1\" fill=\"none\" fill-rule=\"evenodd\">\n<g id=\"rcCom_SOL_thinkingOfGetting_Dog_V001\" transform=\"translate(-340.000000, -1086.000000)\">\n<g id=\"ANCHORS\" transform=\"translate(-1.000000, 995.000000)\">\n<g id=\"Group-15\" transform=\"translate(341.000000, 91.000000)\">\n<circle id=\"Oval-Copy-5\" stroke=\"#666666\" stroke-width=\"2\" cx=\"20\" cy=\"20\" r=\"19\"></circle>\n<text id=\"1\" font-size=\"16\" font-weight=\"400\" fill=\"#E2001A\">\n<tspan x=\"16\" y=\"25\">2</tspan></text></g></g></g></g></svg>\n</p>\n<p>Pursue lifestyle and feeding habit changes before &ndash; or in conjunction with &ndash; a nutritional recommendation to avoid frustration and perceived diet failure. </p>\n<p><svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"40px\" height=\"40px\" viewbox=\"0 0 40 40\" version=\"1.1\">\n<title>Group 15</title>\n<g id=\"✅-Validated-Mobile/Desktop\" stroke=\"none\" stroke-width=\"1\" fill=\"none\" fill-rule=\"evenodd\">\n<g id=\"rcCom_SOL_thinkingOfGetting_Dog_V001\" transform=\"translate(-340.000000, -1086.000000)\">\n<g id=\"ANCHORS\" transform=\"translate(-1.000000, 995.000000)\">\n<g id=\"Group-15\" transform=\"translate(341.000000, 91.000000)\">\n<circle id=\"Oval-Copy-5\" stroke=\"#666666\" stroke-width=\"2\" cx=\"20\" cy=\"20\" r=\"19\"></circle>\n<text id=\"1\" font-size=\"16\" font-weight=\"400\" fill=\"#E2001A\">\n<tspan x=\"16\" y=\"25\">3</tspan>\n</text>\n</g>\n</g>\n</g>\n</g>\n</svg></p>\n<p>Create a structured monitoring program to allow for adjustments, create accountability, and provide emotional support to maximize the likelihood of success.\n</p>\n<p><svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"40px\" height=\"40px\" viewbox=\"0 0 40 40\" version=\"1.1\">\n<title>Group 15</title>\n<g id=\"✅-Validated-Mobile/Desktop\" stroke=\"none\" stroke-width=\"1\" fill=\"none\" fill-rule=\"evenodd\">\n<g id=\"rcCom_SOL_thinkingOfGetting_Dog_V001\" transform=\"translate(-340.000000, -1086.000000)\">\n<g id=\"ANCHORS\" transform=\"translate(-1.000000, 995.000000)\">\n<g id=\"Group-15\" transform=\"translate(341.000000, 91.000000)\">\n<circle id=\"Oval-Copy-5\" stroke=\"#666666\" stroke-width=\"2\" cx=\"20\" cy=\"20\" r=\"19\"></circle>\n<text id=\"1\" font-size=\"16\" font-weight=\"400\" fill=\"#E2001A\">\n<tspan x=\"16\" y=\"25\">4</tspan>\n</text>\n</g>\n</g>\n</g>\n</g>\n</svg></p>\n<p>Remain optimistic, celebrate every milestone, and redefine success to keep both the client and the veterinary team engaged and motivated.</p>"
+        },
+        "Overline": {
+         "value": ""
+        },
+        "Subtitle": {
+         "value": ""
+        },
+        "Title": {
+         "value": "Key points"
+        },
+        "Image": {
+         "value": {}
+        },
+        "ImageAlt": {
+         "value": ""
+        },
+        "ImageAspectRatio": {
+         "id": "5300bff6-b5e8-4d67-8db5-bcd07c147c80",
+         "url": "/en/presentation/styles/image-aspect-ratios/4x3---rectangle",
+         "name": "4x3 - Rectangle",
+         "displayName": "4x3 - Rectangle",
+         "fields": {
+          "Value": {
+           "value": "4:3"
+          }
+         }
+        },
+        "UseVideoInsteadOfImage": {
+         "value": false
+        },
+        "BackgroundColor": {
+         "id": "9520901e-6b62-44c7-9836-b6a7f4b30233",
+         "url": "/presentation/styles/background-colours/white-smoke",
+         "name": "White Smoke",
+         "displayName": "White Smoke",
+         "fields": {
+          "Value": {
+           "value": "white-smoke"
+          }
+         }
+        }
+       },
+       "placeholders": {
+        "content-blocks-variant-content": []
+       }
+      },
+      {
+       "uid": "21490587-9a14-47e7-b75c-8c82d8d20fbf",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 1",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<h2>Introduction</h2>\n<p>&ldquo;Progress, not perfection.&rdquo; This is my mantra for keeping obesity consultations rewarding and successful for everyone involved &ndash; the patient, the client, and the veterinary team. Obesity is a delicate topic in veterinary practice as it is tightly intertwined with the human-animal bond, involving complex emotions; addressing it may feel insurmountable to pet owners and even to veterinary professionals. Yet obesity is also one of the most prevalent diseases in dogs and cats (1), and most certainly a daily topic of discussion in general practice. Approaching these cases with a positive and pragmatic mindset is crucial for keeping both clients and the veterinary team engaged and motivated, resulting in success and, ultimately, in healthier pets.</p>\n<h2>Getting started</h2>\n<p>Introducing the obesity conversation with a client requires diplomacy, compassion, and finesse. Change is much more likely to occur if the client perceives the need for weight management in their pet as their idea, not by us lecturing the client or, worse yet, using scare tactics to try to convince them that their pet needs to lose weight (2). Asking open-ended questions (&ldquo;How do you feel about Charlee&rsquo;s weight?&rdquo;) and leveraging tangible information (&ldquo;Morty has gained a kilogram since we saw him last year; tell me about what has changed in his daily routine.&rdquo;) brings the client into the conversation and gives them the opportunity to share their thoughts while minimizing judgement. Chances are they are concerned too, but perhaps too embarrassed or ashamed to bring up the subject themselves.</p>\n<p>Once the topic of obesity is on the table, a more in-depth discussion can occur. Educating the client on the concept of body condition score (BCS), first explaining what a pet in ideal condition looks like and then involving the client in assessing their own pet (&ldquo;What body condition score would you give Jasper?&rdquo;) is an effective way to reduce judgement (Figure 1). If your evaluation and the client&rsquo;s opinion aren&rsquo;t quite aligned, further discussion using tangible data may be helpful. Looking back through the pet&rsquo;s weight history (&ldquo;When Amber weighed 4.5 kg, her medical record indicates she was in ideal body condition.&rdquo;), leveraging breed standards (&ldquo;The average healthy male Golden Retriever should weigh around 32 kg.&rdquo;), and simply asking the client what weight they think would be healthier for their pet (&ldquo;How much weight do you think would be reasonable for Tom to lose?&rdquo;) can help you come to a consensus &ndash; or at least a compromise (Box 1).</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "99ad7080-aed7-477d-bc2a-1bec42000f65",
+       "componentName": "ContentBlocksVariant",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Image Box 1",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "variant": "media-left-text-right",
+        "renderingId": "{043BB5A2-3062-4BD7-8323-D76DE7BF0DDB}"
+       },
+       "fields": {
+        "Button1": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button1Style": null,
+        "Button2": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button2Style": null,
+        "Button3": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button3Style": null,
+        "ShowOrBetweenButtons": {
+         "value": false
+        },
+        "ShowReadMoreButton": {
+         "value": false
+        },
+        "TitleTag": {
+         "id": "5c0cc2ae-7b4d-4c6b-b1c6-411827ffb88f",
+         "url": "/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "OverlineStyle": {
+         "id": "7e3031eb-ff6f-4c7a-9a68-ae26a5eb0da2",
+         "url": "/presentation/styles/overline-styles/red",
+         "name": "Red",
+         "displayName": "Red",
+         "fields": {
+          "Value": {
+           "value": "red"
+          }
+         }
+        },
+        "AlignContent": {
+         "id": "d3571208-0065-4f83-a0d9-628761d47030",
+         "url": "/global-configuration/component-settings/page-structure/layout-container/vertical-alignments/middle",
+         "name": "Middle",
+         "displayName": "Middle",
+         "fields": {
+          "Value": {
+           "value": "middle"
+          }
+         }
+        },
+        "Content": {
+         "value": "<p>Box 1. Gamifying BCS assessment.</p>\n<p>\n</p>\n<table>\n    <tbody>\n        <tr>\n            <td>Involve the client in assessing their pet&rsquo;s body condition score (BCS). To help reduce bias, judgement, and shame, simplify the process by creating your own BCS card game. Using your favorite BCS chart, create individual cards for each point in the system. Place the images representing each BCS on one side of each card and the BCS value and description on the other. Present the cards, image side up, to your client in no particular order and have them select the card with the set of images that best represent their pet&rsquo;s current appearance. Flip over the chosen card to reveal the BCS and description.&nbsp;<br />\n            </td>\n        </tr>\n    </tbody>\n</table>\n<p>&copy; Dr. Kirsten Graham</p>"
+        },
+        "Overline": {
+         "value": ""
+        },
+        "Subtitle": {
+         "value": ""
+        },
+        "Title": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/8d7f3bad-e802-49ef-9e4c-b49d00a24fd7/8d7f3bad-e802-49ef-9e4c-b49d00a24fd7_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "Illustration of a cat with a body condition score of 8, showing excess body fat, a non-visible waist and slight abdominal distension"
+        },
+        "ImageAspectRatio": {
+         "id": "f3c91bf4-925a-46fd-9251-7fe9a235ee7b",
+         "url": "/presentation/styles/image-aspect-ratios/4x3---rectangle",
+         "name": "4x3 - Rectangle",
+         "displayName": "4x3 - Rectangle",
+         "fields": {
+          "Value": {
+           "value": "4:3"
+          }
+         }
+        },
+        "UseVideoInsteadOfImage": {
+         "value": false
+        },
+        "BackgroundColor": {
+         "id": "9520901e-6b62-44c7-9836-b6a7f4b30233",
+         "url": "/presentation/styles/background-colours/white-smoke",
+         "name": "White Smoke",
+         "displayName": "White Smoke",
+         "fields": {
+          "Value": {
+           "value": "white-smoke"
+          }
+         }
+        }
+       },
+       "placeholders": {
+        "content-blocks-variant-content": []
+       }
+      },
+      {
+       "uid": "b60032c9-35f5-4e5f-a0de-588e54d00391",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Enlarge Image 1",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/611b2f2f-4527-4935-b5b5-b49d00a24cd5/611b2f2f-4527-4935-b5b5-b49d00a24cd5_DownloadAsJpg.jpg",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "Tabby cat lying on a colorful blanket with a body condition score (BCS) chart placed in front of it.The cat appears calm and is looking slightly downward toward the chart."
+        }
+       }
+      },
+      {
+       "uid": "ea89d5a5-863a-4d4f-83d7-da790ac4b14b",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 2",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p>Figure 1. Involving the client in the BCS assessment is helpful for initiating a conversation around pet obesity.<br />\n&copy; Dr. Kirsten Graham</p>\n<p>&nbsp;</p>\n<p>For some clients, addressing their pet&rsquo;s obesity may seem pointless or impossible due to various household circumstances. Troubleshooting with the client to identify the hurdles that need to be overcome is paramount to getting them to a point where they are willing to commit to change. Perhaps there are other pets in the home, and feeding them separately may not seem feasible (Figure 2); maybe there are family members who aren&rsquo;t willing to change their feeding habits or routines; perhaps the pet is able to access other sources of calories in its environment. In such cases, starting off with lifestyle changes before even considering prescribing a weight loss diet may make sense so that when the full nutritional program is eventually introduced, the pet and client are already set up for success.&nbsp;</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "37523547-e2ca-406a-8093-77b105a842ac",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Enlarge Image 2",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/622c0879-0457-47be-9f2f-b49d00a24cf8/622c0879-0457-47be-9f2f-b49d00a24cf8_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "Two cats are interacting with a modern pet feeder on a wooden floor, with one cat eating and the other observing closely"
+        }
+       }
+      },
+      {
+       "uid": "ed278976-550c-4f62-803e-0f7a579107aa",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 3",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p>Figure 2. Technology such as a microchip pet feeder can make feeding pets separately significantly easier.<br />\n&copy; Dr. Kirsten Graham</p>\n<p>&nbsp;</p>\n<p>Leveraging house calls and telemedicine audio-visual platforms, depending on your jurisdiction&rsquo;s regulations, can be immensely helpful in this stage of approaching obesity cases (Figure 3). By seeing the home environment, in person or virtually, you may discover issues &ndash; and be able to come up with reasonable, creative solutions &ndash; that can be addressed ahead of embarking on a weight management program, allowing you to tailor the plan to the patient&rsquo;s and client&rsquo;s individual needs (Box 2). You may also be afforded the opportunity to meet with other household members to uncover additional concerns and to help communicate the importance of addressing the pet&rsquo;s obesity.</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "3926a085-4af1-4ca3-9eff-ea15096850de",
+       "componentName": "ContentBlocksVariant",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Image Box 2",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "variant": "media-left-text-right",
+        "renderingId": "{043BB5A2-3062-4BD7-8323-D76DE7BF0DDB}"
+       },
+       "fields": {
+        "Button1": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button1Style": null,
+        "Button2": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button2Style": null,
+        "Button3": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button3Style": null,
+        "ShowOrBetweenButtons": {
+         "value": false
+        },
+        "ShowReadMoreButton": {
+         "value": false
+        },
+        "TitleTag": {
+         "id": "5c0cc2ae-7b4d-4c6b-b1c6-411827ffb88f",
+         "url": "/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "OverlineStyle": {
+         "id": "7e3031eb-ff6f-4c7a-9a68-ae26a5eb0da2",
+         "url": "/presentation/styles/overline-styles/red",
+         "name": "Red",
+         "displayName": "Red",
+         "fields": {
+          "Value": {
+           "value": "red"
+          }
+         }
+        },
+        "AlignContent": {
+         "id": "d3571208-0065-4f83-a0d9-628761d47030",
+         "url": "/global-configuration/component-settings/page-structure/layout-container/vertical-alignments/middle",
+         "name": "Middle",
+         "displayName": "Middle",
+         "fields": {
+          "Value": {
+           "value": "middle"
+          }
+         }
+        },
+        "Content": {
+         "value": "<p>Box 2. Setting up a mobile weight management unit.&nbsp;</p>\n<p>\n<table>\n    <tbody>\n        <tr>\n            <td>\n            <p>Depending on the regulations in your country, adding a mobile weight management unit to your practice facility is something to consider. It will easily and relatively inexpensively expand your clinical services, and other than a vehicle, very little equipment is needed:</p>\n            <ul>\n                <li>Portable platform scales for both smaller animals and larger dogs&nbsp;</li>\n                <li>Body condition score (BCS) charts</li>\n                <li>Tape measure (for morphometric measurements)</li>\n                <li>Camera and small ruler (for BCS photographs)</li>\n                <li>Blood glucometer and associated supplies (for screening obese cats for diabetes)</li>\n                <li>Stethoscope, thermometer, light source (for basic physical examinations)</li>\n                <li>Calculator</li>\n                <li>Digital kitchen scale (for demonstrating food-weighing techniques)</li>\n            </ul>\n            </td>\n        </tr>\n    </tbody>\n</table>\n</p>\n<p>&copy; Dr. Kirsten Graham</p>"
+        },
+        "Overline": {
+         "value": ""
+        },
+        "Subtitle": {
+         "value": ""
+        },
+        "Title": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/39460ba9-ac64-49e0-a1e7-b49d00a84e50/39460ba9-ac64-49e0-a1e7-b49d00a84e50_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "Veterinary assessment equipment arranged on a portable platform, including body condition charts, a stethoscope, measuring tape, thermometer, ruler and electronic devices"
+        },
+        "ImageAspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "UseVideoInsteadOfImage": {
+         "value": false
+        },
+        "BackgroundColor": {
+         "id": "9520901e-6b62-44c7-9836-b6a7f4b30233",
+         "url": "/presentation/styles/background-colours/white-smoke",
+         "name": "White Smoke",
+         "displayName": "White Smoke",
+         "fields": {
+          "Value": {
+           "value": "white-smoke"
+          }
+         }
+        }
+       },
+       "placeholders": {
+        "content-blocks-variant-content": []
+       }
+      },
+      {
+       "uid": "98f890eb-57b4-494f-a9f1-fdf8a9228d12",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Enlarge Image 3",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/f0d6fdea-974c-4e03-b9f9-b49d00a250f6/f0d6fdea-974c-4e03-b9f9-b49d00a250f6_DownloadAsJpg.jpg",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "WALTHAM Puppy Growth Chart with plotted weight data points, alongside a video call screen featuring two participants, one interacting with a dog"
+        }
+       }
+      },
+      {
+       "uid": "7efdd100-d603-4e0f-a5f8-2eb399625df5",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 4",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p>Figure 3. Leveraging teleconsultation, where jurisdictions allow, is very helpful in assessing the household circumstances.&nbsp;<br />\n&copy; Dr. Kirsten Graham</p>\n<p>&nbsp;</p>\n<h2>Weight loss diets</h2>\n<p>Sending home a prescription diet prematurely could easily lead to the perception of diet failure (&ldquo;I tried the weight loss diet you gave me last year and it didn&rsquo;t work!&rdquo;), not due to the formulation itself but rather due to feeding it improperly. In addition, there can be various extraneous factors that may have thwarted the program. If an owner has had previous unsuccessful experiences, this may erode their trust in your recommendations or contribute to their perception that reducing their pet&rsquo;s weight is hopeless. It is imperative to take the time to explore their concerns first (3) and to then put into place the changes needed to maximize the likelihood of results. If the client is not fully engaged and ready to address their pet&rsquo;s obesity, focusing on smaller changes that they are willing to make will still bring them one step closer to eventually embarking on a weight management program. Give them &ldquo;homework&rdquo; to create healthier habits: simple changes such as shifting from free-feeding to meal-feeding, replacing a coffee mug with a measuring cup or (better yet) digital kitchen scales (Figure 4) or streamlining the treat selection to just a few consistent lower-calorie options will not only set the client and pet up for success later on but will also build their confidence in addressing this seemingly-insurmountable problem and build their trust in your expertise.</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "4d265d81-ccc3-4e72-bd23-ed1a2d662271",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Enlarge Image 4",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c/1bb1238e-b5f3-4a7e-adf6-b49d00a24d1c_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "A digital kitchen scale displays 24 grams of pet food next to a measuring scoop filled with kibble on a countertop"
+        }
+       }
+      },
+      {
+       "uid": "e604b90a-03e7-428e-b980-9a6119d568df",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 5",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p>Figure 4. Making small changes, such as introducing the concept of weighing the food &ndash; or at least using a proper measuring cup &ndash; can have a significant impact on the success of a weight management program.<br />\n&copy; Dr. Kirsten Graham</p>\n<p>&nbsp;</p>\n<h2>Maintaining momentum</h2>\n<p>When the client is ready to address their pet&rsquo;s obesity, sending them home with a weight loss diet and advised feeding amounts is simply not enough; this is where many weight management programs fail. Every pet is different and feeding amounts will most likely need to be tailored and adjusted throughout the weight loss journey. The client may also need support in overcoming challenges such as begging behavior and scavenging or they may need emotional support to maintain their willpower. Regular follow up and open two-way communication is imperative to success. Monitoring patients while on a weight management program is an excellent way to involve the entire veterinary team (4). Many practices have individuals who are particularly passionate about nutrition and weight loss; leveraging these talents not only helps support weight loss journeys, but also creates a sense of purpose for the team, improving staff engagement, providing leadership and learning opportunities, and impacting overall job satisfaction (5).</p>\n<p>Setting up a structured program with regular weight rechecks, ideally every two weeks, will help identify problems quickly and maintain weight loss momentum (6). Better still, monetizing weight management programs by putting together a package or bundle will add value to the services provided (Box 3). Clients who pay into a weight management program for their pet are likely to be more invested and feel more accountable, increasing the likelihood of seeing favorable results.</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "daf46859-a2ed-417e-89ca-1cc466a2888d",
+       "componentName": "ContentBlocksVariant",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Image Box 3",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "variant": "media-left-text-right",
+        "renderingId": "{043BB5A2-3062-4BD7-8323-D76DE7BF0DDB}"
+       },
+       "fields": {
+        "Button1": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button1Style": null,
+        "Button2": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button2Style": null,
+        "Button3": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button3Style": null,
+        "ShowOrBetweenButtons": {
+         "value": false
+        },
+        "ShowReadMoreButton": {
+         "value": false
+        },
+        "TitleTag": {
+         "id": "5c0cc2ae-7b4d-4c6b-b1c6-411827ffb88f",
+         "url": "/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "OverlineStyle": {
+         "id": "7e3031eb-ff6f-4c7a-9a68-ae26a5eb0da2",
+         "url": "/presentation/styles/overline-styles/red",
+         "name": "Red",
+         "displayName": "Red",
+         "fields": {
+          "Value": {
+           "value": "red"
+          }
+         }
+        },
+        "AlignContent": {
+         "id": "d3571208-0065-4f83-a0d9-628761d47030",
+         "url": "/global-configuration/component-settings/page-structure/layout-container/vertical-alignments/middle",
+         "name": "Middle",
+         "displayName": "Middle",
+         "fields": {
+          "Value": {
+           "value": "middle"
+          }
+         }
+        },
+        "Content": {
+         "value": "<p>Box 3. Example bundle of products and services.</p>\n<p>\n</p>\n<table>\n    <tbody>\n        <tr>\n            <td>\n            <p>The following &ldquo;Weight Management Package&rdquo; would span approximately four months, providing a reasonable window of time to pursue at least the initial stages of a weight loss journey. Bundle the services and products together at a flat rate, implementing a modest discount to incentivize the client and create a sense of accountability &ndash; as well as to properly compensate your practice for time, resources and expertise.&nbsp;</p>\n            <ul>\n                <li>Comprehensive consultation: nutritional history, medical record review, physical examination, weight check, body condition score (BCS) and photographs, morphometric measurements, household and lifestyle assessment</li>\n                <li>Screening diagnostics: complete blood count, biochemical profile +/- thyroid panel, urinalysis</li>\n                <li>Eight bi-weekly recheck consultations: weight recheck, BCS reassessment and photographs, morphometric measurements, modification to weight management program as needed, troubleshooting, emotional support</li>\n                <li>Dedicated communication channels (phone, text, email) for support between consultations</li>\n                <li>Digital kitchen scale</li>\n                <li>Food puzzle<strong> (Photo)</strong></li>\n                <li>Discount on prescribed food(s)</li>\n                <li>Discount on mobile fees, if providing in-home visits</li>\n            </ul>\n            <p>A secondary package, consisting of four bi-weekly recheck consultations and ongoing access to the dedicated communication channels as well as the food and mobile fee discounts, could be created to extend services in two-month blocks for the required length of time to achieve the desired result.</p>\n            </td>\n        </tr>\n    </tbody>\n</table>\n<p>&copy; Dr. Kirsten Graham</p>"
+        },
+        "Overline": {
+         "value": ""
+        },
+        "Subtitle": {
+         "value": ""
+        },
+        "Title": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/a05f070e-ee01-4853-bb2d-b49d00a676d0/a05f070e-ee01-4853-bb2d-b49d00a676d0_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "A cat interacting with a pink food-dispensing enrichment ball on a wooden floor"
+        },
+        "ImageAspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "UseVideoInsteadOfImage": {
+         "value": false
+        },
+        "BackgroundColor": {
+         "id": "9520901e-6b62-44c7-9836-b6a7f4b30233",
+         "url": "/presentation/styles/background-colours/white-smoke",
+         "name": "White Smoke",
+         "displayName": "White Smoke",
+         "fields": {
+          "Value": {
+           "value": "white-smoke"
+          }
+         }
+        }
+       },
+       "placeholders": {
+        "content-blocks-variant-content": []
+       }
+      },
+      {
+       "uid": "698bf5cf-6e2f-49c6-934b-6ff58f98a9a2",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 5 bis",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p>For some clients, regular weight checks can be inconvenient or even a deterrent to addressing their pet&rsquo;s obesity. Depending on the circumstances, it may be possible to intersperse in-clinic or mobile visit weight rechecks with weigh-ins done at home by the client. Suitable platform-style scales may be purchased for domestic use (Figure 5) or, for cats and small dogs, pairing a digital luggage scale with a pet carrier makes for an inexpensive option to weigh the pet at home. Note that bathroom scales are not optimal as they are not sensitive enough to weigh smaller pets accurately and, for larger pets, they pose a number of safety risks such as dropping the pet, the client injuring themselves when lifting the pet, or a fearful pet biting or scratching the owner. In-clinic or mobile visit weight rechecks are still required to validate progress and to reassess BCS.</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "82dcb38d-12d3-4575-9e68-448f7244fb42",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Enlarge Image 5",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/16d57a21-fc38-4c64-a1cd-b49d00a24d87/16d57a21-fc38-4c64-a1cd-b49d00a24d87_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "A ginger cat with green eyes is sitting on a digital scale, looking up toward the camera"
+        }
+       }
+      },
+      {
+       "uid": "4b0bcc00-afcd-4019-ae8a-78aa898562a1",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 6",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p>Figure 5. Platform scales are recommended for monitoring the pet&rsquo;s weight at home.<br />\n&copy; Dr. Kirsten Graham</p>\n<p>&nbsp;</p>\n<h2>Measuring success</h2>\n<p>Keeping clients engaged and motivated is the final key feature of a successful weight loss journey. Setting realistic goals and milestones helps to break down an otherwise daunting weight management plan into smaller, manageable stages, particularly in severe obesity cases.&nbsp;</p>\n<p>Regularly sharing the pet&rsquo;s data with a weight loss &ldquo;progress graph&rdquo; is helpful for clients to be able to visually appreciate the outcome of their efforts but the numbers should be put into context. If a cat has lost 0.2 kg in two weeks, the owner may not understand the significance of what they perceive to be a tiny amount of weight. Taking the time to explain the optimal weight loss rate and relaying the data in this context will give the client a better perspective (&ldquo;Nia&rsquo;s ideal weight loss rate is 1 to 2% per week and, over the past two weeks, she&rsquo;s been losing at a rate of 1.8% per week, nicely within the ideal range!&rdquo;). As much as anthropomorphizing has the potential to make pet obesity conversations awkward, it may also help to frame the data in a more relatable manner, using units the client can understand more easily (&ldquo;Lucky&rsquo;s ideal healthy weight is roughly one tenth the size of a 150-pound human; as such, when we see that Lucky has lost 0.4 pounds, that&rsquo;s equivalent to a person losing 4 pounds!&rdquo;).</p>\n<p>Weight loss progress is much more than just the number on the scale. Educating your client about body condition and reassessing the BCS together can help them to visually appreciate the progress they are making with their pet. Periodic top- and side-view BCS photographs taken with the pet standing squarely on all four feet, ideally with a consistent, structured background (such as a tile floor), are very telling and motivating for clients to see (Figure 6). For pets with long, fluffy coats, taking these images following a bath or swim will better illustrate subtle changes.</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "92a789b7-597a-4be1-9c81-e65549eac021",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Enlarge Image 6",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": "BEFORE"
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/54d645d7-2949-439a-9348-b49d00a24e63/54d645d7-2949-439a-9348-b49d00a24e63_DownloadAsJpg.jpg",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "A calico cat from different angles—top and side views—next to a ruler placed on the floor, likely to document the cat's size and body condition before and after weight management."
+        }
+       }
+      },
+      {
+       "uid": "b224b224-e9b7-4eb3-9660-626f10aec04f",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Enlarge Image 6 AFTER",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": "AFTER"
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/2edd3605-87c6-459d-a0b2-b49d00a24e1a/2edd3605-87c6-459d-a0b2-b49d00a24e1a_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "Overhead and side views of a calico cat standing next to rulers used to assess its body size and shape"
+        }
+       }
+      },
+      {
+       "uid": "cd0d7756-6982-40b0-95ba-8a3f2fa3013d",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 7",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p>Figure 6. Taking body condition photographs to document weight loss progress can be very motivating for clients. Use a consistent, structured background and place a standard item, such as a ruler, in the images for scale.<br />\n&copy; Dr. Kirsten Graham</p>\n<p>&nbsp;</p>\n<p>The best and most exciting milestones, however, are the quality-of-life changes that client will start to notice as their pet approaches a healthier weight (Figure 7). The day a pet can fit through their pet door to access the outdoors on their own, the day a cat can get back up onto the windowsill to watch the birds again, the day a dog can walk around the block without a rest, are all well worth celebrating! In addition, medical milestones are often achieved - such as a diabetic cat going into remission or a dog no longer requiring daily treatment for osteoarthritis. Arguably, these accomplishments are far more important than any data point on a graph.</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "12cb12cc-8a75-4929-92fd-81b1f8528bb2",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Enlarge Image 7",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/436df535-739b-44b4-93df-b49d00a24e7a/436df535-739b-44b4-93df-b49d00a24e7a_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "A light-colored dog is running on a grassy lawn with a ball in its mouth, wearing a red collar"
+        }
+       }
+      },
+      {
+       "uid": "f0c90461-ee57-42c8-a03a-ddd727e6caf1",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 8",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p>Figure 7. The most significant successes in weight management are the positive changes seen in the pet&rsquo;s daily life such as re-engaging in activities they enjoyed prior to developing obesity.&nbsp;<br />\n&copy; Dr. Kirsten Graham</p>\n<p>&nbsp;</p>\n<p>Even when there is no tangible progress at a weight recheck, finding something to celebrate can keep everyone involved, motivated and optimistic. Perhaps the client was successfully able to complete a diet transition to the weight loss formulation without the pet rejecting the new food; maybe the client has found a way to reliably feed their cats separately; perhaps the client has managed to eliminate treats or table scraps from the dog&rsquo;s diet. While not measurable progress, these important changes are all major accomplishments that should not be overlooked.</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "6816e0a3-3f13-4946-bea7-d0845210e9ec",
+       "componentName": "QuotePanel",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Quote Panel",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{1C158EAD-D6BB-4750-BB54-99BFBF739B08}"
+       },
+       "fields": {
+        "Author": {
+         "value": "Kirsten M. Graham"
+        },
+        "QuoteText": {
+         "value": "By seeing the home environment, in person or virtually, you may discover issues – and be able to come up with reasonable, creative solutions – that can be addressed ahead of embarking on a weight management program, allowing you to tailor the plan to the patient’s and client’s individual needs."
+        }
+       }
+      },
+      {
+       "uid": "809f0f08-d391-4b60-8aca-e41381bc8183",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Title and Paragraph 9",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<h2>Conclusion</h2>\n<p>The bottom line with any weight management program is simply improvement in quality of life. The terminology used throughout this article &ndash; with a focus on &ldquo;weight management&rdquo; rather than &ldquo;weight loss&rdquo; &ndash; is very intentional. In some cases, it may only be reasonable to mitigate further weight gain but even this will still have some form of positive impact on quality of life. Redefine success and remember: progress, not perfection!</p>\n<p>&nbsp;</p>\n<p>\n</p>\n<div class=\"rc-table\">\n<div class=\"rc-scroll--x\">\n<table class=\"rc-table__table\">\n    <tbody class=\"rc-table__tbody\">\n        <tr class=\"rc-table__row\">\n            <td class=\"rc-table__td\" style=\"padding:1.5em;background-color:#f2f2f2;\"><strong>Conflict of interest statement:</strong> The author is a former associate at Royal Canin Canada and currently a private practitioner with no conflict of interest in the writing of this paper.</td>\n        </tr>\n    </tbody>\n</table>\n</div>\n</div>\n<p>&nbsp;</p>\n<p>&nbsp;</p>\n<p>&nbsp;</p>\n<h2>References</h2>\n<p>\n</p>\n<ol>\n    <li>Montoya M, P&eacute;ron F, Hookey T, <em>et al</em>. Overweight and obese body condition in ~4.9 million dogs and ~1.3 million cats seen at primary practices across the USA: Prevalences by life stage from early growth to senior. <em>Prev. Vet. Med.</em> 2025;235:106398. doi: 10.1016/j.prevetmed.2024.106398. Epub 2024 Dec 3. PMID: 39644829.</li>\n    <li>Sutherland KA, Coe JB, O&rsquo;Sullivan TL. Assessing owners&rsquo; readiness to change their behaviour to address their companion animal&rsquo;s obesity. <em>Vet Rec.</em> 2023;192(3):e1979. doi: 10.1002/vetr.1979. Epub 2022 Sep 8. PMID: 36073659.</li>\n    <li>Sutherland KA, Coe JB, Janke N, <em>et al</em>. Veterinary professionals&rsquo; weight-related communication when discussing an overweight or obese pet with a client. <em>J. Am. Vet. Med. Assoc.</em> 2022;260(9):1076-1085.</li>\n    <li>Fraser-Celin VL, Boulton A, Keil K, <em>et al</em>. When veterinarians treat plus-sized pets: Insights for veterinary practice. <em>Can. Vet. J.</em> 2024;65(9):920-926.</li>\n    <li>Cline MG, Burns KM, Coe JB, <em>et al</em>. 2021 AAHA nutrition and weight management guidelines for dogs and cats. <em>J. Am. Anim. Hosp. Assoc</em>. 2021;57(4):153-178.</li>\n    <li>Brooks D, Churchill J, Fein K, <em>et al</em>. 2014 AAHA weight management guidelines for dogs and cats. <em>J. Am. Anim. Hosp. Assoc.</em> 2014;50(1):1-11.</li>\n</ol>\n<p>&nbsp;</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "4271011a-359b-4e75-a91b-f7dfa87b053e",
+       "componentName": "ContentBlocksVariant",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/AuthorCard",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "variant": "media-left-text-right",
+        "renderingId": "{043BB5A2-3062-4BD7-8323-D76DE7BF0DDB}"
+       },
+       "fields": {
+        "Button1": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button1Style": null,
+        "Button2": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button2Style": null,
+        "Button3": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button3Style": null,
+        "ShowOrBetweenButtons": {
+         "value": false
+        },
+        "ShowReadMoreButton": {
+         "value": false
+        },
+        "TitleTag": {
+         "id": "5c0cc2ae-7b4d-4c6b-b1c6-411827ffb88f",
+         "url": "/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "OverlineStyle": {
+         "id": "7e3031eb-ff6f-4c7a-9a68-ae26a5eb0da2",
+         "url": "/presentation/styles/overline-styles/red",
+         "name": "Red",
+         "displayName": "Red",
+         "fields": {
+          "Value": {
+           "value": "red"
+          }
+         }
+        },
+        "AlignContent": {
+         "id": "d3571208-0065-4f83-a0d9-628761d47030",
+         "url": "/global-configuration/component-settings/page-structure/layout-container/vertical-alignments/middle",
+         "name": "Middle",
+         "displayName": "Middle",
+         "fields": {
+          "Value": {
+           "value": "middle"
+          }
+         }
+        },
+        "Content": {
+         "value": "<p style=\"text-align:left;\" id=\"author\">Dr. Graham is a Canadian general practitioner who launched her dedicated mobile weight management business in 2021. The first of its kind in Ontario, her mobile and telemedicine practice focuses exclusively on the treatment and prevention of obesity in dogs and cats. Dr. Graham takes a practical and compassionate approach to weight management, and enjoys cases that require creativity to achieve success. She strives to make weight management a positive experience for everyone involved, setting realistic goals and celebrating every achievement, big or small, along the journey.</p>"
+        },
+        "Overline": {
+         "value": ""
+        },
+        "Subtitle": {
+         "value": "DVM, MSc, BScH, Graham Mobile Veterinary Weight Management Services, Ontario, Canada"
+        },
+        "Title": {
+         "value": "Kirsten M. Graham"
+        },
+        "Image": {
+         "value": {
+          "src": "https://marspetcareaprimocdn.petcare.global/5d3ae41d-fed1-411b-9966-b49d00a24ec7/5d3ae41d-fed1-411b-9966-b49d00a24ec7_DownloadAsPng.png",
+          "dam": "aprimo"
+         }
+        },
+        "ImageAlt": {
+         "value": "Kirsten M. Graham"
+        },
+        "ImageAspectRatio": {
+         "id": "f3c91bf4-925a-46fd-9251-7fe9a235ee7b",
+         "url": "/presentation/styles/image-aspect-ratios/4x3---rectangle",
+         "name": "4x3 - Rectangle",
+         "displayName": "4x3 - Rectangle",
+         "fields": {
+          "Value": {
+           "value": "4:3"
+          }
+         }
+        },
+        "UseVideoInsteadOfImage": {
+         "value": false
+        },
+        "BackgroundColor": {
+         "id": "a35b5a2d-cf60-461b-834c-74830a79070d",
+         "url": "/presentation/styles/background-colours/white",
+         "name": "White",
+         "displayName": "White",
+         "fields": {
+          "Value": {
+           "value": "white"
+          }
+         }
+        }
+       },
+       "placeholders": {
+        "content-blocks-variant-content": []
+       }
+      },
+      {
+       "uid": "1e9dc9be-c0b1-4368-89bf-b206a1f23dda",
+       "componentName": "ArticleCarousel",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/How I approach Pet obesity/Data/Article Carousel",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{DE148529-E441-430C-AB99-1764AD82EDC5}"
+       },
+       "fields": {}
+      }
+     ],
+     "article-content-local": []
+    }
+   }
+  ]
+ }
+}
