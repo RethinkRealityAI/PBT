@@ -19,6 +19,7 @@
  */
 import { errorResponse, jsonResponse, requireAdmin, type AdminCtx } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
+import { chunkSectionedMarkdown, type SectionChunk } from '../../src/services/ragShared';
 import {
   MAX_PDF_BYTES,
   extractPdf,
@@ -40,8 +41,14 @@ const BUNDLED_GONE =
  * (`scripts/knowledge-sync.ts`) calls the same function with a service-role
  * client and a null actor.
  */
-function storeDoc(ctx: AdminCtx, args: StoreDocArgs): Promise<number> {
-  return storeKnowledgeDoc(ctx.sb, ctx.user.id, args);
+function storeDoc(ctx: AdminCtx, args: StoreDocArgs, sections?: SectionChunk[]): Promise<number> {
+  return storeKnowledgeDoc(ctx.sb, ctx.user.id, args, sections);
+}
+
+/** `metadata.source.kind === 'academy'` — a Royal Canin Academy article. */
+function isAcademyDoc(meta: Record<string, unknown>): boolean {
+  const source = meta.source;
+  return !!source && typeof source === 'object' && (source as { kind?: unknown }).kind === 'academy';
 }
 
 export default async (req: Request): Promise<Response> => {
@@ -129,6 +136,12 @@ export default async (req: Request): Promise<Response> => {
       // focus filter can't see. Promote it on the way through.
       if (tags.focus == null && tags.topic === 'communication') tags.focus = 'communication';
       const citation = typeof rawMeta.citation === 'string' ? rawMeta.citation : '';
+      // An Academy article is re-chunked the way the sync chunks it (section
+      // header line, references not embedded) — the generic chunker would
+      // silently replace its section chunks until the next body change.
+      const sections = isAcademyDoc(rawMeta)
+        ? chunkSectionedMarkdown(doc.title, doc.content)
+        : undefined;
       const chunkCount = await storeDoc(ctx, {
         slug: doc.slug,
         title: doc.title,
@@ -140,7 +153,7 @@ export default async (req: Request): Promise<Response> => {
         // that would hand the UI a delete/edit affordance the seeder undoes.
         source: doc.source,
         metadata: { ...rawMeta, ...(citation ? { citation } : {}), tags },
-      });
+      }, sections);
       return jsonResponse({ ok: true, chunks: chunkCount });
     }
 

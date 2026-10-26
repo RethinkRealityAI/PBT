@@ -41,6 +41,107 @@ export function toPgvectorLiteral(vec: number[]): string {
   return `[${vec.join(',')}]`;
 }
 
+/** One section-aware chunk: the section it came from + the embedded text. */
+export interface SectionChunk {
+  section: string;
+  content: string;
+}
+
+/** Sections whose text is never embedded (kept in the stored document only). */
+const UNEMBEDDED_SECTION = /^(references?|bibliography|further reading)$/i;
+
+/**
+ * Section-aware chunking for long articles (the Royal Canin Academy corpus).
+ *
+ * Retrieval hands a prompt only k = 3 passages, so each one has to stand on
+ * its own: the body is split at `## ` headings, paragraphs inside a section
+ * are packed greedily to ~targetTokens (never across a section boundary), and
+ * every chunk opens with ONE header line — "<Title> — <Section>" — so a
+ * passage read alone still says what it is about. Text before the first
+ * heading (the stand-first) is the "Overview" section. A `### ` sub-heading
+ * travels with the paragraph after it. The References section is not
+ * embedded: citations would only crowd real passages out of the top 3.
+ * A single unit longer than the target (a big table or box) is split at line
+ * boundaries; nothing is ever split mid-line, and no text is dropped.
+ */
+export function chunkSectionedMarkdown(
+  title: string,
+  markdown: string,
+  targetTokens = 500,
+): SectionChunk[] {
+  const sections: Array<{ name: string; lines: string[] }> = [{ name: 'Overview', lines: [] }];
+  for (const line of markdown.split('\n')) {
+    const h = /^## +(.+?)\s*$/.exec(line);
+    if (h) sections.push({ name: h[1].trim(), lines: [] });
+    else sections[sections.length - 1].lines.push(line);
+  }
+
+  const out: SectionChunk[] = [];
+  for (const section of sections) {
+    if (UNEMBEDDED_SECTION.test(section.name)) continue;
+    const paragraphs = section.lines
+      .join('\n')
+      .split(/\n[ \t]*\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    // Units: a sub-heading glued to what follows it; oversize units split by line.
+    const units: string[] = [];
+    let pendingHeading = '';
+    for (const p of paragraphs) {
+      if (/^#{3,6} /.test(p) && !p.includes('\n')) {
+        pendingHeading = pendingHeading ? `${pendingHeading}\n\n${p}` : p;
+        continue;
+      }
+      const unit = pendingHeading ? `${pendingHeading}\n\n${p}` : p;
+      pendingHeading = '';
+      if (estimateTokens(unit) <= targetTokens) {
+        units.push(unit);
+        continue;
+      }
+      let buf: string[] = [];
+      let t = 0;
+      for (const line of unit.split('\n')) {
+        const lt = estimateTokens(line);
+        if (t + lt > targetTokens && buf.length) {
+          units.push(buf.join('\n'));
+          buf = [];
+          t = 0;
+        }
+        buf.push(line);
+        t += lt;
+      }
+      if (buf.length) units.push(buf.join('\n'));
+    }
+    if (pendingHeading) units.push(pendingHeading);
+    if (units.length === 0) continue;
+
+    const header = `${title} — ${section.name}`;
+    let current: string[] = [];
+    let tokens = 0;
+    const flush = () => {
+      if (current.length === 0) return;
+      out.push({ section: section.name, content: `${header}\n\n${current.join('\n\n')}` });
+      current = [];
+      tokens = 0;
+    };
+    for (const u of units) {
+      const t = estimateTokens(u);
+      if (tokens + t > targetTokens && current.length) flush();
+      current.push(u);
+      tokens += t;
+    }
+    flush();
+  }
+  return out;
+}
+
+/** A section chunk's citation: the document's, plus which section it is. */
+export function sectionCitation(citation: string | null | undefined, section: string): string | null {
+  if (!citation) return null;
+  return `${citation} — "${section}"`;
+}
+
 /**
  * Paragraph-boundary greedy chunking for markdown/plain text.
  *
