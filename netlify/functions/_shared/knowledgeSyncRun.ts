@@ -61,11 +61,12 @@ import {
 } from './knowledgeSync';
 import type { SqlChunkRow, SqlDocument } from './knowledgeSql';
 import { embedTexts } from './gemini';
-import { chunkMarkdown } from '../../../src/services/ragShared';
+import { chunkMarkdown, sectionCitation } from '../../../src/services/ragShared';
+import { academyDocs, isAcademySlug, type AcademyBundle } from './knowledgeAcademy';
 import { estimateTokens } from '../../../src/shared/ai/telemetryHeuristics';
 
-export type KnowledgeGroup = 'fecal' | 'builtin' | 'studies';
-export const KNOWLEDGE_GROUPS: KnowledgeGroup[] = ['fecal', 'builtin', 'studies'];
+export type KnowledgeGroup = 'fecal' | 'builtin' | 'studies' | 'academy';
+export const KNOWLEDGE_GROUPS: KnowledgeGroup[] = ['fecal', 'builtin', 'studies', 'academy'];
 
 export interface ResolvedDoc {
   slug: string;
@@ -89,6 +90,17 @@ export interface ResolvedDoc {
   citationDefault?: string;
   /** Explicit embedding units (the fecal charts), else `chunkMarkdown`. */
   chunks?: string[];
+  /**
+   * Section of each explicit chunk (parallel to `chunks`; the Academy
+   * articles). Adds `section` to the chunk's tags and to its citation.
+   */
+  chunkSections?: string[];
+  /**
+   * What chunk tags carry besides the catalogue tags, when it must differ
+   * from `baseMetadata` — an Academy article keeps its provenance block on
+   * the document only. Absent = `baseMetadata` (every other seed).
+   */
+  chunkTagBase?: Record<string, unknown>;
 }
 
 export type SyncAction = 'created' | 'updated' | 'unchanged' | 'left deleted' | 'retired';
@@ -107,6 +119,12 @@ export interface RunKnowledgeSyncOptions {
   sb: KnowledgeDb;
   /** Bytes of a bundled study PDF, by file name under public/studies/. */
   readStudy: (file: string) => Promise<Uint8Array>;
+  /**
+   * The Royal Canin Academy snapshots (`knowledge/academy/**`), or null when
+   * they are not readable here. Absent or null ⇒ the `academy` group is
+   * skipped and owns nothing (never retired) — see knowledgeAcademy.ts.
+   */
+  readAcademy?: () => Promise<AcademyBundle | null>;
   /** Defaults to every group. */
   groups?: readonly KnowledgeGroup[];
   /** Rows already read (saves a round-trip); otherwise read from `sb`. */
@@ -130,11 +148,14 @@ export interface RunKnowledgeSyncResult {
   existingRows: ExistingKnowledgeRow[];
   /** Set when the run did nothing because another sync holds the lease. */
   skipped?: 'lease-held';
+  /** The academy group's gate, when the run included it. */
+  academy?: { published: boolean; status: string };
 }
 
 /** The group a stored slug belongs to — decides whether a partial run owns it. */
 export function groupOfSlug(slug: string): KnowledgeGroup {
   if (isFecalSeedSlug(slug)) return 'fecal';
+  if (isAcademySlug(slug)) return 'academy';
   if (slug.startsWith('study:') || BUNDLED_STUDIES.some((s) => s.slug === slug)) return 'studies';
   return 'builtin';
 }
@@ -352,14 +373,18 @@ async function prepareChunks(
   const citation = catalogue.citationFor({ slug: doc.slug, citation: doc.citationDefault });
   const units = doc.chunks ?? chunkMarkdown(doc.content);
   const embeddings = await embedTexts(units, 'RETRIEVAL_DOCUMENT');
-  return units.map((content, i) => ({
-    chunk_idx: i,
-    content,
-    token_estimate: estimateTokens(content),
-    tags: { category: doc.category, ...doc.baseMetadata, ...tags },
-    citation,
-    embedding: embeddings[i],
-  }));
+  const base = doc.chunkTagBase ?? doc.baseMetadata;
+  return units.map((content, i) => {
+    const section = doc.chunkSections?.[i];
+    return {
+      chunk_idx: i,
+      content,
+      token_estimate: estimateTokens(content),
+      tags: { category: doc.category, ...base, ...tags, ...(section ? { section } : {}) },
+      citation: section ? sectionCitation(citation, section) : citation,
+      embedding: embeddings[i],
+    };
+  });
 }
 
 /** Plan, then apply (or collect, or report) the built-in knowledge base. */
@@ -413,10 +438,29 @@ async function runKnowledgeSyncUnlocked(
   if (groups.has('studies')) {
     desired.push(...(await studyDocs(rowsBySlug, opts.readStudy, dryRun, log)));
   }
+  // The Academy group owns its slugs only while it is published and fully
+  // readable: a closed gate or a broken bundle leaves stored rows alone.
+  let academy: RunKnowledgeSyncResult['academy'];
+  if (groups.has('academy')) {
+    let result: Awaited<ReturnType<typeof academyDocs>>;
+    try {
+      result = await academyDocs(opts.readAcademy ? await opts.readAcademy() : null);
+    } catch (err) {
+      // A malformed manifest or snapshot must not take the other groups down.
+      const reason = err instanceof Error ? err.message : String(err);
+      result = { published: false, docs: [], status: `academy: SKIPPED — ${reason}; stored articles untouched` };
+    }
+    academy = { published: result.published, status: result.status };
+    log(`  ${result.status}`);
+    desired.push(...result.docs);
+  }
   desired.sort((a, b) => a.slug.localeCompare(b.slug));
 
   const plan = planKnowledgeSync(desired, existingRows, {
-    owns: (slug) => groups.has(groupOfSlug(slug)),
+    owns: (slug) => {
+      const group = groupOfSlug(slug);
+      return groups.has(group) && (group !== 'academy' || academy?.published === true);
+    },
   });
   const catalogue = buildSeedCatalogue(existingRows);
   const summary = summarizeSync(plan);
@@ -435,7 +479,7 @@ async function runKnowledgeSyncUnlocked(
     }
     for (const slug of plan.retire) lines.push({ slug, action: 'retired', chunks: null });
     lines.sort((a, b) => a.slug.localeCompare(b.slug));
-    return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows };
+    return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows, academy };
   }
 
   const write: Array<{ doc: ResolvedDoc; action: SyncAction }> = [
@@ -541,5 +585,5 @@ async function runKnowledgeSyncUnlocked(
   for (const doc of plan.skip) lines.push({ slug: doc.slug, action: 'unchanged', chunks: null });
   lines.sort((a, b) => a.slug.localeCompare(b.slug));
 
-  return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows };
+  return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows, academy };
 }

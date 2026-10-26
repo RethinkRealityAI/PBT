@@ -42,6 +42,14 @@
 [functions."ai-fecal-scan"]
   included_files = ["public/fecal-scan/**"]
 
+# The Royal Canin Academy corpus (knowledge/academy/: manifest + verbatim
+# article snapshots) is code the knowledge sync writes — but only while the
+# manifest's publish gate is open (Royal Canin's written permission recorded
+# AND publish: true). Bundled so the background sync reads it from disk; if it
+# is ever missing the academy group is skipped, never retired.
+[functions."knowledge-sync-background"]
+  included_files = ["knowledge/academy/**"]
+
 # Local `netlify dev`: Vite is pinned to 3006 in vite.config.ts; without this
 # the CLI waits on Vite's default 5173 and times out.
 [dev]
