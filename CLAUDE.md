@@ -69,7 +69,14 @@ caller (`netlify/functions/_shared/flagRules.ts` — the same resolver
 `flags-resolve` uses; fail-open on a read error).
 `component.chat.coach_drawer` is the coach-hints switch (default ON),
 `component.stats.sentiment_chart` the scorecard/history journey strip,
-`field.home.welcome_eyebrow` the greeting override. **Guard:**
+`field.home.welcome_eyebrow` the greeting override.
+`scenario.cat.enabled` (default **OFF** until the feline content ships) is
+the cat switch: on, the trainee app asks Dog | Cat (Build a scenario, Home's
+Today's pick) and lists published cat scenarios; off, it is dogs only —
+`useTrainingSpecies` reads `dog` whatever the device stored (the stored
+choice is kept, not erased) and refuses `cat`, and
+`useResolvedLibraryScenarios` drops every cat scenario, so Home, the
+Ready-made list and the chat's prev/next never offer one. **Guard:**
 `src/tests/flag-parity.test.ts` fails if a seeded switch has no `FlagKey`,
 a `FlagKey` is unseeded, or a declared switch is never read — a switch that
 does nothing must not reach the admin screen again (four did, including the
@@ -353,14 +360,19 @@ shape: 400 / 404 / 502 (Gemini). Tests:
 (Admins author scenarios in the **Scenario Studio**, below — not here.)
 
 - **Animal first**: "Which animal?" Dog | Cat at the top (`useTrainingSpecies`,
-  `pbt:train_species`, shared with Home), then the Build / Library tabs.
-  Pets are white line icons (`src/design-system/SpeciesIcon.tsx`: lucide
+  `pbt:train_species`, shared with Home) — rendered only while
+  `scenario.cat.enabled` is on (Routing → Feature switches); a one-animal app
+  asks no question. Pets are white line icons (`src/design-system/SpeciesIcon.tsx`: lucide
   `Dog`/`Cat` — `SpeciesIcon`, `SpeciesBadge`), never emoji; `Segmented`
   takes an optional per-option `icon`.
-- **View tabs** (`ViewTabs`, underline — deliberately not a third gold pill
-  row): **Build your own** | **Ready-made** (never "Library": the bottom tab
-  bar's Library is the clinical resources). The TopBar title follows the tab.
-  Filter rows are `ChipScroller` (edge fade = "swipe for more") with counts.
+- **Views**: **Build your own** (the default) | **Ready-made** (never
+  "Library": the bottom tab bar's Library is the clinical resources). The
+  underline `ViewTabs` toggle between them was removed from the top of the
+  screen on 2026-10-27 — the Ready-made list is moving to a home of its own —
+  but the view stays wired behind `CreateScreen`'s `view` prop
+  (`CreateView`), so nothing about it has to be rebuilt when it moves; the
+  TopBar title follows the view. Filter rows are `ChipScroller` (edge fade =
+  "swipe for more") with counts.
 - **Ready-made** tab (keys still `create.library.*`) = the RESOLVED library (`useResolvedLibraryScenarios`: the
   three `LIBRARY_SCENARIOS` with overrides + every published `admin:`
   scenario), filtered to the animal, with CATEGORY chips (when ≥ 2 groups;
@@ -377,9 +389,10 @@ shape: 400 / 404 / 502 (Gemini). Tests:
   `persistScenario` writes `user_scenarios.species`, retrying without it
   if the column is missing. The chat's provenance retrieval passes the
   category's knowledge (`scenarioRetrievalFilters(s, { categoryKnowledge })`).
-- **Home**: the Dog | Cat switch appears on Today's pick only when the
-  published library holds BOTH animals (never an empty hero because of a
-  preference); Chat prev/next walks the resolved library for the same animal.
+- **Home**: the Dog | Cat switch appears on Today's pick only when cats are
+  switched on AND the published library holds BOTH animals (never an empty
+  hero because of a preference); Chat prev/next walks the resolved library
+  for the same animal.
 - **Difficulty** — four levels with descriptions (`DIFFICULTY_DESCRIPTIONS` in `scenarios.ts`).
 - Optional `**weightKg`** on `Scenario` for custom builds.
 
@@ -762,7 +775,7 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations (28 files, all hand-run; all applied to production —
+Migrations (29 files, all hand-run; all but the last applied to production —
 `npm run verify:db` proves the live project has every relation AND column
 the code uses). Each
 file's header explains it in full:
@@ -869,6 +882,11 @@ file's header explains it in full:
   `user_id` nullable, the three columns, four CHECKs, the partial index, RLS
   unchanged; 114 sessions rebuilt — 60 on 1 Oct from 30 devices — and the
   one id already present skipped).
+- `20261027000000_cat_scenarios_flag.sql` — seeds `scenario.cat.enabled`
+  (surface `scenario`, default OFF): the cat switch (see Routing → Feature
+  switches). **Not yet applied to production** — apply with the deploy so the
+  switch shows in Admin → Flags; until then the app behaves as if it were
+  off (the code default), which is the intended launch state.
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -1122,7 +1140,7 @@ Active keys:
 - `pbt:admin_session` (admin portal only, managed by supabase-js)
 - `pbt:admin_nav_collapsed`, `pbt:admin:knowledge_auto_suggest` (admin portal UI preferences)
 - `pbt:admin:studio_drafts:<userId>` (Scenario Studio unsaved work + assistant transcripts, per admin account; ≤20 entries, 14-day expiry)
-- `pbt:train_species` (`'dog' | 'cat'`, default dog — the trainee's chosen animal, shared by Create and Home; `useTrainingSpecies`)
+- `pbt:train_species` (`'dog' | 'cat'`, default dog — the trainee's chosen animal, shared by Create and Home; `useTrainingSpecies`, which reads `dog` while `scenario.cat.enabled` is off)
 - `pbt:admin:studio_assistant_collapsed` (admin portal: the Scenario Studio builder's assistant folded to a rail)
 
 ## Adding new content

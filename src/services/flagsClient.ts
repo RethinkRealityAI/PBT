@@ -39,7 +39,8 @@ export type FlagKey =
   | 'component.chat.coach_drawer'
   | 'component.stats.sentiment_chart'
   | 'field.home.headline'
-  | 'field.home.welcome_eyebrow';
+  | 'field.home.welcome_eyebrow'
+  | 'scenario.cat.enabled';
 
 export const FLAG_DEFAULTS: Record<FlagKey, unknown> = {
   'screen.analyzer.enabled': true,
@@ -69,6 +70,10 @@ export const FLAG_DEFAULTS: Record<FlagKey, unknown> = {
   'component.stats.sentiment_chart': true,
   'field.home.headline': '',
   'field.home.welcome_eyebrow': '',
+  // Cat scenarios for trainees (the Dog | Cat switch on Build a scenario and
+  // Home, cat builds, published cat scenarios). OFF until the feline content
+  // ships: the trainee app is dogs only.
+  'scenario.cat.enabled': false,
 };
 
 export interface ScenarioOverride {

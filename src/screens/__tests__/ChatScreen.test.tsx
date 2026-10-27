@@ -282,8 +282,9 @@ describe('ChatScreen scenario rotation (resolved library)', () => {
     expect(setScenario).toHaveBeenCalledWith({ ...SEED_SCENARIOS[5], _overrideId: 'seed:2' });
   });
 
-  it('keeps a cat session among the cat scenarios', async () => {
+  it('keeps a cat session among the cat scenarios (cats switched on)', async () => {
     const user = userEvent.setup();
+    flagValues = { 'scenario.cat.enabled': true };
     flagSnapshot = { flags: {}, scenarioOverrides: [CAT_A, CAT_B], fetchedAt: 0 };
     currentScenario = adminOverrideToScenario(CAT_A)!;
     render(<ChatScreen />);
@@ -295,6 +296,16 @@ describe('ChatScreen scenario rotation (resolved library)', () => {
     await user.click(screen.getByRole('button', { name: /previous scenario/i }));
     // Two cats: previous wraps to the other cat too — never a dog seed.
     expect((setScenario.mock.calls[0][0] as Scenario)._overrideId).toBe('admin:cat-b');
+  });
+
+  it('offers no rotation for a cat session while scenario.cat.enabled is off (published cats are not listed)', () => {
+    flagValues = {};
+    flagSnapshot = { flags: {}, scenarioOverrides: [CAT_A, CAT_B], fetchedAt: 0 };
+    currentScenario = adminOverrideToScenario(CAT_A)!;
+    render(<ChatScreen />);
+    // Nothing to walk to: the pager is disabled rather than jumping to a dog.
+    expect(screen.getByRole('button', { name: /next scenario/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /previous scenario/i })).toBeDisabled();
   });
 });
 

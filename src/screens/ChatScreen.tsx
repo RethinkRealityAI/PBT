@@ -225,13 +225,20 @@ function ScenarioDetailsPanel({
 }) {
   const t = useT();
   const { locale } = useLanguage();
+  const dark = useTheme().resolvedTheme === 'dark';
   // Display-only view — canonical `scenario` keeps feeding prompts/paging.
   const view = localizedScenario(scenario, locale);
   return (
     <AnimatePresence>
       {open && (
         <>
-          {/* Tap-outside scrim — subtle so it doesn't feel heavy on auto-open */}
+          {/*
+           * Tap-outside scrim. It also dims the voice orb's glow behind the
+           * card: at 0.12 the gold bloom bled through the glass and washed
+           * out the briefing text (the long, read-before-you-begin one), so
+           * it is a real scrim now — darker on dark where the glow is
+           * brightest, lighter on light where the page is already pale.
+           */}
           <motion.button
             type="button"
             aria-label={t('chat.details.closeScrimAria')}
@@ -244,8 +251,9 @@ function ScenarioDetailsPanel({
               inset: 0,
               zIndex: 40,
               border: 'none',
-              background: 'rgba(20, 12, 14, 0.12)',
-              backdropFilter: 'blur(2px)',
+              background: dark ? 'rgba(8, 6, 7, 0.62)' : 'rgba(20, 12, 14, 0.32)',
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
               cursor: 'default',
             }}
           />
@@ -276,13 +284,16 @@ function ScenarioDetailsPanel({
               // Glass-card chrome inlined here so the body / footer
               // split is the actual flex container — Glass wraps its
               // children in an extra non-flex `<div>`, which would
-              // collapse the column. Tokens come from the same source
-              // as `<Glass blur={24} tint={0.05} backdropSaturatePct={130}>`.
+              // collapse the column. Border and shadow are the <Glass>
+              // tokens; the fill is deliberately more opaque than a
+              // Glass tint (0.05 let the orb's glow through and the
+              // briefing became hard to read) and branches on theme so
+              // `--pbt-text` always sits on a surface of its own kind.
               border: '1px solid var(--pbt-glass-border)',
               boxShadow: 'var(--pbt-shadow-glass)',
-              background: 'rgba(255, 255, 255, 0.05)',
-              backdropFilter: 'blur(22px) saturate(130%) brightness(1.02)',
-              WebkitBackdropFilter: 'blur(22px) saturate(130%) brightness(1.02)',
+              background: dark ? 'rgba(18, 14, 15, 0.84)' : 'rgba(255, 255, 255, 0.84)',
+              backdropFilter: 'blur(22px) saturate(130%)',
+              WebkitBackdropFilter: 'blur(22px) saturate(130%)',
             }}
           >
             <div

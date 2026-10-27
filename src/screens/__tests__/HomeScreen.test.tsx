@@ -111,7 +111,20 @@ describe("HomeScreen — Today's pick animal switch", () => {
     expect((setScenario.mock.calls[0][0] as Scenario).species).toBeUndefined();
   });
 
-  it('shows Dog | Cat when the library holds both, and limits the rotation to the chosen animal', async () => {
+  it('shows no switch and no cat pick while scenario.cat.enabled is off, even with a cat scenario published', async () => {
+    flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
+    localStorage.setItem('pbt:train_species', '"cat"');
+    const user = userEvent.setup();
+    render(<HomeScreen />);
+    expect(switchGroup()).toBeNull();
+    // The three shipped dogs only: the cat scenario is not in the rotation.
+    expect(counter()).toMatch(/\/3$/);
+    await user.click(screen.getByRole('button', { name: 'Start scenario' }));
+    expect((setScenario.mock.calls[0][0] as Scenario).species).toBeUndefined();
+  });
+
+  it('shows Dog | Cat when the library holds both (cats switched on), and limits the rotation to the chosen animal', async () => {
+    flagValues = { 'scenario.cat.enabled': true };
     flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
     const user = userEvent.setup();
     render(<HomeScreen />);
@@ -136,6 +149,7 @@ describe("HomeScreen — Today's pick animal switch", () => {
   });
 
   it('draws pet icons (no emoji) on the Dog | Cat switch', () => {
+    flagValues = { 'scenario.cat.enabled': true };
     flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
     render(<HomeScreen />);
     for (const name of ['Dog', 'Cat']) {
@@ -146,6 +160,7 @@ describe("HomeScreen — Today's pick animal switch", () => {
   });
 
   it("names the pick's category above its title", async () => {
+    flagValues = { 'scenario.cat.enabled': true };
     flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
     const user = userEvent.setup();
     render(<HomeScreen />);
