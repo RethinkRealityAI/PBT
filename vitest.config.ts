@@ -38,7 +38,9 @@ export default defineConfig({
         test: {
           name: 'functions',
           environment: 'node',
-          include: ['netlify/functions/**/*.{test,spec}.ts'],
+          // scripts/** = the Royal Canin Academy import (scripts/academy) —
+          // pure node code with no DOM.
+          include: ['netlify/functions/**/*.{test,spec}.ts', 'scripts/**/*.{test,spec}.ts'],
         },
       },
     ],

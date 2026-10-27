@@ -1,0 +1,995 @@
+{
+ "name": "Canine atopic dermatitis and the owner",
+ "fields": {
+  "ReadingTime": {
+   "value": "5 - 15 min"
+  },
+  "PublicationDate": {
+   "value": "2021-10-21T00:00:00Z"
+  },
+  "EditorialTag": {
+   "id": "d925a9cf-0d6d-4cbc-90c4-7c7b05f1c429",
+   "url": "/settings/taxonomy/editorial-tags/article",
+   "name": "Article",
+   "displayName": "Article",
+   "fields": {
+    "Value": {
+     "value": "Article"
+    },
+    "Text": {
+     "value": "Article"
+    }
+   }
+  },
+  "Title": {
+   "value": "Canine atopic dermatitis and the owner"
+  },
+  "BreadcrumbName": {
+   "value": "Canine atopic dermatitis and the owner"
+  },
+  "HideBreadcrumb": {
+   "value": false
+  },
+  "OpenGraphType": {
+   "value": ""
+  },
+  "OpenGraphSiteName": {
+   "value": ""
+  },
+  "OpenGraphAdmins": {
+   "value": ""
+  },
+  "OpenGraphAppId": {
+   "value": ""
+  },
+  "OpenGraphDescription": {
+   "value": "Treating canine atopic dermatitis can be challenging in itself, but keeping the owner fully engaged can be challenging too."
+  },
+  "OpenGraphImageUrl": {
+   "value": {
+    "src": "https://cdn.royalcanin-weshare-online.io/8T9CVnwBRYZmsWpcnMEu/v1/vf-312-article-3-front-photo",
+    "alt": "Regular, clear and honest communication between the owner and the veterinary surgeon is a keystone for successful management of the atopic dog.",
+    "width": "1000",
+    "height": "678"
+   }
+  },
+  "OpenGraphTitle": {
+   "value": "Canine atopic dermatitis and the owner"
+  },
+  "TwitterCardType": {
+   "id": "32f6a4e4-93dd-4a9c-aa60-cdedb0bedabb",
+   "url": "/sitecore/service/sitecore/system/settings/feature/experience-accelerator/sitemetadata/enums/twitter-card-types/summary-card-with-large-image",
+   "name": "Summary Card with Large Image",
+   "displayName": "Summary Card with Large Image",
+   "fields": {
+    "Value": {
+     "value": "summary_large_image"
+    }
+   }
+  },
+  "TwitterDescription": {
+   "value": "Treating canine atopic dermatitis can be challenging in itself, but keeping the owner fully engaged can be challenging too."
+  },
+  "TwitterImage": {
+   "value": {
+    "src": "https://cdn.royalcanin-weshare-online.io/8T9CVnwBRYZmsWpcnMEu/v1/vf-312-article-3-front-photo",
+    "alt": "Regular, clear and honest communication between the owner and the veterinary surgeon is a keystone for successful management of the atopic dog.",
+    "width": "1000",
+    "height": "678"
+   }
+  },
+  "TwitterSite": {
+   "value": ""
+  },
+  "TwitterTitle": {
+   "value": "Canine atopic dermatitis and the owner"
+  },
+  "MetaKeywords": {
+   "value": "atopy, communication, compliance, Advetia, quality of life, motivation, dog owner"
+  },
+  "MetaTitle": {
+   "value": "Vet Focus 31.2 Canine atopic dermatitis and the owner"
+  },
+  "MetaDescription": {
+   "value": "Vet Focus 31.2 Canine atopic dermatitis and the owner"
+  },
+  "Page Type": {
+   "id": "33673bb7-8096-451b-8b40-59d63d508641",
+   "url": "/global-configuration/component-settings/page-structure/page-types/must-do",
+   "name": "Must Do",
+   "displayName": "Must Do",
+   "fields": {
+    "Page Type": {
+     "value": "Must Do"
+    }
+   }
+  },
+  "SitemapsFile": null,
+  "Priority": {
+   "value": ""
+  },
+  "EnableHrefLangTags": {
+   "value": true
+  },
+  "EnableSeoNoIndex": {
+   "value": false
+  },
+  "ExcludeSeoSitemaps": {
+   "value": false
+  },
+  "SitemapUpdated": {
+   "value": "2025-05-14T12:40:40Z"
+  },
+  "ArticleName": {
+   "value": "Canine atopic dermatitis and the owner"
+  },
+  "ArticleDescription": {
+   "value": "<p><em>Treating canine atopic dermatitis can be challenging in itself, but keeping the owner fully engaged can be challenging too, as Pascal Pr&eacute;laud describes in this short paper.</em></p>\n<p>&copy; Shutterstock</p>"
+  },
+  "ArticleImage": {
+   "value": {
+    "src": "https://cdn.royalcanin-weshare-online.io/8T9CVnwBRYZmsWpcnMEu/v1/vf-312-article-3-front-photo",
+    "alt": "Regular, clear and honest communication between the owner and the veterinary surgeon is a keystone for successful management of the atopic dog.",
+    "width": "1000",
+    "height": "678"
+   }
+  },
+  "ImageAlt": {
+   "value": "Regular, clear and honest communication between the owner and the veterinary surgeon is a keystone for successful management of the atopic dog."
+  },
+  "ArticlePageType": {
+   "id": "8a9df0b4-2955-447e-b0e6-9bf79615f8af",
+   "url": "/settings/taxonomy/pet/dog",
+   "name": "Dog",
+   "displayName": "Dog",
+   "fields": {
+    "Value": {
+     "value": "Dog"
+    },
+    "Text": {
+     "value": "Dog"
+    }
+   }
+  },
+  "ArticleTopics": [],
+  "Tags": [],
+  "Lifestage": [
+   {
+    "id": "c5de8b63-ee53-4811-b1d0-64fbd6e5c507",
+    "url": "/settings/taxonomy/lifestage/adult",
+    "name": "Adult",
+    "displayName": "Adult",
+    "fields": {
+     "Value": {
+      "value": "Adult"
+     },
+     "Text": {
+      "value": "Adult"
+     }
+    }
+   },
+   {
+    "id": "94c948cd-2db7-49f8-b4d1-ac851a562738",
+    "url": "/settings/taxonomy/lifestage/senior",
+    "name": "Senior",
+    "displayName": "Senior",
+    "fields": {
+     "Value": {
+      "value": "Senior"
+     },
+     "Text": {
+      "value": "Senior"
+     }
+    }
+   }
+  ],
+  "Species": [
+   {
+    "id": "093bd5ca-71f7-4186-ae68-8ea1629292ae",
+    "url": "/settings/taxonomy/species/dog",
+    "name": "Dog",
+    "displayName": "Dog",
+    "fields": {
+     "Value": {
+      "value": "Dog"
+     },
+     "Text": {
+      "value": "Dog"
+     }
+    }
+   }
+  ],
+  "Themes": [
+   {
+    "id": "d7a0cef9-cd8f-4bff-aa50-411a50c98c78",
+    "url": "/settings/taxonomy/themes/dermatology",
+    "name": "Dermatology",
+    "displayName": "Dermatology",
+    "fields": {
+     "Value": {
+      "value": "Dermatology"
+     },
+     "Text": {
+      "value": "Dermatology"
+     }
+    }
+   }
+  ]
+ },
+ "placeholders": {
+  "jss-main": [
+   {
+    "uid": "fd37b953-be3a-4078-b40b-2e4c9dbb5047",
+    "componentName": "PageHeader",
+    "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Page Header",
+    "restrictedPlaceHolder": null,
+    "params": {
+     "renderingId": "{578CC5CC-1EF3-4047-B269-B36390B54C26}"
+    },
+    "fields": {
+     "Headline": {
+      "value": "Canine atopic dermatitis and the owner"
+     },
+     "Image": {
+      "value": {
+       "src": "https://cdn.royalcanin-weshare-online.io/8T9CVnwBRYZmsWpcnMEu/v1/vf-312-article-3-front-photo",
+       "alt": "Regular, clear and honest communication between the owner and the veterinary surgeon is a keystone for successful management of the atopic dog.",
+       "width": "1000",
+       "height": "678",
+       "fetchPriority": "high"
+      }
+     },
+     "ImageAlt": {
+      "value": "Regular, clear and honest communication between the owner and the veterinary surgeon is a keystone for successful management of the atopic dog."
+     },
+     "LeadParagraph": {
+      "value": "<em>Written by <a href=\"#first\">Pascal Pr&eacute;laud</a></em>\n<p><em>&nbsp;</em></p>\n<p><em></em><em>Treating canine atopic dermatitis can be challenging in itself, but keeping the owner fully engaged can be challenging too, as Pascal Pr&eacute;laud describes in this short paper.</em></p>\n<p>&copy; Shutterstock</p>"
+     }
+    },
+    "placeholders": {
+     "page-header-content": [
+      {
+       "uid": "0cf82849-0721-4c13-bca5-a1b6bb3e4ae8",
+       "componentName": "EditorialTag",
+       "dataSource": "",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{18C8CED9-961C-4408-9D59-3B302ED70EE8}"
+       }
+      },
+      {
+       "uid": "4696d692-3b4c-4732-a1a5-da12b80d805b",
+       "componentName": "PublicationDate",
+       "dataSource": "",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{38A7AC0F-5218-43E8-8FD4-E6F4D0E8F10E}"
+       }
+      },
+      {
+       "uid": "82e0385c-73d8-4ab5-8f41-d479d106a710",
+       "componentName": "ReadingTime",
+       "dataSource": "",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{FD80670A-E728-40C9-8F46-2003245FB896}"
+       },
+       "fields": {}
+      },
+      {
+       "uid": "209cccaa-90c2-409e-8066-746589e4307f",
+       "componentName": "SocialShare",
+       "dataSource": "",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "Variation": "{CD21CE7C-2C94-4047-A05C-5A98EDDE9782}",
+        "renderingId": "{6D8F15E5-88D1-4BB7-8568-F76A2BD1112C}"
+       },
+       "fields": {}
+      }
+     ]
+    }
+   },
+   {
+    "uid": "2d53017c-b271-4b32-bbbb-e73183169d87",
+    "componentName": "Article",
+    "dataSource": "",
+    "restrictedPlaceHolder": null,
+    "params": {
+     "CacheClearingBehavior": "Clear on publish",
+     "renderingId": "{7957F048-2023-48EE-8A2C-B0658BA1757A}"
+    },
+    "placeholders": {
+     "article-content": [
+      {
+       "uid": "08e18c4e-dd02-4cbe-83dd-ed8d19698bed",
+       "componentName": "ImageAndCaption",
+       "dataSource": "{D164FB9E-DE36-48B3-B16C-C23B5808A970}",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "CacheClearingBehavior": "Clear on publish",
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "5f1bccb0-cb0c-4a52-b2d1-42d0046ad534",
+         "url": "/presentation/styles/image-aspect-ratios/16x9---wide",
+         "name": "16x9 - Wide",
+         "displayName": "16x9 - Wide",
+         "fields": {
+          "Value": {
+           "value": "16:9"
+          }
+         }
+        },
+        "Caption": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://cdn.royalcanin-weshare-online.io/8T9CVnwBRYZmsWpcnMEu/v1/vf-312-article-3-front-photo",
+          "alt": "Regular, clear and honest communication between the owner and the veterinary surgeon is a keystone for successful management of the atopic dog.",
+          "width": "1000",
+          "height": "678"
+         }
+        },
+        "ImageAlt": {
+         "value": "Regular, clear and honest communication between the owner and the veterinary surgeon is a keystone for successful management of the atopic dog."
+        }
+       }
+      },
+      {
+       "uid": "f0653e57-46b6-476d-96b9-6151fe5a9054",
+       "componentName": "LayoutContainerVariation",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Layout 1",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "columns": "1",
+        "renderingId": "{ECFA783B-53F5-4C29-BF90-FB4DCA12D7DB}"
+       },
+       "fields": {
+        "ShowBrackets": {
+         "value": false
+        },
+        "ReverseLayoutOnMobile": {
+         "value": false
+        },
+        "AlignContent": {
+         "id": "a3159d8e-f3d1-4c2d-b0e1-a23ad45dee44",
+         "url": "/global-configuration/component-settings/page-structure/layout-container/vertical-alignments/top",
+         "name": "Top",
+         "displayName": "Top",
+         "fields": {
+          "Value": {
+           "value": ""
+          }
+         }
+        },
+        "WrapperWidth": {
+         "id": "c50d09e3-fcc3-480c-82e7-cd74188f4fc7",
+         "url": "/presentation/styles/wrappers/large",
+         "name": "Large",
+         "displayName": "Large",
+         "fields": {
+          "Value": {
+           "value": "Large"
+          }
+         }
+        },
+        "BackgroundColour": {
+         "id": "a35b5a2d-cf60-461b-834c-74830a79070d",
+         "url": "/presentation/styles/background-colours/white",
+         "name": "White",
+         "displayName": "White",
+         "fields": {
+          "Value": {
+           "value": "white"
+          }
+         }
+        }
+       },
+       "placeholders": {
+        "layout-container-column1": [
+         {
+          "uid": "02983ef1-b3c9-4f42-b06b-81717f2d285c",
+          "componentName": "ContentBlocksVariant",
+          "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Content Block key points",
+          "restrictedPlaceHolder": null,
+          "params": {
+           "CacheClearingBehavior": "Clear on publish",
+           "variant": "media-right-text-left",
+           "renderingId": "{595FD7EC-FE33-4B10-ACCB-057586FCEB8F}"
+          },
+          "fields": {
+           "Button1": {
+            "value": {
+             "href": ""
+            }
+           },
+           "Button1Style": null,
+           "Button2": {
+            "value": {
+             "href": ""
+            }
+           },
+           "Button2Style": null,
+           "Button3": {
+            "value": {
+             "href": ""
+            }
+           },
+           "Button3Style": null,
+           "ShowOrBetweenButtons": {
+            "value": false
+           },
+           "ShowReadMoreButton": {
+            "value": false
+           },
+           "TitleTag": {
+            "id": "5c0cc2ae-7b4d-4c6b-b1c6-411827ffb88f",
+            "url": "/presentation/styles/heading-levels/h2",
+            "name": "h2",
+            "displayName": "h2",
+            "fields": {
+             "Value": {
+              "value": "h2"
+             }
+            }
+           },
+           "OverlineStyle": null,
+           "AlignContent": {
+            "id": "d3571208-0065-4f83-a0d9-628761d47030",
+            "url": "/global-configuration/component-settings/page-structure/layout-container/vertical-alignments/middle",
+            "name": "Middle",
+            "displayName": "Middle",
+            "fields": {
+             "Value": {
+              "value": "middle"
+             }
+            }
+           },
+           "Content": {
+            "value": "<p><svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"40px\" height=\"40px\" viewbox=\"0 0 40 40\" version=\"1.1\">\n<title>Group 15</title>\n<g id=\"✅-Validated-Mobile/Desktop\" stroke=\"none\" stroke-width=\"1\" fill=\"none\" fill-rule=\"evenodd\">\n<g id=\"rcCom_SOL_thinkingOfGetting_Dog_V001\" transform=\"translate(-340.000000, -1086.000000)\">\n<g id=\"ANCHORS\" transform=\"translate(-1.000000, 995.000000)\">\n<g id=\"Group-15\" transform=\"translate(341.000000, 91.000000)\">\n<circle id=\"Oval-Copy-5\" stroke=\"#666666\" stroke-width=\"2\" cx=\"20\" cy=\"20\" r=\"19\"></circle>\n<text id=\"1\" font-size=\"16\" font-weight=\"400\" fill=\"#E2001A\">\n<tspan x=\"16\" y=\"25\">1</tspan>\n</text>\n</g>\n</g>\n</g>\n</g>\n</svg></p>\n<p>Good and sustained communication with the owner is key to successful treatment of any dog with atopic dermatitis.</p>\n<p><svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"40px\" height=\"40px\" viewbox=\"0 0 40 40\" version=\"1.1\">\n<title>Group 15</title>\n<g id=\"✅-Validated-Mobile/Desktop\" stroke=\"none\" stroke-width=\"1\" fill=\"none\" fill-rule=\"evenodd\">\n<g id=\"rcCom_SOL_thinkingOfGetting_Dog_V001\" transform=\"translate(-340.000000, -1086.000000)\">\n<g id=\"ANCHORS\" transform=\"translate(-1.000000, 995.000000)\">\n<g id=\"Group-15\" transform=\"translate(341.000000, 91.000000)\">\n<circle id=\"Oval-Copy-5\" stroke=\"#666666\" stroke-width=\"2\" cx=\"20\" cy=\"20\" r=\"19\"></circle>\n<text id=\"1\" font-size=\"16\" font-weight=\"400\" fill=\"#E2001A\">\n<tspan x=\"16\" y=\"25\">2</tspan></text></g></g></g></g></svg>\n</p>\n<p>A clinic should have an established protocol to ensure an optimal approach to every atopic dermatitis case.\n</p>"
+           },
+           "Overline": {
+            "value": ""
+           },
+           "Subtitle": {
+            "value": ""
+           },
+           "Title": {
+            "value": "Key Points"
+           },
+           "Image": {
+            "value": {}
+           },
+           "ImageAlt": {
+            "value": ""
+           },
+           "ImageAspectRatio": null,
+           "UseVideoInsteadOfImage": {
+            "value": false
+           },
+           "BackgroundColor": {
+            "id": "9520901e-6b62-44c7-9836-b6a7f4b30233",
+            "url": "/presentation/styles/background-colours/white-smoke",
+            "name": "White Smoke",
+            "displayName": "White Smoke",
+            "fields": {
+             "Value": {
+              "value": "white-smoke"
+             }
+            }
+           }
+          },
+          "placeholders": {
+           "content-blocks-variant-content": []
+          }
+         }
+        ]
+       }
+      },
+      {
+       "uid": "ed278976-550c-4f62-803e-0f7a579107aa",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Title and Paragraph 3",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p><span style=\"font-size: 1.875rem; color: #e2001a;\">Introduction</span></p>\n<p>Canine atopic dermatitis (CAD) is a multifactorial chronic disease that requires the veterinarian not only to deliver long-term care to the dog but also establish and maintain an excellent relationship with the owner. Unlike some other chronic diseases, there is no true consensus on the best monitoring program for CAD, but maintaining continued contact with these cases is essential to ensure the effectiveness, feasibility, and safety of the various treatment options, and this is only possible if the owner is fully informed and engaged. Optimal communication is therefore the cornerstone of long-term treatment, as CAD can negatively impact the owner’s quality of life as well as that of the patient [<strong title=\"Spitznagel MB, Solc M, Chapman KR, et al. Caregiver burden in the veterinary dermatology client: comparison to healthy controls and relationship to quality of life. Vet Dermatol 2019;30(1):3-e2.\" class=\"reference-snippet\">1</strong>][<strong title=\"Linek M, Favrot C. Impact of canine atopic dermatitis on the health-related quality of life of affected dogs and quality of life of their owners. Vet Dermatol 2010;21:456-462.\" class=\"reference-snippet\">2</strong>]. A recent large-scale survey on dogs with CAD (author’s unpublished data, 2013) demonstrated both that owners frequently lack knowledge of the disease (for example, only 4% understood that CAD is a long-term disease), and that there are often shortcomings in the therapeutic options offered by the clinician (for example, only 15% had tried an elimination diet and only 6% had tried cyclosporine).&nbsp;<br />\n<br />\nThe first, most essential step with CAD is identifying the disease and getting owners to accept its lasting nature before starting on the long journey involved in monitoring a chronic skin condition. However, there are many potential pitfalls; one study suggested there are seven fundamental mistakes to avoid in long-term management of chronic dermatology cases (Table 1) [<strong title=\"Ackerman L. Seven common mistakes to avoid in achieving long-term success with dermatology patients. Vet Med Sci 2015;1(1):2-8.\" class=\"reference-snippet\">3</strong>]. This short paper provides some key measures that can be easily incorporated into daily practice to ensure that the owner of an atopic dog is kept fully engaged and better informed.</p>\n<p>&nbsp;</p>\n<div class=\"rc-table\">\n<div class=\"rc-scroll--x\">\n<table class=\"rc-table__table\">\n    <caption>Table 1. Seven common mistakes when dealing with chronic skin conditions [<strong title=\"Ackerman L. Seven common mistakes to avoid in achieving long-term success with dermatology patients. Vet Med Sci 2015;1(1):2-8.\" class=\"reference-snippet\">3</strong>].</caption>\n    <tbody class=\"rc-table__tbody\">\n        <tr class=\"rc-table__row\">\n            <td class=\"rc-table__td\">\n            <div>•<span style=\"white-space: pre;\">\t</span>Not controlling flare-ups</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Not taking client expectations into account</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Not understanding the situation in terms of quality of life</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Not using evidence-based medical data</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Underestimating the role of treatment compliance&nbsp;&nbsp;</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Not taking cost into consideration when offering appropriate therapeutic choices</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Regarding dermatology clients/patients as a nuisance</div>\n            </td>\n        </tr>\n    </tbody>\n</table>\n</div>\n<p class=\"rc-scroll--x\">&nbsp;</p>\n</div>\n<h2 class=\"rc-beta\">First steps: preparation</h2>\n<p>Atopic dermatitis is a real opportunity for veterinarians, in terms of medical, technical and interpersonal reasons, but it is essential to understand the disease in order to master the various therapeutic options and therefore communicate effectively. This involves the clinician keeping up to date with evidence-based journals and websites (<em>e.g</em>., www.icada.org) [<strong title=\"Olivry T, DeBoer DJ, Favrot C, et al. Treatment of canine atopic dermatitis: 2015 updated guidelines from the International Committee on Allergic Diseases of Animals (ICADA). BMC Vet Res 2015;11(1):210.\" class=\"reference-snippet\">4</strong>], and having access to the appropriate equipment for dermatological investigations, including a good microscope and otoscope. Good “tools” to use during the consultation, such as checklists and even metaphorical diagrams [<strong title=\"Noli C. Assessing Quality of Life for pets with dermatologic disease and their owners. Vet Clin North Am Small Anim Pract 2019;49(1):83-93.\" class=\"reference-snippet\">5</strong>][<strong title=\"Favrot C, Linek M, Mueller R, et al. Development of a questionnaire to assess the impact of atopic dermatitis on health-related quality of life of affected dogs and their owners. Vet Dermatol 2010;21(1):63-69.\" class=\"reference-snippet\">6</strong>][<strong title=\"Prlaud P. Dermatite Atopique Canine. Paris: Masson-Elsevier; 2017;1-184.\" class=\"reference-snippet\">7</strong>], may be useful, and additional communication resources, such as informative websites, can also be helpful. Do note however that most canine atopic dermatitis sites are either too technical or very product- or service-oriented, and it can be helpful for the clinic to have its own web page or blog designed specifically for owners of atopic dogs. In addition, follow-up consultations should always be assigned to the same veterinarian, and the clinic should have a trusted specialist for referral of difficult cases.<br />\n<br />\n</p>\n<h2 class=\"rc-beta\">The consultation process</h2>\n<p>Certain elements are key to ensuring good client communication, and it is essential that a clinic has an appropriate protocol in place for dermatological cases (Table 2). The first consultation should never be overlong, as this is generally unnecessary and counterproductive. A shorter timeframe is more effective, and should focus on a few vital points. The clinician should first fully understand any existing or previous therapies, and then address the owner's expectations and the limits of their motivation or adherence to treatment. It is also necessary to give an explanation (and if necessary a demonstration) of any medication prescribed, and – essentially – explain what it is intended to achieve. So, for example, if a dog with pre-existing CAD presents with a flare-up of otitis externa and <em>Malassezia</em> pododermatitis, the consultation should focus on the <em>Malassezia</em>, topical ear care, and the feasibility of treatment options. Prolonged explanations about allergies, immune responses or the skin barrier should be avoided, and keeps things simple; an appointment should then be made for a follow-up visit when other aspects can be discussed as necessary.</p>\n<p>&nbsp;</p>\n<div class=\"rc-table\">\n<div class=\"rc-scroll--x\">\n<table class=\"rc-table__table\">\n    <caption style=\"text-align: left;\">Table 2. Key elements for good communication.</caption>\n    <tbody class=\"rc-table__tbody\">\n        <tr class=\"rc-table__row\">\n            <td class=\"rc-table__td\" style=\"text-align: left;\">\n            <div>•<span style=\"white-space: pre;\">\t</span>Training for dedicated veterinarians and nurses</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Uniform approach within the clinic</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>First consultation focusing on treating the flare-up</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Follow-up phone call within 48 hours</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Adaption of treatment(s) as necessary</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Simple, appropriate monitoring tools</div>\n            <div>•<span style=\"white-space: pre;\">\t</span>Follow-up scheduling&nbsp;</div>\n            </td>\n        </tr>\n    </tbody>\n</table>\n</div>\n</div>\n<p>\n<br />\nSubsequent consultations should be equally structured. To maintain a positive relationship with the client, and ensure case continuity, a telephone or video call within 48 hours of the initial consult can allow the clinician to check on treatment efficacy, adherence, and any adverse effects (Figure 1).</p>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "f38467e4-7c72-451f-9d7d-f7aa08abcaf0",
+       "componentName": "ImageAndCaption",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Enlarge Image 1",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{B72CC8E9-6E17-4681-9001-0AF97A2E1D5F}"
+       },
+       "fields": {
+        "AspectRatio": {
+         "id": "b54018f6-a28c-44ac-b2fb-b51f28e3e750",
+         "url": "/presentation/styles/image-aspect-ratios/13x5---cinemascope",
+         "name": "13x5 - Cinemascope",
+         "displayName": "13x5 - Cinemascope",
+         "fields": {
+          "Value": {
+           "value": "13:5"
+          }
+         }
+        },
+        "Caption": {
+         "value": "Figure 1.To maintain a positive relationship with the client, and ensure case continuity, a telephone or video call within 48 hours of the initial consult can allow the clinician to check on treatment efficacy, adherence, and any adverse effects.© Shutterstock "
+        },
+        "Image": {
+         "value": {
+          "src": "https://cdn.royalcanin-weshare-online.io/ulbkb3wBBKJuub5qpcRN/v1/vf-312-article-3-figure-1-eng-jpg",
+          "alt": "To maintain a positive relationship with the client, and ensure case continuity, a telephone or video call within 48 hours of the initial consult. ",
+          "width": "1000",
+          "height": "667"
+         }
+        },
+        "ImageAlt": {
+         "value": "To maintain a positive relationship with the client, and ensure case continuity, a telephone or video call within 48 hours of the initial consult. "
+        }
+       }
+      },
+      {
+       "uid": "ea89d5a5-863a-4d4f-83d7-da790ac4b14b",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Title and Paragraph 1",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p>A physical check-up 2 or 3 weeks later not only enables a second clinical examination (including aural and cytological checks), it allows further discussion on treatment and logical planning for future management. This can be aided by using a quality-of-life scale [<strong title=\"Noli C, Minafo G, Galzerano M. Quality of life of dogs with skin diseases and their owners; Part 1: development and validation of a questionnaire. Vet Dermatol 2011;22(4):335-343.\" class=\"reference-snippet\">8</strong>], whereby identification of the priority factors can greatly assist in making therapeutic choices (Table 3). Information should essentially be provided in stages, with each consultation emphasizing only the necessary points for understanding the treatment.</p>\n<p>&nbsp;</p>\n<div class=\"rc-table\">\n<div class=\"rc-scroll--x\">\n<table class=\"rc-table__table\">\n    <caption style=\"text-align: left;\">Table 3. A quality-of-life survey can help prioritize the factors to be considered when dealing with a dog with CAD [<strong title=\"Noli C, Minafo G, Galzerano M. Quality of life of dogs with skin diseases and their owners; Part 1: development and validation of a questionnaire. Vet Dermatol 2011;22(4):335-343.\" class=\"reference-snippet\">8</strong>]. Scoring each factor (on a scale of 1 to 5) will identify the main criteria for both the dog and the owner.</caption>\n    <thead class=\"rc-table__thead\">\n        <tr class=\"rc-table__row\">\n            <th class=\"rc-table__th rc-espilon\">Dog factors</th>\n            <th class=\"rc-table__th rc-espilon\">Owner factors</th>\n        </tr>\n    </thead>\n    <tbody class=\"rc-table__tbody\">\n        <tr class=\"rc-table__row\">\n            <td class=\"rc-table__td\">\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Disease severity</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Behavior/mood&nbsp;</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Sleep</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Eating behavior</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Work/play</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Social relations</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Behavioral changes</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Treatments</div>\n            </td>\n            <td class=\"rc-table__td\">\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Loss of time</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Exhaustion</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Family activities</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Cost</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Emotional distress</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Physical discomfort</div>\n            <div>&bull;<span style=\"white-space: pre;\">\t</span>Family relations</div>\n            </td>\n        </tr>\n    </tbody>\n</table>\n</div>\n<p class=\"rc-scroll--x\">&nbsp;</p>\n</div>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "21490587-9a14-47e7-b75c-8c82d8d20fbf",
+       "componentName": "TitleAndParagraph",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Title and Paragraph 2",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{C6E02A45-C0BD-4D75-BB75-601DC8099EB2}"
+       },
+       "fields": {
+        "HeadingLevel": {
+         "id": "b88aac1c-b17b-4af2-9278-aeaf6aa51696",
+         "url": "/en/presentation/styles/heading-levels/h2",
+         "name": "h2",
+         "displayName": "h2",
+         "fields": {
+          "Value": {
+           "value": "h2"
+          }
+         }
+        },
+        "Text": {
+         "value": "<p><span style=\"font-size: 1.875rem; color: #e2001a;\">Outside the consultation&nbsp;</span></p>\n<p>\nAs noted above, a quality-of-life scale is an essential support tool when carrying out a follow-up [<strong title=\"Favrot C, Linek M, Mueller R, et al. Development of a questionnaire to assess the impact of atopic dermatitis on health-related quality of life of affected dogs and their owners. Vet Dermatol 2010;21(1):63-69.\" class=\"reference-snippet\">6</strong>][<strong title=\"Noli C, Minafo G, Galzerano M. Quality of life of dogs with skin diseases and their owners; Part 1: development and validation of a questionnaire. Vet Dermatol 2011;22(4):335-343.\" class=\"reference-snippet\">8</strong>] and this can be completed online, during a video consultation, or even via a smartphone app. This is in preference to other options such as lesion charts or pruritus scales, which the author finds unhelpful. Keeping in contact is also essential, and for serious cases group meetings with owners may be beneficial. &ldquo;Care contracts&rdquo; which assist in monitoring chronic diseases are suitable for dogs with CAD, and financial planning with a monthly breakdown of expenses will keep the owner engaged and facilitate early detection of complications or flare-ups, which can help avoid losing contact with the case.</p>\n<h2 class=\"rc-beta\"><span style=\"color: #e2001a;\">Conclusion</span></h2>\n<p id=\"first\">\n</p>\n<p>When dealing with CAD, longer consultations and over-reliance on external resources can be counterproductive, and it is much more effective if the veterinarian can show empathy for the owner&rsquo;s viewpoint; this must be coupled with a thorough understanding of canine atopic dermatitis and a willingness to offer appropriate treatment options, alongside judicious use of measures that help the owner comprehend the many ramifications of this complex disease.</p><span class='anchor-link' id='first'>&nbsp;</span>"
+        },
+        "Title": {
+         "value": ""
+        }
+       }
+      },
+      {
+       "uid": "e823a39a-741f-43b3-bd96-07bc1d6e606f",
+       "componentName": "ContentBlocksVariant",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Pascal Prelaud",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "variant": "media-left-text-right",
+        "renderingId": "{043BB5A2-3062-4BD7-8323-D76DE7BF0DDB}"
+       },
+       "fields": {
+        "Button1": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button1Style": null,
+        "Button2": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button2Style": null,
+        "Button3": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button3Style": null,
+        "ShowOrBetweenButtons": {
+         "value": false
+        },
+        "ShowReadMoreButton": {
+         "value": false
+        },
+        "TitleTag": null,
+        "OverlineStyle": null,
+        "AlignContent": {
+         "id": "d3571208-0065-4f83-a0d9-628761d47030",
+         "url": "/global-configuration/component-settings/page-structure/layout-container/vertical-alignments/middle",
+         "name": "Middle",
+         "displayName": "Middle",
+         "fields": {
+          "Value": {
+           "value": "middle"
+          }
+         }
+        },
+        "Content": {
+         "value": "<h4>Pascal Pr&eacute;laud</h4>\n<strong>DVM, Dip. ECVD</strong><br />\n<br />\nFrance<br />\n<br />\nDr. Pr&eacute;laud graduated from Toulouse Vet School in 1984 and went on to establish a laboratory which pioneered canine allergy testing. A specialist in veterinary dermatology since 1987, he now holds a senior role at a private veterinary hospital outside Paris, and has also authored many articles and textbooks on canine atopic dermatitis.<br />"
+        },
+        "Overline": {
+         "value": ""
+        },
+        "Subtitle": {
+         "value": ""
+        },
+        "Title": {
+         "value": ""
+        },
+        "Image": {
+         "value": {
+          "src": "https://cdn.royalcanin-weshare-online.io/kOeQb3wBaPOZra8qhMPo/v3/vf-312-pascal-prelaud",
+          "width": "460",
+          "height": "600",
+          "dam": "weshare"
+         }
+        },
+        "ImageAlt": {
+         "value": "Pascal Prelaud"
+        },
+        "ImageAspectRatio": {
+         "id": "f3c91bf4-925a-46fd-9251-7fe9a235ee7b",
+         "url": "/presentation/styles/image-aspect-ratios/4x3---rectangle",
+         "name": "4x3 - Rectangle",
+         "displayName": "4x3 - Rectangle",
+         "fields": {
+          "Value": {
+           "value": "4:3"
+          }
+         }
+        },
+        "UseVideoInsteadOfImage": {
+         "value": false
+        },
+        "BackgroundColor": {
+         "id": "a35b5a2d-cf60-461b-834c-74830a79070d",
+         "url": "/presentation/styles/background-colours/white",
+         "name": "White",
+         "displayName": "White",
+         "fields": {
+          "Value": {
+           "value": "white"
+          }
+         }
+        }
+       },
+       "placeholders": {
+        "content-blocks-variant-content": []
+       }
+      },
+      {
+       "uid": "a2e7aa4e-b8df-4e8a-b528-eb29d9abc073",
+       "componentName": "Sources",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Sources",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{58943EF5-A2D8-4351-A8A9-29B7CBC358FC}"
+       },
+       "fields": {
+        "Title": {
+         "value": "References"
+        },
+        "items": [
+         {
+          "id": "2f32f3ee-896a-48bd-b0af-d8cc16b968f6",
+          "url": "/en/veterinary/canine-atopic-dermatitis-and-the-owner/data/sources/source-item",
+          "name": "Source Item",
+          "displayName": "Source Item",
+          "fields": {
+           "Link": {
+            "value": {
+             "href": ""
+            }
+           },
+           "NofollowLink": {
+            "value": false
+           },
+           "Text": {
+            "value": "Spitznagel MB, Solc M, Chapman KR, et al. Caregiver burden in the veterinary dermatology client: comparison to healthy controls and relationship to quality of life. Vet Dermatol 2019;30(1):3-e2."
+           }
+          }
+         },
+         {
+          "id": "1455e9ab-3e1a-4d8d-94b5-59a23a273506",
+          "url": "/en/veterinary/canine-atopic-dermatitis-and-the-owner/data/sources/sources-item-2",
+          "name": "Sources item 2",
+          "displayName": "Sources item 2",
+          "fields": {
+           "Link": {
+            "value": {
+             "href": ""
+            }
+           },
+           "NofollowLink": {
+            "value": false
+           },
+           "Text": {
+            "value": "Linek M, Favrot C. Impact of canine atopic dermatitis on the health-related quality of life of affected dogs and quality of life of their owners. Vet Dermatol 2010;21:456-462."
+           }
+          }
+         },
+         {
+          "id": "099bb13a-8e4c-456b-92fa-9e9b15c18345",
+          "url": "/en/veterinary/canine-atopic-dermatitis-and-the-owner/data/sources/sources-item-3",
+          "name": "Sources item 3",
+          "displayName": "Sources item 3",
+          "fields": {
+           "Link": {
+            "value": {
+             "href": ""
+            }
+           },
+           "NofollowLink": {
+            "value": false
+           },
+           "Text": {
+            "value": "Ackerman L. Seven common mistakes to avoid in achieving long-term success with dermatology patients. Vet Med Sci 2015;1(1):2-8."
+           }
+          }
+         },
+         {
+          "id": "2a308fec-f1df-45f7-ae6f-43b7d5e40848",
+          "url": "/en/veterinary/canine-atopic-dermatitis-and-the-owner/data/sources/sources-item-4",
+          "name": "Sources item 4",
+          "displayName": "Sources item 4",
+          "fields": {
+           "Link": {
+            "value": {
+             "href": ""
+            }
+           },
+           "NofollowLink": {
+            "value": false
+           },
+           "Text": {
+            "value": "Olivry T, DeBoer DJ, Favrot C, et al. Treatment of canine atopic dermatitis: 2015 updated guidelines from the International Committee on Allergic Diseases of Animals (ICADA). BMC Vet Res 2015;11(1):210."
+           }
+          }
+         },
+         {
+          "id": "ef1b71b8-881a-43b1-be55-725485835448",
+          "url": "/en/veterinary/canine-atopic-dermatitis-and-the-owner/data/sources/sources-item-5",
+          "name": "Sources item 5",
+          "displayName": "Sources item 5",
+          "fields": {
+           "Link": {
+            "value": {
+             "href": ""
+            }
+           },
+           "NofollowLink": {
+            "value": false
+           },
+           "Text": {
+            "value": "Noli C. Assessing Quality of Life for pets with dermatologic disease and their owners. Vet Clin North Am Small Anim Pract 2019;49(1):83-93."
+           }
+          }
+         },
+         {
+          "id": "20ff73a6-7b87-4233-b48f-ef2640197c71",
+          "url": "/en/veterinary/canine-atopic-dermatitis-and-the-owner/data/sources/sources-item-6",
+          "name": "Sources item 6",
+          "displayName": "Sources item 6",
+          "fields": {
+           "Link": {
+            "value": {
+             "href": ""
+            }
+           },
+           "NofollowLink": {
+            "value": false
+           },
+           "Text": {
+            "value": "Favrot C, Linek M, Mueller R, et al. Development of a questionnaire to assess the impact of atopic dermatitis on health-related quality of life of affected dogs and their owners. Vet Dermatol 2010;21(1):63-69."
+           }
+          }
+         },
+         {
+          "id": "19f9c9a4-4f69-4ca3-a694-114fecc41129",
+          "url": "/en/veterinary/canine-atopic-dermatitis-and-the-owner/data/sources/sources-item-7",
+          "name": "Sources item 7",
+          "displayName": "Sources item 7",
+          "fields": {
+           "Link": {
+            "value": {
+             "href": ""
+            }
+           },
+           "NofollowLink": {
+            "value": false
+           },
+           "Text": {
+            "value": "Prelaud P. Dermatite Atopique Canine. Paris: Masson-Elsevier; 2017;1-184."
+           }
+          }
+         },
+         {
+          "id": "12198de3-7f94-4adb-b4c5-c06505901712",
+          "url": "/en/veterinary/canine-atopic-dermatitis-and-the-owner/data/sources/sources-item-8",
+          "name": "Sources item 8",
+          "displayName": "Sources item 8",
+          "fields": {
+           "Link": {
+            "value": {
+             "href": ""
+            }
+           },
+           "NofollowLink": {
+            "value": false
+           },
+           "Text": {
+            "value": "Noli C, Minafo G, Galzerano M. Quality of life of dogs with skin diseases and their owners; Part 1: development and validation of a questionnaire. Vet Dermatol 2011;22(4):335-343."
+           }
+          }
+         }
+        ]
+       }
+      },
+      {
+       "uid": "03ac10fb-21c6-4596-b301-e65bc6de824d",
+       "componentName": "ArticleCarousel",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Article Carousel",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "renderingId": "{DE148529-E441-430C-AB99-1764AD82EDC5}"
+       },
+       "fields": {}
+      },
+      {
+       "uid": "cfcfcdc0-0559-4e68-83f7-6c10e1cfe29a",
+       "componentName": "ContentBlocksVariant",
+       "dataSource": "/sitecore/content/Academy/Academy/Academy/Home/Veterinary/Canine atopic dermatitis and the owner/Data/Content pdf",
+       "restrictedPlaceHolder": null,
+       "params": {
+        "variant": "text-centered",
+        "renderingId": "{513CFD6E-236B-45FA-90F5-FF7B71FA9624}"
+       },
+       "fields": {
+        "Button1": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button1Style": null,
+        "Button2": {
+         "value": {
+          "href": "https://p1.aprimocdn.net/marspetcare/3fa4fc9b-df9a-4b24-a81a-b26e00e8225e/3fa4fc9b-df9a-4b24-a81a-b26e00e8225e_Original%20file.pdf",
+          "text": "Access the PDF of the issue",
+          "linktype": "external",
+          "url": "https://p1.aprimocdn.net/marspetcare/3fa4fc9b-df9a-4b24-a81a-b26e00e8225e/3fa4fc9b-df9a-4b24-a81a-b26e00e8225e_Original%20file.pdf",
+          "anchor": "",
+          "title": "Access the PDF of the issue",
+          "target": "_blank"
+         }
+        },
+        "Button2Style": {
+         "id": "1444a77e-efc8-4e23-beec-b59371855d56",
+         "url": "/presentation/styles/button-styles/secondary",
+         "name": "Secondary",
+         "displayName": "Secondary",
+         "fields": {
+          "Value": {
+           "value": "secondary-alt"
+          }
+         }
+        },
+        "Button3": {
+         "value": {
+          "href": ""
+         }
+        },
+        "Button3Style": null,
+        "ShowOrBetweenButtons": {
+         "value": false
+        },
+        "ShowReadMoreButton": {
+         "value": false
+        },
+        "TitleTag": null,
+        "OverlineStyle": null,
+        "AlignContent": {
+         "id": "d3571208-0065-4f83-a0d9-628761d47030",
+         "url": "/global-configuration/component-settings/page-structure/layout-container/vertical-alignments/middle",
+         "name": "Middle",
+         "displayName": "Middle",
+         "fields": {
+          "Value": {
+           "value": "middle"
+          }
+         }
+        },
+        "Content": {
+         "value": ""
+        },
+        "Overline": {
+         "value": ""
+        },
+        "Subtitle": {
+         "value": ""
+        },
+        "Title": {
+         "value": ""
+        },
+        "Image": {
+         "value": {}
+        },
+        "ImageAlt": {
+         "value": ""
+        },
+        "ImageAspectRatio": null,
+        "UseVideoInsteadOfImage": {
+         "value": false
+        },
+        "BackgroundColor": {
+         "id": "8df74f92-4b64-46e3-bbec-81f95d03f2b0",
+         "url": "/en/presentation/styles/background-colours/white",
+         "name": "White",
+         "displayName": "White",
+         "fields": {
+          "Value": {
+           "value": "white"
+          }
+         }
+        }
+       }
+      }
+     ],
+     "article-content-local": []
+    }
+   }
+  ]
+ }
+}

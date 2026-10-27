@@ -198,6 +198,54 @@ describe('admin-knowledge-ingest — knowledge scope', () => {
   });
 });
 
+describe('admin-knowledge-ingest — re-embed of a Royal Canin Academy article', () => {
+  it('re-chunks by section like the sync (header line, section tag + citation, no references)', async () => {
+    const body = [
+      '> Stand-first.',
+      '',
+      '## Weight loss diets',
+      '',
+      'Sending home a prescription diet prematurely could lead to perceived diet failure.',
+      '',
+      '## References',
+      '',
+      '1. Montoya M, et al. Prev Vet Med 2025.',
+    ].join('\n');
+    sb.setHandler('knowledge_documents', (call: SbCall) =>
+      call.ops.some((o) => o.op === 'upsert')
+        ? { data: { id: 'doc-2' }, error: null }
+        : {
+            data: {
+              id: 'doc-2',
+              slug: 'academy:how-i-approach-pet-obesity',
+              title: 'How I approach... Pet obesity',
+              category: 'clinical',
+              content: body,
+              source: 'code-seed',
+              metadata: {
+                citation: 'Graham KM. How I approach... Pet obesity.',
+                tags: { focus: 'weight', tools: ['roleplay'], species: ['dog', 'puppy'], origin: 'academy' },
+                source: { kind: 'academy', url: 'https://academy.royalcanin.com/en/veterinary/how-i-approach-pet-obesity' },
+              },
+            },
+            error: null,
+          },
+    );
+    const res = await post({ op: 're-embed', slug: 'academy:how-i-approach-pet-obesity' });
+    expect(res.status).toBe(200);
+    const chunks = insertedChunks();
+    expect(chunks.map((c) => (c.tags as Bag).section)).toEqual(['Overview', 'Weight loss diets']);
+    expect(chunks[1].content).toBe(
+      'How I approach... Pet obesity — Weight loss diets\n\n' +
+        'Sending home a prescription diet prematurely could lead to perceived diet failure.',
+    );
+    expect(chunks[1].citation).toBe('Graham KM. How I approach... Pet obesity. — "Weight loss diets"');
+    expect(chunks[1].tags).toMatchObject({ category: 'clinical', focus: 'weight', origin: 'academy', tools: ['roleplay'] });
+    expect(chunks.some((c) => String(c.content).includes('Montoya'))).toBe(false);
+    expect(upsertedDoc().source).toBe('code-seed');
+  });
+});
+
 describe('admin-knowledge-ingest — retired ingest-bundled op', () => {
   it('answers 410, pointing at the automatic sync, and touches nothing', async () => {
     const fetchSpy = vi.fn();

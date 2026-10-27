@@ -47,8 +47,10 @@
  *      extracts or embeds).
  *
  * Even an authorised caller can only ever write CODE-DEFINED content: the
- * document set comes from `buildSeedDocs()` and `BUNDLED_STUDIES`; nothing
- * in the request body is read.
+ * document set comes from `buildSeedDocs()`, `BUNDLED_STUDIES` and the
+ * Royal Canin Academy snapshots bundled from `knowledge/academy/` (written
+ * only while that manifest's publish gate is open); nothing in the request
+ * body is read.
  *
  * Never throws: a failed sync leaves whatever is already stored, retrieval
  * fails open into the prompts' bundled text, and the app is unaffected.
@@ -65,6 +67,7 @@ import {
   readExistingRows,
   runKnowledgeSync,
 } from './_shared/knowledgeSyncRun';
+import { readAcademyBundleFromDisk, type AcademyBundle } from './_shared/knowledgeAcademy';
 
 /** How recently a sync must have run for a fresh request to be redundant. */
 export const SYNC_COOLDOWN_MS = 10 * 60_000;
@@ -88,6 +91,24 @@ function studyReader(req: Request): (file: string) => Promise<Uint8Array> {
     if (!res.ok) throw new Error(`fetch /studies/${file} → ${res.status}`);
     return new Uint8Array(await res.arrayBuffer());
   };
+}
+
+/**
+ * The Royal Canin Academy snapshots, from disk. They ship with this function
+ * through `included_files = ["knowledge/academy/**"]` (netlify.toml), the
+ * same way `ai-fecal-scan` ships its chart photos: resolved from the working
+ * directory, then LAMBDA_TASK_ROOT. Not bundled ⇒ null, and the engine skips
+ * the group with a warning — it never retires articles it could not read.
+ */
+let loggedAcademyMissing = false;
+async function academyReader(): Promise<AcademyBundle | null> {
+  const roots = [...new Set([process.cwd(), process.env.LAMBDA_TASK_ROOT].filter(Boolean) as string[])];
+  const bundle = await readAcademyBundleFromDisk(roots);
+  if (!bundle && !loggedAcademyMissing) {
+    loggedAcademyMissing = true;
+    console.warn(`${LOG} knowledge/academy not bundled (tried ${roots.join(', ')}) — academy group skipped`);
+  }
+  return bundle;
 }
 
 export default async (req: Request, context?: NetlifyContextLike): Promise<Response> => {
@@ -134,6 +155,7 @@ export default async (req: Request, context?: NetlifyContextLike): Promise<Respo
       const probe = await runKnowledgeSync({
         sb,
         readStudy,
+        readAcademy: academyReader,
         existingRows,
         dryRun: true,
       });
@@ -154,6 +176,7 @@ export default async (req: Request, context?: NetlifyContextLike): Promise<Respo
     const result = await runKnowledgeSync({
       sb,
       readStudy,
+      readAcademy: academyReader,
       existingRows,
       log: (line) => console.log(`${LOG}${line}`),
     });

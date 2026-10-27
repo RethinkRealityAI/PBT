@@ -9,7 +9,7 @@
  * service-role script can call it with `userId = null`.
  */
 import { embedTexts, getGeminiClient } from './gemini';
-import { chunkMarkdown } from '../../../src/services/ragShared';
+import { chunkMarkdown, sectionCitation, type SectionChunk } from '../../../src/services/ragShared';
 import { estimateTokens } from '../../../src/shared/ai/telemetryHeuristics';
 import {
   ALL_KNOWLEDGE_SPECIES,
@@ -273,25 +273,36 @@ async function forgetSyncFingerprint(
   }
 }
 
-/** Chunk + embed + store a document. Replaces any existing chunks. */
+/**
+ * Chunk + embed + store a document. Replaces any existing chunks.
+ *
+ * `sections` swaps the generic paragraph chunker for explicit section-aware
+ * units (an Academy article — `chunkSectionedMarkdown`): each chunk then
+ * carries its `section` in its tags and citation, exactly as the sync writes
+ * it, so an admin's "rebuild the search index" can't flatten the corpus.
+ */
 export async function storeKnowledgeDoc(
   sb: KnowledgeDb,
   userId: string | null,
   args: StoreDocArgs,
+  sections?: SectionChunk[],
 ): Promise<number> {
   const tags = withKnowledgeScope(args.tags);
-  const units = chunkMarkdown(args.content);
-  const embeddings = await embedTexts(units, 'RETRIEVAL_DOCUMENT');
+  const units = sections ?? chunkMarkdown(args.content).map((content) => ({ content, section: '' }));
+  const embeddings = await embedTexts(
+    units.map((u) => u.content),
+    'RETRIEVAL_DOCUMENT',
+  );
   return writeKnowledgeDoc(
     sb,
     userId,
     args,
-    units.map((content, i) => ({
+    units.map(({ content, section }, i) => ({
       chunk_idx: i,
       content,
       token_estimate: estimateTokens(content),
-      tags: { category: args.category, ...tags },
-      citation: args.citation || null,
+      tags: { category: args.category, ...tags, ...(section ? { section } : {}) },
+      citation: section ? sectionCitation(args.citation, section) : args.citation || null,
       embedding: embeddings[i],
     })),
   );

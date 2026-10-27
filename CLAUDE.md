@@ -308,7 +308,8 @@ three triggers:
    and **can never fail the deploy**.
 3. **`npm run knowledge:sync`** (service-role env) — the hands-on one.
    `--dry-run` prints the plan without calling Gemini at all;
-   `--only fecal|builtin|studies` narrows it. After a direct sync it runs the
+   `--only fecal|builtin|studies|academy` narrows it (`--dry-run --existing
+   rows.json` needs no keys at all). After a direct sync it runs the
    retrieval proof (the dog probe must rank the Score 3.5 passage first; the
    cat probe must return only `fecal:cat`) and exits non-zero on failure.
    No service key? `-- --emit-sql <file> --existing <rows.json>` runs the same
@@ -331,6 +332,39 @@ three triggers:
   the engine; the study PDFs are *injected* so disk and HTTP produce the same
   `sourceHash`), `_shared/knowledgeSql.ts` (SQL emission),
   `_shared/knowledgeTrigger.ts` (the fire-and-forget kick + the HMAC key).
+
+### Royal Canin Academy corpus (group `academy`, publish-gated)
+
+Curated, verbatim Vet Focus articles from academy.royalcanin.com/en/veterinary.
+Spec: `docs/superpowers/specs/2026-10-26-academy-knowledge-import-design.md`;
+how-to: `knowledge/academy/README.md`.
+- **Files** (code, reviewed in PRs): `knowledge/academy/catalogue.json` (all
+  457 sitemap articles: metadata, triage proposal + reviewed decision),
+  `manifest.json` (the gate + per-article `approved`/`focus`/`species`/
+  `tools`/`reason`; rejections kept so they aren't re-proposed),
+  `articles/<slug>.md` (front-matter + Markdown converted deterministically
+  from the page's Sitecore `__NEXT_DATA__` JSON — no model in the text path;
+  never edit by hand, the sync refuses a `contentHash` mismatch).
+- **Scripts** (`scripts/academy/`): `npm run academy:catalogue` /
+  `academy:snapshot` / `academy:verify [--update]`. The fetcher uses a
+  truthful UA, ≥ 1.5 s between requests, never `/api/`, caches in
+  `.cache/academy/` (gitignored). Triage (`triage.ts`) only proposes; a human
+  edits the manifest.
+- **Gate:** `_shared/knowledgeAcademy.ts` yields documents only when
+  `permission.status === 'granted'` AND `publish === true`; otherwise (or if
+  the bundle is unreadable) the group writes nothing and OWNS nothing — never
+  retires. Ships `pending` / `false`: **Royal Canin's written permission must
+  be recorded before flipping it** (the articles are © Royal Canin SAS).
+- Documents: `code-seed`, `clinical`, slug `academy:<site-slug>`,
+  `metadata.source.kind = 'academy'` (URL, issue, authors, hashes, license);
+  tags `{ focus, tools, species, origin: 'academy' }` — species from the
+  site's `Species[]` (HARD scope), tools the four training defaults, never
+  `fecal-scan`. Chunks are section-aware (`chunkSectionedMarkdown` in
+  `ragShared.ts`: "<Title> — <Section>" header line, References not
+  embedded, `section` tag + citation suffix); `admin-knowledge-ingest`
+  `re-embed` uses the same chunker. Bundled into `knowledge-sync-background`
+  via `included_files`. Admin → Knowledge shows a "Royal Canin Academy" pill
+  and "Open source ↗". Refresh quarterly (catalogue + verify → PR).
 
 ### Tag assistant (AI pre-fill when filing a document)
 

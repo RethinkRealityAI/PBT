@@ -47,6 +47,7 @@ import {
   type AdminCtx,
 } from './_shared/admin';
 import { isFocusAreaKey } from '../../src/shared/knowledge/focusAreas';
+import { sectionCitation } from '../../src/services/ragShared';
 import {
   isKnowledgeSpeciesKey,
   isKnowledgeToolKey,
@@ -340,7 +341,12 @@ async function update(ctx: AdminCtx, body: Record<string, unknown>): Promise<Res
         const tags = applyScope(applyFocus(row.tags, nextFocus), nextTools, nextSpecies);
         tags.category = nextCategory;
         const rowPatch: Record<string, unknown> = { tags };
-        if (hasCitation) rowPatch.citation = citation;
+        // A section chunk (Royal Canin Academy) keeps its section suffix.
+        if (hasCitation) {
+          rowPatch.citation = typeof tags.section === 'string' && tags.section
+            ? sectionCitation(citation, tags.section)
+            : citation;
+        }
         const { error } = await ctx.sb.from('knowledge_chunks').update(rowPatch).eq('id', row.id);
         return error?.message ?? null;
       }),

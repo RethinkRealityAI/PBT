@@ -174,3 +174,26 @@ describe('admin-knowledge update — knowledge scope', () => {
     expect((docPatch().metadata as Bag).tags).toMatchObject({ tools: ['scoring'] });
   });
 });
+
+describe('admin-knowledge update — section chunks (Royal Canin Academy)', () => {
+  it('keeps each chunk\'s section suffix when the citation is edited', async () => {
+    sb.setHandler('knowledge_chunks', (call: SbCall) =>
+      call.ops.some((o) => o.op === 'update')
+        ? { data: null, error: null }
+        : {
+            data: [
+              { id: 'c1', tags: { category: 'clinical', focus: 'weight', section: 'Key points' } },
+              { id: 'c2', tags: { category: 'clinical', focus: 'weight' } },
+            ],
+            error: null,
+          },
+    );
+    const res = await update({ citation: 'Graham KM. Pet obesity. 2026.' });
+    expect(res.status).toBe(200);
+    expect(chunkPatches().map((p) => p.citation)).toEqual([
+      'Graham KM. Pet obesity. 2026. — "Key points"',
+      'Graham KM. Pet obesity. 2026.',
+    ]);
+    expect((chunkPatches()[0].tags as Bag).section).toBe('Key points');
+  });
+});
