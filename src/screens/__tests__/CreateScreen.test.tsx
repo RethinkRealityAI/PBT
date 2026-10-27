@@ -23,6 +23,8 @@ const { go, back, setScenario, persistUserScenario, logEvent } = vi.hoisted(() =
 
 /** The flag snapshot the screen sees (team objections + scenario overrides). */
 let flagSnapshot: FlagSnapshot | null = null;
+/** Admin → Flags values for the test (`scenario.cat.enabled` is OFF by default). */
+let flagValues: Record<string, unknown> = {};
 
 vi.mock('../../app/providers/NavigationProvider', () => ({
   useNavigation: () => ({ go, back, replace: vi.fn(), current: 'create', history: [] }),
@@ -46,7 +48,7 @@ vi.mock('../../app/providers/FlagProvider', async () => {
       preview: null,
       ready: true,
       refresh: async () => {},
-      getFlag: <T,>(_key: string, fallback: T) => fallback,
+      getFlag: <T,>(key: string, fallback: T) => (key in flagValues ? (flagValues[key] as T) : fallback),
       getOverride: (id: string) => findOverride(flagSnapshot, id),
       getSimulationConfig: () => null,
     }),
@@ -190,8 +192,6 @@ function snapshot(
 
 const animalTab = (name: 'Dog' | 'Cat') =>
   within(screen.getByRole('tablist', { name: 'Animal to train on' })).getByRole('tab', { name });
-const screenTab = (name: 'Build your own' | 'Ready-made') =>
-  within(screen.getByRole('tablist', { name: 'Scenario tabs' })).getByRole('tab', { name });
 const breedInput = () => screen.getByRole('textbox', { name: 'Breed' }) as HTMLInputElement;
 const chip = (name: string) => screen.queryByRole('button', { name });
 const categoryGroup = () => screen.getByRole('group', { name: 'Choose a category' });
@@ -213,14 +213,19 @@ const offered = (title: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   flagSnapshot = snapshot([HIDDEN_SEED, ADMIN_CAT, ADMIN_DOG_PROBIOTICS]);
+  // Most of these tests exercise both animals: switch cats on. The
+  // "dogs only" block below runs with the switch off (the shipped default).
+  flagValues = { 'scenario.cat.enabled': true };
 });
 
 // ── Build tab ─────────────────────────────────────────────────────────────
 
 describe('CreateScreen — which animal (Build tab)', () => {
-  it('opens on Build with Dog chosen and dog breed suggestions', () => {
+  it('opens on Build with Dog chosen and dog breed suggestions — and no view toggle', () => {
     render(<CreateScreen />);
-    expect(screenTab('Build your own')).toHaveAttribute('aria-selected', 'true');
+    // The Build | Ready-made underline toggle is gone from the top of the screen.
+    expect(screen.queryByRole('tablist', { name: 'Scenario tabs' })).toBeNull();
+    expect(screen.getByText('Build a scenario')).toBeInTheDocument();
     expect(animalTab('Dog')).toHaveAttribute('aria-selected', 'true');
     expect(breedInput().value).toBe(POPULAR_BREEDS.dog[0]);
     expect(chip(POPULAR_BREEDS.dog[1])).not.toBeNull();
@@ -406,7 +411,54 @@ describe('CreateScreen — which animal (Build tab)', () => {
   });
 });
 
-// ── Library tab ───────────────────────────────────────────────────────────
+// ── Dogs only (cats switched off — the shipped default) ───────────────────
+
+describe('CreateScreen — dogs only while scenario.cat.enabled is off', () => {
+  beforeEach(() => {
+    flagValues = {};
+  });
+
+  it('asks no "Which animal?" and builds a dog, whatever the device stored', async () => {
+    // A preference saved while cats were on must not leak a cat build.
+    localStorage.setItem('pbt:train_species', '"cat"');
+    const user = userEvent.setup();
+    render(<CreateScreen />);
+    expect(screen.queryByRole('tablist', { name: 'Animal to train on' })).toBeNull();
+    expect(screen.queryByText('Which animal?')).toBeNull();
+    expect(breedInput().value).toBe(POPULAR_BREEDS.dog[0]);
+    expect(screen.getByLabelText("Dog's weight (optional)")).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Puppy (<1)' })).toBeInTheDocument();
+    // The stored preference is kept for when the switch comes back on.
+    expect(localStorage.getItem('pbt:train_species')).toBe('"cat"');
+
+    await user.click(screen.getAllByRole('button', { name: 'Start scenario' })[0]);
+    const built = setScenario.mock.calls[0][0] as Scenario;
+    expect(built.species).toBeUndefined();
+    expect(built.breed).toBe(POPULAR_BREEDS.dog[0]);
+  });
+
+  it('offers only dog categories and objections', () => {
+    render(<CreateScreen />);
+    const chips = within(screen.getByRole('group', { name: 'Choose a category' }))
+      .getAllByRole('button')
+      .map((b) => b.textContent);
+    expect(chips).toContain('GI');
+    expect(chips).not.toContain('Urinary');
+  });
+
+  it('lists no published cat scenario in the Ready-made view', () => {
+    localStorage.setItem('pbt:train_species', '"cat"');
+    render(<CreateScreen view="library" />);
+    const cards = screen
+      .queryAllByRole('button', { name: /^Start: / })
+      .map((b) => b.getAttribute('aria-label')!.replace(/^Start: /, ''));
+    expect(cards).toContain('Weight / obesity denial');
+    expect(cards).not.toContain('Kitten on dry food');
+    expect(screen.queryByRole('tablist', { name: 'Animal to train on' })).toBeNull();
+  });
+});
+
+// ── Library view ──────────────────────────────────────────────────────────
 
 describe('CreateScreen — Library tab', () => {
   const startButtons = () =>
@@ -416,8 +468,7 @@ describe('CreateScreen — Library tab', () => {
 
   it('lists the RESOLVED library for the chosen animal: hidden seed gone, published scenarios in', async () => {
     const user = userEvent.setup();
-    render(<CreateScreen />);
-    await user.click(screenTab('Ready-made'));
+    render(<CreateScreen view="library" />);
     const dogCards = startButtons();
     expect(dogCards).toContain('Weight / obesity denial');
     expect(dogCards).toContain('Switching brands hesitation');
@@ -435,9 +486,8 @@ describe('CreateScreen — Library tab', () => {
 
   it("names the category on every card, and the objection when the admin customised the title", async () => {
     const user = userEvent.setup();
-    render(<CreateScreen />);
+    render(<CreateScreen view="library" />);
     await user.click(animalTab('Cat'));
-    await user.click(screenTab('Ready-made'));
     // The custom title says nothing about the pushback; the eyebrow names the
     // category AND the objection on ONE line.
     const catCard = screen.getByRole('button', { name: 'Start: Kitten on dry food' });
@@ -454,9 +504,8 @@ describe('CreateScreen — Library tab', () => {
 
   it('starts a library scenario with its override handle', async () => {
     const user = userEvent.setup();
-    render(<CreateScreen />);
+    render(<CreateScreen view="library" />);
     await user.click(animalTab('Cat'));
-    await user.click(screenTab('Ready-made'));
     await user.click(screen.getByRole('button', { name: 'Start: Kitten on dry food' }));
     const started = setScenario.mock.calls[0][0] as Scenario;
     expect(started._overrideId).toBe('admin:cat-1');
@@ -468,8 +517,7 @@ describe('CreateScreen — Library tab', () => {
   it('filters by category chips, then by objection chips within the chosen category', async () => {
     const user = userEvent.setup();
     flagSnapshot = snapshot([HIDDEN_SEED, ADMIN_CAT, ADMIN_DOG_PROBIOTICS, ADMIN_DOG_COST, ADMIN_DOG_OTHER]);
-    render(<CreateScreen />);
-    await user.click(screenTab('Ready-made'));
+    render(<CreateScreen view="library" />);
     const categories = screen.getByRole('group', { name: 'Filter by category' });
     // Each chip carries how many scenarios it leaves (decoration: the
     // accessible name is the label alone).
@@ -529,8 +577,7 @@ describe('CreateScreen — Library tab', () => {
       { ...ROW, scenario_id: 'seed:0', visible: false },
       ADMIN_DOG_COST,
     ]);
-    render(<CreateScreen />);
-    await user.click(screenTab('Ready-made'));
+    render(<CreateScreen view="library" />);
     expect(screen.queryByRole('group', { name: 'Filter by category' })).toBeNull();
     const objections = screen.getByRole('group', { name: 'Filter by objection' });
     await user.click(within(objections).getByRole('button', { name: 'Switching brands hesitation' }));
@@ -540,21 +587,19 @@ describe('CreateScreen — Library tab', () => {
   it('shows an empty state with a way to build one when the animal has no library scenarios', async () => {
     const user = userEvent.setup();
     flagSnapshot = snapshot([HIDDEN_SEED]);
-    render(<CreateScreen />);
-    await user.click(screenTab('Ready-made'));
+    render(<CreateScreen view="library" />);
     await user.click(animalTab('Cat'));
     expect(screen.getByText('No ready-made cat scenarios yet.')).toBeInTheDocument();
     expect(startButtons()).toEqual([]);
     await user.click(screen.getByRole('button', { name: 'Build one' }));
-    expect(screenTab('Build your own')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Build a scenario')).toBeInTheDocument();
     expect(breedInput().value).toBe(POPULAR_BREEDS.cat[0]);
   });
 
   it('makes the whole card the Start target, with difficulty as a labelled meter and the persona as the owner', async () => {
     const user = userEvent.setup();
     flagSnapshot = null;
-    render(<CreateScreen />);
-    await user.click(screenTab('Ready-made'));
+    render(<CreateScreen view="library" />);
     const card = screen.getByRole('button', { name: 'Start: Weight / obesity denial' });
     // One target per card: no separate Start button inside it.
     expect(within(card).queryAllByRole('button')).toHaveLength(0);
@@ -566,31 +611,16 @@ describe('CreateScreen — Library tab', () => {
     expect(go).toHaveBeenCalledWith('chat');
   });
 
-  it('names the view in the title and avoids the bottom bar’s "Library" for this tab', async () => {
-    const user = userEvent.setup();
-    render(<CreateScreen />);
-    expect(screen.getByText('Build a scenario')).toBeInTheDocument();
-    await user.click(screenTab('Ready-made'));
+  it('names the view in the title and avoids the bottom bar’s "Library" for this view', () => {
+    render(<CreateScreen view="library" />);
     expect(screen.getByText('Ready-made scenarios')).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Library' })).toBeNull();
-  });
-
-  it('moves between the view tabs with the arrow keys', async () => {
-    const user = userEvent.setup();
-    render(<CreateScreen />);
-    screenTab('Build your own').focus();
-    await user.keyboard('{ArrowRight}');
-    expect(screenTab('Ready-made')).toHaveAttribute('aria-selected', 'true');
-    expect(screenTab('Ready-made')).toHaveFocus();
-    await user.keyboard('{ArrowLeft}');
-    expect(screenTab('Build your own')).toHaveAttribute('aria-selected', 'true');
   });
 
   it('without a snapshot the Library is the three shipped dog scenarios', async () => {
     const user = userEvent.setup();
     flagSnapshot = null;
-    render(<CreateScreen />);
-    await user.click(screenTab('Ready-made'));
+    render(<CreateScreen view="library" />);
     expect(startButtons()).toEqual([
       'Weight / obesity denial',
       'Cost / price pushback',
@@ -602,13 +632,13 @@ describe('CreateScreen — Library tab', () => {
 // ── French ────────────────────────────────────────────────────────────────
 
 describe('CreateScreen — French', () => {
-  async function renderFr() {
+  async function renderFr(view: 'build' | 'library' = 'build') {
     // The French catalog is a lazy chunk: load it first so the assertions test
     // the wording, not how fast a dynamic import resolves under load.
     await loadCatalog('fr');
     render(
       <LanguageProvider initialLocale="fr">
-        <CreateScreen />
+        <CreateScreen view={view} />
       </LanguageProvider>,
     );
   }
@@ -632,14 +662,9 @@ describe('CreateScreen — French', () => {
     expect(within(group).getByRole('button', { name: 'Urinary' })).toBeInTheDocument();
   });
 
-  it('labels the Ready-made tab and its category row in French', async () => {
-    const user = userEvent.setup();
-    await renderFr();
-    await user.click(
-      within(screen.getByRole('tablist', { name: 'Onglets de scénario' })).getByRole('tab', {
-        name: 'Clés en main',
-      }),
-    );
+  it('labels the Ready-made view and its category row in French', async () => {
+    await renderFr('library');
+    expect(screen.getByText('Scénarios clés en main')).toBeInTheDocument();
     const categories = screen.getByRole('group', { name: 'Filtrer par catégorie' });
     expect(within(categories).getAllByRole('button').map((b) => b.getAttribute('title'))).toEqual([
       'Toutes',

@@ -5,7 +5,6 @@ import { Icon } from '../design-system/Icon';
 import { Chip } from '../design-system/Chip';
 import { PillButton } from '../design-system/PillButton';
 import { Segmented, type SegmentedOption } from '../design-system/Segmented';
-import { ViewTabs } from '../design-system/ViewTabs';
 import { ChipScroller } from '../design-system/ChipScroller';
 import { SpeciesIcon } from '../design-system/SpeciesIcon';
 import { DifficultyMeter, DIFFICULTY_METER_FILL } from '../design-system/DifficultyMeter';
@@ -28,7 +27,7 @@ import {
 import { useResolvedLibraryScenarios, type ResolvedScenario } from '../data/useResolvedScenarios';
 import { DRIVER_KEYS, type DriverKey } from '../design-system/tokens';
 import { persistUserScenario } from '../features/scenarios/persistScenario';
-import { useTrainingSpecies } from '../features/scenarios/useTrainingSpecies';
+import { useCatScenariosEnabled, useTrainingSpecies } from '../features/scenarios/useTrainingSpecies';
 import {
   useObjectionCatalog,
   type TrainingCategory,
@@ -57,7 +56,14 @@ import {
   localizedPushbackCategory,
 } from '../i18n/dataL10n/pushbacks';
 
-type Tab = 'build' | 'library';
+/**
+ * The screen's two views. `build` is the trainee's own builder; `library` is
+ * the Ready-made list (the resolved library for the animal). The underline
+ * toggle between them is gone from the top of the screen — the Ready-made
+ * list is moving to a home of its own — but the view stays wired behind the
+ * `view` prop so nothing about it has to be rebuilt when it moves.
+ */
+export type CreateView = 'build' | 'library';
 
 const CUSTOM_PUSHBACK = PUSHBACK_CATEGORIES.find((c) => c.id === 'custom')!;
 /** Quick-pick breed chips shown per animal (the field stays free text). */
@@ -132,28 +138,27 @@ function libraryObjectionFilters(
   return [...seen.values()].sort((a, b) => rank(a.id) - rank(b.id));
 }
 
-export function CreateScreen() {
+export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
   const { go } = useNavigation();
   const { setScenario } = useScenario();
   const { profile } = useProfile();
   const { savedPets } = useSavedPets();
   const t = useT();
   const { locale } = useLanguage();
+  // Dogs only while `scenario.cat.enabled` is off: the hook reads 'dog' and
+  // the "Which animal?" row below is not rendered.
   const [species, setSpecies] = useTrainingSpecies();
+  const catEnabled = useCatScenariosEnabled();
   const { objections, teamObjections, categories, categoriesFor, objectionsIn, categoryById } =
     useObjectionCatalog();
   const resolvedLibrary = useResolvedLibraryScenarios();
-  const tabOptions: { value: Tab; label: string }[] = [
-    { value: 'build', label: t('create.tab.build') },
-    { value: 'library', label: t('create.tab.library') },
-  ];
   // Line icons, not emoji: white on the active gradient, muted otherwise.
   const animalOptions: SegmentedOption<ScenarioSpecies>[] = [
     { value: 'dog', label: t('create.animal.dog'), icon: <SpeciesIcon species="dog" size={14} /> },
     { value: 'cat', label: t('create.animal.cat'), icon: <SpeciesIcon species="cat" size={14} /> },
   ];
 
-  const [tab, setTab] = useState<Tab>('build');
+  const [tab, setTab] = useState<CreateView>(view);
   // Default matches the first quick-pick chip so it renders as selected
   // on load instead of an orphan value no chip highlights.
   const [breed, setBreed] = useState(() => POPULAR_BREEDS[species][0]);
@@ -352,42 +357,37 @@ export function CreateScreen() {
       <TopBar showBack title={t(tab === 'library' ? 'create.titleLibrary' : 'create.title')} />
       <Page>
         {/*
-         * Three controls, three jobs, three looks: underline tabs switch the
-         * VIEW, the pill picks the ANIMAL (it scopes both views), chips
-         * NARROW the list. They used to be three identical gold pill rows.
+         * Two controls, two jobs, two looks: the pill picks the ANIMAL (it
+         * scopes both views), chips NARROW the list. (The underline view
+         * toggle that used to sit above them is gone — see `CreateView`.)
          */}
-        <div className="lg:max-w-md" style={{ marginBottom: 16 }}>
-          <ViewTabs
-            options={tabOptions}
-            value={tab}
-            onChange={(v) => setTab(v)}
-            ariaLabel={t('create.tabsAria')}
-          />
-        </div>
 
-        {/* ── Which animal? — first choice, drives both tabs ── */}
-        <div
-          className="flex items-center justify-between gap-3 lg:justify-start lg:gap-5"
-          style={{ marginBottom: 16 }}
-        >
+        {/* ── Which animal? — first choice, drives both views. Only with
+            cats switched on: a one-animal app asks no question. ── */}
+        {catEnabled && (
           <div
-            style={{
-              fontSize: 16,
-              fontWeight: 700,
-              letterSpacing: '-0.01em',
-              color: 'var(--pbt-text)',
-              paddingLeft: 2,
-            }}
+            className="flex items-center justify-between gap-3 lg:justify-start lg:gap-5"
+            style={{ marginBottom: 16 }}
           >
-            {t('create.animal.title')}
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                letterSpacing: '-0.01em',
+                color: 'var(--pbt-text)',
+                paddingLeft: 2,
+              }}
+            >
+              {t('create.animal.title')}
+            </div>
+            <Segmented
+              options={animalOptions}
+              value={species}
+              onChange={changeSpecies}
+              ariaLabel={t('create.animal.aria')}
+            />
           </div>
-          <Segmented
-            options={animalOptions}
-            value={species}
-            onChange={changeSpecies}
-            ariaLabel={t('create.animal.aria')}
-          />
-        </div>
+        )}
 
         {tab === 'library' ? (
           libraryForAnimal.length === 0 ? (

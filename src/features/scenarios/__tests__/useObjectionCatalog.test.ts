@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerDataCatalog } from '../../../i18n/dataRegistry';
 import { frData } from '../../../i18n/fr';
 import { PUSHBACK_CATEGORIES } from '../../../data/scenarios';
@@ -15,6 +15,21 @@ import {
   trainingCategoriesForSpecies,
 } from '../useObjectionCatalog';
 import { readTrainingSpecies, useTrainingSpecies } from '../useTrainingSpecies';
+
+/** Admin → Flags for the species-hook tests (`scenario.cat.enabled` is OFF by default). */
+let flagValues: Record<string, unknown> = {};
+vi.mock('../../../app/providers/FlagProvider', async () => {
+  const actual = await vi.importActual<typeof import('../../../app/providers/FlagProvider')>(
+    '../../../app/providers/FlagProvider',
+  );
+  return {
+    ...actual,
+    useFlags: () => ({
+      ...actual.useFlags(),
+      getFlag: <T,>(key: string, fallback: T) => (key in flagValues ? (flagValues[key] as T) : fallback),
+    }),
+  };
+});
 
 registerDataCatalog('fr', frData);
 
@@ -162,7 +177,13 @@ describe('categories', () => {
 });
 
 describe('useTrainingSpecies', () => {
-  it("defaults to 'dog', persists the choice and keeps every instance in sync", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    flagValues = {};
+  });
+
+  it("defaults to 'dog', persists the choice and keeps every instance in sync (cats on)", () => {
+    flagValues = { 'scenario.cat.enabled': true };
     expect(readTrainingSpecies()).toBe('dog');
     const a = renderHook(() => useTrainingSpecies());
     const b = renderHook(() => useTrainingSpecies());
@@ -171,6 +192,19 @@ describe('useTrainingSpecies', () => {
     expect(b.result.current[0]).toBe('cat');
     expect(localStorage.getItem('pbt:train_species')).toBe('"cat"');
     expect(readTrainingSpecies()).toBe('cat');
+  });
+
+  it("reads 'dog' and refuses 'cat' while scenario.cat.enabled is off — without erasing the stored choice", () => {
+    localStorage.setItem('pbt:train_species', '"cat"');
+    expect(readTrainingSpecies()).toBe('cat');
+    const hook = renderHook(() => useTrainingSpecies());
+    expect(hook.result.current[0]).toBe('dog');
+    act(() => hook.result.current[1]('cat'));
+    expect(hook.result.current[0]).toBe('dog');
+    // Kept for when the switch comes back on; a dog choice still saves.
+    expect(localStorage.getItem('pbt:train_species')).toBe('"cat"');
+    act(() => hook.result.current[1]('dog'));
+    expect(localStorage.getItem('pbt:train_species')).toBe('"dog"');
   });
 
   it('resets a corrupt stored value to dog', () => {

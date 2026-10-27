@@ -8,6 +8,9 @@
  *     pushback resolved against the built-ins AND the team's objections
  *     (`snapshot.objections`) — so a probiotics or cat scenario published
  *     from the Studio reaches trainees without a deploy
+ *   - cat scenarios are dropped while `scenario.cat.enabled` is off (the
+ *     trainee app is dogs only until the feline content ships), so Home,
+ *     the Ready-made list and the chat's prev/next never offer one
  *
  * Each returned item carries the `override` row so callers can read the
  * card-level fields (card_title_override, info_modal_body, etc.) without
@@ -26,6 +29,8 @@ import {
 } from './scenarioOverrides';
 import type { ScenarioOverride } from '../services/flagsClient';
 import { useFlags } from '../app/providers/FlagProvider';
+import { useCatScenariosEnabled } from '../features/scenarios/useTrainingSpecies';
+import { speciesOf } from '../shared/scenarios/species';
 
 export interface ResolvedScenario {
   scenario: Scenario;
@@ -35,6 +40,7 @@ export interface ResolvedScenario {
 
 export function useResolvedLibraryScenarios(): ResolvedScenario[] {
   const { snapshot, getOverride } = useFlags();
+  const catEnabled = useCatScenariosEnabled();
   return useMemo(() => {
     const items: Array<ResolvedScenario & { sort: number | null }> = [];
     // Team-authored objections (Scenario Studio). Retired ones are included so
@@ -70,7 +76,9 @@ export function useResolvedLibraryScenarios(): ResolvedScenario[] {
     }
 
     const visible = items.filter(
-      (it) => it.override == null || it.override.visible !== false,
+      (it) =>
+        (it.override == null || it.override.visible !== false) &&
+        (catEnabled || speciesOf(it.scenario.species) !== 'cat'),
     );
     visible.sort((a, b) => {
       if (a.sort != null && b.sort != null) return a.sort - b.sort;
@@ -83,5 +91,5 @@ export function useResolvedLibraryScenarios(): ResolvedScenario[] {
       scenarioId,
       override,
     }));
-  }, [snapshot, getOverride]);
+  }, [snapshot, getOverride, catEnabled]);
 }
