@@ -32,6 +32,15 @@ let voiceStatus:
   | 'ended'
   | 'error' = 'idle';
 let voiceError: string | null = null;
+/** Time-limit state the voice hook reports (see VOICE_SESSION_CAPS). */
+let voiceTimeUp = false;
+let voiceCapWarning = false;
+let voiceCapDeadline: number | null = null;
+let voiceTimeUpAutoEndAt: number | null = null;
+let voiceExtensionsLeft = 2;
+let voiceMessages: Array<{ role: 'ai' | 'user'; text: string; timestamp: number }> = [];
+const extendSession = vi.fn(() => true);
+const noteTimeUpChoice = vi.fn();
 /** Switch values a test sets; anything absent reads its fallback (on). */
 let flagValues: Record<string, unknown> = {};
 
@@ -119,10 +128,19 @@ vi.mock('../../app/providers/ChatProvider', () => ({
 }));
 
 vi.mock('../../services/voiceSession', () => ({
+  VOICE_SESSION_CAPS: { extensionMs: 3 * 60_000 },
   useVoiceSession: () => ({
     status: voiceStatus,
     emotion: 'red',
-    messages: [],
+    messages: voiceMessages,
+    liveAiText: '',
+    capWarning: voiceCapWarning,
+    capDeadline: voiceCapDeadline,
+    timeUp: voiceTimeUp,
+    timeUpAutoEndAt: voiceTimeUpAutoEndAt,
+    extensionsLeft: voiceExtensionsLeft,
+    extendSession,
+    noteTimeUpChoice,
     start: voiceStart,
     stop: voiceStop,
     endSession: voiceEndSession,
@@ -131,14 +149,24 @@ vi.mock('../../services/voiceSession', () => ({
   }),
 }));
 
+function resetVoiceMock() {
+  voiceStatus = 'idle';
+  voiceError = null;
+  voiceTimeUp = false;
+  voiceCapWarning = false;
+  voiceCapDeadline = null;
+  voiceTimeUpAutoEndAt = null;
+  voiceExtensionsLeft = 2;
+  voiceMessages = [];
+}
+
 describe('ChatScreen voice-first flow', () => {
   beforeEach(() => {
     currentScenario = SEED_SCENARIOS[0];
     flagSnapshot = null;
     flagValues = {};
     __resetPreviewRuns();
-    voiceStatus = 'idle';
-    voiceError = null;
+    resetVoiceMock();
     vi.clearAllMocks();
     voiceEndSession.mockResolvedValue({ report: null, transcript: [] });
   });
@@ -366,5 +394,152 @@ describe('ChatScreen preview runs', () => {
       'aria-pressed',
       'true',
     );
+  });
+});
+
+describe('ChatScreen voice time limit — ask, never cut off', () => {
+  beforeEach(() => {
+    currentScenario = SEED_SCENARIOS[0];
+    flagSnapshot = null;
+    flagValues = {};
+    __resetPreviewRuns();
+    resetVoiceMock();
+    vi.clearAllMocks();
+    voiceEndSession.mockResolvedValue({ report: null, transcript: [], sessionId: 's1' });
+    voiceStatus = 'listening';
+    voiceMessages = [
+      { role: 'ai', text: 'That price feels steep.', timestamp: 1 },
+      { role: 'user', text: 'I hear you.', timestamp: 2 },
+    ];
+  });
+
+  function showTimeUp(extensionsLeft = 2) {
+    voiceTimeUp = true;
+    voiceCapWarning = true;
+    voiceExtensionsLeft = extensionsLeft;
+    voiceTimeUpAutoEndAt = Date.now() + 45_000;
+    render(<ChatScreen />);
+    return screen.getByRole('dialog', { name: "Time's up" });
+  }
+
+  it('offers score, keep going and start over — and says it will auto-score', () => {
+    showTimeUp();
+    expect(screen.getByRole('button', { name: 'End and get my score' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Keep going (+3 min)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /start over/i })).toBeInTheDocument();
+    expect(screen.getByRole('timer')).toHaveTextContent(/score it for you in 0:4[45]/);
+    // Nothing has been ended or scored just because time ran out.
+    expect(voiceEndSession).not.toHaveBeenCalled();
+    expect(screen.getByText('Paused')).toBeInTheDocument();
+  });
+
+  it('"End and get my score" scores the conversation', async () => {
+    const user = userEvent.setup();
+    showTimeUp();
+    await user.click(screen.getByRole('button', { name: 'End and get my score' }));
+    expect(noteTimeUpChoice).toHaveBeenCalledWith('score');
+    expect(voiceEndSession).toHaveBeenCalledTimes(1);
+    expect(chatApplyVoiceSessionComplete).toHaveBeenCalledWith(null, [], 's1');
+  });
+
+  it('"Keep going" extends the session without ending it', async () => {
+    const user = userEvent.setup();
+    showTimeUp();
+    await user.click(screen.getByRole('button', { name: 'Keep going (+3 min)' }));
+    expect(extendSession).toHaveBeenCalledTimes(1);
+    expect(voiceEndSession).not.toHaveBeenCalled();
+    expect(voiceStop).not.toHaveBeenCalled();
+  });
+
+  it('"Start over" restarts the same scenario unscored', async () => {
+    const user = userEvent.setup();
+    showTimeUp();
+    await user.click(screen.getByRole('button', { name: /start over/i }));
+    expect(noteTimeUpChoice).toHaveBeenCalledWith('restart');
+    expect(voiceStop).toHaveBeenCalled();
+    expect(voiceStart).toHaveBeenCalledWith(SEED_SCENARIOS[0], expect.objectContaining({ locale: 'en' }));
+    expect(voiceEndSession).not.toHaveBeenCalled();
+  });
+
+  it('drops "Keep going" once the extensions are used up', () => {
+    showTimeUp(0);
+    expect(screen.queryByRole('button', { name: /keep going/i })).toBeNull();
+    expect(screen.getByText(/longest a voice session can run/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'End and get my score' })).toBeInTheDocument();
+  });
+
+  it('is not dismissed by Escape — the trainee must choose', async () => {
+    const user = userEvent.setup();
+    showTimeUp();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: "Time's up" })).toBeInTheDocument();
+    expect(voiceEndSession).not.toHaveBeenCalled();
+  });
+
+  it('never shows the prompt once the session is no longer live', () => {
+    voiceTimeUp = true;
+    voiceStatus = 'ended';
+    render(<ChatScreen />);
+    expect(screen.queryByRole('dialog', { name: "Time's up" })).toBeNull();
+  });
+
+  it('shows a countdown in the last minute', () => {
+    voiceCapWarning = true;
+    voiceCapDeadline = Date.now() + 42_000;
+    render(<ChatScreen />);
+    expect(screen.getByText(/0:4[12] left/)).toBeInTheDocument();
+    expect(screen.getByText(/keep going or get your score/i)).toBeInTheDocument();
+  });
+
+  it('does not promise "keep going" in the final minute when no extension is left', () => {
+    voiceCapWarning = true;
+    voiceExtensionsLeft = 0;
+    voiceCapDeadline = Date.now() + 42_000;
+    render(<ChatScreen />);
+    expect(screen.queryByText(/keep going/i)).toBeNull();
+    expect(screen.getByText(/you'll get your score/i)).toBeInTheDocument();
+  });
+});
+
+describe('ChatScreen voice connection lost mid-conversation', () => {
+  beforeEach(() => {
+    currentScenario = SEED_SCENARIOS[0];
+    flagSnapshot = null;
+    flagValues = {};
+    __resetPreviewRuns();
+    resetVoiceMock();
+    vi.clearAllMocks();
+    voiceEndSession.mockResolvedValue({ report: null, transcript: [], sessionId: 's1' });
+    voiceStatus = 'error';
+    voiceError = 'Voice connection lost.';
+  });
+
+  it('offers to score the conversation the trainee already had', async () => {
+    const user = userEvent.setup();
+    voiceMessages = [
+      { role: 'ai', text: 'That price feels steep.', timestamp: 1 },
+      { role: 'user', text: 'I hear you.', timestamp: 2 },
+    ];
+    render(<ChatScreen />);
+    await user.click(screen.getByRole('button', { name: 'Score what you have' }));
+    expect(voiceEndSession).toHaveBeenCalledTimes(1);
+    expect(voiceStart).not.toHaveBeenCalled();
+  });
+
+  it('"Start over" begins a fresh session', async () => {
+    const user = userEvent.setup();
+    voiceMessages = [{ role: 'user', text: 'I hear you.', timestamp: 2 }];
+    render(<ChatScreen />);
+    await user.click(screen.getByRole('button', { name: 'Start over' }));
+    expect(voiceStop).toHaveBeenCalled();
+    expect(voiceStart).toHaveBeenCalledTimes(1);
+    expect(voiceEndSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps the plain retry when the trainee never spoke (nothing to score)', () => {
+    voiceMessages = [{ role: 'ai', text: 'That price feels steep.', timestamp: 1 }];
+    render(<ChatScreen />);
+    expect(screen.queryByRole('button', { name: 'Score what you have' })).toBeNull();
+    expect(screen.getByRole('button', { name: /try voice again/i })).toBeInTheDocument();
   });
 });

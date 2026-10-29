@@ -13,7 +13,25 @@
  * data, not UI chrome.
  */
 export const chat = {
-  'chat.voice.capWarning': 'Voice sessions wrap up at 5 minutes — about a minute left.',
+  'chat.voice.capWarning': "About a minute left. When time's up, you can keep going or get your score.",
+  /** The same warning once no "keep going" extension is left. */
+  'chat.voice.capWarningFinal': "About a minute left. When time's up, you'll get your score.",
+  /** Countdown shown during the last minute. {time} is m:ss ("0:42"). */
+  'chat.voice.timeLeft': '{time} left',
+  'chat.voice.status.paused': 'Paused',
+
+  // Time's-up prompt (voice time limit reached — `TimeUpModal`)
+  'chat.timeUp.title': "Time's up",
+  'chat.timeUp.subtitle':
+    "Your conversation is paused — nothing is lost. Get your score now, or keep going to finish the conversation.",
+  'chat.timeUp.subtitleFinal':
+    "That's the longest a voice session can run. Your conversation is paused — nothing is lost.",
+  'chat.timeUp.score': 'End and get my score',
+  /** {minutes} is a whole number. */
+  'chat.timeUp.keepGoing': 'Keep going (+{minutes} min)',
+  'chat.timeUp.startOver': "Start over (this one won't be scored)",
+  /** {time} is m:ss. */
+  'chat.timeUp.autoScore': "No choice made? We'll score it for you in {time}.",
 
   // Customer-state vocabulary. The enum keys (red/yellow/green) are machine
   // values and never translate; these display labels do.
@@ -94,7 +112,9 @@ export const chat = {
   /** The admin switched voice off (Flags → Voice mode in chat) after the screen loaded. */
   'chat.voice.error.disabled': 'Voice practice is switched off right now. Switch to text to keep going.',
   'chat.voice.error.lost':
-    'Voice connection lost. Check your network and tap Begin simulation to restart.',
+    'Voice connection lost. You can still get a score for the conversation you had, or start over.',
+  'chat.voice.lost.scoreSoFar': 'Score what you have',
+  'chat.voice.lost.startOver': 'Start over',
   /** {reason} is the raw transport error — never translated. */
   'chat.voice.error.startFailed': 'Voice could not start: {reason}',
   'chat.voice.error.unknown': 'unknown error',

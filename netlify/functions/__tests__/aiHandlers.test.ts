@@ -50,6 +50,7 @@ import hint from '../ai-hint';
 import evaluate from '../ai-evaluate';
 import vision from '../ai-vision';
 import voiceToken, { NEW_SESSION_WINDOW_MS, TOKEN_TTL_MS } from '../ai-voice-token';
+import { VOICE_SESSION_CAPS, voiceSessionMaxMs } from '../../../src/shared/ai/voiceCaps';
 import scenarioAi from '../admin-scenario-ai';
 import { __resetAiCaches, __resetRateLimits } from '../_shared/ai';
 import { ANON_DAILY_CAP } from '../_shared/anonSessions';
@@ -58,7 +59,6 @@ import { MODEL_LIVE, MODEL_TEXT } from '../../../src/shared/ai/models';
 import { AI_LIMITS } from '../../../src/shared/ai/contract';
 
 /** `VOICE_SESSION_CAPS.hardCapMs` in src/services/voiceSession.ts (5:00). */
-const VOICE_HARD_CAP_MS = 5 * 60_000;
 
 const UUID = '0b1a3c9e-5d2f-4a6b-8c7d-9e0f1a2b3c4d';
 const scenario = SEED_SCENARIOS[0];
@@ -768,8 +768,11 @@ describe('ai-voice-token', () => {
     expect(body.model).toBe(MODEL_LIVE);
     expect(Date.parse(body.expiresAt) - before).toBeGreaterThanOrEqual(TOKEN_TTL_MS - 50);
     expect(Date.parse(body.newSessionExpiresAt) - before).toBeGreaterThanOrEqual(NEW_SESSION_WINDOW_MS - 50);
-    // The token must outlive the 5-minute voice cap.
-    expect(TOKEN_TTL_MS).toBeGreaterThan(VOICE_HARD_CAP_MS);
+    // The token must outlive the LONGEST session the client allows — every
+    // "keep going" taken and every time's-up prompt left to auto-score —
+    // or the socket dies mid-conversation and the session is never scored.
+    expect(TOKEN_TTL_MS).toBeGreaterThan(VOICE_SESSION_CAPS.hardCapMs);
+    expect(TOKEN_TTL_MS).toBeGreaterThan(voiceSessionMaxMs());
 
     // v1alpha client, never the plain one.
     expect(mocks.genaiCtorOptions[0]).toMatchObject({

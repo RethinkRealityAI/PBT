@@ -26,7 +26,8 @@ import {
   type DriverKey,
 } from '../design-system/tokens';
 import { useTheme } from '../app/providers/ThemeProvider';
-import { useVoiceSession, type EmotionColor } from '../services/voiceSession';
+import { useVoiceSession, VOICE_SESSION_CAPS, type EmotionColor } from '../services/voiceSession';
+import { formatClock, useSecondsLeft } from '../features/chat/voiceCountdown';
 import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
 import { useResolvedLibraryScenarios, type ResolvedScenario } from '../data/useResolvedScenarios';
 import { seedScenarioId } from '../data/scenarioOverrides';
@@ -923,6 +924,29 @@ export function ChatScreen() {
     });
   }, [scenario, voiceEnabled]);
 
+  /**
+   * Throw the current voice conversation away (unscored) and begin the same
+   * scenario again. The tap is the user gesture the new AudioContext needs.
+   */
+  const restartVoice = useCallback(() => {
+    finalizeGenRef.current += 1;
+    voiceStopRef.current();
+    beginVoice();
+  }, [beginVoice]);
+
+  // Time's up (VOICE_SESSION_CAPS): the hook has paused the mic and waits for
+  // the trainee — score it, keep going, or start over. Never shown over the
+  // analyzing / ready beat, and it replaces any End / Exit dialog that was
+  // open, so there is exactly one decision on screen.
+  const voiceLive =
+    voice.status === 'listening' || voice.status === 'thinking' || voice.status === 'aiSpeaking';
+  const timeUpOpen = mode === 'voice' && voice.timeUp && voiceLive && !voiceAnalyzing && !voiceReady;
+  useEffect(() => {
+    if (!timeUpOpen) return;
+    setEndModalOpen(false);
+    setExitModalOpen(false);
+  }, [timeUpOpen]);
+
   const cycleScenario = useCallback(
     (delta: number) => {
       const { ring, index: currentIndex } = rotation;
@@ -1373,7 +1397,8 @@ useThinkingSound(
             isReady={voiceReady}
             analysisError={voiceAnalysisError}
             onBegin={beginVoice}
-            onRetry={voiceAnalysisError ? finalizeVoice : beginVoice}
+            onRetry={voiceAnalysisError ? finalizeVoice : restartVoice}
+            onScoreSoFar={finalizeVoice}
             driverKey={driverKey}
           />
         </>
@@ -1484,6 +1509,22 @@ useThinkingSound(
         )}
       </div>
     </div>
+    <TimeUpModal
+      open={timeUpOpen}
+      extensionsLeft={voice.extensionsLeft}
+      autoEndAt={voice.timeUpAutoEndAt}
+      onScore={() => {
+        voice.noteTimeUpChoice('score');
+        void finalizeVoice();
+      }}
+      onKeepGoing={() => {
+        voice.extendSession();
+      }}
+      onStartOver={() => {
+        voice.noteTimeUpChoice('restart');
+        restartVoice();
+      }}
+    />
     <EndSessionModal
       open={endModalOpen}
       mode={mode}
@@ -1596,6 +1637,7 @@ function VoiceMode({
   analysisError,
   onBegin,
   onRetry,
+  onScoreSoFar,
   driverKey,
 }: {
   voice: ReturnType<typeof useVoiceSession>;
@@ -1605,6 +1647,8 @@ function VoiceMode({
   analysisError: string | null;
   onBegin: () => void;
   onRetry?: () => void;
+  /** Score the conversation captured before a dropped connection. */
+  onScoreSoFar?: () => void;
   driverKey: DriverKey;
 }) {
   const t = useT();
@@ -1621,7 +1665,17 @@ function VoiceMode({
     voice.status === 'listening' ||
     voice.status === 'thinking' ||
     voice.status === 'aiSpeaking';
-  const showCapWarning = !!voice.capWarning && sessionLive && !isAnalyzing && !isReadyProp;
+  const showCapWarning =
+    !!voice.capWarning && !voice.timeUp && sessionLive && !isAnalyzing && !isReadyProp;
+  const secondsLeft = useSecondsLeft(voice.capDeadline, showCapWarning);
+  // The connection dropped AFTER the trainee had spoken: that conversation is
+  // still in memory and can be scored — "Try again" alone used to start a new
+  // session and silently throw it away.
+  const lostWithConversation =
+    voice.status === 'error' &&
+    !analysisError &&
+    !!onScoreSoFar &&
+    voice.messages.some((m) => m.role === 'user');
 
   // Voice transcript display:
   // - AI line: render ONLY `voice.liveAiText`. The voice session keeps it
@@ -1700,6 +1754,8 @@ function VoiceMode({
         >
           {isConnecting
             ? t('chat.voice.status.connecting')
+            : voice.timeUp && sessionLive
+            ? t('chat.voice.status.paused')
             : isReady
             ? t('chat.voice.ready')
             : STATUS_LABEL_KEYS[voice.status]
@@ -1725,7 +1781,26 @@ function VoiceMode({
             textAlign: 'center',
           }}
         >
-          {t('chat.voice.capWarning')}
+          {secondsLeft != null && (
+            <span
+              aria-hidden
+              style={{
+                display: 'block',
+                marginBottom: 4,
+                fontFamily: 'var(--pbt-font-mono)',
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: '0.18em',
+                color: 'var(--pbt-text)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {t('chat.voice.timeLeft', { time: formatClock(secondsLeft) })}
+            </span>
+          )}
+          {voice.extensionsLeft > 0
+            ? t('chat.voice.capWarning')
+            : t('chat.voice.capWarningFinal')}
         </div>
       )}
 
@@ -1895,8 +1970,42 @@ function VoiceMode({
             >
               {voice.error ?? analysisError}
             </p>
-            {onRetry && (
+            {lostWithConversation ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={onScoreSoFar}
+                  style={{
+                    padding: '6px 16px', borderRadius: 9999, border: 'none', cursor: 'pointer',
+                    background:
+                      'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+                    color: '#fff', fontFamily: 'var(--pbt-font-mono)', fontSize: 11,
+                    fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase',
+                    boxShadow:
+                      '0 4px 12px -4px color-mix(in oklab, var(--pbt-driver-primary) 45%, transparent)',
+                  }}
+                >
+                  {t('chat.voice.lost.scoreSoFar')}
+                </button>
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    style={{
+                      padding: '6px 16px', borderRadius: 9999, cursor: 'pointer',
+                      background: 'transparent',
+                      border: '1px solid color-mix(in oklab, var(--pbt-text) 22%, transparent)',
+                      color: 'var(--pbt-text)', fontFamily: 'var(--pbt-font-mono)', fontSize: 11,
+                      fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase',
+                    }}
+                  >
+                    {t('chat.voice.lost.startOver')}
+                  </button>
+                )}
+              </div>
+            ) : onRetry ? (
               <button
+                type="button"
                 onClick={onRetry}
                 style={{
                   padding: '6px 16px', borderRadius: 9999, border: 'none', cursor: 'pointer',
@@ -1910,7 +2019,7 @@ function VoiceMode({
               >
                 {hasStartError ? t('chat.voice.retryVoice') : t('chat.error.retry')}
               </button>
-            )}
+            ) : null}
           </Glass>
         </div>
       )}
@@ -1971,6 +2080,73 @@ function VoiceMode({
 // ─────────────────────────────────────────────────────────────
 // Session-end + back-confirm modals
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * Voice time limit reached (VOICE_SESSION_CAPS). The conversation is paused —
+ * nothing scored, nothing lost — and the trainee picks what happens next.
+ * Deliberately not dismissible: an Escape / backdrop tap that silently left
+ * the mic paused would be a dead end. An unanswered prompt is scored by the
+ * hook after `decisionMs`, and the footer says so.
+ */
+function TimeUpModal({
+  open,
+  extensionsLeft,
+  autoEndAt,
+  onScore,
+  onKeepGoing,
+  onStartOver,
+}: {
+  open: boolean;
+  extensionsLeft: number;
+  autoEndAt: number | null;
+  onScore: () => void;
+  onKeepGoing: () => void;
+  onStartOver: () => void;
+}) {
+  const t = useT();
+  const secondsLeft = useSecondsLeft(autoEndAt, open);
+  const canExtend = extensionsLeft > 0;
+  return (
+    <ModalShell
+      open={open}
+      onClose={() => {}}
+      title={t('chat.timeUp.title')}
+      subtitle={canExtend ? t('chat.timeUp.subtitle') : t('chat.timeUp.subtitleFinal')}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <ModalActionButton tone="primary" onClick={onScore}>
+          {t('chat.timeUp.score')}
+        </ModalActionButton>
+        {canExtend && (
+          <ModalActionButton tone="secondary" onClick={onKeepGoing}>
+            {t('chat.timeUp.keepGoing', {
+              minutes: String(Math.round(VOICE_SESSION_CAPS.extensionMs / 60_000)),
+            })}
+          </ModalActionButton>
+        )}
+        <ModalActionButton tone="quiet" onClick={onStartOver}>
+          {t('chat.timeUp.startOver')}
+        </ModalActionButton>
+        {secondsLeft != null && (
+          <p
+            role="timer"
+            aria-live="off"
+            style={{
+              margin: '4px 0 0',
+              fontSize: 12,
+              lineHeight: 1.45,
+              textAlign: 'center',
+              color: 'var(--pbt-text-muted)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {t('chat.timeUp.autoScore', { time: formatClock(secondsLeft) })}
+          </p>
+        )}
+      </div>
+    </ModalShell>
+  );
+}
 
 function EndSessionModal({
   open,
