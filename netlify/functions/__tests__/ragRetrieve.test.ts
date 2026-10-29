@@ -4,6 +4,7 @@
  * `_shared/retrieval.retrieveChunks`. These tests pin its external contract:
  * never 400s, fails open to `{ results: [] }`, same headers, same fallback.
  */
+import { RATE_LIMITS } from '../_shared/rateLimits';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFakeSupabase, setFunctionEnv, type FakeSupabase } from './fakeSupabase';
 
@@ -128,9 +129,9 @@ describe('rag-retrieve', () => {
     expect(JSON.stringify(body)).not.toContain('fecal:dog');
   });
 
-  it('rate-limits a caller at 30 requests a minute', async () => {
+  it('rate-limits a caller at its per-minute limit', async () => {
     sb.rpc.mockResolvedValue({ data: [ROW], error: null });
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < RATE_LIMITS.ragRetrieve; i++) {
       expect((await ragRetrieve(post({ query: `q${i}` }))).status).toBe(200);
     }
     const limited = await ragRetrieve(post({ query: 'one too many' }));

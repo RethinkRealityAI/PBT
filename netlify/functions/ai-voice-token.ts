@@ -53,6 +53,7 @@ import {
   retrieveForScenario,
   sanitizeScenario,
 } from './_shared/ai';
+import { RATE_LIMITS, perMinute } from './_shared/rateLimits';
 import { isSwitchOn } from './_shared/flagRules';
 import { buildVoiceSystemPrompt } from '../../src/data/knowledge/promptBuilders';
 import { MODEL_LIVE } from '../../src/shared/ai/models';
@@ -106,7 +107,7 @@ export const VOICE_TOOLS = [
 ];
 
 export default async (req: Request): Promise<Response> => {
-  const limited = rateLimit(req, 'voice-token', { limit: 6, windowMs: 60_000 });
+  const limited = rateLimit(req, 'voice-token', perMinute(RATE_LIMITS.voiceToken));
   if (limited) return limited;
 
   const parsed = await parseJsonBody<VoiceTokenRequest>(req, MAX_BODY_BYTES);

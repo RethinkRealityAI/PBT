@@ -35,12 +35,13 @@
  */
 import { MAX_K, MAX_QUERY_CHARS, retrieveChunks, sanitizeFilters } from './_shared/retrieval';
 import { rateLimit } from './_shared/ai';
+import { RATE_LIMITS, perMinute } from './_shared/rateLimits';
 import type { RetrievedChunk } from '../../src/services/ragShared';
 
 /** The one knowledge scope a public, anonymous caller may search. */
 export const PUBLIC_RETRIEVAL_TOOL = 'roleplay';
 
-const RATE = { limit: 30, windowMs: 60_000 };
+const RATE = perMinute(RATE_LIMITS.ragRetrieve);
 
 const JSON_HEADERS = {
   'content-type': 'application/json',

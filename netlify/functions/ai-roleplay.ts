@@ -31,6 +31,7 @@ import {
   sanitizeTurns,
   withRetry,
 } from './_shared/ai';
+import { RATE_LIMITS, perMinute } from './_shared/rateLimits';
 import {
   buildCustomerSystemPrompt,
   END_SIMULATION_TOKEN,
@@ -51,7 +52,7 @@ import type { AiEmotion } from '../../src/services/types';
 const MAX_BODY_BYTES = 512 * 1024;
 
 export default async (req: Request): Promise<Response> => {
-  const limited = rateLimit(req, 'roleplay', { limit: 40, windowMs: 60_000 });
+  const limited = rateLimit(req, 'roleplay', perMinute(RATE_LIMITS.roleplay));
   if (limited) return limited;
 
   const parsed = await parseJsonBody<RoleplayRequest>(req, MAX_BODY_BYTES);

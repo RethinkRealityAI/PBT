@@ -41,6 +41,7 @@ import {
   sanitizeScenario,
   sanitizeTurns,
 } from './_shared/ai';
+import { RATE_LIMITS, perMinute } from './_shared/rateLimits';
 import { writeAnonymousSession } from './_shared/anonSessions';
 import { scenarioSummaryLine } from '../../src/data/scenarioSummary';
 import { MODEL_LIVE, MODEL_TEXT } from '../../src/shared/ai/models';
@@ -101,10 +102,10 @@ export default async (req: Request): Promise<Response> => {
   // daily per-device row cap still bounds inserts).
   const limited =
     body.claim === true
-      ? rateLimit(req, 'session-claim', { limit: 10, windowMs: 60_000 })
+      ? rateLimit(req, 'session-claim', perMinute(RATE_LIMITS.sessionClaim))
       : checkpoint
-        ? rateLimit(req, 'session-checkpoint', { limit: 240, windowMs: 60_000 })
-        : rateLimit(req, 'session-save', { limit: 20, windowMs: 60_000 });
+        ? rateLimit(req, 'session-checkpoint', perMinute(RATE_LIMITS.sessionCheckpoint))
+        : rateLimit(req, 'session-save', perMinute(RATE_LIMITS.sessionSave));
   if (limited) return limited;
 
   const caller = await readCaller(req);

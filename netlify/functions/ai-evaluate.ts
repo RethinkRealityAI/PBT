@@ -36,6 +36,7 @@ import {
   sanitizeScenario,
   sanitizeTurns,
 } from './_shared/ai';
+import { RATE_LIMITS, perMinute } from './_shared/rateLimits';
 import { scenarioSummaryLine } from '../../src/data/scenarioSummary';
 import type { Scenario } from '../../src/data/scenarios';
 import { MODEL_LIVE, MODEL_TEXT } from '../../src/shared/ai/models';
@@ -54,7 +55,7 @@ import {
   type SessionOwner,
 } from './_shared/anonSessions';
 import type { ChatMessage, ScoreReport } from '../../src/services/types';
-import { scoreTranscript, unavailableReport } from './_shared/scoring';
+import { scoreTranscript, staffTurnCount, unavailableReport } from './_shared/scoring';
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -119,7 +120,7 @@ async function persistScore(sb: SupabaseClient, args: PersistArgs): Promise<bool
 }
 
 export default async (req: Request): Promise<Response> => {
-  const limited = rateLimit(req, 'evaluate', { limit: 10, windowMs: 60_000 });
+  const limited = rateLimit(req, 'evaluate', perMinute(RATE_LIMITS.evaluate));
   if (limited) return limited;
 
   const parsed = await parseJsonBody<EvaluateRequest>(req, MAX_BODY_BYTES);
@@ -146,6 +147,15 @@ export default async (req: Request): Promise<Response> => {
   } catch (err) {
     console.error('[ai-evaluate]', errorMessage(err));
     return aiError(500, 'server', 'AI is not configured');
+  }
+
+  // Nothing the trainee said → nothing to grade. Never ask the model: given a
+  // customer-only transcript it invents a score (workshop voice sessions came
+  // back 0–89 on no trainee words). Old app versions still in the field send
+  // these, so the guard lives here, not only in the browser.
+  if (staffTurnCount(transcript) === 0) {
+    const payload: EvaluateResponse = { report: unavailableReport(), persisted: false };
+    return ok(payload);
   }
 
   const endedEarly = ENDED_EARLY_VALUES.includes(body.endedEarly as EndedEarly)

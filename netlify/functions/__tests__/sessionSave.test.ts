@@ -3,6 +3,7 @@
  * `session-save` — anonymous session recording + the sign-in claim.
  * Supabase is the chainable fake; no AI call is involved.
  */
+import { RATE_LIMITS } from '../_shared/rateLimits';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   anonSessionsTable,
@@ -184,7 +185,7 @@ describe('session-save · record', () => {
 
   it('is rate-limited per IP, separately from claims', async () => {
     let last: Response | null = null;
-    for (let i = 0; i < 21; i++) last = await save(jsonRequest('session-save', body()));
+    for (let i = 0; i < RATE_LIMITS.sessionSave + 1; i++) last = await save(jsonRequest('session-save', body()));
     expect(last?.status).toBe(429);
     const headers = signIn('user-1');
     const claimed = await save(

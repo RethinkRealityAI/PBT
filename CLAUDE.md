@@ -121,7 +121,9 @@ long-lived key). `npm run check:bundle` fails if a key-shaped string
 Wire contract: `src/shared/ai/contract.ts` (read its header — it states what the
 server trusts). Transport: `src/services/aiApi.ts::postAi` attaches the Supabase
 bearer when signed in and the `allowTelemetry` / `preview` flags. Shared server
-helpers: `netlify/functions/_shared/ai.ts` (caller identity, per-IP rate limit,
+helpers: `netlify/functions/_shared/ai.ts` (caller identity, per-IP rate limit —
+the trainee-facing limits live in `_shared/rateLimits.ts`, sized for a
+workshop room of ~40 on ONE IP; never size one for a single person,
 payload bounds, `simulation_config` + `scenario_overrides` loaders, server-side
 telemetry). Model IDs live in `src/shared/ai/models.ts`.
 
@@ -224,7 +226,7 @@ Model strings live in `src/shared/ai/models.ts` (`MODEL_TEXT`, `MODEL_LIVE`, emb
 
 **Voice pipeline:** `src/services/voiceSession.ts` — the ordering is load-bearing (and `ai-voice-token` refuses a token with 403 `disabled` while *Voice mode in chat* is off — see Routing → Feature switches): mic **permission first** (`acquireMic()` is the first await in `start()`, inside the Begin tap — nothing connects or plays until granted), then playback `AudioContext`, then **`POST ai-voice-token`** (the server builds the voice system prompt with server-loaded config/overrides/RAG and mints a single-use token whose model + system prompt + tools are locked — `uses: 1`, new-session window 2 min, session life 15 min > `voiceSessionMaxMs()`, the longest session the time limit allows), then `ai.live.connect` on a client created with that token and `httpOptions: { apiVersion: 'v1alpha' }`; the capture processor is wired inside `onopen`. The browser never builds or sees the voice system prompt. Re-entrancy guard runs synchronously before any await (double-Begin must not open two sockets). A playback-end watchdog force-exits `aiSpeaking` if `source.onended` is missed — a stuck `aiSpeaking` mutes the mic for the rest of the session. Avoid calling `session.close()` twice (guarded).
 
-**Voice time limit — ask, never cut off** (`src/shared/ai/voiceCaps.ts`, 2026-10-29, after workshop trainees were cut off at 5:00 and left with a near-zero or no score): a countdown shows in the last minute; at the deadline the mic pauses (`inputPausedRef`), the customer's in-flight line plays out, and `TimeUpModal` asks **End and get my score** / **Keep going (+3 min)** (≤ 2 extensions) / **Start over** (unscored). Not dismissible; an unanswered prompt auto-scores after 45 s through the natural-end path, so an abandoned tab still stops billing and still keeps the work. Every choice logs `voice_time_up` (`meta.choice`: score · extend · restart · auto_score). The token TTL must stay > `voiceSessionMaxMs()` (pinned in `aiHandlers.test.ts`). A connection lost after the trainee spoke offers **Score what you have** (the transcript is still in memory) next to Start over — "Try again" alone used to discard it. At the deadline a trainee mid-sentence gets up to 10 s to finish (`finishSentenceMs`); a session that ended on the time limit is scored with `endedEarly: 'time_limit'`.
+**Voice time limit — ask, never cut off** (`src/shared/ai/voiceCaps.ts`, 2026-10-29, after workshop trainees were cut off at 5:00 and left with a near-zero or no score): a countdown shows in the last minute; at the deadline the mic pauses (`inputPausedRef`), the customer's in-flight line plays out, and `TimeUpModal` asks **End and get my score** / **Keep going (+3 min)** (≤ 2 extensions) / **Start over** (unscored). Not dismissible; an unanswered prompt auto-scores after 45 s through the natural-end path, so an abandoned tab still stops billing and still keeps the work. Every choice logs `voice_time_up` (`meta.choice`: score · extend · restart · auto_score). The token TTL must stay > `voiceSessionMaxMs()` (pinned in `aiHandlers.test.ts`). A connection lost after the trainee spoke offers **Score what you have** (the transcript is still in memory) next to Start over — "Try again" alone used to discard it. At the deadline a trainee mid-sentence gets up to 10 s to finish (`finishSentenceMs`); a session that ended on the time limit is scored with `endedEarly: 'time_limit'`. `ai-evaluate` itself refuses (honest "unavailable", no model call) a transcript with no trainee turn — older app versions still send them.
 
 **Trainee speech always reaches the voice transcript** (2026-10-29): `inputTranscription` is kept whatever the AI is doing (the mic gate already stops echo — Gemini delivers the trainee's words late, after the reply starts) and committed BEFORE the AI line it preceded; no 200-char ceiling. Before this, workshop voice sessions were saved with the customer's lines only and scored 0–89 on nothing. A session with **no** trainee speech is never scored (`heardTrainee: false` → "We couldn't hear you", saved unscored).
 
@@ -257,7 +259,7 @@ Per-consumer tool: `ai-roleplay` / `ai-voice-token` / browser `useTextChat` →
 `scenario-builder`; `ai-fecal-scan` → `fecal-scan` + species (no docSlugs).
 The public `rag-retrieve` endpoint (browser `useTextChat`) **forces**
 `tool: 'roleplay'` whatever the body says, strips provenance (slug/title)
-from its response, and is rate-limited 30/min per IP — a caller cannot use it
+from its response, and is rate-limited per IP (`RATE_LIMITS.ragRetrieve`) — a caller cannot use it
 to read fecal-scan or scoring-only documents.
 Admin tester: `admin-knowledge-search` (permission `knowledge.read`) runs the
 same retrieval and echoes the exact filter — that is how you *prove* a cat
