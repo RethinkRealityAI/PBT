@@ -54,4 +54,6 @@ export const history: Record<keyof typeof en, string> = {
   'history.detail.speaker.you': 'Vous',
   'history.detail.bottom.home': 'Accueil',
   'history.detail.bottom.back': "Retour à l'historique",
+  /** Séance interrompue (onglet fermé, connexion perdue) puis évaluée après coup. */
+  'history.recovered': 'Récupérée après interruption',
 };

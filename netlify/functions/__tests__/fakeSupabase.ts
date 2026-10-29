@@ -34,6 +34,7 @@ const CHAIN_OPS = [
   'gte',
   'lt',
   'lte',
+  'contains',
   'is',
   'in',
   'order',

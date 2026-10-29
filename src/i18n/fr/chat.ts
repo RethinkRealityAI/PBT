@@ -22,7 +22,7 @@ export const chat: Record<keyof typeof enChat, string> = {
   'chat.timeUp.keepGoing': 'Continuer (+{minutes} min)',
   'chat.timeUp.startOver': 'Recommencer (celle-ci ne sera pas évaluée)',
   /** {time} est au format m:ss. */
-  'chat.timeUp.autoScore': 'Aucun choix ? Nous l’évaluerons pour vous dans {time}.',
+  'chat.timeUp.autoScore': 'Aucun choix ? Nous l’évaluerons pour vous dans {time}.',
 
   'chat.emotion.defensive': 'Défensif',
   'chat.emotion.receptive': 'Réceptif',
@@ -98,6 +98,25 @@ export const chat: Record<keyof typeof enChat, string> = {
     'Connexion vocale perdue. Vous pouvez quand même obtenir un résultat pour la conversation que vous avez eue, ou recommencer.',
   'chat.voice.lost.scoreSoFar': 'Obtenir mon résultat',
   'chat.voice.lost.startOver': 'Recommencer',
+  /** La séance s’est terminée sans qu’aucune parole du stagiaire soit captée — rien n’a été évalué. */
+  'chat.voice.notHeard':
+    'Nous n’avons rien entendu de votre part pendant cette séance, elle n’a donc pas été évaluée. Vérifiez que votre microphone est activé et non en sourdine, installez-vous dans un endroit plus calme si possible, puis recommencez.',
+
+  // Passage au mode écrit pendant une conversation vocale en cours (`ChatScreen`)
+  'chat.switchModal.title': 'Passer au mode écrit ?',
+  'chat.switchModal.subtitle':
+    'Vous êtes au milieu d’une conversation vocale. Obtenez d’abord votre résultat, ou changez maintenant et elle ne sera pas évaluée ici.',
+  'chat.switchModal.score': 'Voir d’abord mon résultat',
+  'chat.switchModal.switch': 'Changer sans évaluation',
+  'chat.switchModal.cancel': 'Continuer à parler',
+
+  // Avis à l’accueil après l’enregistrement et l’évaluation d’une séance interrompue (`RecoveredSessionNotice`)
+  'chat.recovered.title': 'Nous avons enregistré votre dernière séance',
+  /** {score} est un nombre entier de 0 à 100. */
+  'chat.recovered.body':
+    'Elle a été interrompue avant la fin, alors nous avons évalué ce que vous avez dit : {score}/100.',
+  'chat.recovered.view': 'Voir mon résultat',
+  'chat.recovered.dismiss': 'Masquer',
   'chat.voice.error.startFailed':
     'Le mode vocal n’a pas pu démarrer : {reason}',
   'chat.voice.error.unknown': 'erreur inconnue',

@@ -171,4 +171,10 @@ export interface SessionRecord {
    * user-editable localStorage).
    */
   difficulty?: 1 | 2 | 3 | 4;
+  /**
+   * The session was interrupted (tab closed, connection dropped, app
+   * reloaded) and scored afterwards from its saved checkpoint
+   * (`src/features/chat/sessionCheckpoint.ts`). History says so.
+   */
+  recovered?: boolean;
 }

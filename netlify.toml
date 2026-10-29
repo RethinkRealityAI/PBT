@@ -42,6 +42,12 @@
 [functions."ai-fecal-scan"]
   included_files = ["public/fecal-scan/**"]
 
+# Hourly: score sessions that were saved but never scored (an interrupted tab,
+# a dropped connection, a trainee who left mid-conversation). The scheduled
+# function only dispatches; `sessions-recover-background` does the scoring.
+[functions."sessions-recover"]
+  schedule = "@hourly"
+
 # Local `netlify dev`: Vite is pinned to 3006 in vite.config.ts; without this
 # the CLI waits on Vite's default 5173 and times out.
 [dev]

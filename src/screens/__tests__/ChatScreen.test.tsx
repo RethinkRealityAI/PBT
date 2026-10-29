@@ -19,6 +19,8 @@ const chatEnd = vi.fn();
 const chatApplyVoiceSessionComplete = vi.fn();
 const chatReset = vi.fn();
 const chatSend = vi.fn();
+const chatCheckpointVoice = vi.fn();
+const chatRecordVoiceUnscored = vi.fn();
 
 let currentScenario: Scenario = SEED_SCENARIOS[0];
 /** The flag snapshot `useResolvedLibraryScenarios` sees (null = none loaded). */
@@ -123,6 +125,8 @@ vi.mock('../../app/providers/ChatProvider', () => ({
     end: chatEnd,
     applyVoiceSessionComplete: chatApplyVoiceSessionComplete,
     reset: chatReset,
+    checkpointVoice: chatCheckpointVoice,
+    recordVoiceUnscored: chatRecordVoiceUnscored,
     startedAt: null,
   }),
 }));
@@ -141,6 +145,7 @@ vi.mock('../../services/voiceSession', () => ({
     extensionsLeft: voiceExtensionsLeft,
     extendSession,
     noteTimeUpChoice,
+    sessionId: 'voice-session-1',
     start: voiceStart,
     stop: voiceStop,
     endSession: voiceEndSession,
@@ -541,5 +546,81 @@ describe('ChatScreen voice connection lost mid-conversation', () => {
     render(<ChatScreen />);
     expect(screen.queryByRole('button', { name: 'Score what you have' })).toBeNull();
     expect(screen.getByRole('button', { name: /try voice again/i })).toBeInTheDocument();
+  });
+});
+
+describe('ChatScreen — a voice conversation is never silently lost', () => {
+  beforeEach(() => {
+    currentScenario = SEED_SCENARIOS[0];
+    flagSnapshot = null;
+    flagValues = {};
+    __resetPreviewRuns();
+    resetVoiceMock();
+    vi.clearAllMocks();
+    voiceStatus = 'listening';
+    voiceMessages = [
+      { role: 'ai', text: 'That price feels steep.', timestamp: 1 },
+      { role: 'user', text: 'I hear you.', timestamp: 2 },
+    ];
+  });
+
+  it('checkpoints the live voice transcript', () => {
+    render(<ChatScreen />);
+    expect(chatCheckpointVoice).toHaveBeenCalledWith(voiceMessages, 'voice-session-1');
+  });
+
+  it('asks before switching to text mid-conversation — and scores it on request', async () => {
+    const user = userEvent.setup();
+    voiceEndSession.mockResolvedValue({ report: null, transcript: voiceMessages, sessionId: 'voice-session-1', heardTrainee: true });
+    render(<ChatScreen />);
+    await user.click(screen.getByRole('button', { name: 'Text' }));
+    expect(screen.getByRole('dialog', { name: 'Switch to text?' })).toBeInTheDocument();
+    expect(voiceStop).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Get my score first' }));
+    expect(voiceEndSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Switch without scoring" still saves the conversation', async () => {
+    const user = userEvent.setup();
+    render(<ChatScreen />);
+    await user.click(screen.getByRole('button', { name: 'Text' }));
+    await user.click(screen.getByRole('button', { name: 'Switch without scoring' }));
+    expect(chatRecordVoiceUnscored).toHaveBeenCalledWith(voiceMessages, 'voice-session-1', 'user_exit');
+    expect(voiceStop).toHaveBeenCalled();
+  });
+
+  it('switches straight away when the trainee has not spoken yet', async () => {
+    const user = userEvent.setup();
+    voiceMessages = [{ role: 'ai', text: 'That price feels steep.', timestamp: 1 }];
+    render(<ChatScreen />);
+    await user.click(screen.getByRole('button', { name: 'Text' }));
+    expect(screen.queryByRole('dialog', { name: 'Switch to text?' })).toBeNull();
+    expect(voiceStop).toHaveBeenCalled();
+  });
+
+  it('the scenario arrows save the conversation before moving on', async () => {
+    const user = userEvent.setup();
+    render(<ChatScreen />);
+    await user.click(screen.getByRole('button', { name: /next scenario/i }));
+    expect(chatRecordVoiceUnscored).toHaveBeenCalledWith(voiceMessages, 'voice-session-1', 'user_exit');
+  });
+
+  it('leaving the screen mid-conversation saves it', () => {
+    const { unmount } = render(<ChatScreen />);
+    unmount();
+    expect(chatRecordVoiceUnscored).toHaveBeenCalledWith(voiceMessages, 'voice-session-1', 'user_exit');
+  });
+
+  it('a session in which the trainee was never heard is not scored — they are told why', async () => {
+    const user = userEvent.setup();
+    const aiOnly = [{ role: 'ai' as const, text: 'Hello? Are you there?', timestamp: 1 }];
+    voiceEndSession.mockResolvedValue({ report: null, transcript: aiOnly, sessionId: 'voice-session-1', heardTrainee: false });
+    voiceTimeUp = true;
+    voiceTimeUpAutoEndAt = Date.now() + 40_000;
+    render(<ChatScreen />);
+    await user.click(screen.getByRole('button', { name: 'End and get my score' }));
+    await vi.waitFor(() => expect(chatRecordVoiceUnscored).toHaveBeenCalledWith(aiOnly, 'voice-session-1', 'error'));
+    expect(chatApplyVoiceSessionComplete).not.toHaveBeenCalled();
+    expect(screen.getByText(/couldn't hear you/i)).toBeInTheDocument();
   });
 });

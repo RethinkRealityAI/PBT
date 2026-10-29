@@ -80,6 +80,17 @@ function fullRow(over: Record<string, unknown> = {}) {
   };
 }
 
+describe('toSessionSummary — a session scored after an interruption', () => {
+  it('is flagged recovered from score_report.recovered, in the full and lite reads', () => {
+    const row = fullRow();
+    const recovered = { ...row, score_report: { ...(row.score_report as object), recovered: { at: '2026-10-29T20:00:00Z', endedReason: 'user_exit' } } };
+    expect(toSessionSummary(recovered).recovered).toBe(true);
+    expect(toSessionSummary(row).recovered).toBe(false);
+    const lite = fromLiteRow({ ...row, score_report: undefined, sr_overall: 70, sr_recovered: { at: 'x', endedReason: 'interrupted' } });
+    expect(toSessionSummary(lite).recovered).toBe(true);
+  });
+});
+
 describe('toSessionSummary — a full modern row', () => {
   it('derives every field', () => {
     const s = toSessionSummary(fullRow(), { hintsBySession: new Map([['s-1', 2]]) });
@@ -89,6 +100,7 @@ describe('toSessionSummary — a full modern row', () => {
       anon_session_id: null,
       locale: null,
       reconstructed: false,
+      recovered: false,
       created_at: '2026-10-01T12:10:00.000Z',
       started_at: '2026-10-01T12:05:00.000Z',
       completed: true,

@@ -168,6 +168,13 @@ function tokenRequest(): Record<string, any> {
   return call[1];
 }
 
+/** Drive one finished trainee utterance through the input transcription. */
+function deliverUserTurn(text: string) {
+  act(() => {
+    callbacks.onmessage({ serverContent: { inputTranscription: { text, finished: true } } });
+  });
+}
+
 /** Drive one completed AI turn through the message callback. */
 function deliverAiTurn(text: string) {
   act(() => {
@@ -182,6 +189,7 @@ describe('voiceSession — telemetry attribution', () => {
     evaluateConversation.mockResolvedValue(null);
     const { result } = await startSession();
     deliverAiTurn('That price feels steep to me.');
+    deliverUserTurn('I hear you — what matters most to you?');
 
     let outcome: Awaited<ReturnType<typeof result.current.endSession>> | undefined;
     await act(async () => {
@@ -194,7 +202,8 @@ describe('voiceSession — telemetry attribution', () => {
     expect(options.sessionId).toHaveLength(36);
     // The scorer's telemetry id IS the id the consumer saves the record under…
     expect(outcome?.sessionId).toBe(options.sessionId);
-    expect(outcome?.transcript).toHaveLength(1);
+    expect(outcome?.transcript).toHaveLength(2);
+    expect(outcome?.heardTrainee).toBe(true);
     // …and the same id was attributed to the token mint, so the server-side
     // telemetry for the voice turns lines up with the scorer's row.
     expect(tokenRequest().sessionId).toBe(options.sessionId);
@@ -204,11 +213,13 @@ describe('voiceSession — telemetry attribution', () => {
     evaluateConversation.mockResolvedValue(null);
     const { result } = await startSession();
     deliverAiTurn('That price feels steep to me.');
+    deliverUserTurn('Tell me more.');
     await act(async () => {
       await result.current.endSession();
     });
     const options = evaluateConversation.mock.calls[0][2];
     expect(options.mode).toBe('voice');
+    expect(options).not.toHaveProperty('endedEarly');
     expect(options).not.toHaveProperty('config');
     expect(options).not.toHaveProperty('retrieved');
   });
@@ -431,6 +442,7 @@ describe('voiceSession — locale', () => {
     evaluateConversation.mockResolvedValue(null);
     const { result } = await startSession({ locale: 'fr' });
     deliverAiTurn('Ben, ça coûte pas mal cher pour de la bouffe à chien.');
+    deliverUserTurn('Je comprends, parlons-en.');
     await act(async () => {
       await result.current.endSession();
     });
@@ -618,6 +630,7 @@ describe('voiceSession — 5-minute time limit (ask, never cut off)', () => {
       }),
     );
     // And the transcript is still there to score.
+    deliverUserTurn('Could we try a small bag first?');
     deliverAiTurn('Fine, I will think about it.');
     let outcome: Awaited<ReturnType<typeof result.current.endSession>> | undefined;
     evaluateConversation.mockResolvedValue(null);
@@ -709,5 +722,140 @@ describe('voiceSession — 5-minute time limit (ask, never cut off)', () => {
     expect(VOICE_SESSION_CAPS.hardCapMs).toBe(5 * 60_000);
     expect(VOICE_SESSION_CAPS.hardCapMs - VOICE_SESSION_CAPS.warnMs).toBe(60_000);
     expect(VOICE_SESSION_CAPS.warnLeadMs).toBe(60_000);
+  });
+});
+
+describe('voiceSession — the trainee\'s words always reach the transcript', () => {
+  it('keeps a transcription that arrives while the customer is already replying, before that reply', async () => {
+    evaluateConversation.mockResolvedValue(null);
+    const { result } = await startSession();
+    deliverAiTurn('He is just big-boned.');
+    // The trainee spoke; Gemini starts the reply audio first…
+    act(() => {
+      callbacks.onmessage({
+        serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm', data: btoa('ab') } }] } },
+      });
+    });
+    expect(result.current.status).toBe('aiSpeaking');
+    // …and only then delivers the trainee's words (the old code dropped these).
+    act(() => {
+      callbacks.onmessage({ serverContent: { inputTranscription: { text: 'How often does he walk?' } } });
+    });
+    act(() => {
+      callbacks.onmessage({
+        serverContent: { outputTranscription: { text: 'About twice a day.' }, turnComplete: true },
+      });
+    });
+    expect(result.current.messages.map((m) => [m.role, m.text])).toEqual([
+      // The opening turn is pinned to the scripted line.
+      ['ai', SCENARIO.openingLine],
+      ['user', 'How often does he walk?'],
+      ['ai', 'About twice a day.'],
+    ]);
+  });
+
+  it('never drops a long answer (the old 200-character ceiling did)', async () => {
+    const { result } = await startSession();
+    deliverAiTurn('Why change?');
+    const long = 'I completely understand. '.repeat(20).trim();
+    act(() => {
+      callbacks.onmessage({ serverContent: { inputTranscription: { text: long } } });
+    });
+    act(() => {
+      callbacks.onmessage({
+        serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm', data: btoa('ab') } }] } },
+      });
+    });
+    expect(result.current.messages.at(-1)).toMatchObject({ role: 'user', text: long });
+  });
+
+  it('does not score a session in which the trainee was never heard', async () => {
+    const { result } = await startSession();
+    deliverAiTurn('Do we really need this?');
+    deliverAiTurn('Hello? Are you there?');
+    let outcome: Awaited<ReturnType<typeof result.current.endSession>> | undefined;
+    await act(async () => {
+      outcome = await result.current.endSession();
+    });
+    expect(evaluateConversation).not.toHaveBeenCalled();
+    expect(outcome?.heardTrainee).toBe(false);
+    expect(outcome?.report).toBeNull();
+    expect(outcome?.transcript).toHaveLength(2);
+  });
+
+  it('exposes the session id it saves under', async () => {
+    const { result } = await startSession();
+    expect(result.current.sessionId).toBe(tokenRequest().sessionId);
+  });
+});
+
+describe('voiceSession — time limit and the scorer', () => {
+  it('tells the scorer when the time limit ended the conversation', async () => {
+    evaluateConversation.mockResolvedValue(null);
+    const { result } = await startSession();
+    deliverAiTurn('Opening.');
+    deliverUserTurn('I hear you.');
+    act(() => {
+      vi.advanceTimersByTime(VOICE_SESSION_CAPS.hardCapMs);
+    });
+    expect(result.current.timeUp).toBe(true);
+    await act(async () => {
+      await result.current.endSession();
+    });
+    expect(evaluateConversation.mock.calls[0][2].endedEarly).toBe('time_limit');
+  });
+
+  it('a session that kept going and ended naturally is not flagged', async () => {
+    evaluateConversation.mockResolvedValue(null);
+    const { result } = await startSession();
+    deliverAiTurn('Opening.');
+    deliverUserTurn('I hear you.');
+    act(() => {
+      vi.advanceTimersByTime(VOICE_SESSION_CAPS.hardCapMs);
+    });
+    act(() => {
+      result.current.extendSession();
+    });
+    await act(async () => {
+      await result.current.endSession();
+    });
+    expect(evaluateConversation.mock.calls[0][2]).not.toHaveProperty('endedEarly');
+  });
+
+  it('lets a trainee who is mid-sentence finish before pausing (up to the grace)', async () => {
+    const { result } = await startSession();
+    deliverAiTurn('Opening.');
+    act(() => {
+      vi.advanceTimersByTime(VOICE_SESSION_CAPS.hardCapMs - 100);
+      callbacks.onmessage({ serverContent: { inputTranscription: { text: 'What I would suggest is' } } });
+    });
+    expect(result.current.status).toBe('thinking');
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    expect(result.current.timeUp).toBe(false);
+    // They finish; the customer replies; then the prompt.
+    act(() => {
+      callbacks.onmessage({ serverContent: { inputTranscription: { text: ' a slower switch.', finished: true } } });
+      callbacks.onmessage({ serverContent: { outputTranscription: { text: 'Okay.' }, turnComplete: true } });
+    });
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(result.current.timeUp).toBe(true);
+    expect(result.current.messages.some((m) => m.role === 'user' && m.text.includes('slower switch'))).toBe(true);
+  });
+
+  it('the sentence grace is bounded', async () => {
+    const { result } = await startSession();
+    deliverAiTurn('Opening.');
+    act(() => {
+      vi.advanceTimersByTime(VOICE_SESSION_CAPS.hardCapMs - 100);
+      callbacks.onmessage({ serverContent: { inputTranscription: { text: 'And another thing' } } });
+    });
+    act(() => {
+      vi.advanceTimersByTime(VOICE_SESSION_CAPS.finishSentenceMs + 1_000);
+    });
+    expect(result.current.timeUp).toBe(true);
   });
 });

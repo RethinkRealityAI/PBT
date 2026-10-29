@@ -21,44 +21,32 @@
  * (`20260911000000_server_authoritative_scores.sql`) rejects it. This
  * function is the only writer of `score_report` / `score_overall`.
  */
-import { Type, type GoogleGenAI } from '@google/genai';
+import type { GoogleGenAI } from '@google/genai';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getGeminiClient } from './_shared/gemini';
 import {
   aiError,
   errorMessage,
   isUuid,
-  loadPromptOverrides,
-  loadSimulationConfig,
   ok,
   parseJsonBody,
   rateLimit,
   readCaller,
   readLocale,
-  readUsage,
-  recordCallServer,
-  retrieveForScenario,
   sanitizeScenario,
   sanitizeTurns,
-  withRetry,
 } from './_shared/ai';
-import { buildScoringSystemPrompt } from '../../src/data/knowledge/promptBuilders';
-import {
-  bandFor,
-  weightedOverall,
-  type DimensionKey,
-} from '../../src/data/knowledge/scoringRubric';
-import { resolveWeights } from '../../src/data/knowledge/simulationConfig';
 import { scenarioSummaryLine } from '../../src/data/scenarioSummary';
 import type { Scenario } from '../../src/data/scenarios';
 import { MODEL_LIVE, MODEL_TEXT } from '../../src/shared/ai/models';
 import {
+  ENDED_EARLY_VALUES,
   isAnonSessionId,
+  type EndedEarly,
   type EvaluateRequest,
   type EvaluateResponse,
 } from '../../src/shared/ai/contract';
-import { estimateCostUsd, estimateTokens } from '../../src/shared/ai/telemetryHeuristics';
-import { DEFAULT_LOCALE, isLocale, type Locale } from '../../src/i18n/locales';
+import { isLocale, type Locale } from '../../src/i18n/locales';
 import {
   checkSessionOwner,
   ownerColumns,
@@ -66,146 +54,9 @@ import {
   type SessionOwner,
 } from './_shared/anonSessions';
 import type { ChatMessage, ScoreReport } from '../../src/services/types';
+import { scoreTranscript, unavailableReport } from './_shared/scoring';
 
 const MAX_BODY_BYTES = 1024 * 1024;
-
-/**
- * Localized `description` for a structured-output field whose VALUE is
- * free-form prose the trainee will read. Empty for English so the English
- * schema literal is byte-identical to what it always was.
- */
-function frDescription(locale: Locale | undefined, french: string): { description?: string } {
-  return (locale ?? DEFAULT_LOCALE) === 'fr' ? { description: french } : {};
-}
-
-const ZERO_DIMENSIONS: Record<DimensionKey, number> = {
-  acknowledge: 0,
-  clarify: 0,
-  transform: 0,
-  empathy: 0,
-  rapport: 0,
-};
-
-/** The placeholder the browser used to build — text identical. */
-function unavailableReport(): ScoreReport {
-  return {
-    ...ZERO_DIMENSIONS,
-    overall: 0,
-    band: 'poor',
-    critique:
-      'We could not score this session right now. Please try again, or check your network.',
-    betterAlternative: '—',
-    perDimensionNotes: {
-      acknowledge: '',
-      clarify: '',
-      transform: '',
-      empathy: '',
-      rapport: '',
-    },
-    keyMoments: [],
-    turnSentiment: [],
-    scoreUnavailable: true,
-  };
-}
-
-function buildResponseSchema(locale: Locale) {
-  return {
-    type: Type.OBJECT,
-    properties: {
-      acknowledge: { type: Type.INTEGER, description: '0-100' },
-      clarify: { type: Type.INTEGER, description: '0-100' },
-      transform: { type: Type.INTEGER, description: '0-100' },
-      empathy: { type: Type.INTEGER, description: '0-100' },
-      rapport: { type: Type.INTEGER, description: '0-100' },
-      critique: {
-        type: Type.STRING,
-        ...frDescription(
-          locale,
-          'Critique en plusieurs paragraphes, rédigée en français canadien. Les extraits du dialogue sont cités mot pour mot dans la langue où ils ont été dits.',
-        ),
-      },
-      betterAlternative: {
-        type: Type.STRING,
-        ...frDescription(locale, 'Exemple de réplique améliorée, en français canadien.'),
-      },
-      perDimensionNotes: {
-        type: Type.OBJECT,
-        properties: {
-          acknowledge: {
-            type: Type.STRING,
-            ...frDescription(locale, 'Note de coaching en français canadien.'),
-          },
-          clarify: {
-            type: Type.STRING,
-            ...frDescription(locale, 'Note de coaching en français canadien.'),
-          },
-          transform: {
-            type: Type.STRING,
-            ...frDescription(locale, 'Note de coaching en français canadien.'),
-          },
-          empathy: {
-            type: Type.STRING,
-            ...frDescription(locale, 'Note de coaching en français canadien.'),
-          },
-          rapport: {
-            type: Type.STRING,
-            ...frDescription(locale, 'Note de coaching en français canadien.'),
-          },
-        },
-        required: ['acknowledge', 'clarify', 'transform', 'empathy', 'rapport'],
-      },
-      keyMoments: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            ts: { type: Type.STRING },
-            // `type` stays a machine value (win|miss) in every locale.
-            type: { type: Type.STRING },
-            label: {
-              type: Type.STRING,
-              ...frDescription(locale, 'Titre court du moment, en français canadien.'),
-            },
-            quote: {
-              type: Type.STRING,
-              ...frDescription(
-                locale,
-                "Extrait du dialogue cité MOT POUR MOT, dans la langue où il a été dit — ne jamais traduire une citation.",
-              ),
-            },
-          },
-          required: ['ts', 'type', 'label', 'quote'],
-        },
-      },
-      // Per-turn sentiment arc — drives the sentiment chart in the admin
-      // session modal. One entry per transcript turn.
-      turnSentiment: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            idx: { type: Type.INTEGER },
-            speaker: { type: Type.STRING },
-            sentiment: { type: Type.NUMBER },
-          },
-          required: ['idx', 'speaker', 'sentiment'],
-        },
-      },
-    },
-    required: [
-      'acknowledge',
-      'clarify',
-      'transform',
-      'empathy',
-      'rapport',
-      'critique',
-      'betterAlternative',
-      'perDimensionNotes',
-      'keyMoments',
-      'turnSentiment',
-    ],
-  };
-}
 
 interface PersistArgs {
   owner: SessionOwner;
@@ -297,100 +148,24 @@ export default async (req: Request): Promise<Response> => {
     return aiError(500, 'server', 'AI is not configured');
   }
 
-  const config = await loadSimulationConfig(caller.sb);
-  const retrieved = await retrieveForScenario(caller.sb, scenario, config, 'scoring');
-  // Only `successCriteria` reaches the scorer — the customer's AI notes are
-  // not read here (they shape the role-play, never the grade).
-  const overrides = await loadPromptOverrides(caller.sb, scenario, body);
-  const systemInstruction = buildScoringSystemPrompt({
-    scenario,
-    config,
-    retrieved,
-    locale,
-    overrides: { successCriteria: overrides?.successCriteria ?? null },
-  });
-
-  const formatted = transcript
-    .map((m, i) => `${i + 1}. ${m.role === 'user' ? 'STAFF' : 'CUSTOMER'}: ${m.text}`)
-    .join('\n');
-
-  const evalT0 = performance.now();
+  const endedEarly = ENDED_EARLY_VALUES.includes(body.endedEarly as EndedEarly)
+    ? (body.endedEarly as EndedEarly)
+    : null;
   let report: ScoreReport;
   try {
-    // Same retry budget as the roleplay call — a single transient network
-    // blip must not turn a finished session into an unscorable one.
-    const { value: response } = await withRetry(() =>
-      ai.models.generateContent({
-        model: MODEL_TEXT,
-        contents: `Here is the full conversation transcript. Score the staff turns.\n\n${formatted}`,
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          responseSchema: buildResponseSchema(locale),
-        },
-      }),
-    );
-
-    const raw = response.text ?? '';
-    if (!raw) throw new Error('Empty score response');
-    const parsedOut = JSON.parse(raw) as Omit<ScoreReport, 'overall' | 'band'>;
-    // Coerce each dimension to a clamped 0–100 integer. The schema marks them
-    // required, but a drifting model can still omit one or return a
-    // non-number; without this the canonical report would carry NaN bars.
-    const dim = (v: unknown): number =>
-      typeof v === 'number' && Number.isFinite(v)
-        ? Math.max(0, Math.min(100, Math.round(v)))
-        : 0;
-    const dims: Record<DimensionKey, number> = {
-      acknowledge: dim(parsedOut.acknowledge),
-      clarify: dim(parsedOut.clarify),
-      transform: dim(parsedOut.transform),
-      empathy: dim(parsedOut.empathy),
-      rapport: dim(parsedOut.rapport),
-    };
-    const overall = weightedOverall(dims, resolveWeights(config));
-
-    const latency = Math.round(performance.now() - evalT0);
-    const usage = readUsage(response);
-    const tokensIn = usage.promptTokenCount ?? estimateTokens(formatted);
-    const tokensOut = usage.candidatesTokenCount ?? estimateTokens(raw);
-    await recordCallServer(
-      caller.sb,
-      {
-        sessionId,
-        userId: caller.userId,
-        callType: 'evaluate',
-        modelId: MODEL_TEXT,
-        latencyMs: latency,
-        tokensIn,
-        tokensOut,
-        costUsd: estimateCostUsd(MODEL_TEXT, tokensIn, tokensOut),
-      },
-      { allowTelemetry, preview },
-    );
-
-    // Only the model's own fields ride along. `scoreUnavailable` is OUR flag
-    // (the honest-failure fallback); a model that emitted it would turn a
-    // real score into "unavailable" in every consumer.
-    const { scoreUnavailable: _neverFromModel, ...modelFields } = parsedOut as Record<
-      string,
-      unknown
-    >;
-    report = { ...modelFields, ...dims, overall, band: bandFor(overall) } as ScoreReport;
+    report = await scoreTranscript(caller.sb, ai, {
+      scenario,
+      transcript,
+      locale,
+      sessionId,
+      userId: caller.userId,
+      body,
+      allowTelemetry,
+      preview,
+      endedEarly,
+    });
   } catch (err) {
     console.error('[ai-evaluate] evaluateConversation failed', errorMessage(err));
-    await recordCallServer(
-      caller.sb,
-      {
-        sessionId,
-        userId: caller.userId,
-        callType: 'evaluate',
-        modelId: MODEL_TEXT,
-        latencyMs: Math.round(performance.now() - evalT0),
-        error: errorMessage(err),
-      },
-      { allowTelemetry, preview },
-    );
     const payload: EvaluateResponse = { report: unavailableReport(), persisted: false };
     return ok(payload);
   }

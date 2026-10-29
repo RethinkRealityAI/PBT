@@ -194,6 +194,47 @@ describe('session-save · record', () => {
   });
 });
 
+describe('session-save · checkpoint (mid-conversation save)', () => {
+  it('records the conversation so far as in progress — no ending needed', async () => {
+    sb.setHandler('training_sessions', anonSessionsTable(SESSION, { own: true }));
+    const res = await save(
+      jsonRequest('session-save', body({ checkpoint: true, completed: false, endedReason: undefined })),
+    );
+    expect(await res.json()).toEqual({ persisted: true });
+    const fields = sb.callsFor('training_sessions')[0].ops[0].args[0] as Record<string, unknown>;
+    expect(fields.completed).toBe(false);
+    expect(fields.ended_reason).toBeNull();
+    expect(fields.transcript).toHaveLength(2);
+    expect(fields).not.toHaveProperty('score_report');
+  });
+
+  it('only ever updates a row that is still in progress — a late checkpoint cannot reopen a finished session', async () => {
+    sb.setHandler('training_sessions', anonSessionsTable(SESSION, { own: true }));
+    // Even a body claiming to be finished is stored as in progress.
+    await save(jsonRequest('session-save', body({ checkpoint: true })));
+    const ops = sb.callsFor('training_sessions')[0].ops;
+    expect(ops).toContainEqual({ op: 'eq', args: ['completed', false] });
+    expect(ops).toContainEqual({ op: 'is', args: ['ended_reason', null] });
+    expect((ops[0].args[0] as Record<string, unknown>).completed).toBe(false);
+  });
+
+  it('a final save is not guarded that way', async () => {
+    sb.setHandler('training_sessions', anonSessionsTable(SESSION, { own: true }));
+    await save(jsonRequest('session-save', body()));
+    const ops = sb.callsFor('training_sessions')[0].ops;
+    expect(ops).not.toContainEqual({ op: 'eq', args: ['completed', false] });
+  });
+
+  it('has its own, larger rate bucket — a room on one IP checkpointing does not block final saves', async () => {
+    sb.setHandler('training_sessions', anonSessionsTable(SESSION, { own: true }));
+    for (let i = 0; i < 30; i++) {
+      const res = await save(jsonRequest('session-save', body({ checkpoint: true })));
+      expect(res.status).toBe(200);
+    }
+    expect((await save(jsonRequest('session-save', body()))).status).toBe(200);
+  });
+});
+
 describe('session-save · claim', () => {
   it('requires a signed-in caller', async () => {
     const res = await save(jsonRequest('session-save', { claim: true, anonSessionId: DEVICE, sessionIds: [SESSION] }));

@@ -95,10 +95,16 @@ export default async (req: Request): Promise<Response> => {
   if (parsed instanceof Response) return parsed;
   const body = parsed.body as Partial<SessionSaveRequest> & Partial<ClaimRequest>;
 
+  const checkpoint = body.claim !== true && body.checkpoint === true;
+  // Checkpoints arrive after every exchange — a workshop room shares one IP —
+  // so they get their own, larger bucket; they only ever update a row (the
+  // daily per-device row cap still bounds inserts).
   const limited =
     body.claim === true
       ? rateLimit(req, 'session-claim', { limit: 10, windowMs: 60_000 })
-      : rateLimit(req, 'session-save', { limit: 20, windowMs: 60_000 });
+      : checkpoint
+        ? rateLimit(req, 'session-checkpoint', { limit: 240, windowMs: 60_000 })
+        : rateLimit(req, 'session-save', { limit: 20, windowMs: 60_000 });
   if (limited) return limited;
 
   const caller = await readCaller(req);
@@ -123,7 +129,7 @@ export default async (req: Request): Promise<Response> => {
   const endedReason = ENDED.includes(body.endedReason as SessionEndedReason)
     ? (body.endedReason as SessionEndedReason)
     : null;
-  if (!endedReason) return aiError(400, 'bad_request', 'endedReason is invalid');
+  if (!endedReason && !checkpoint) return aiError(400, 'bad_request', 'endedReason is invalid');
   const transcript = sanitizeTurns(body.transcript);
   const duration = Number(body.durationSeconds);
   const durationSeconds = Number.isFinite(duration)
@@ -138,15 +144,16 @@ export default async (req: Request): Promise<Response> => {
     transcript: transcript as unknown as Record<string, unknown>[],
     duration_seconds: durationSeconds,
     mode,
-    completed: body.completed === true,
-    ended_reason: endedReason,
+    // In progress: no ending yet (`sessions-recover` scores it if it never ends).
+    completed: checkpoint ? false : body.completed === true,
+    ended_reason: checkpoint ? null : endedReason,
     pushback_id: scenario.pushback.id,
     driver: scenario.suggestedDriver,
     scenario_summary: scenarioSummaryLine(scenario),
     model_id: mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
     turns: transcript.length,
     locale: isLocale(body.locale) ? body.locale : null,
-  });
+  }, { onlyInProgress: checkpoint });
   if (written === 'ok') return ok<SessionSaveResponse>({ persisted: true });
   return skip(written === 'error' ? 'failed' : written);
 };

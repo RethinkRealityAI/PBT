@@ -32,6 +32,9 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { TabBar } from '../shell/TabBar';
 import { useCloudSync } from '../features/auth/useCloudSync';
 import { logEvent, markScreenEntered, startAnalytics } from '../lib/analytics';
+import { recoverPendingSession } from '../features/chat/sessionCheckpoint';
+import { SESSION_RECOVERED_EVENT } from '../features/chat/RecoveredSessionNotice';
+import { persistToSupabase } from '../features/chat/useTextChat';
 
 /*
  * Screen loading strategy (spec §13.9 — main JS chunk < 500 kB gzip).
@@ -165,6 +168,7 @@ export function App() {
                     <TabBarHost />
                     <ScreenViewLogger />
                     <ChatAbandonWatcher />
+                    <SessionRecoveryRunner />
                     <PreviewRunner />
                   </AppFrame>
                 </ChatProvider>
@@ -209,6 +213,22 @@ function ChatAbandonWatcher() {
       void chat.abandon('user_exit');
     }
   }, [current, chat]);
+  return null;
+}
+
+/**
+ * Once per launch: an interrupted session this device checkpointed (tab
+ * closed, reload, dropped connection mid-conversation) is scored and added to
+ * the trainee's history — see `src/features/chat/sessionCheckpoint.ts`. Home
+ * then says so (`RecoveredSessionNotice`). Never in an admin preview.
+ */
+function SessionRecoveryRunner() {
+  useEffect(() => {
+    if (isPreviewMode()) return;
+    void recoverPendingSession(persistToSupabase).then((record) => {
+      if (record) window.dispatchEvent(new Event(SESSION_RECOVERED_EVENT));
+    });
+  }, []);
   return null;
 }
 

@@ -33,7 +33,7 @@ import {
   type SortKey,
 } from '../lib/sessionsExplorer';
 import { LANGUAGE_NONE, REBUILT_SCORE_HELP, languageKey, languageLabel } from '../lib/who';
-import { AnonAvatar, DeviceTag, RebuiltTag } from '../who';
+import { AnonAvatar, DeviceTag, RebuiltTag, RecoveredTag } from '../who';
 
 export interface TableRowPerson {
   name: string;
@@ -299,6 +299,11 @@ export function SessionsTable({
                     {s.reconstructed && (
                       <span style={{ marginRight: 6 }}>
                         <RebuiltTag />
+                      </span>
+                    )}
+                    {s.recovered && (
+                      <span style={{ marginRight: 6 }}>
+                        <RecoveredTag />
                       </span>
                     )}
                     {objection && (

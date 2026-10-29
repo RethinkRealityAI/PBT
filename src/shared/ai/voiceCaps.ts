@@ -31,8 +31,10 @@ export const VOICE_SESSION_CAPS = {
   extensionMs: 3 * 60_000,
   /** How many times a trainee may keep going. */
   maxExtensions: 2,
+  /** At the deadline, a trainee mid-sentence gets up to this long to finish. */
+  finishSentenceMs: 10_000,
   /** An unanswered time's-up prompt scores the session after this long. */
-  decisionMs: 45_000,
+  decisionMs: 40_000,
   /**
    * Longest wait for the customer's in-flight line to finish playing before
    * the prompt appears (mirrors the natural-end playback ceiling).
@@ -42,14 +44,14 @@ export const VOICE_SESSION_CAPS = {
 
 /**
  * The longest a session can stay open under these limits: every allowed
- * extension taken, each prompt left until its auto-score, each drain at its
- * ceiling. The token TTL must exceed this.
+ * extension taken, each prompt left until its auto-score, each sentence grace
+ * and drain at its ceiling. The token TTL must exceed this.
  */
 export function voiceSessionMaxMs(caps: typeof VOICE_SESSION_CAPS = VOICE_SESSION_CAPS): number {
   const prompts = caps.maxExtensions + 1;
   return (
     caps.hardCapMs +
     caps.maxExtensions * caps.extensionMs +
-    prompts * (caps.decisionMs + caps.maxDrainMs)
+    prompts * (caps.finishSentenceMs + caps.decisionMs + caps.maxDrainMs)
   );
 }

@@ -115,6 +115,24 @@ export const chat = {
     'Voice connection lost. You can still get a score for the conversation you had, or start over.',
   'chat.voice.lost.scoreSoFar': 'Score what you have',
   'chat.voice.lost.startOver': 'Start over',
+  /** The session ended without a single trainee word captured — nothing was scored. */
+  'chat.voice.notHeard':
+    "We couldn't hear you in that session, so it wasn't scored. Check that your microphone is on and not muted, move somewhere quieter if you can, then start over.",
+
+  // Switching to text during a live voice conversation (`ChatScreen`)
+  'chat.switchModal.title': 'Switch to text?',
+  'chat.switchModal.subtitle':
+    "You're in the middle of a voice conversation. Get your score for it first, or switch now and it won't be scored here.",
+  'chat.switchModal.score': 'Get my score first',
+  'chat.switchModal.switch': 'Switch without scoring',
+  'chat.switchModal.cancel': 'Keep talking',
+
+  // Home notice after an interrupted session was saved and scored (`RecoveredSessionNotice`)
+  'chat.recovered.title': 'We saved your last session',
+  /** {score} is a whole number 0–100. */
+  'chat.recovered.body': 'It was interrupted before it finished, so we scored what you said: {score}/100.',
+  'chat.recovered.view': 'See my score',
+  'chat.recovered.dismiss': 'Dismiss',
   /** {reason} is the raw transport error — never translated. */
   'chat.voice.error.startFailed': 'Voice could not start: {reason}',
   'chat.voice.error.unknown': 'unknown error',

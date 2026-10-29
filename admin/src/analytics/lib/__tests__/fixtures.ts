@@ -11,6 +11,7 @@ export function session(over: Partial<SessionSummary> = {}): SessionSummary {
     anon_session_id: null,
     locale: null,
     reconstructed: false,
+    recovered: false,
     created_at: '2026-10-10T15:00:00.000Z',
     started_at: null,
     completed: true,

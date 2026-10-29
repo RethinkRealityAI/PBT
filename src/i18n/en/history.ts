@@ -54,4 +54,6 @@ export const history = {
   'history.detail.speaker.you': 'You',
   'history.detail.bottom.home': 'Home',
   'history.detail.bottom.back': 'Back to history',
+  /** A session that was interrupted (tab closed, connection lost) and scored afterwards. */
+  'history.recovered': 'Saved after an interruption',
 } as const;

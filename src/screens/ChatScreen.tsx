@@ -790,6 +790,10 @@ export function ChatScreen() {
   const [voiceAnalyzing, setVoiceAnalyzing] = useState(false);
   const [voiceReady, setVoiceReady] = useState(false);
   const [voiceAnalysisError, setVoiceAnalysisError] = useState<string | null>(null);
+  /** The last voice session ended without a single trainee word captured. */
+  const [voiceNotHeard, setVoiceNotHeard] = useState(false);
+  /** Asking before a mode switch would throw away a live voice conversation. */
+  const [switchModalOpen, setSwitchModalOpen] = useState(false);
   const [endModalOpen, setEndModalOpen] = useState(false);
   const [exitModalOpen, setExitModalOpen] = useState(false);
   // Open by default in voice mode so Begin Simulation lives inside the panel
@@ -877,7 +881,16 @@ export function ChatScreen() {
     setVoiceAnalyzing(true);
     setVoiceAnalysisError(null);
     try {
-      const { report, transcript, sessionId } = await voiceEndRef.current();
+      const { report, transcript, sessionId, heardTrainee } = await voiceEndRef.current();
+      if (!heardTrainee && transcript.length > 0) {
+        // Nothing the trainee said reached the transcript — a 0/100 (or a
+        // guess) for silence would be a fake score. Keep the record, tell
+        // them, and offer a fresh start.
+        chatRef.current.recordVoiceUnscored(transcript, sessionId, 'error');
+        setVoiceAnalyzing(false);
+        setVoiceNotHeard(true);
+        return;
+      }
       if (gen !== finalizeGenRef.current || modeRef.current !== 'voice') {
         // User toggled away (or another finalize already started). The
         // voice session has already been ended/torn down by the toggle
@@ -910,8 +923,27 @@ export function ChatScreen() {
     }
   }, [go, t]);
 
+  // Live voice transcript + id, for the paths that end a voice session
+  // without scoring it through the app.
+  const voiceMessagesRef = useRef(voice.messages);
+  voiceMessagesRef.current = voice.messages;
+  const voiceSessionIdRef = useRef(voice.sessionId);
+  voiceSessionIdRef.current = voice.sessionId;
+
+  /**
+   * End the live voice session WITHOUT scoring it here — but never lose it:
+   * the transcript is saved (and the server's recovery job scores it if the
+   * trainee spoke). Used by start over, scenario arrows, switching to text,
+   * "End without saving" and leaving the screen.
+   */
+  const discardVoice = useCallback(() => {
+    chatRef.current.recordVoiceUnscored(voiceMessagesRef.current, voiceSessionIdRef.current, 'user_exit');
+    voiceStopRef.current();
+  }, []);
+
   const beginVoice = useCallback(() => {
     if (!scenario || !voiceEnabled) return;
+    setVoiceNotHeard(false);
     voiceFinalizeBusyRef.current = false;
     setVoiceAnalyzing(false);
     setVoiceAnalysisError(null);
@@ -930,9 +962,9 @@ export function ChatScreen() {
    */
   const restartVoice = useCallback(() => {
     finalizeGenRef.current += 1;
-    voiceStopRef.current();
+    discardVoice();
     beginVoice();
-  }, [beginVoice]);
+  }, [beginVoice, discardVoice]);
 
   // Time's up (VOICE_SESSION_CAPS): the hook has paused the mic and waits for
   // the trainee — score it, keep going, or start over. Never shown over the
@@ -953,7 +985,7 @@ export function ChatScreen() {
       if (currentIndex < 0 || ring.length === 0) return;
       const n = ring.length;
       const nextScenario = ring[(currentIndex + delta + n) % n];
-      voiceStopRef.current();
+      discardVoice();
       chatRef.current.reset();
       voiceFinalizeBusyRef.current = false;
       setVoiceAnalyzing(false);
@@ -962,10 +994,24 @@ export function ChatScreen() {
       // Re-open the details panel so Begin Simulation is available for the new scenario
       if (mode === 'voice') setScenarioDetailsOpen(true);
     },
-    [mode, rotation, setScenario],
+    [mode, rotation, setScenario, discardVoice],
   );
 
-  const handleModeChange = useCallback((nextMode: 'text' | 'voice') => {
+  const handleModeChange = useCallback((nextMode: 'text' | 'voice', opts: { confirmed?: boolean } = {}) => {
+    // Switching to text mid-conversation used to throw the voice
+    // conversation away silently. Ask first when there's something to lose.
+    if (
+      nextMode === 'text' &&
+      !opts.confirmed &&
+      modeRef.current === 'voice' &&
+      (voiceStatusRef.current === 'listening' ||
+        voiceStatusRef.current === 'thinking' ||
+        voiceStatusRef.current === 'aiSpeaking') &&
+      voiceMessagesRef.current.some((m) => m.role === 'user')
+    ) {
+      setSwitchModalOpen(true);
+      return;
+    }
     // Invalidate any in-flight finalizeVoice so a slow scoring call
     // can't stomp on the new mode after the toggle.
     finalizeGenRef.current += 1;
@@ -973,7 +1019,7 @@ export function ChatScreen() {
     setVoiceAnalyzing(false);
     setVoiceReady(false);
     if (nextMode === 'text') {
-      voiceStopRef.current();
+      discardVoice();
       // A voice session that already finalized left chat.status === 'complete'
       // on the shared ChatProvider. Without resetting, the moment we flip
       // mode to 'text' the SessionEndingOverlay shows ("Your scorecard is
@@ -1008,7 +1054,7 @@ export function ChatScreen() {
         driver: driverRef.current,
       });
     }
-  }, [scenario]);
+  }, [scenario, discardVoice]);
 
   // Voice switched off — or the flag snapshot arrived after this screen
   // mounted in voice mode, or an admin preview asked for voice: fall back to
@@ -1034,6 +1080,28 @@ useThinkingSound(
     });
     return () => voice.registerNaturalEndHandler(null);
   }, [mode, voice, finalizeVoice]);
+
+  // Save-as-you-go for voice: every committed line is checkpointed, so a
+  // closed tab, a reload or a dropped connection still leaves a session that
+  // gets scored (sessionCheckpoint.ts + the server's recovery job).
+  useEffect(() => {
+    if (mode !== 'voice' || voice.messages.length === 0) return;
+    chatRef.current.checkpointVoice(voice.messages, voice.sessionId);
+  }, [mode, voice.messages, voice.sessionId]);
+
+  // Leaving the screen tears the live socket down — save what was said.
+  useEffect(
+    () => () => {
+      const live =
+        voiceStatusRef.current === 'listening' ||
+        voiceStatusRef.current === 'thinking' ||
+        voiceStatusRef.current === 'aiSpeaking';
+      if (live) {
+        chatRef.current.recordVoiceUnscored(voiceMessagesRef.current, voiceSessionIdRef.current, 'user_exit');
+      }
+    },
+    [],
+  );
 
   // Open text conversation whenever text mode enters idle (mount + after reset).
   // Voice mode stays visually ready until the user taps Begin simulation.
@@ -1399,6 +1467,8 @@ useThinkingSound(
             onBegin={beginVoice}
             onRetry={voiceAnalysisError ? finalizeVoice : restartVoice}
             onScoreSoFar={finalizeVoice}
+            notHeard={voiceNotHeard}
+            onStartOver={restartVoice}
             driverKey={driverKey}
           />
         </>
@@ -1509,6 +1579,36 @@ useThinkingSound(
         )}
       </div>
     </div>
+    <ModalShell
+      open={switchModalOpen}
+      onClose={() => setSwitchModalOpen(false)}
+      title={t('chat.switchModal.title')}
+      subtitle={t('chat.switchModal.subtitle')}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <ModalActionButton
+          tone="primary"
+          onClick={() => {
+            setSwitchModalOpen(false);
+            void finalizeVoice();
+          }}
+        >
+          {t('chat.switchModal.score')}
+        </ModalActionButton>
+        <ModalActionButton
+          tone="secondary"
+          onClick={() => {
+            setSwitchModalOpen(false);
+            handleModeChange('text', { confirmed: true });
+          }}
+        >
+          {t('chat.switchModal.switch')}
+        </ModalActionButton>
+        <ModalActionButton tone="quiet" onClick={() => setSwitchModalOpen(false)}>
+          {t('chat.switchModal.cancel')}
+        </ModalActionButton>
+      </div>
+    </ModalShell>
     <TimeUpModal
       open={timeUpOpen}
       extensionsLeft={voice.extensionsLeft}
@@ -1547,7 +1647,7 @@ useThinkingSound(
       onEnd={() => {
         setEndModalOpen(false);
         if (mode === 'voice') {
-          voiceStopRef.current();
+          discardVoice();
           go('home');
         } else {
           void chat.abandon('user_exit');
@@ -1569,7 +1669,7 @@ useThinkingSound(
       onDiscard={() => {
         setExitModalOpen(false);
         if (mode === 'voice') {
-          voiceStopRef.current();
+          discardVoice();
           go('home');
         } else {
           void chat.abandon('user_exit');
@@ -1638,6 +1738,8 @@ function VoiceMode({
   onBegin,
   onRetry,
   onScoreSoFar,
+  notHeard,
+  onStartOver,
   driverKey,
 }: {
   voice: ReturnType<typeof useVoiceSession>;
@@ -1649,6 +1751,9 @@ function VoiceMode({
   onRetry?: () => void;
   /** Score the conversation captured before a dropped connection. */
   onScoreSoFar?: () => void;
+  /** The session ended without any trainee speech captured. */
+  notHeard?: boolean;
+  onStartOver?: () => void;
   driverKey: DriverKey;
 }) {
   const t = useT();
@@ -1955,6 +2060,31 @@ function VoiceMode({
             : t(AI_STATE_LABEL_KEY[voice.emotion])}
         </span>
       </div>
+
+      {notHeard && !voice.error && !analysisError && (
+        <div style={{ width: '100%', marginTop: 16 }} role="alert">
+          <Glass radius={16} padding={14}>
+            <p style={{ fontSize: 13, color: 'var(--pbt-text)', margin: '0 0 10px', lineHeight: 1.45 }}>
+              {t('chat.voice.notHeard')}
+            </p>
+            {onStartOver && (
+              <button
+                type="button"
+                onClick={onStartOver}
+                style={{
+                  padding: '6px 16px', borderRadius: 9999, border: 'none', cursor: 'pointer',
+                  background:
+                    'linear-gradient(180deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+                  color: '#fff', fontFamily: 'var(--pbt-font-mono)', fontSize: 11,
+                  fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase',
+                }}
+              >
+                {t('chat.voice.lost.startOver')}
+              </button>
+            )}
+          </Glass>
+        </div>
+      )}
 
       {/* Error states */}
       {(voice.error || analysisError) && (

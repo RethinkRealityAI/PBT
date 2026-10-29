@@ -21,6 +21,7 @@ import { SCENARIO_SOURCE_LABELS, SKILL_KEYS, SKILL_LABELS, endingUnknown, isScor
 import type { CsvValue } from './csv';
 import {
   REBUILT_TAG,
+  RECOVERED_TAG,
   anonymousName,
   deviceLabel,
   languageKey,
@@ -255,6 +256,7 @@ export function searchText(s: SessionSummary, traineeName: string): string {
     s.user_id ? null : 'anonymous no account',
     s.locale ? sessionLanguage(s) : null,
     s.reconstructed ? `${REBUILT_TAG} rebuilt from app activity` : null,
+    s.recovered ? `${RECOVERED_TAG} recovered interrupted` : null,
     s.scenario_title,
     s.scenario_summary,
     s.pushback_id ? objectionLabel(s.pushback_id) : null,

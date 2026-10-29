@@ -20,6 +20,7 @@ import type { PromptOverrides } from '../data/knowledge/promptBuilders';
 import type { Locale } from '../i18n/locales';
 import {
   AI_ENDPOINTS,
+  type EndedEarly,
   type EvaluateRequest,
   type EvaluateResponse,
   type HintRequest,
@@ -50,6 +51,8 @@ export interface CallOptions {
   locale?: Locale;
   /** Which pipeline produced the transcript being scored. Defaults to text. */
   mode?: 'text' | 'voice';
+  /** The conversation stopped before its natural close (time limit, interruption). */
+  endedEarly?: EndedEarly;
 }
 
 /**
@@ -152,6 +155,7 @@ export async function evaluateConversation(
     mode: options.mode ?? 'text',
     sessionId: options.sessionId ?? null,
     locale: options.locale,
+    ...(options.endedEarly ? { endedEarly: options.endedEarly } : {}),
     // Read by the server only for an anonymous caller: the score then lands
     // in this device's anonymous session row (never for a signed-in caller,
     // a preview or a trainee who opted out of training data use). Omitted
