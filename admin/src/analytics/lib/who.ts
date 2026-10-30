@@ -133,6 +133,11 @@ export function languageOrder(rows: readonly { locale?: string | null }[]): stri
 
 // ─── Rebuilt sessions ──────────────────────────────────────────────────
 
+export const RECOVERED_TAG = 'Scored later';
+
+export const RECOVERED_TAG_HELP =
+  'This session ended before it was scored (the app was closed, the connection dropped, or the trainee left mid-conversation). Its saved transcript was scored afterwards with the same scorer, told the conversation was interrupted.';
+
 export const REBUILT_TAG = 'Rebuilt';
 
 export const REBUILT_TAG_HELP =

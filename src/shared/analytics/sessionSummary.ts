@@ -44,7 +44,7 @@ export const SESSION_SUMMARY_LITE_COLUMNS = [
   'sr_acknowledge:score_report->acknowledge, sr_clarify:score_report->clarify',
   'sr_transform:score_report->transform, sr_empathy:score_report->empathy',
   'sr_rapport:score_report->rapport, sr_overall:score_report->overall, sr_band:score_report->band',
-  'sr_unavailable:score_report->scoreUnavailable, sr_critique:score_report->critique',
+  'sr_unavailable:score_report->scoreUnavailable, sr_critique:score_report->critique, sr_recovered:score_report->recovered',
   'sc_difficulty:scenario->difficulty, sc_species:scenario->species, sc_override:scenario->_overrideId',
   'sc_pushback:scenario->pushback, sc_breed:scenario->breed, sc_persona:scenario->persona, sc_age:scenario->age',
 ].join(', ');
@@ -59,6 +59,7 @@ const LITE_REPORT_KEYS: Array<[string, string]> = [
   ['sr_band', 'band'],
   ['sr_unavailable', 'scoreUnavailable'],
   ['sr_critique', 'critique'],
+  ['sr_recovered', 'recovered'],
 ];
 const LITE_SCENARIO_KEYS: Array<[string, string]> = [
   ['sc_difficulty', 'difficulty'],
@@ -315,6 +316,7 @@ export function toSessionSummary(row: SessionRowLike, options: SessionSummaryOpt
     anon_session_id: str(r.user_id) ? null : str(r.anon_session_id),
     locale: str(r.locale),
     reconstructed,
+    recovered: isObj(r.score_report) && isObj((r.score_report as Obj).recovered),
     created_at,
     started_at,
     completed: r.completed === true,

@@ -214,6 +214,11 @@ export function HistoryScreen() {
                         level={s.difficulty}
                         style={{ fontSize: 10.5, color: 'var(--pbt-text-muted)' }}
                       />
+                      {s.recovered && (
+                        <span style={{ fontSize: 10.5, color: 'var(--pbt-text-muted)', textAlign: 'center' }}>
+                          {t('history.recovered')}
+                        </span>
+                      )}
                     </div>
                   )}
                   <span style={{ color: 'var(--pbt-text-muted)', fontSize: 18 }}>›</span>

@@ -59,15 +59,32 @@ const DISPATCH_TIMEOUT_MS = 10_000;
 export function knowledgeSyncKey(
   serviceKey: string | undefined = process.env.SUPABASE_SERVICE_ROLE_KEY,
 ): string | null {
-  if (!serviceKey) return null;
-  return createHmac('sha256', serviceKey).update(KNOWLEDGE_SYNC_KEY_LABEL).digest('hex');
+  return internalKey(KNOWLEDGE_SYNC_KEY_LABEL, serviceKey);
 }
 
 /** Constant-time check of the request's `x-pbt-sync-key`. False when either side is missing. */
 export function verifyKnowledgeSyncKey(req: Request): boolean {
-  const expected = knowledgeSyncKey();
+  return verifyInternalKey(req, KNOWLEDGE_SYNC_KEY_HEADER, KNOWLEDGE_SYNC_KEY_LABEL);
+}
+
+/**
+ * HMAC-SHA256 of a fixed label keyed with the service-role key — a secret
+ * only our own functions (and an operator holding that key) can compute,
+ * with nothing extra to configure. One label per internal endpoint.
+ */
+export function internalKey(
+  label: string,
+  serviceKey: string | undefined = process.env.SUPABASE_SERVICE_ROLE_KEY,
+): string | null {
+  if (!serviceKey) return null;
+  return createHmac('sha256', serviceKey).update(label).digest('hex');
+}
+
+/** Constant-time check of `header` against `internalKey(label)`. */
+export function verifyInternalKey(req: Request, header: string, label: string): boolean {
+  const expected = internalKey(label);
   if (!expected) return false;
-  const given = req.headers.get(KNOWLEDGE_SYNC_KEY_HEADER) ?? '';
+  const given = req.headers.get(header) ?? '';
   const a = Buffer.from(given, 'utf8');
   const b = Buffer.from(expected, 'utf8');
   if (a.length !== b.length) return false;

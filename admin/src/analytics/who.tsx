@@ -6,7 +6,7 @@
  */
 import { COLOR } from '../lib/tokens';
 import { Tag } from './trainee/parts';
-import { DEVICE_HELP, REBUILT_TAG, REBUILT_TAG_HELP, deviceLabel } from './lib/who';
+import { DEVICE_HELP, REBUILT_TAG, REBUILT_TAG_HELP, RECOVERED_TAG, RECOVERED_TAG_HELP, deviceLabel } from './lib/who';
 
 /** A plain person silhouette on a neutral disc — anonymous, so no initials and no driver colour. */
 export function AnonAvatar({ size = 26 }: { size?: number }) {
@@ -45,6 +45,14 @@ export function DeviceTag({ anonId, lower = false }: { anonId: string | null | u
 }
 
 /** Marks an anonymous session rebuilt from app activity (no transcript, no score). */
+export function RecoveredTag() {
+  return (
+    <Tag tone="muted" title={RECOVERED_TAG_HELP}>
+      {RECOVERED_TAG}
+    </Tag>
+  );
+}
+
 export function RebuiltTag() {
   return (
     <Tag tone="muted" title={REBUILT_TAG_HELP}>

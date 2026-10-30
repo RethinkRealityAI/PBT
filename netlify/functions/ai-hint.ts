@@ -24,6 +24,7 @@ import {
   sanitizeTurns,
   withRetry,
 } from './_shared/ai';
+import { RATE_LIMITS, perMinute } from './_shared/rateLimits';
 import { buildCoachHintSystemPrompt } from '../../src/data/knowledge/promptBuilders';
 import { MODEL_TEXT } from '../../src/shared/ai/models';
 import type { HintRequest, HintResponse } from '../../src/shared/ai/contract';
@@ -34,7 +35,7 @@ const MAX_BODY_BYTES = 512 * 1024;
 const MAX_HINT_CHARS = 320;
 
 export default async (req: Request): Promise<Response> => {
-  const limited = rateLimit(req, 'hint', { limit: 20, windowMs: 60_000 });
+  const limited = rateLimit(req, 'hint', perMinute(RATE_LIMITS.hint));
   if (limited) return limited;
 
   const parsed = await parseJsonBody<HintRequest>(req, MAX_BODY_BYTES);

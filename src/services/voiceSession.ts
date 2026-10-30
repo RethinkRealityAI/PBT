@@ -7,6 +7,7 @@ import { evaluateConversation } from './geminiService';
 import { postAi } from './aiApi';
 import {
   AI_ENDPOINTS,
+  AI_LIMITS,
   type VoiceTokenRequest,
   type VoiceTokenResponse,
 } from '../shared/ai/contract';
@@ -15,6 +16,7 @@ import { getOrCreateSessionId } from '../lib/storage';
 import { logEvent } from '../lib/analytics';
 import { DEFAULT_LOCALE, LOCALE_BCP47, type Locale } from '../i18n/locales';
 import { translate } from '../i18n/translate';
+import { VOICE_SESSION_CAPS } from '../shared/ai/voiceCaps';
 
 export type EmotionColor = 'red' | 'yellow' | 'green';
 export type VoiceStatus =
@@ -37,6 +39,13 @@ export interface VoiceSessionResult {
    * Null when the session never started.
    */
   sessionId: string | null;
+  /**
+   * False when the transcript holds no trainee speech at all (mic muted or
+   * blocked, a noisy room, the trainee never spoke). Nothing was scored —
+   * a 0/100 for silence would be a fake score — so the caller tells the
+   * trainee we couldn't hear them instead of showing a scorecard.
+   */
+  heardTrainee: boolean;
 }
 
 export interface VoiceStartOptions {
@@ -79,10 +88,40 @@ export interface UseVoiceSessionReturn {
   /** Live, partial AI text for the in-flight turn (cleared when next AI turn begins). */
   liveAiText: string;
   /**
-   * True once the session passes the warning threshold (4:00) and until it
-   * stops/restarts — the UI announces that the hard cap is approaching.
+   * True from a minute before the current deadline (4:00 for the first one)
+   * until the deadline is extended or the session stops/restarts — the UI
+   * shows the countdown and announces that time is nearly up.
    */
   capWarning: boolean;
+  /**
+   * Epoch ms at which the current time's-up prompt is due (null when no
+   * session is live). Drives the on-screen countdown.
+   */
+  capDeadline: number | null;
+  /**
+   * The time limit was reached: the mic is paused and the session is waiting
+   * for the trainee to score it, keep going, or start over. Nothing is lost
+   * and nothing has been scored yet.
+   */
+  timeUp: boolean;
+  /** Epoch ms at which an unanswered time's-up prompt scores the session. */
+  timeUpAutoEndAt: number | null;
+  /** "Keep going" extensions still available for this session. */
+  extensionsLeft: number;
+  /**
+   * Answer the time's-up prompt with "keep going": resumes the mic and moves
+   * the deadline by `VOICE_SESSION_CAPS.extensionMs`. No-op unless `timeUp`
+   * and an extension is left.
+   */
+  extendSession: () => boolean;
+  /**
+   * Record how the trainee answered the time's-up prompt when the answer is
+   * acted on by the caller (score now / start over). "Keep going" and the
+   * auto-score are recorded by the hook itself.
+   */
+  noteTimeUpChoice: (choice: 'score' | 'restart') => void;
+  /** Id of the live (or last) session — the record id it is checkpointed and saved under. */
+  sessionId: string | null;
   start: (scenario: Scenario, options?: VoiceStartOptions) => Promise<void>;
   stop: () => void;
   endSession: () => Promise<VoiceSessionResult>;
@@ -95,23 +134,11 @@ const SAMPLE_RATE_OUT = 24000;
 const SAMPLE_RATE_IN = 16000;
 
 /**
- * Wall-clock caps on a live voice session, measured from socket open.
- *
- * Live audio bills per second on both legs, so an abandoned tab (phone in a
- * pocket, forgotten desktop) is a runaway-cost hazard — nothing in the
- * conversation loop ever ends a session the user walked away from. At
- * `warnMs` the UI announces the wrap-up; at `hardCapMs` we trigger the SAME
- * graceful end path the model's `endSimulation` tool uses, so queued TTS
- * finishes and the session is scored rather than dropped.
- *
- * Exported so the thresholds are unit-testable without a socket/audio harness.
+ * Wall-clock caps on a live voice session — see `src/shared/ai/voiceCaps.ts`
+ * for the limits and why the cap PROMPTS (score / keep going / start over)
+ * instead of ending the session. Re-exported so existing imports keep working.
  */
-export const VOICE_SESSION_CAPS = {
-  /** 4:00 — "about a minute left" warning. */
-  warnMs: 4 * 60_000,
-  /** 5:00 — graceful end. */
-  hardCapMs: 5 * 60_000,
-} as const;
+export { VOICE_SESSION_CAPS };
 
 // Strip any control-token / function-call narration that leaks into the AI's
 // transcribed audio. Keeps both the on-screen `liveAiText` and the saved
@@ -155,6 +182,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [liveAiText, setLiveAiText] = useState('');
   const [capWarning, setCapWarning] = useState(false);
+  const [capDeadline, setCapDeadline] = useState<number | null>(null);
+  const [timeUp, setTimeUp] = useState(false);
+  const [timeUpAutoEndAt, setTimeUpAutoEndAt] = useState<number | null>(null);
+  const [extensionsLeft, setExtensionsLeft] = useState<number>(VOICE_SESSION_CAPS.maxExtensions);
+  const [sessionIdState, setSessionIdState] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Session stored as a Promise (reference pattern) — all sends via .then()
@@ -226,6 +258,25 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   /** Duration-cap timers (see VOICE_SESSION_CAPS) — armed on socket open. */
   const capWarnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const capEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Waits for the customer's in-flight line to finish before the prompt shows. */
+  const timeUpDrainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Scores the session if the time's-up prompt goes unanswered. */
+  const timeUpDecisionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Mirrors `timeUp` for socket/timer callbacks. */
+  const timeUpRef = useRef(false);
+  /** "Keep going" extensions taken this session. */
+  const extensionsUsedRef = useRef(0);
+  /**
+   * Mic audio is not sent while true — set the moment the time limit is
+   * reached so the conversation doesn't carry on underneath the prompt.
+   */
+  const inputPausedRef = useRef(false);
+  /**
+   * The session reached its time limit and was not extended afterwards — the
+   * scorer is told (`endedEarly: 'time_limit'`) so a cut-off close isn't read
+   * as a failed one. Cleared by "keep going" and by start/stop.
+   */
+  const endedByTimeLimitRef = useRef(false);
   // Gates mic audio until the AI delivers its first complete turn (prevents double opening)
   const openingDeliveredRef = useRef(false);
   // Timestamp until which mic audio should be suppressed (post-AI-speech grace period).
@@ -256,45 +307,157 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   }, []);
 
   const clearCapTimers = useCallback(() => {
-    if (capWarnTimerRef.current) {
-      clearTimeout(capWarnTimerRef.current);
-      capWarnTimerRef.current = null;
+    for (const ref of [capWarnTimerRef, capEndTimerRef, timeUpDrainTimerRef, timeUpDecisionTimerRef]) {
+      if (ref.current) {
+        clearTimeout(ref.current);
+        ref.current = null;
+      }
     }
-    if (capEndTimerRef.current) {
-      clearTimeout(capEndTimerRef.current);
-      capEndTimerRef.current = null;
-    }
+    timeUpRef.current = false;
+    inputPausedRef.current = false;
+    setTimeUp(false);
+    setTimeUpAutoEndAt(null);
+    setCapDeadline(null);
   }, []);
 
+  /** True while the conversation is live (not connecting, ended or failed). */
+  const isLive = useCallback(
+    () =>
+      statusRef.current === 'listening' ||
+      statusRef.current === 'thinking' ||
+      statusRef.current === 'aiSpeaking',
+    [],
+  );
+
   /**
-   * Arm the duration cap. Called from `onopen` so the clock starts when the
-   * socket (and therefore the billing) actually starts, not at the Begin tap.
+   * Show the time's-up prompt once the customer's in-flight line has played
+   * out (so they aren't cut off mid-sentence), then start the decision
+   * window: an unanswered prompt ends + scores the session through the same
+   * natural-end path `endSimulation` uses — the work is kept, never dropped.
    */
-  const startCapTimers = useCallback(() => {
+  const openTimeUpPrompt = useCallback(
+    (drainStartedAt: number) => {
+      timeUpDrainTimerRef.current = null;
+      if (pendingNaturalEndRef.current || !isLive()) return;
+      const ctx = playbackCtxRef.current;
+      const tailMs =
+        ctx && ctx.state !== 'closed'
+          ? Math.max(0, (nextPlayTimeRef.current - ctx.currentTime) * 1000)
+          : 0;
+      const waited = Date.now() - drainStartedAt;
+      if (tailMs > 50 && waited < VOICE_SESSION_CAPS.maxDrainMs) {
+        timeUpDrainTimerRef.current = setTimeout(
+          () => openTimeUpPrompt(drainStartedAt),
+          Math.min(Math.ceil(tailMs) + 250, VOICE_SESSION_CAPS.maxDrainMs - waited),
+        );
+        return;
+      }
+      timeUpRef.current = true;
+      setTimeUp(true);
+      setTimeUpAutoEndAt(Date.now() + VOICE_SESSION_CAPS.decisionMs);
+      timeUpDecisionTimerRef.current = setTimeout(() => {
+        timeUpDecisionTimerRef.current = null;
+        if (!timeUpRef.current || pendingNaturalEndRef.current) return;
+        pendingNaturalEndRef.current = true;
+        logEvent({
+          type: 'custom',
+          screen: 'chat',
+          target: 'voice_time_up',
+          meta: {
+            sessionId: sessionIdRef.current,
+            choice: 'auto_score',
+            extensionsUsed: extensionsUsedRef.current,
+          },
+        });
+        naturalEndHandlerRef.current?.();
+      }, VOICE_SESSION_CAPS.decisionMs);
+    },
+    [isLive],
+  );
+
+  /**
+   * The deadline passed. If the trainee is mid-sentence ('thinking' = their
+   * speech is being transcribed), give them up to `finishSentenceMs` to
+   * finish before the mic pauses — cutting someone off mid-answer at the
+   * moment that matters most was half the complaint. Then stop listening (so
+   * the conversation doesn't carry on under the prompt), let the customer's
+   * in-flight line play out, and ask. Deliberately NOT a socket kill and NOT
+   * an automatic end — the trainee decides.
+   */
+  const pauseAtTimeUp = useCallback(
+    (deadlineAt: number) => {
+      capEndTimerRef.current = null;
+      if (pendingNaturalEndRef.current || !isLive()) return;
+      const speaking = statusRef.current === 'thinking' && userTextBufferRef.current.trim().length > 0;
+      if (speaking && Date.now() - deadlineAt < VOICE_SESSION_CAPS.finishSentenceMs) {
+        capEndTimerRef.current = setTimeout(() => pauseAtTimeUp(deadlineAt), 500);
+        return;
+      }
+      inputPausedRef.current = true;
+      endedByTimeLimitRef.current = true;
+      openTimeUpPrompt(Date.now());
+    },
+    [isLive, openTimeUpPrompt],
+  );
+
+  /**
+   * Arm the duration cap for the next `durationMs`. Called from `onopen` so
+   * the clock starts when the socket (and therefore the billing) actually
+   * starts, not at the Begin tap — and again by `extendSession`.
+   */
+  const startCapTimers = useCallback((durationMs: number) => {
     clearCapTimers();
     setCapWarning(false);
+    setCapDeadline(Date.now() + durationMs);
     capWarnTimerRef.current = setTimeout(() => {
       capWarnTimerRef.current = null;
       setCapWarning(true);
-    }, VOICE_SESSION_CAPS.warnMs);
+    }, Math.max(0, durationMs - VOICE_SESSION_CAPS.warnLeadMs));
     capEndTimerRef.current = setTimeout(() => {
       capEndTimerRef.current = null;
       // Already wrapping up (endSimulation / green-primed close, or the user
       // hit End) — let that path finish rather than double-triggering.
-      if (pendingNaturalEndRef.current) return;
-      const live =
-        statusRef.current === 'listening' ||
-        statusRef.current === 'thinking' ||
-        statusRef.current === 'aiSpeaking';
-      if (!live) return;
-      // Same graceful exit as the model's endSimulation tool: let queued TTS
-      // drain, then fire the registered natural-end handler (ChatScreen →
-      // finalizeVoice → scoring). Deliberately NOT a socket kill — a hard
-      // close mid-sentence would lose the closing line and the scorecard.
-      pendingNaturalEndRef.current = true;
-      scheduleNaturalEndAfterPlayback();
-    }, VOICE_SESSION_CAPS.hardCapMs);
-  }, [clearCapTimers, scheduleNaturalEndAfterPlayback]);
+      if (pendingNaturalEndRef.current || !isLive()) return;
+      pauseAtTimeUp(Date.now());
+    }, durationMs);
+  }, [clearCapTimers, isLive, pauseAtTimeUp]);
+
+  const logTimeUpChoice = useCallback(
+    (choice: 'score' | 'restart' | 'extend' | 'auto_score') => {
+      logEvent({
+        type: 'custom',
+        screen: 'chat',
+        target: 'voice_time_up',
+        meta: {
+          sessionId: sessionIdRef.current,
+          choice,
+          extensionsUsed: extensionsUsedRef.current,
+        },
+      });
+    },
+    [],
+  );
+
+  const noteTimeUpChoice = useCallback(
+    (choice: 'score' | 'restart') => {
+      if (timeUpRef.current) logTimeUpChoice(choice);
+    },
+    [logTimeUpChoice],
+  );
+
+  const extendSession = useCallback((): boolean => {
+    if (!timeUpRef.current || pendingNaturalEndRef.current || !isLive()) return false;
+    if (extensionsUsedRef.current >= VOICE_SESSION_CAPS.maxExtensions) return false;
+    extensionsUsedRef.current += 1;
+    endedByTimeLimitRef.current = false;
+    setExtensionsLeft(VOICE_SESSION_CAPS.maxExtensions - extensionsUsedRef.current);
+    logTimeUpChoice('extend');
+    // Re-arming clears the prompt + decision timer and un-pauses the mic.
+    startCapTimers(VOICE_SESSION_CAPS.extensionMs);
+    // Short grace so the tap / prompt sound isn't sent as the trainee's turn.
+    micUnmuteAtRef.current = performance.now() + 250;
+    return true;
+  }, [isLive, logTimeUpChoice, startCapTimers]);
 
   const addAiMessage = useCallback(() => {
     const text = sanitizeAiText(aiTextBufferRef.current);
@@ -317,6 +480,17 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     transcriptRef.current = [...transcriptRef.current, msg];
     setMessages([...transcriptRef.current]);
   }, []);
+
+  /**
+   * Commit the trainee's buffered speech as one turn (capped at the server's
+   * per-turn limit — never dropped for being long, which the old 200-char
+   * ceiling did to every substantive answer).
+   */
+  const commitUserBuffer = useCallback(() => {
+    const pending = userTextBufferRef.current.trim();
+    userTextBufferRef.current = '';
+    if (pending) addUserMessage(pending.slice(0, AI_LIMITS.maxTurnChars));
+  }, [addUserMessage]);
 
   // Time-based playback scheduler from reference — gapless, no queue race
   const playAudioChunk = useCallback((base64Audio: string) => {
@@ -343,11 +517,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       // record. We trust the model's VAD and accept occasional echo over
       // dropped turns. The 200-character ceiling guards against runaway
       // accumulation if STT mis-triggers without a finished flag.
-      const pending = userTextBufferRef.current.trim();
-      if (pending && pending.length <= 200) {
-        addUserMessage(pending);
-      }
-      userTextBufferRef.current = '';
+      commitUserBuffer();
       // Do NOT clear aiTextBufferRef here. outputAudioTranscription chunks often arrive
       // in the same message before this audio chunk, or in earlier messages before the
       // first PCM arrives — clearing on first play would drop the leading words every turn.
@@ -414,7 +584,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       playbackEndTimerRef.current = null;
       finishSpeaking();
     }, msUntilQueueEnd + 350);
-  }, [scheduleNaturalEndAfterPlayback, setStatusSync]);
+  }, [commitUserBuffer, scheduleNaturalEndAfterPlayback, setStatusSync]);
 
   const stopRecording = useCallback(() => {
     processorRef.current?.disconnect();
@@ -486,6 +656,8 @@ export function useVoiceSession(): UseVoiceSessionReturn {
         // Send via Promise — no race with sessionRef being null
         // Don't send mic audio until AI delivers its opening — prevents double opener
         if (!openingDeliveredRef.current) return;
+        // Time limit reached — nothing is sent while the trainee decides.
+        if (inputPausedRef.current) return;
         // CRITICAL: don't send mic audio while AI is speaking — browser echo cancellation
         // doesn't apply to WebAudio playback, so AI audio leaks through speakers into the
         // mic. Sending it back to Gemini causes self-conversation, mid-sentence interrupts,
@@ -566,10 +738,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       }
       clearCapTimers();
       setCapWarning(false);
+      extensionsUsedRef.current = 0;
+      setExtensionsLeft(VOICE_SESSION_CAPS.maxExtensions);
       // One id for this session: telemetry rows written by the scorer, the
       // local SessionRecord and the Supabase row all key off it.
       const sessionId = uuid();
       sessionIdRef.current = sessionId;
+      setSessionIdState(sessionId);
+      endedByTimeLimitRef.current = false;
       micUnmuteAtRef.current = 0;
       setError(null);
       emotionRef.current = 'red';
@@ -730,7 +906,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
             // onopen keeps processor sends from racing a null session.
             startRecording(sessionPromise);
             // Billing starts here — so does the duration cap.
-            startCapTimers();
+            startCapTimers(VOICE_SESSION_CAPS.hardCapMs);
             // …and the session counts as started: mic granted, token minted,
             // socket open. Voice never calls useTextChat.open(), so this is
             // voice's one `session_open` (same meta shape as text's). Last in
@@ -817,26 +993,23 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
             // User speech transcription — buffered, committed on sentence end.
             //
-            // Drop inputTranscription while the AI is speaking: those events
-            // are almost always echo from the AI's own audio bleeding back
-            // through the mic. Capturing them as user turns confused the
-            // model (perceived barge-in), polluted the transcript with the
-            // AI's own words attributed to "user", and produced visible
-            // stalls. Real user barge-in is signalled by the model via
-            // `interrupted: true`, after which we transition out of
-            // aiSpeaking and resume buffering normally. A user turn that
-            // ended just before AI started is still captured by the
-            // pending-buffer commit at the top of playAudioChunk.
-            if (serverContent?.inputTranscription && statusRef.current !== 'aiSpeaking') {
+            // Kept WHATEVER the AI is doing. The mic sends no audio while the
+            // AI speaks (the capture gate in startRecording), so a
+            // transcription that arrives during `aiSpeaking` is the late tail
+            // of what the trainee said BEFORE the reply — Gemini routinely
+            // delivers it after the reply's first audio. Dropping it (the old
+            // behaviour, meant to filter echo the gate already prevents) lost
+            // whole trainee turns: workshop voice sessions were saved with
+            // the customer's lines only, and the scorer graded a conversation
+            // it could not see. Pending text is committed BEFORE the AI line
+            // it preceded (first reply audio, or at turnComplete at the latest).
+            if (serverContent?.inputTranscription) {
               const { text, finished } = serverContent.inputTranscription;
               if (text) {
                 userTextBufferRef.current += text;
                 if (statusRef.current === 'listening') setStatusSync('thinking');
               }
-              if (finished && userTextBufferRef.current.trim()) {
-                addUserMessage(userTextBufferRef.current.trim());
-                userTextBufferRef.current = '';
-              }
+              if (finished) commitUserBuffer();
             }
 
             // AI transcription — single source. Accumulated, displayed at turnComplete.
@@ -888,6 +1061,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
                 aiTextBufferRef.current = openingLineRef.current;
               }
               const finalText = sanitizeAiText(aiTextBufferRef.current);
+              // Trainee words that arrived after the reply started belong
+              // BEFORE it in the transcript.
+              commitUserBuffer();
               addAiMessage();
               if (finalText) setLiveAiText(finalText);
               openingDeliveredRef.current = true;
@@ -978,9 +1154,9 @@ export function useVoiceSession(): UseVoiceSessionReturn {
   }, [
     acquireMic,
     addAiMessage,
-    addUserMessage,
     cleanup,
     clearCapTimers,
+    commitUserBuffer,
     playAudioChunk,
     scheduleNaturalEndAfterPlayback,
     setStatusSync,
@@ -994,7 +1170,11 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     cleanup();
     clearCapTimers();
     setCapWarning(false);
+    extensionsUsedRef.current = 0;
+    setExtensionsLeft(VOICE_SESSION_CAPS.maxExtensions);
+    endedByTimeLimitRef.current = false;
     sessionIdRef.current = null;
+    setSessionIdState(null);
     setError(null);
     emotionRef.current = 'red';
     setEmotion('red');
@@ -1013,12 +1193,10 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
     // Flush any in-flight AI text that hasn't been committed yet (e.g. user hit END
     // before a turnComplete fired). Otherwise the last AI line is lost from the transcript.
+    // Trainee words still buffered were said before any in-flight AI line.
+    commitUserBuffer();
     if (aiTextBufferRef.current.trim()) {
       addAiMessage();
-    }
-    if (userTextBufferRef.current.trim()) {
-      addUserMessage(userTextBufferRef.current.trim());
-      userTextBufferRef.current = '';
     }
 
     const transcriptSnapshot = [...transcriptRef.current];
@@ -1027,24 +1205,30 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     // even if stop() lands while scoring is in flight.
     const sessionId = sessionIdRef.current;
 
+    const endedByTimeLimit = endedByTimeLimitRef.current;
+    const heardTrainee = transcriptSnapshot.some((m) => m.role === 'user' && m.text.trim().length > 0);
+
     finalizePromiseRef.current = (async (): Promise<VoiceSessionResult> => {
       cleanup();
       setStatusSync('ended');
 
       let report: ScoreReport | null = null;
-      if (transcriptSnapshot.length && scenario) {
+      // No trainee speech → nothing to grade. Never ask the scorer: it would
+      // invent a score for a conversation it cannot see.
+      if (heardTrainee && scenario) {
         try {
           report = await evaluateConversation(scenario, transcriptSnapshot, {
             sessionId,
             locale: localeRef.current,
             mode: 'voice',
+            ...(endedByTimeLimit ? { endedEarly: 'time_limit' as const } : {}),
           });
         } catch {
           report = null;
         }
       }
 
-      return { report, transcript: transcriptSnapshot, sessionId };
+      return { report, transcript: transcriptSnapshot, sessionId, heardTrainee };
     })();
 
     try {
@@ -1052,7 +1236,7 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     } finally {
       finalizePromiseRef.current = null;
     }
-  }, [addAiMessage, addUserMessage, cleanup, setStatusSync]);
+  }, [addAiMessage, cleanup, commitUserBuffer, setStatusSync]);
 
   useEffect(() => {
     return () => { cleanup(); };
@@ -1064,6 +1248,13 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     messages,
     liveAiText,
     capWarning,
+    capDeadline,
+    timeUp,
+    timeUpAutoEndAt,
+    extensionsLeft,
+    extendSession,
+    noteTimeUpChoice,
+    sessionId: sessionIdState,
     start,
     stop,
     endSession,

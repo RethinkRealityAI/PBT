@@ -32,8 +32,10 @@
  *
  * Lifetime — `newSessionExpireTime` is 2 minutes (the token must be used to
  * OPEN a session promptly after Begin) and `expireTime` is 15 minutes, which
- * outlives the 5-minute session cap (`VOICE_SESSION_CAPS.hardCapMs`) with
- * margin for the graceful wrap-up. `uses: 1` — one token, one session.
+ * outlives the longest session the client allows (`voiceSessionMaxMs()` in
+ * `src/shared/ai/voiceCaps.ts`: the 5-minute cap plus every "keep going"
+ * extension and time's-up prompt — pinned by the handler tests). `uses: 1` —
+ * one token, one session.
  */
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import {
@@ -51,6 +53,7 @@ import {
   retrieveForScenario,
   sanitizeScenario,
 } from './_shared/ai';
+import { RATE_LIMITS, perMinute } from './_shared/rateLimits';
 import { isSwitchOn } from './_shared/flagRules';
 import { buildVoiceSystemPrompt } from '../../src/data/knowledge/promptBuilders';
 import { MODEL_LIVE } from '../../src/shared/ai/models';
@@ -58,7 +61,7 @@ import type { VoiceTokenRequest, VoiceTokenResponse } from '../../src/shared/ai/
 import { LOCALE_BCP47 } from '../../src/i18n/locales';
 
 const MAX_BODY_BYTES = 256 * 1024;
-/** Token stops accepting messages — must outlive the 5-min session cap. */
+/** Token stops accepting messages — must outlive `voiceSessionMaxMs()`. */
 export const TOKEN_TTL_MS = 15 * 60_000;
 /** Window in which the token may OPEN a session. */
 export const NEW_SESSION_WINDOW_MS = 2 * 60_000;
@@ -104,7 +107,7 @@ export const VOICE_TOOLS = [
 ];
 
 export default async (req: Request): Promise<Response> => {
-  const limited = rateLimit(req, 'voice-token', { limit: 6, windowMs: 60_000 });
+  const limited = rateLimit(req, 'voice-token', perMinute(RATE_LIMITS.voiceToken));
   if (limited) return limited;
 
   const parsed = await parseJsonBody<VoiceTokenRequest>(req, MAX_BODY_BYTES);

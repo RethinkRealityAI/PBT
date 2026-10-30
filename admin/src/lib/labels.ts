@@ -76,6 +76,7 @@ export const ACTION_LABELS: Record<string, string> = {
   session_abandon: 'Left a session early',
   session_restart: 'Restarted a session',
   session_rescore: 'Retried scoring',
+  voice_time_up: 'Reached the voice time limit',
   session_feedback: 'Rated a session',
   coach_hint_request: 'Asked for a coach hint',
   library_scenario: 'Opened a library scenario',

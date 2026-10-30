@@ -13,7 +13,25 @@
  * data, not UI chrome.
  */
 export const chat = {
-  'chat.voice.capWarning': 'Voice sessions wrap up at 5 minutes — about a minute left.',
+  'chat.voice.capWarning': "About a minute left. When time's up, you can keep going or get your score.",
+  /** The same warning once no "keep going" extension is left. */
+  'chat.voice.capWarningFinal': "About a minute left. When time's up, you'll get your score.",
+  /** Countdown shown during the last minute. {time} is m:ss ("0:42"). */
+  'chat.voice.timeLeft': '{time} left',
+  'chat.voice.status.paused': 'Paused',
+
+  // Time's-up prompt (voice time limit reached — `TimeUpModal`)
+  'chat.timeUp.title': "Time's up",
+  'chat.timeUp.subtitle':
+    "Your conversation is paused — nothing is lost. Get your score now, or keep going to finish the conversation.",
+  'chat.timeUp.subtitleFinal':
+    "That's the longest a voice session can run. Your conversation is paused — nothing is lost.",
+  'chat.timeUp.score': 'End and get my score',
+  /** {minutes} is a whole number. */
+  'chat.timeUp.keepGoing': 'Keep going (+{minutes} min)',
+  'chat.timeUp.startOver': "Start over (this one won't be scored)",
+  /** {time} is m:ss. */
+  'chat.timeUp.autoScore': "No choice made? We'll score it for you in {time}.",
 
   // Customer-state vocabulary. The enum keys (red/yellow/green) are machine
   // values and never translate; these display labels do.
@@ -94,7 +112,27 @@ export const chat = {
   /** The admin switched voice off (Flags → Voice mode in chat) after the screen loaded. */
   'chat.voice.error.disabled': 'Voice practice is switched off right now. Switch to text to keep going.',
   'chat.voice.error.lost':
-    'Voice connection lost. Check your network and tap Begin simulation to restart.',
+    'Voice connection lost. You can still get a score for the conversation you had, or start over.',
+  'chat.voice.lost.scoreSoFar': 'Score what you have',
+  'chat.voice.lost.startOver': 'Start over',
+  /** The session ended without a single trainee word captured — nothing was scored. */
+  'chat.voice.notHeard':
+    "We couldn't hear you in that session, so it wasn't scored. Check that your microphone is on and not muted, move somewhere quieter if you can, then start over.",
+
+  // Switching to text during a live voice conversation (`ChatScreen`)
+  'chat.switchModal.title': 'Switch to text?',
+  'chat.switchModal.subtitle':
+    "You're in the middle of a voice conversation. Get your score for it first, or switch now and it won't be scored here.",
+  'chat.switchModal.score': 'Get my score first',
+  'chat.switchModal.switch': 'Switch without scoring',
+  'chat.switchModal.cancel': 'Keep talking',
+
+  // Home notice after an interrupted session was saved and scored (`RecoveredSessionNotice`)
+  'chat.recovered.title': 'We saved your last session',
+  /** {score} is a whole number 0–100. */
+  'chat.recovered.body': 'It was interrupted before it finished, so we scored what you said: {score}/100.',
+  'chat.recovered.view': 'See my score',
+  'chat.recovered.dismiss': 'Dismiss',
   /** {reason} is the raw transport error — never translated. */
   'chat.voice.error.startFailed': 'Voice could not start: {reason}',
   'chat.voice.error.unknown': 'unknown error',

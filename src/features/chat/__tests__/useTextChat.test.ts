@@ -518,9 +518,10 @@ describe('anonymous sessions are recorded by the server', () => {
       await result.current.end();
     });
 
-    await vi.waitFor(() => expect(postAi).toHaveBeenCalled());
+    const finalSave = () => postAi.mock.calls.find(([, b]) => !(b as { checkpoint?: boolean }).checkpoint);
+    await vi.waitFor(() => expect(finalSave()).toBeTruthy());
     expect(sb.from).not.toHaveBeenCalledWith('training_sessions');
-    const [endpoint, body] = postAi.mock.calls[0];
+    const [endpoint, body] = finalSave()!;
     expect(endpoint).toBe('/.netlify/functions/session-save');
     expect(body).toMatchObject({
       sessionId: result.current.sessionId,
@@ -572,5 +573,174 @@ describe('anonymous sessions are recorded by the server', () => {
     });
     expect(postAi).not.toHaveBeenCalled();
     expect(sb.from).not.toHaveBeenCalledWith('training_sessions');
+  });
+});
+
+describe('useTextChat — save as you go (nothing a trainee practises is lost)', () => {
+  function fakeSignedOutSupabase() {
+    const from = vi.fn();
+    const getUser = vi.fn(async () => ({ data: { user: null } }));
+    return { client: { auth: { getUser }, from }, from, getUser };
+  }
+  const checkpoints = () =>
+    postAi.mock.calls.filter(([, b]) => (b as { checkpoint?: boolean }).checkpoint === true);
+
+  beforeEach(() => {
+    acceptTerms();
+    localStorage.removeItem('pbt:pending_session');
+    supabase.client = fakeSignedOutSupabase().client;
+  });
+
+  it('checkpoints after every exchange — in progress, no ending — locally and on the server', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    // Nothing before the trainee has said anything.
+    expect(localStorage.getItem('pbt:pending_session')).toBeNull();
+    await act(async () => {
+      await result.current.send('I hear you on the cost.');
+    });
+    await vi.waitFor(() => expect(checkpoints()).toHaveLength(1));
+    const body = checkpoints()[0][1] as Record<string, unknown>;
+    expect(body).toMatchObject({ sessionId: result.current.sessionId, completed: false, checkpoint: true });
+    expect(body).not.toHaveProperty('endedReason');
+    expect(body.transcript).toHaveLength(3);
+
+    const pending = JSON.parse(localStorage.getItem('pbt:pending_session')!);
+    expect(pending.id).toBe(result.current.sessionId);
+    expect(pending.transcript).toHaveLength(3);
+  });
+
+  it('the final save always lands after the checkpoints, and clears the local copy', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    await act(async () => {
+      await result.current.send('I hear you on the cost.');
+    });
+    evaluateConversation.mockResolvedValueOnce(goodReport(70));
+    await act(async () => {
+      await result.current.end();
+    });
+    await vi.waitFor(() =>
+      expect(postAi.mock.calls.some(([, b]) => (b as { endedReason?: string }).endedReason === 'completed')).toBe(true),
+    );
+    const order = postAi.mock.calls.map(([, b]) => ((b as { checkpoint?: boolean }).checkpoint ? 'checkpoint' : 'final'));
+    expect(order.at(-1)).toBe('final');
+    expect(order.lastIndexOf('checkpoint')).toBeLessThan(order.indexOf('final'));
+    expect(localStorage.getItem('pbt:pending_session')).toBeNull();
+  });
+
+  it('a send that fails still checkpoints the trainee\'s committed message', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    generateRoleplayMessage.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => {
+      await result.current.send('What worries you most?');
+    });
+    await vi.waitFor(() => expect(checkpoints()).toHaveLength(1));
+    expect((checkpoints()[0][1] as { transcript: ChatMessage[] }).transcript.at(-1)?.text).toBe('What worries you most?');
+  });
+
+  it('reset() mid-conversation saves it as left early instead of dropping it', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    await act(async () => {
+      await result.current.send('I hear you on the cost.');
+    });
+    act(() => {
+      result.current.reset();
+    });
+    await vi.waitFor(() =>
+      expect(postAi.mock.calls.some(([, b]) => (b as { endedReason?: string }).endedReason === 'user_exit')).toBe(true),
+    );
+  });
+
+  it('reset() with nothing said saves nothing', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    act(() => {
+      result.current.reset();
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(postAi).not.toHaveBeenCalled();
+  });
+
+  it('a signed-in checkpoint only updates a row still in progress, never overwrites one', async () => {
+    const isFn = vi.fn();
+    const eqCalls: unknown[][] = [];
+    const chain: Record<string, unknown> = {};
+    chain.update = vi.fn(() => chain);
+    chain.eq = vi.fn((...a: unknown[]) => {
+      eqCalls.push(a);
+      return chain;
+    });
+    chain.is = vi.fn((...a: unknown[]) => {
+      isFn(...a);
+      return chain;
+    });
+    chain.select = vi.fn(async () => ({ data: [], error: null }));
+    const upsert = vi.fn(async (_row: Record<string, unknown>, _opts?: unknown) => ({ error: null }));
+    chain.upsert = upsert;
+    supabase.client = {
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
+      from: () => chain,
+    };
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    await act(async () => {
+      await result.current.open();
+    });
+    await act(async () => {
+      await result.current.send('I hear you on the cost.');
+    });
+    await vi.waitFor(() => expect(upsert).toHaveBeenCalled());
+    expect(eqCalls).toContainEqual(['completed', false]);
+    expect(isFn).toHaveBeenCalledWith('ended_reason', null);
+    // No row yet → insert-if-absent only.
+    expect(upsert.mock.calls[0][1]).toEqual({ onConflict: 'id', ignoreDuplicates: true });
+    expect((upsert.mock.calls[0][0] as Record<string, unknown>).completed).toBe(false);
+  });
+
+  it('checkpoints a voice conversation and records one that ends unscored', async () => {
+    const { result } = renderHook(() => useTextChat(SCENARIO_A));
+    const voiceId = '33333333-3333-4333-8333-333333333333';
+    const transcript: ChatMessage[] = [
+      { role: 'ai', text: 'Do we need this?', timestamp: 1 },
+      { role: 'user', text: 'Tell me more.', timestamp: 2 },
+    ];
+    act(() => {
+      result.current.checkpointVoice([transcript[0]], voiceId);
+    });
+    // Nothing until the trainee spoke.
+    expect(localStorage.getItem('pbt:pending_session')).toBeNull();
+    act(() => {
+      result.current.checkpointVoice(transcript, voiceId);
+    });
+    await vi.waitFor(() => expect(checkpoints()).toHaveLength(1));
+    expect(checkpoints()[0][1]).toMatchObject({ sessionId: voiceId, mode: 'voice', checkpoint: true });
+    expect(JSON.parse(localStorage.getItem('pbt:pending_session')!).mode).toBe('voice');
+
+    act(() => {
+      result.current.recordVoiceUnscored(transcript, voiceId, 'user_exit');
+    });
+    await vi.waitFor(() =>
+      expect(postAi.mock.calls.some(([, b]) => (b as { endedReason?: string }).endedReason === 'user_exit')).toBe(true),
+    );
+    expect(localStorage.getItem('pbt:pending_session')).toBeNull();
+    // Finalised: later checkpoints for the same id are ignored.
+    const before = postAi.mock.calls.length;
+    act(() => {
+      result.current.checkpointVoice(transcript, voiceId);
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(postAi.mock.calls.length).toBe(before);
   });
 });

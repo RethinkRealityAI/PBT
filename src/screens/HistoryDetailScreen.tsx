@@ -206,6 +206,11 @@ function ScorecardView({ session }: { session: SessionRecord }) {
                 caption
                 style={{ marginTop: 10, fontSize: 12.5, color: 'var(--pbt-text)' }}
               />
+              {session.recovered && (
+                <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--pbt-text-muted)' }}>
+                  {t('history.recovered')}
+                </div>
+              )}
             </div>
           </div>
         </Glass>

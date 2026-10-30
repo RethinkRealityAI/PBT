@@ -26,6 +26,7 @@ import { getOrCreateSessionId, readStorage, writeStorage } from '../../lib/stora
 import { hasAcceptedCurrentTerms } from '../../lib/terms';
 import { SESSIONS_KEY } from '../../lib/sessionsKey';
 import { uuid } from '../../lib/id';
+import { clearPendingSession, staffTurns, writePendingSession } from './sessionCheckpoint';
 import { getSupabase } from '../auth/supabaseClient';
 import { recordTurns } from '../../services/aiTelemetry';
 import { postAi } from '../../services/aiApi';
@@ -160,6 +161,23 @@ export interface UseTextChat {
    * Resolves true when a real (non-placeholder) score was obtained.
    */
   rescore: () => Promise<boolean>;
+  /**
+   * Save-as-you-go for VOICE (text checkpoints itself after every exchange):
+   * ChatScreen calls this as the live transcript grows, so an interrupted
+   * voice session is still saved and scored later (`sessionCheckpoint.ts`).
+   */
+  checkpointVoice: (transcript: ChatMessage[], voiceSessionId: string | null) => void;
+  /**
+   * Record a voice conversation that ends without a score through the app —
+   * the trainee started over, switched to text, left, or was never heard.
+   * The transcript is still saved (and, if the trainee spoke, scored later
+   * by the server's recovery job), so nothing they practised is lost.
+   */
+  recordVoiceUnscored: (
+    transcript: ChatMessage[],
+    voiceSessionId: string | null,
+    reason: 'user_exit' | 'error',
+  ) => void;
   reset: () => void;
   startedAt: number | null;
 }
@@ -174,6 +192,12 @@ interface PersistArgs {
   endedReason: 'completed' | 'abandoned' | 'timeout' | 'error' | 'user_exit';
   /** App language the session was played in (stored as `training_sessions.locale`). */
   locale: Locale;
+  /**
+   * A mid-conversation save (`sessionCheckpoint.ts`): recorded as in progress
+   * — not completed, no ending — and without per-turn telemetry (that is
+   * written once, with the final save).
+   */
+  checkpoint?: boolean;
 }
 
 /**
@@ -196,7 +220,7 @@ interface PersistArgs {
  * including them here would fail the whole upsert. The upsert only touches
  * the columns listed, so a score the server already wrote is left intact.
  */
-async function persistToSupabase(args: PersistArgs): Promise<void> {
+export async function persistToSupabase(args: PersistArgs): Promise<void> {
   // Admin preview: the conversation is a prompt test, not a training session.
   if (skipPersistence()) return;
   const sb = getSupabase();
@@ -219,7 +243,7 @@ async function persistToSupabase(args: PersistArgs): Promise<void> {
       await recordAnonymousSession(args);
       return;
     }
-    await sb.from('training_sessions').upsert({
+    const row = {
       id: args.recordId,
       user_id: user.id,
       locale: args.locale,
@@ -227,14 +251,33 @@ async function persistToSupabase(args: PersistArgs): Promise<void> {
       transcript: args.transcript as unknown as Record<string, unknown>[],
       duration_seconds: args.durationSeconds,
       mode: args.mode,
-      completed: args.completed,
-      ended_reason: args.endedReason,
+      completed: args.checkpoint ? false : args.completed,
+      ended_reason: args.checkpoint ? null : args.endedReason,
       pushback_id: args.scenario.pushback.id,
       driver: args.scenario.suggestedDriver,
       scenario_summary: scenarioSummaryLine(args.scenario),
       model_id: args.mode === 'voice' ? MODEL_LIVE : MODEL_TEXT,
       turns: args.transcript.length,
-    });
+    };
+
+    if (args.checkpoint) {
+      // Only ever touch a row that is still in progress — a checkpoint that
+      // lands late must not reopen a session that has since finished or
+      // been scored. No row yet → create it (never overwrite one).
+      const { data: updated } = await sb
+        .from('training_sessions')
+        .update(row)
+        .eq('id', args.recordId)
+        .eq('completed', false)
+        .is('ended_reason', null)
+        .select('id');
+      if (!Array.isArray(updated) || updated.length === 0) {
+        await sb.from('training_sessions').upsert(row, { onConflict: 'id', ignoreDuplicates: true });
+      }
+      return;
+    }
+
+    await sb.from('training_sessions').upsert(row);
 
     if (args.transcript.length > 0) {
       await recordTurns(
@@ -265,8 +308,8 @@ async function recordAnonymousSession(args: PersistArgs): Promise<void> {
     scenario: args.scenario,
     transcript: args.transcript,
     mode: args.mode,
-    completed: args.completed,
-    endedReason: args.endedReason,
+    completed: args.checkpoint ? false : args.completed,
+    ...(args.checkpoint ? { checkpoint: true } : { endedReason: args.endedReason }),
     durationSeconds: args.durationSeconds,
     locale: args.locale,
   };
@@ -343,6 +386,18 @@ export function useTextChat(scenario: Scenario): UseTextChat {
   // citations grounded the session in `rag_documents`. [] = ungrounded.
   const retrievedRef = useRef<RetrievedChunk[]>([]);
   const persistedRef = useRef<boolean>(false);
+  /**
+   * Every server write for a session goes through this chain, in order, so a
+   * checkpoint can never land after the final save (or the scorer's write).
+   */
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueueWrite = useCallback((job: () => Promise<void>): Promise<void> => {
+    const next = writeQueueRef.current.then(job, job).catch(() => {});
+    writeQueueRef.current = next;
+    return next;
+  }, []);
+  /** Voice sessions already finalised through the app — no more checkpoints for them. */
+  const finalisedVoiceIdsRef = useRef<Set<string>>(new Set());
 
   /**
    * Canonical, append-only transcript.
@@ -381,6 +436,33 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     ];
     setMessages([...transcriptRef.current]);
   }, []);
+
+  /**
+   * Checkpoint the TEXT conversation so far — locally and on the server —
+   * so an interrupted session survives (see `sessionCheckpoint.ts`). Nothing
+   * for previews, finished sessions, or before the trainee has spoken.
+   */
+  const checkpointText = useCallback(() => {
+    if (skipPersistence() || persistedRef.current) return;
+    const recordId = recordIdRef.current;
+    const msgs = transcriptRef.current.filter((m) => !m._transientError);
+    if (!recordId || staffTurns(msgs) === 0) return;
+    const startedAt = startedAtRef.current ?? Date.now();
+    writePendingSession({ id: recordId, mode: 'text', scenario, transcript: msgs, startedAt, locale });
+    void enqueueWrite(() =>
+      persistToSupabase({
+        scenario,
+        recordId,
+        transcript: msgs,
+        durationSeconds: Math.round((Date.now() - startedAt) / 1000),
+        mode: 'text',
+        completed: false,
+        endedReason: 'abandoned',
+        locale,
+        checkpoint: true,
+      }),
+    );
+  }, [scenario, locale, enqueueWrite]);
 
   const open = useCallback(async () => {
     if (status !== 'idle') return;
@@ -479,6 +561,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
           .trim();
         const cleanMsg: ChatMessage = { ...next, text: cleanText };
         appendTurn(cleanMsg);
+        checkpointText();
 
         // Hard turn cap as a safety net — if the model hasn't ended by
         // MAX_CUSTOMER_TURNS we force the close. Counted AFTER appending
@@ -520,9 +603,11 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         ]);
         setTransientError(translate(locale, 'chat.error.sendRetry'));
         setStatus('awaitingUser');
+        // The trainee's message is committed — keep it even if they give up now.
+        checkpointText();
       }
     },
-    [scenario, appendTurn, promptOverrides, locale],
+    [scenario, appendTurn, promptOverrides, locale, checkpointText],
   );
 
   const end = useCallback(async () => {
@@ -533,6 +618,9 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     // Bind the record about to be written to the scenario it was played
     // against — see scoredScenarioRef.
     scoredScenarioRef.current = scenario;
+    // No checkpoint may land after the scorer writes the score.
+    persistedRef.current = true;
+    await writeQueueRef.current;
 
     let report: ScoreReport | null = null;
     try {
@@ -571,16 +659,19 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       writeStorage(SESSIONS_KEY, [record, ...existing].slice(0, MAX_SESSIONS));
     }
     persistedRef.current = true;
-    void persistToSupabase({
-      scenario,
-      recordId,
-      transcript: msgs,
-      durationSeconds,
-      mode: 'text',
-      completed: true,
-      endedReason: 'completed',
-      locale,
-    });
+    clearPendingSession(recordId);
+    void enqueueWrite(() =>
+      persistToSupabase({
+        scenario,
+        recordId,
+        transcript: msgs,
+        durationSeconds,
+        mode: 'text',
+        completed: true,
+        endedReason: 'completed',
+        locale,
+      }),
+    );
     void persistRagDocument({
       sessionId: recordId,
       scenario,
@@ -592,7 +683,7 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       completed: true,
       retrieved: retrievedRef.current,
     });
-  }, [scenario, locale]);
+  }, [scenario, locale, enqueueWrite]);
 
   const rescore = useCallback(async (): Promise<boolean> => {
     const msgs = transcriptRef.current.filter((m) => !m._transientError);
@@ -680,18 +771,23 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         target: 'session_abandon',
         meta: { sessionId: recordId, reason, turns: msgs.length },
       });
-      void persistToSupabase({
-        scenario,
-        recordId,
-        transcript: msgs,
-        durationSeconds,
-        mode: 'text',
-        completed: false,
-        endedReason: reason,
-        locale,
-      });
+      // The transcript is saved with how it ended; if the trainee spoke, the
+      // server's recovery job scores it later (`sessions-recover`).
+      clearPendingSession(recordId);
+      void enqueueWrite(() =>
+        persistToSupabase({
+          scenario,
+          recordId,
+          transcript: msgs,
+          durationSeconds,
+          mode: 'text',
+          completed: false,
+          endedReason: reason,
+          locale,
+        }),
+      );
     },
-    [scenario, locale],
+    [scenario, locale, enqueueWrite],
   );
 
   // Keep endRef current so the setTimeout in send() calls the latest end()
@@ -725,7 +821,15 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     });
   }, [abandon]);
 
+  // reset() is called from places (scenario arrows, mode switch, preview
+  // runs) that used to drop an unsaved conversation on the floor.
+  const abandonRef = useRef(abandon);
+  abandonRef.current = abandon;
+
   const reset = useCallback(() => {
+    if (!persistedRef.current && staffTurns(transcriptRef.current) > 0) {
+      void abandonRef.current('user_exit');
+    }
     genRef.current += 1;
     transcriptRef.current = [];
     setMessages([]);
@@ -765,22 +869,28 @@ export function useTextChat(scenario: Scenario): UseTextChat {
       const recordId = voiceSessionId ?? recordIdRef.current ?? uuid();
       // Pin it so sessionId is exposed (post-session feedback attributes to it).
       recordIdRef.current = recordId;
+      finalisedVoiceIdsRef.current.add(recordId);
+      clearPendingSession(recordId);
+      // Checkpoints already queued go first; the final save is last.
+      await writeQueueRef.current;
       // Bind the record to the scenario it was played against — see
       // scoredScenarioRef (a later rescore() must not use a newer selection).
       scoredScenarioRef.current = scenario;
       if (msgs.length === 0) {
         setStatus('idle');
         persistedRef.current = true;
-        void persistToSupabase({
-          scenario,
-          recordId,
-          transcript: [],
-          durationSeconds: 1,
-          mode: 'voice',
-          completed: false,
-          endedReason: 'abandoned',
-          locale,
-        });
+        void enqueueWrite(() =>
+          persistToSupabase({
+            scenario,
+            recordId,
+            transcript: [],
+            durationSeconds: 1,
+            mode: 'voice',
+            completed: false,
+            endedReason: 'abandoned',
+            locale,
+          }),
+        );
         return;
       }
 
@@ -808,16 +918,18 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         writeStorage(SESSIONS_KEY, [record, ...existing].slice(0, MAX_SESSIONS));
       }
       persistedRef.current = true;
-      void persistToSupabase({
-        scenario,
-        recordId,
-        transcript: msgs,
-        durationSeconds,
-        mode: 'voice',
-        completed: true,
-        endedReason: 'completed',
-        locale,
-      });
+      void enqueueWrite(() =>
+        persistToSupabase({
+          scenario,
+          recordId,
+          transcript: msgs,
+          durationSeconds,
+          mode: 'voice',
+          completed: true,
+          endedReason: 'completed',
+          locale,
+        }),
+      );
       void persistRagDocument({
         sessionId: recordId,
         scenario,
@@ -829,7 +941,55 @@ export function useTextChat(scenario: Scenario): UseTextChat {
         completed: true,
       });
     },
-    [scenario, locale],
+    [scenario, locale, enqueueWrite],
+  );
+
+  const checkpointVoice = useCallback(
+    (transcript: ChatMessage[], voiceSessionId: string | null) => {
+      if (!voiceSessionId || skipPersistence() || finalisedVoiceIdsRef.current.has(voiceSessionId)) return;
+      const msgs = transcript.filter((m) => !m._transientError);
+      if (staffTurns(msgs) === 0) return;
+      const startedAt = msgs[0]?.timestamp ?? Date.now();
+      writePendingSession({ id: voiceSessionId, mode: 'voice', scenario, transcript: msgs, startedAt, locale });
+      void enqueueWrite(() =>
+        persistToSupabase({
+          scenario,
+          recordId: voiceSessionId,
+          transcript: msgs,
+          durationSeconds: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
+          mode: 'voice',
+          completed: false,
+          endedReason: 'abandoned',
+          locale,
+          checkpoint: true,
+        }),
+      );
+    },
+    [scenario, locale, enqueueWrite],
+  );
+
+  const recordVoiceUnscored = useCallback(
+    (transcript: ChatMessage[], voiceSessionId: string | null, reason: 'user_exit' | 'error') => {
+      if (!voiceSessionId || skipPersistence() || finalisedVoiceIdsRef.current.has(voiceSessionId)) return;
+      finalisedVoiceIdsRef.current.add(voiceSessionId);
+      clearPendingSession(voiceSessionId);
+      const msgs = transcript.filter((m) => !m._transientError);
+      if (msgs.length === 0) return;
+      const startedAt = msgs[0]?.timestamp ?? Date.now();
+      void enqueueWrite(() =>
+        persistToSupabase({
+          scenario,
+          recordId: voiceSessionId,
+          transcript: msgs,
+          durationSeconds: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
+          mode: 'voice',
+          completed: false,
+          endedReason: reason,
+          locale,
+        }),
+      );
+    },
+    [scenario, locale, enqueueWrite],
   );
 
   return {
@@ -845,6 +1005,8 @@ export function useTextChat(scenario: Scenario): UseTextChat {
     restart,
     applyVoiceSessionComplete,
     rescore,
+    checkpointVoice,
+    recordVoiceUnscored,
     reset,
     startedAt: startedAtRef.current,
   };

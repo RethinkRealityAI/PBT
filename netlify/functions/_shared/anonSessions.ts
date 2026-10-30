@@ -83,15 +83,19 @@ export async function writeAnonymousSession(
   sessionId: string,
   anonId: string,
   fields: Record<string, unknown>,
+  opts: { onlyInProgress?: boolean } = {},
 ): Promise<AnonWrite> {
-  const guardedUpdate = () =>
-    sb
+  const guardedUpdate = () => {
+    const q = sb
       .from('training_sessions')
       .update(fields)
       .eq('id', sessionId)
       .is('user_id', null)
-      .eq('anon_session_id', anonId)
-      .select('id');
+      .eq('anon_session_id', anonId);
+    // A checkpoint must never reopen a session that has since finished (or
+    // been scored): it only updates a row still in progress.
+    return (opts.onlyInProgress ? q.eq('completed', false).is('ended_reason', null) : q).select('id');
+  };
   const wrote = (data: unknown) => Array.isArray(data) && data.length > 0;
   const fail = (step: string, message: string): AnonWrite => {
     console.warn(`[sessions] anonymous ${step} failed`, message);

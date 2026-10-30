@@ -56,6 +56,14 @@ export interface SessionSummary {
    * the score were never stored.
    */
   reconstructed: boolean;
+  /**
+   * Scored AFTER the session ended without a score — interrupted (tab closed,
+   * connection lost, app reloaded) or left mid-conversation — by the app on
+   * the trainee's next launch or by the hourly `sessions-recover` job
+   * (`score_report.recovered`). The score is real; the trainee may not have
+   * seen it live.
+   */
+  recovered: boolean;
   /** Row creation — in practice the END of the session (the scorer writes the row). */
   created_at: string;
   /** created_at − duration, when a duration was stored. */

@@ -27,6 +27,7 @@ import { useScreenEnabled } from '../app/screenFlags';
 import { resolveDimensions, resolveWeights } from '../data/knowledge/simulationConfig';
 import type { DimensionKey } from '../data/knowledge/scoringRubric';
 import { SaveProgressBanner } from '../features/auth/SaveProgressBanner';
+import { RecoveredSessionNotice } from '../features/chat/RecoveredSessionNotice';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
 import { ReportModal } from '../features/reporting/ReportModal';
@@ -730,6 +731,7 @@ export function HomeScreen() {
          * Right col (45%): save banner + quick actions + library + ECHO.
          * On mobile both divs stack in JSX order → identical to original layout.
          */}
+        <RecoveredSessionNotice />
         <div className="lg:grid lg:grid-cols-[55fr_45fr] lg:gap-8 lg:items-start">
 
           {/* ── Left column ── */}

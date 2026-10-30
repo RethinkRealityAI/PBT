@@ -3,7 +3,26 @@ import type { chat as enChat } from '../en/chat';
 /** Français (fr-CA). Voir .claude/agents/translator.md pour le glossaire. */
 export const chat: Record<keyof typeof enChat, string> = {
   'chat.voice.capWarning':
-    'Les séances vocales se terminent à 5 minutes — il reste environ une minute.',
+    'Il reste environ une minute. À la fin du temps, vous pourrez continuer ou obtenir votre résultat.',
+  /** Le même avertissement quand il ne reste plus de prolongation « Continuer ». */
+  'chat.voice.capWarningFinal':
+    'Il reste environ une minute. À la fin du temps, vous obtiendrez votre résultat.',
+  /** Compte à rebours de la dernière minute. {time} est au format m:ss (« 0:42 »). */
+  'chat.voice.timeLeft': 'Il reste {time}',
+  'chat.voice.status.paused': 'En pause',
+
+  // Fenêtre « Temps écoulé » (limite de la séance vocale atteinte — `TimeUpModal`)
+  'chat.timeUp.title': 'Temps écoulé',
+  'chat.timeUp.subtitle':
+    'Votre conversation est en pause — rien n’est perdu. Obtenez votre résultat maintenant, ou continuez pour terminer la conversation.',
+  'chat.timeUp.subtitleFinal':
+    'C’est la durée maximale d’une séance vocale. Votre conversation est en pause — rien n’est perdu.',
+  'chat.timeUp.score': 'Terminer et voir mon résultat',
+  /** {minutes} est un nombre entier. */
+  'chat.timeUp.keepGoing': 'Continuer (+{minutes} min)',
+  'chat.timeUp.startOver': 'Recommencer (celle-ci ne sera pas évaluée)',
+  /** {time} est au format m:ss. */
+  'chat.timeUp.autoScore': 'Aucun choix ? Nous l’évaluerons pour vous dans {time}.',
 
   'chat.emotion.defensive': 'Défensif',
   'chat.emotion.receptive': 'Réceptif',
@@ -76,7 +95,28 @@ export const chat: Record<keyof typeof enChat, string> = {
   'chat.voice.error.disabled':
     'La pratique vocale est désactivée pour le moment. Passez au mode écrit pour continuer.',
   'chat.voice.error.lost':
-    'Connexion vocale perdue. Vérifiez votre réseau et touchez « Commencer la simulation » pour redémarrer.',
+    'Connexion vocale perdue. Vous pouvez quand même obtenir un résultat pour la conversation que vous avez eue, ou recommencer.',
+  'chat.voice.lost.scoreSoFar': 'Obtenir mon résultat',
+  'chat.voice.lost.startOver': 'Recommencer',
+  /** La séance s’est terminée sans qu’aucune parole du stagiaire soit captée — rien n’a été évalué. */
+  'chat.voice.notHeard':
+    'Nous n’avons rien entendu de votre part pendant cette séance, elle n’a donc pas été évaluée. Vérifiez que votre microphone est activé et non en sourdine, installez-vous dans un endroit plus calme si possible, puis recommencez.',
+
+  // Passage au mode écrit pendant une conversation vocale en cours (`ChatScreen`)
+  'chat.switchModal.title': 'Passer au mode écrit ?',
+  'chat.switchModal.subtitle':
+    'Vous êtes au milieu d’une conversation vocale. Obtenez d’abord votre résultat, ou changez maintenant et elle ne sera pas évaluée ici.',
+  'chat.switchModal.score': 'Voir d’abord mon résultat',
+  'chat.switchModal.switch': 'Changer sans évaluation',
+  'chat.switchModal.cancel': 'Continuer à parler',
+
+  // Avis à l’accueil après l’enregistrement et l’évaluation d’une séance interrompue (`RecoveredSessionNotice`)
+  'chat.recovered.title': 'Nous avons enregistré votre dernière séance',
+  /** {score} est un nombre entier de 0 à 100. */
+  'chat.recovered.body':
+    'Elle a été interrompue avant la fin, alors nous avons évalué ce que vous avez dit : {score}/100.',
+  'chat.recovered.view': 'Voir mon résultat',
+  'chat.recovered.dismiss': 'Masquer',
   'chat.voice.error.startFailed':
     'Le mode vocal n’a pas pu démarrer : {reason}',
   'chat.voice.error.unknown': 'erreur inconnue',

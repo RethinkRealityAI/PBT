@@ -123,6 +123,15 @@ export interface RoleplayResponse {
 
 // ─── Scoring ───────────────────────────────────────────────────────────────
 
+/**
+ * Why a conversation stopped before its natural close. The scorer gets a
+ * FIXED server-written note for each value (never client text), telling it to
+ * grade the staff turns that happened rather than the missing close.
+ */
+export type EndedEarly = 'time_limit' | 'interrupted';
+
+export const ENDED_EARLY_VALUES: readonly EndedEarly[] = ['time_limit', 'interrupted'];
+
 export interface EvaluateRequest extends AiRequestMeta {
   scenario: Scenario;
   transcript: ChatMessage[];
@@ -140,6 +149,8 @@ export interface EvaluateRequest extends AiRequestMeta {
    * callers, previews and `allowTelemetry: false`.
    */
   anonSessionId?: string;
+  /** Set when the conversation stopped early — see `EndedEarly`. */
+  endedEarly?: EndedEarly;
 }
 
 export interface EvaluateResponse {
@@ -177,8 +188,17 @@ export interface SessionSaveRequest extends AiRequestMeta {
   transcript: ChatMessage[];
   mode: 'text' | 'voice';
   completed: boolean;
-  endedReason: SessionEndedReason;
+  /** Required unless `checkpoint` (an in-progress save records no ending). */
+  endedReason?: SessionEndedReason;
   durationSeconds: number;
+  /**
+   * A mid-conversation save (after each exchange), so an interrupted session
+   * — closed tab, dropped connection — still reaches the database and can be
+   * scored later (`sessions-recover`). Recorded as in progress (`completed:
+   * false`, no `ended_reason`) and only ever applied to a row that is STILL
+   * in progress: a late checkpoint can never reopen a finished session.
+   */
+  checkpoint?: boolean;
 }
 
 export interface SessionSaveResponse {
