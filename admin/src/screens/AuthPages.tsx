@@ -11,6 +11,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Glass } from '../primitives/Glass';
 import { COLOR } from '../lib/tokens';
 import { getSupabase } from '../lib/supabase';
+import {
+  confirmedRecoveryUser,
+  forgetConfirmedRecovery,
+  readRecoveryLink,
+  rememberConfirmedRecovery,
+} from '../lib/recoveryLink';
 
 const MIN_PASSWORD = 10;
 
@@ -213,8 +219,19 @@ export function InviteAcceptPage() {
 
 // ── Password reset ─────────────────────────────────────────────────────
 
+/**
+ * How long to wait for supabase-js to confirm the link with the server before
+ * offering "Try again". Generous on purpose: the check is a network round trip
+ * and a slow phone must never be told a good link has expired.
+ */
+const CONFIRM_TIMEOUT_MS = 20_000;
+
 export function ResetPasswordPage() {
-  const [ready, setReady] = useState<'checking' | 'ok' | 'invalid'>('checking');
+  // Read before supabase-js consumes the hash (see `readRecoveryLink`).
+  const [link] = useState(() => readRecoveryLink(window.location.href));
+  const [ready, setReady] = useState<'checking' | 'ok' | 'invalid' | 'unconfirmed'>(() =>
+    link.kind === 'error' ? 'invalid' : 'checking',
+  );
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
@@ -222,26 +239,41 @@ export function ResetPasswordPage() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    const sb = getSupabase();
-    // supabase-js consumes the recovery hash on load and emits the session.
-    let settled = false;
-    const finish = (ok: boolean) => {
-      if (settled) return;
-      settled = true;
-      setReady(ok ? 'ok' : 'invalid');
+    if (link.kind === 'error') return;
+    // The account this page may change: the link's, or — on a reload after the
+    // hash was consumed — the one this tab already confirmed. Never simply
+    // whoever is signed in: a failed link leaves an older session in place.
+    const expected = link.kind === 'recovery' ? link.userId : confirmedRecoveryUser();
+    if (!expected) {
+      setReady('invalid');
+      return;
+    }
+    let cancelled = false;
+    const settle = (next: 'ok' | 'invalid' | 'unconfirmed') => {
+      if (!cancelled) setReady((prev) => (prev === 'checking' ? next : prev));
     };
-    sb.auth.getSession().then(({ data }) => {
-      if (data.session) finish(true);
-    });
-    const { data: sub } = sb.auth.onAuthStateChange((_e, session) => {
-      if (session) finish(true);
-    });
-    const timer = window.setTimeout(() => finish(false), 2500);
+    const timer = window.setTimeout(() => settle('unconfirmed'), CONFIRM_TIMEOUT_MS);
+    // getSession() waits for supabase-js to finish reading the link (it
+    // verifies the token with the server), so this is its real answer.
+    getSupabase()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (data.session?.user.id === expected) {
+          rememberConfirmedRecovery(expected);
+          settle('ok');
+        } else {
+          // A fresh link that didn't produce its session is almost always a
+          // dropped connection (Supabase rejects a used/expired link before it
+          // ever reaches this page) — offer a retry, not "expired".
+          settle(link.kind === 'recovery' ? 'unconfirmed' : 'invalid');
+        }
+      })
+      .catch(() => settle('unconfirmed'));
     return () => {
-      sub.subscription.unsubscribe();
+      cancelled = true;
       window.clearTimeout(timer);
     };
-  }, []);
+  }, [link]);
 
   const strong = password.length >= MIN_PASSWORD;
   const matches = password === confirm;
@@ -253,6 +285,7 @@ export function ResetPasswordPage() {
       const sb = getSupabase();
       const { error: err } = await sb.auth.updateUser({ password });
       if (err) throw new Error(err.message);
+      forgetConfirmedRecovery();
       // Fire-and-forget confirmation email; failure must not block the reset.
       const { data } = await sb.auth.getSession();
       if (data.session) {
@@ -277,6 +310,26 @@ export function ResetPasswordPage() {
     return (
       <AuthShell title="Checking your link…">
         <p style={bodyText}>One moment.</p>
+      </AuthShell>
+    );
+  }
+
+  if (ready === 'unconfirmed') {
+    return (
+      <AuthShell title="We couldn’t check your link">
+        <p style={bodyText}>
+          Your reset link looks right, but we couldn’t confirm it with the
+          server — usually a weak connection. Try again. If it still doesn’t
+          work, request a new link from the sign-in screen.
+        </p>
+        <button type="button" onClick={() => window.location.reload()} style={{ ...primaryButton(false), marginTop: 16 }}>
+          Try again
+        </button>
+        <div>
+          <a href="/admin" style={linkStyle}>
+            Back to sign in
+          </a>
+        </div>
       </AuthShell>
     );
   }
