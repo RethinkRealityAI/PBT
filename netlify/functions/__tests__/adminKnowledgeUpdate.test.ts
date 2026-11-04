@@ -174,3 +174,28 @@ describe('admin-knowledge update — knowledge scope', () => {
     expect((docPatch().metadata as Bag).tags).toMatchObject({ tools: ['scoring'] });
   });
 });
+
+describe('admin-knowledge update — section / page chunks (external corpora)', () => {
+  it('keeps each chunk\'s section or page suffix when the citation is edited', async () => {
+    sb.setHandler('knowledge_chunks', (call: SbCall) =>
+      call.ops.some((o) => o.op === 'update')
+        ? { data: null, error: null }
+        : {
+            data: [
+              { id: 'c1', tags: { category: 'clinical', focus: 'weight', section: 'Key points' } },
+              { id: 'c2', tags: { category: 'clinical', focus: 'weight' } },
+              { id: 'c3', tags: { category: 'clinical', focus: 'weight', section: 'Intro', pages: [4] } },
+            ],
+            error: null,
+          },
+    );
+    const res = await update({ citation: 'Example AQ. Synthetic. 2026.' });
+    expect(res.status).toBe(200);
+    expect(chunkPatches().map((p) => p.citation)).toEqual([
+      'Example AQ. Synthetic. 2026. — "Key points"',
+      'Example AQ. Synthetic. 2026.',
+      'Example AQ. Synthetic. 2026. — p. 4',
+    ]);
+    expect((chunkPatches()[0].tags as Bag).section).toBe('Key points');
+  });
+});

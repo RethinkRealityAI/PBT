@@ -61,11 +61,27 @@ import {
 } from './knowledgeSync';
 import type { SqlChunkRow, SqlDocument } from './knowledgeSql';
 import { embedTexts } from './gemini';
-import { chunkMarkdown } from '../../../src/services/ragShared';
+import { chunkMarkdown, pageCitation, sectionCitation } from '../../../src/services/ragShared';
+import {
+  academyDocs,
+  bundledAcademyManifest,
+  isAcademySlug,
+  type AcademyManifest,
+} from './knowledgeAcademy';
+import { bundledFelineManifest, felineDocs, isFelineSlug, type FelineManifest } from './knowledgeFeline';
+import {
+  snapshotReaderFor,
+  type ExternalCorpus,
+  type ExternalDocsResult,
+  type SnapshotReader,
+} from './knowledgeExternal';
 import { estimateTokens } from '../../../src/shared/ai/telemetryHeuristics';
 
-export type KnowledgeGroup = 'fecal' | 'builtin' | 'studies';
-export const KNOWLEDGE_GROUPS: KnowledgeGroup[] = ['fecal', 'builtin', 'studies'];
+export type KnowledgeGroup = 'fecal' | 'builtin' | 'studies' | 'academy' | 'feline';
+export const KNOWLEDGE_GROUPS: KnowledgeGroup[] = ['fecal', 'builtin', 'studies', 'academy', 'feline'];
+const EXTERNAL_GROUPS: readonly ExternalCorpus[] = ['academy', 'feline'];
+const isExternalGroup = (g: KnowledgeGroup): g is ExternalCorpus =>
+  (EXTERNAL_GROUPS as readonly string[]).includes(g);
 
 export interface ResolvedDoc {
   slug: string;
@@ -89,6 +105,23 @@ export interface ResolvedDoc {
   citationDefault?: string;
   /** Explicit embedding units (the fecal charts), else `chunkMarkdown`. */
   chunks?: string[];
+  /**
+   * Section of each explicit chunk (parallel to `chunks`; the external
+   * corpora). Adds `section` to the chunk's tags, and to its citation unless
+   * the chunk is paged.
+   */
+  chunkSections?: string[];
+  /**
+   * Source pages of each explicit chunk (parallel to `chunks`; the feline
+   * assets). Adds `pages` to the chunk's tags and "— p. N" to its citation.
+   */
+  chunkPages?: number[][];
+  /**
+   * What chunk tags carry besides the catalogue tags, when it must differ
+   * from `baseMetadata` — an Academy article keeps its provenance block on
+   * the document only. Absent = `baseMetadata` (every other seed).
+   */
+  chunkTagBase?: Record<string, unknown>;
 }
 
 export type SyncAction = 'created' | 'updated' | 'unchanged' | 'left deleted' | 'retired';
@@ -107,6 +140,15 @@ export interface RunKnowledgeSyncOptions {
   sb: KnowledgeDb;
   /** Bytes of a bundled study PDF, by file name under public/studies/. */
   readStudy: (file: string) => Promise<Uint8Array>;
+  /**
+   * Reads the external corpora's text from `knowledge_source_snapshots`.
+   * Absent ⇒ read through `sb` (the service role); null ⇒ not reachable
+   * here, and the `academy` / `feline` groups are skipped and own nothing
+   * (never retired) — see knowledgeExternal.ts.
+   */
+  readSnapshots?: SnapshotReader | null;
+  /** Override the bundled manifests (tests). null = unreadable. */
+  manifests?: { academy?: AcademyManifest | null; feline?: FelineManifest | null };
   /** Defaults to every group. */
   groups?: readonly KnowledgeGroup[];
   /** Rows already read (saves a round-trip); otherwise read from `sb`. */
@@ -130,11 +172,15 @@ export interface RunKnowledgeSyncResult {
   existingRows: ExistingKnowledgeRow[];
   /** Set when the run did nothing because another sync holds the lease. */
   skipped?: 'lease-held';
+  /** Each external corpus's gate, when the run included it. */
+  external: Partial<Record<ExternalCorpus, { published: boolean; status: string }>>;
 }
 
 /** The group a stored slug belongs to — decides whether a partial run owns it. */
 export function groupOfSlug(slug: string): KnowledgeGroup {
   if (isFecalSeedSlug(slug)) return 'fecal';
+  if (isAcademySlug(slug)) return 'academy';
+  if (isFelineSlug(slug)) return 'feline';
   if (slug.startsWith('study:') || BUNDLED_STUDIES.some((s) => s.slug === slug)) return 'studies';
   return 'builtin';
 }
@@ -352,14 +398,29 @@ async function prepareChunks(
   const citation = catalogue.citationFor({ slug: doc.slug, citation: doc.citationDefault });
   const units = doc.chunks ?? chunkMarkdown(doc.content);
   const embeddings = await embedTexts(units, 'RETRIEVAL_DOCUMENT');
-  return units.map((content, i) => ({
-    chunk_idx: i,
-    content,
-    token_estimate: estimateTokens(content),
-    tags: { category: doc.category, ...doc.baseMetadata, ...tags },
-    citation,
-    embedding: embeddings[i],
-  }));
+  const base = doc.chunkTagBase ?? doc.baseMetadata;
+  return units.map((content, i) => {
+    const section = doc.chunkSections?.[i];
+    const pages = doc.chunkPages?.[i];
+    return {
+      chunk_idx: i,
+      content,
+      token_estimate: estimateTokens(content),
+      tags: {
+        category: doc.category,
+        ...base,
+        ...tags,
+        ...(section ? { section } : {}),
+        ...(pages?.length ? { pages } : {}),
+      },
+      citation: pages?.length
+        ? pageCitation(citation, pages)
+        : section
+          ? sectionCitation(citation, section)
+          : citation,
+      embedding: embeddings[i],
+    };
+  });
 }
 
 /** Plan, then apply (or collect, or report) the built-in knowledge base. */
@@ -387,6 +448,7 @@ export async function runKnowledgeSync(
       retiredSlugs: [],
       existingRows: opts.existingRows ?? [],
       skipped: 'lease-held',
+      external: {},
     };
   }
   try {
@@ -413,10 +475,45 @@ async function runKnowledgeSyncUnlocked(
   if (groups.has('studies')) {
     desired.push(...(await studyDocs(rowsBySlug, opts.readStudy, dryRun, log)));
   }
+  // An external corpus owns its slugs only while it is published and every
+  // approved document was read and verified: a closed gate, a missing row or
+  // an unreadable table leaves stored rows alone.
+  const external: RunKnowledgeSyncResult['external'] = {};
+  const read = opts.readSnapshots === undefined ? snapshotReaderFor(opts.sb) : opts.readSnapshots;
+  for (const corpus of EXTERNAL_GROUPS) {
+    if (!groups.has(corpus)) continue;
+    let result: ExternalDocsResult;
+    try {
+      result =
+        corpus === 'academy'
+          ? await academyDocs(
+              opts.manifests && 'academy' in opts.manifests
+                ? (opts.manifests.academy ?? null)
+                : bundledAcademyManifest(),
+              read,
+            )
+          : await felineDocs(
+              opts.manifests && 'feline' in opts.manifests
+                ? (opts.manifests.feline ?? null)
+                : bundledFelineManifest(),
+              read,
+            );
+    } catch (err) {
+      // A malformed manifest must not take the other groups down.
+      const reason = err instanceof Error ? err.message : String(err);
+      result = { published: false, docs: [], status: `${corpus}: SKIPPED — ${reason}; stored documents untouched` };
+    }
+    external[corpus] = { published: result.published, status: result.status };
+    log(`  ${result.status}`);
+    desired.push(...result.docs);
+  }
   desired.sort((a, b) => a.slug.localeCompare(b.slug));
 
   const plan = planKnowledgeSync(desired, existingRows, {
-    owns: (slug) => groups.has(groupOfSlug(slug)),
+    owns: (slug) => {
+      const group = groupOfSlug(slug);
+      return groups.has(group) && (!isExternalGroup(group) || external[group]?.published === true);
+    },
   });
   const catalogue = buildSeedCatalogue(existingRows);
   const summary = summarizeSync(plan);
@@ -435,7 +532,7 @@ async function runKnowledgeSyncUnlocked(
     }
     for (const slug of plan.retire) lines.push({ slug, action: 'retired', chunks: null });
     lines.sort((a, b) => a.slug.localeCompare(b.slug));
-    return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows };
+    return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows, external };
   }
 
   const write: Array<{ doc: ResolvedDoc; action: SyncAction }> = [
@@ -541,5 +638,5 @@ async function runKnowledgeSyncUnlocked(
   for (const doc of plan.skip) lines.push({ slug: doc.slug, action: 'unchanged', chunks: null });
   lines.sort((a, b) => a.slug.localeCompare(b.slug));
 
-  return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows };
+  return { plan, lines, summary, sqlDocs, retiredSlugs, existingRows, external };
 }

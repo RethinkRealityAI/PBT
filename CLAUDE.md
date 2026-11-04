@@ -316,7 +316,9 @@ three triggers:
    and **can never fail the deploy**.
 3. **`npm run knowledge:sync`** (service-role env) — the hands-on one.
    `--dry-run` prints the plan without calling Gemini at all;
-   `--only fecal|builtin|studies` narrows it. After a direct sync it runs the
+   `--only fecal|builtin|studies|academy|feline` narrows it (`--dry-run
+   --existing rows.json` needs no keys at all; `--snapshots <file>` feeds
+   the external corpora offline). After a direct sync it runs the
    retrieval proof (the dog probe must rank the Score 3.5 passage first; the
    cat probe must return only `fecal:cat`) and exits non-zero on failure.
    No service key? `-- --emit-sql <file> --existing <rows.json>` runs the same
@@ -339,6 +341,43 @@ three triggers:
   the engine; the study PDFs are *injected* so disk and HTTP produce the same
   `sourceHash`), `_shared/knowledgeSql.ts` (SQL emission),
   `_shared/knowledgeTrigger.ts` (the fire-and-forget kick + the HMAC key).
+
+### External corpora — Royal Canin Academy + feline assets (publish-gated)
+
+The repo is PUBLIC and this text is © Royal Canin, so **no source text lives
+in git**: `knowledge/<corpus>/manifest.json` (gate + per-document scope +
+sha256 pin `contentHash`) and `catalogue.json` (metadata only) are code; the
+reviewed Markdown is in **`knowledge_source_snapshots`** (service role only;
+migration `20261104000000_knowledge_source_snapshots.sql`). Specs:
+`docs/superpowers/specs/2026-10-26-academy-knowledge-import-design.md` +
+`2026-11-04-feline-knowledge-import-design.md`.
+- **One engine** `_shared/knowledgeExternal.ts`: a corpus yields documents
+  only when `permission.status === 'granted'` AND `publish === true` AND
+  every approved row exists with sha256(content) = the pin. Anything else
+  (closed gate, missing / edited row, unreadable table, bad manifest) skips
+  the corpus with a loud line and it OWNS nothing — never retires. Manifests
+  are bundled by static JSON import (no `included_files`).
+- **Writers:** `npm run academy:snapshot` / `feline:snapshot` re-pin the
+  manifest and, with `-- --upload` (service role) or `--emit-sql <file>`,
+  upsert the rows (`scripts/knowledgeSnapshots.ts`). A row alone is never
+  retrievable. **Upload before a pin change merges**, or the sync skips.
+- **Guard:** `src/tests/knowledge-repo-guard.test.ts` — only manifests /
+  catalogues / READMEs under `knowledge/`, no prose keys
+  (`description`, `keywords`, `authors`, `content`, …), no Box share link
+  or `@royalcanin.com` address anywhere. Test fixtures are synthetic.
+- **Academy** (`academy:<slug>`, `knowledge/academy/README.md`): 131 approved
+  Vet Focus articles, text from the CMS `__NEXT_DATA__` JSON converted
+  deterministically (`scripts/academy/`: catalogue / snapshot / verify;
+  truthful UA, ≥ 1.5 s, never `/api/`, cache `.cache/academy/`). Tags
+  `{ focus, tools, species, origin:'academy' }`, species from the site's
+  `Species[]`; section chunks (`chunkSectionedMarkdown`, References not
+  embedded). Gate ships `pending` / `false`: **Royal Canin's written
+  permission must be recorded before flipping it.**
+- **Feline** — see the subsection below.
+- Admin → Knowledge: "Royal Canin Academy" / "Royal Canin asset" pill (asset
+  type · region) and "Open source ↗" (vetted: Academy origin / https
+  `*.box.com` only, read from DB metadata). `admin-knowledge-ingest`
+  `re-embed` re-chunks both kinds the sync's way.
 
 ### Tag assistant (AI pre-fill when filing a document)
 

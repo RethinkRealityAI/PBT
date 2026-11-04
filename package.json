@@ -15,7 +15,10 @@
     "typecheck": "tsc --noEmit",
     "check:bundle": "node scripts/check-bundle-size.mjs",
     "verify:db": "node scripts/verify-db-schema.mjs",
-    "knowledge:sync": "esbuild scripts/knowledge-sync.ts --bundle --platform=node --format=esm --packages=external --outfile=.netlify/knowledge-sync.mjs && node .netlify/knowledge-sync.mjs"
+    "knowledge:sync": "esbuild scripts/knowledge-sync.ts --bundle --platform=node --format=esm --packages=external --outfile=.netlify/knowledge-sync.mjs && node .netlify/knowledge-sync.mjs",
+    "academy:catalogue": "esbuild scripts/academy/catalogue.ts --bundle --platform=node --format=esm --packages=external --outfile=.netlify/academy-catalogue.mjs && node .netlify/academy-catalogue.mjs",
+    "academy:snapshot": "esbuild scripts/academy/snapshot.ts --bundle --platform=node --format=esm --packages=external --outfile=.netlify/academy-snapshot.mjs && node .netlify/academy-snapshot.mjs",
+    "academy:verify": "esbuild scripts/academy/verify.ts --bundle --platform=node --format=esm --packages=external --outfile=.netlify/academy-verify.mjs && node .netlify/academy-verify.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

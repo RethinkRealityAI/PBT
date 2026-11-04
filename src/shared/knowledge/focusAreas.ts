@@ -35,6 +35,11 @@ export const FOCUS_AREAS: FocusArea[] = [
     description: 'Urinary crystals, stones, and urinary-care diets.',
   },
   {
+    key: 'renal',
+    label: 'Kidney health',
+    description: 'Chronic kidney disease, renal diets, phosphorus restriction, early renal support.',
+  },
+  {
     key: 'aging',
     label: 'Senior care',
     description: 'Aging pets, mobility, cognition, senior diets.',

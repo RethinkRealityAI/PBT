@@ -25,7 +25,13 @@
  *
  *   npm run knowledge:sync                    — write straight to Supabase
  *   npm run knowledge:sync -- --dry-run       — print the plan, write nothing
- *   npm run knowledge:sync -- --only fecal    — fecal | builtin | studies
+ *   npm run knowledge:sync -- --only fecal    — fecal | builtin | studies | academy | feline
+ *   npm run knowledge:sync -- --only academy --dry-run --existing rows.json
+ *                                             — plan with no keys at all
+ *   … --snapshots snapshots.json              — offline modes: the external
+ *                                               corpora's text from a file
+ *                                               (an array of
+ *                                               knowledge_source_snapshots rows)
  *   npm run knowledge:sync -- --emit-sql db/knowledge.sql --existing rows.json
  *
  * ── Idempotence ────────────────────────────────────────────────────────────
@@ -70,10 +76,26 @@
  * split into `<file>.001.sql`, `<file>.002.sql`, … of ~400 KB each; apply
  * them in order.
  *
+ * ── External corpora (`--only academy`, `--only feline`) ────────────────────
+ * Royal Canin Academy articles and Royal Canin feline assets. Their
+ * manifests (`knowledge/<corpus>/manifest.json`) are code; their TEXT is in
+ * the service-role table `knowledge_source_snapshots`, uploaded by
+ * `npm run academy:snapshot -- --upload` / `feline:snapshot -- --upload`
+ * and accepted only when it matches the manifest's sha256 pin. A corpus
+ * writes NOTHING until its manifest's permission is `granted` AND `publish`
+ * is true; until then every run prints a "NOT PUBLISHED" line and leaves
+ * stored rows alone. Offline modes read the text from `--snapshots <file>`
+ * or skip the corpus. When published, the proof adds probes per corpus
+ * (academy: weight-denial passage for a dog, no dog-only article for a cat;
+ * feline: a urinary passage for a cat scoring query, owner-facing documents
+ * only for a cat roleplay query, nothing feline for a dog; neither for the
+ * Fecal Scan).
+ *
  * Env (names only are ever printed, never values):
  *   direct:     SUPABASE_URL (or VITE_SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY,
  *               GEMINI_API_KEY
  *   --emit-sql: GEMINI_API_KEY
+ *   --dry-run:  the Supabase pair, or none with `--existing <rows.json>`
  *
  * Paths are resolved from `process.cwd()`, which npm and the Netlify build
  * plugin both set to the repo root.
@@ -90,6 +112,9 @@ import {
 } from '../netlify/functions/_shared/knowledgeSyncRun';
 import type { ExistingKnowledgeRow } from '../netlify/functions/_shared/knowledgeSync';
 import { emitKnowledgeSqlFiles } from '../netlify/functions/_shared/knowledgeSql';
+import { isAcademySlug } from '../netlify/functions/_shared/knowledgeAcademy';
+import { isFelineSlug } from '../netlify/functions/_shared/knowledgeFeline';
+import type { SnapshotReader, SnapshotRow } from '../netlify/functions/_shared/knowledgeExternal';
 import { toPgvectorLiteral } from '../src/services/ragShared';
 import {
   FECAL_SPECIES,
@@ -104,6 +129,7 @@ interface Options {
   dryRun: boolean;
   emitSql: string | null;
   existing: string | null;
+  snapshots: string | null;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -111,6 +137,7 @@ function parseArgs(argv: string[]): Options {
   let dryRun = false;
   let emitSql: string | null = null;
   let existing: string | null = null;
+  let snapshots: string | null = null;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -129,10 +156,13 @@ function parseArgs(argv: string[]): Options {
     } else if (arg === '--existing') {
       existing = argv[++i] ?? '';
       if (!existing) throw new Error('--existing needs a file path');
+    } else if (arg === '--snapshots') {
+      snapshots = argv[++i] ?? '';
+      if (!snapshots) throw new Error('--snapshots needs a file path');
     } else if (arg === '--help' || arg === '-h') {
       console.log(
-        'Usage: npm run knowledge:sync [-- --only fecal|builtin|studies] [--dry-run]\n' +
-          '       npm run knowledge:sync -- --emit-sql <file> --existing <rows.json>',
+        'Usage: npm run knowledge:sync [-- --only fecal|builtin|studies|academy|feline] [--dry-run]\n' +
+          '       npm run knowledge:sync -- --emit-sql <file> --existing <rows.json> [--snapshots <file>]',
       );
       process.exit(0);
     } else {
@@ -145,6 +175,17 @@ function parseArgs(argv: string[]): Options {
     dryRun,
     emitSql,
     existing,
+    snapshots,
+  };
+}
+
+/** `--snapshots <file>`: knowledge_source_snapshots rows from a JSON file (offline modes). */
+function fileSnapshotReader(file: string): SnapshotReader {
+  const rows = JSON.parse(readFileSync(path.resolve(process.cwd(), file), 'utf8')) as SnapshotRow[];
+  if (!Array.isArray(rows)) throw new Error('--snapshots must hold a JSON array of rows');
+  return async (corpus, slugs) => {
+    const want = new Set(slugs);
+    return rows.filter((r) => r.corpus === corpus && want.has(r.slug));
   };
 }
 
@@ -233,6 +274,91 @@ interface RpcClient {
   }>;
 }
 
+// ── Academy proof (only when the academy group is published) ───────────────
+
+const ACADEMY_DOG_PROBE =
+  'The owner insists their Labrador is not overweight, just big-boned, and refuses a weight loss diet';
+const ACADEMY_CAT_PROBE = 'How should I talk to a cat owner about their overweight cat and feeding?';
+
+interface ScopedRow extends MatchRow {
+  tags?: Record<string, unknown> | null;
+}
+
+async function matchScoped(sb: RpcClient, query: string, filter: Record<string, unknown>): Promise<ScopedRow[]> {
+  const [embedding] = await embedTexts([query], 'RETRIEVAL_QUERY');
+  const { data, error } = await sb.rpc('match_knowledge_chunks', {
+    query_embedding: toPgvectorLiteral(embedding),
+    match_count: 3,
+    filter,
+  });
+  if (error) throw new Error(`match_knowledge_chunks failed — ${error.message}`);
+  return (data ?? []) as ScopedRow[];
+}
+
+async function proveAcademy(sb: RpcClient, dogOnly: Set<string>): Promise<void> {
+  console.log('\nVerifying academy — scope { tools:[roleplay], species:[dog] }');
+  const dogRows = await matchScoped(sb, ACADEMY_DOG_PROBE, { tools: ['roleplay'], species: ['dog'] });
+  dogRows.forEach((r, i) =>
+    console.log(`  ${i + 1}. ${r.similarity.toFixed(4)}  [${r.doc_slug ?? '?'}]  ${String(r.tags?.focus ?? '—')}`),
+  );
+  const grounded = dogRows.some(
+    (r) =>
+      (isAcademySlug(r.doc_slug ?? '') || (r.doc_slug ?? '').startsWith('clinical:')) &&
+      r.tags?.focus === 'weight',
+  );
+  if (!grounded) {
+    throw new Error('The weight-denial probe found no academy:/clinical: passage with focus "weight".');
+  }
+
+  console.log('\nVerifying academy isolation — scope { tools:[roleplay], species:[cat] }');
+  const catRows = await matchScoped(sb, ACADEMY_CAT_PROBE, { tools: ['roleplay'], species: ['cat'] });
+  const leaked = catRows.find((r) => r.doc_slug && dogOnly.has(r.doc_slug));
+  if (leaked) throw new Error(`Cat scope returned the dog-only article ${leaked.doc_slug}.`);
+
+  console.log('\nVerifying academy isolation — scope { tools:[fecal-scan] }');
+  for (const species of ['dog', 'cat'] as const) {
+    const rows = await matchScoped(sb, ACADEMY_DOG_PROBE, { tools: ['fecal-scan'], species: [species] });
+    const stray = rows.find((r) => isAcademySlug(r.doc_slug ?? ''));
+    if (stray) throw new Error(`The Fecal Scan scope returned ${stray.doc_slug}.`);
+  }
+  console.log('\nOK — academy passages ground the weight probe and stay inside their scopes.');
+}
+
+// ── Feline proof (only when the feline group is published) ─────────────────
+
+const FELINE_SCORING_PROBE =
+  'Can a therapeutic urinary diet dissolve struvite stones in a cat, and how long does dissolution take?';
+const FELINE_OWNER_PROBE = 'My cat keeps going to the litter box and I am worried about her bladder';
+const FELINE_DOG_PROBE = 'My dog has bladder crystals; which urinary diet should he eat?';
+
+async function proveFeline(sb: RpcClient, ownerFacing: Set<string>): Promise<void> {
+  console.log('\nVerifying feline — scope { tools:[scoring], species:[cat] }');
+  const scoring = await matchScoped(sb, FELINE_SCORING_PROBE, { tools: ['scoring'], species: ['cat'] });
+  scoring.forEach((r, i) =>
+    console.log(`  ${i + 1}. ${r.similarity.toFixed(4)}  [${r.doc_slug ?? '?'}]  ${String(r.tags?.focus ?? '—')}`),
+  );
+  if (!scoring.some((r) => isFelineSlug(r.doc_slug ?? '') && r.tags?.focus === 'urinary')) {
+    throw new Error('The struvite probe found no feline: passage with focus "urinary".');
+  }
+
+  console.log('\nVerifying feline audience — scope { tools:[roleplay], species:[cat] }');
+  const roleplay = await matchScoped(sb, FELINE_OWNER_PROBE, { tools: ['roleplay'], species: ['cat'] });
+  const vetOnly = roleplay.find((r) => isFelineSlug(r.doc_slug ?? '') && !ownerFacing.has(r.doc_slug ?? ''));
+  if (vetOnly) throw new Error(`The cat roleplay scope returned the vet-facing ${vetOnly.doc_slug}.`);
+
+  console.log('\nVerifying feline isolation — dog and Fecal Scan scopes');
+  for (const filter of [
+    { tools: ['roleplay'], species: ['dog'] },
+    { tools: ['scoring'], species: ['dog'] },
+    { tools: ['fecal-scan'], species: ['cat'] },
+  ]) {
+    const rows = await matchScoped(sb, FELINE_DOG_PROBE, filter);
+    const stray = rows.find((r) => isFelineSlug(r.doc_slug ?? ''));
+    if (stray) throw new Error(`Scope ${JSON.stringify(filter)} returned ${stray.doc_slug}.`);
+  }
+  console.log('\nOK — feline passages ground the urinary probe and stay inside their scopes.');
+}
+
 async function proveRetrieval(sb: RpcClient): Promise<void> {
   async function probe(species: 'dog' | 'cat'): Promise<MatchRow[]> {
     const [embedding] = await embedTexts([PROBE], 'RETRIEVAL_QUERY');
@@ -317,24 +443,29 @@ async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
   const emitting = opts.emitSql !== null;
 
-  const missing = [!process.env.GEMINI_API_KEY && 'GEMINI_API_KEY'].filter(Boolean) as string[];
-  const url = emitting ? '' : envFirst('SUPABASE_URL', 'VITE_SUPABASE_URL');
-  const serviceKey = emitting ? '' : (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '');
-  if (!emitting) {
+  // A dry run never embeds, and with `--existing` it never reads the
+  // database either — so it can run on a machine with no keys at all.
+  const offline = emitting || (opts.dryRun && opts.existing !== null);
+  const missing = [!opts.dryRun && !process.env.GEMINI_API_KEY && 'GEMINI_API_KEY'].filter(
+    Boolean,
+  ) as string[];
+  const url = offline ? '' : envFirst('SUPABASE_URL', 'VITE_SUPABASE_URL');
+  const serviceKey = offline ? '' : (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '');
+  if (!offline) {
     if (!url) missing.push('SUPABASE_URL (or VITE_SUPABASE_URL)');
     if (!serviceKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
   }
   // Names only — never the values.
   if (missing.length) throw new Error(`Missing env: ${missing.join(', ')}`);
 
-  const sb = emitting
+  const sb = offline
     ? null
     : createClient(url, serviceKey, {
         auth: { persistSession: false, autoRefreshToken: false },
       });
 
   let existingRows: ExistingKnowledgeRow[] | undefined;
-  if (emitting) {
+  if (offline) {
     if (!opts.existing) {
       throw new Error(
         '--emit-sql needs --existing <file> (see the SELECT in this file’s header). ' +
@@ -351,6 +482,9 @@ async function main(): Promise<void> {
     // rows come from the snapshot and the output is a file.
     sb: sb ?? ({ from: () => { throw new Error('no database in --emit-sql mode'); } } as never),
     readStudy: readStudyFromDisk,
+    // Online: the table, through the service role. Offline: `--snapshots`,
+    // else the external corpora are skipped (loudly, never retired).
+    readSnapshots: opts.snapshots ? fileSnapshotReader(opts.snapshots) : offline ? null : undefined,
     groups: opts.groups,
     existingRows,
     dryRun: opts.dryRun,
@@ -360,6 +494,13 @@ async function main(): Promise<void> {
 
   console.log('');
   printTable(result.lines);
+
+  for (const corpus of ['academy', 'feline'] as const) {
+    const gate = result.external[corpus];
+    // Loud on purpose: a reviewer reading a dry run must not mistake an
+    // empty plan for "already in sync".
+    if (gate && !gate.published) console.log(`\n*** ${gate.status} ***`);
+  }
 
   if (opts.dryRun) {
     console.log(`\n${result.summary} (dry run — nothing was written)`);
@@ -391,6 +532,30 @@ async function main(): Promise<void> {
     // now; proving retrieval against a half-written corpus would only fail.
     console.log('Retrieval proof skipped — another sync holds the lease.');
     return;
+  }
+
+  if (result.external.academy?.published) {
+    const dogOnly = new Set(
+      result.plan.create
+        .concat(result.plan.update, result.plan.skip)
+        .filter((d) => d.group === 'academy')
+        .filter((d) => {
+          const species = (d.tagDefaults.species as string[] | undefined) ?? [];
+          return !species.includes('cat');
+        })
+        .map((d) => d.slug),
+    );
+    await proveAcademy(sb as unknown as RpcClient, dogOnly);
+  }
+
+  if (result.external.feline?.published) {
+    const ownerFacing = new Set(
+      result.plan.create
+        .concat(result.plan.update, result.plan.skip)
+        .filter((d) => d.group === 'feline' && d.tagDefaults.audience === 'owner')
+        .map((d) => d.slug),
+    );
+    await proveFeline(sb as unknown as RpcClient, ownerFacing);
   }
 
   if (!opts.groups.includes('fecal')) {

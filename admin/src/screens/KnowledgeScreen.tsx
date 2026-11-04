@@ -46,6 +46,8 @@ import {
 } from '../data/queries';
 import {
   UPLOAD_CATEGORIES,
+  externalSource,
+  type ExternalSource,
   deleteConsequences,
   docCitation,
   fetchDeletedKnowledge,
@@ -149,6 +151,40 @@ function SourcePill({ source }: { source: string }) {
     <StatusPill tone={built ? 'neutral' : 'info'} dot={false}>
       {sourceLabel(source)}
     </StatusPill>
+  );
+}
+
+/**
+ * A document from an external corpus (Royal Canin Academy article, Royal
+ * Canin feline asset): which library it came from, what it is, and a
+ * one-click way back to the source (new tab). The link stops propagation so
+ * clicking it in a list row doesn't also open the row.
+ */
+function ExternalSourceBadge({ source }: { source: ExternalSource }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <StatusPill tone="info" dot={false}>
+        {source.label}
+      </StatusPill>
+      {source.detail && (
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: COLOR.inkSoft }} data-testid="external-source-detail">
+          {source.detail}
+        </span>
+      )}
+      {source.url && (
+        <a
+          href={source.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          data-testid="academy-source-link"
+          style={{ fontSize: 11.5, fontWeight: 700, color: COLOR.info, textDecoration: 'none' }}
+        >
+          Open source ↗
+        </a>
+      )}
+    </span>
   );
 }
 
@@ -1137,6 +1173,7 @@ function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => vo
   const focus = resolveDocFocus(doc.metadata);
   const scope = resolveDocScope(doc.metadata);
   const citation = docCitation(doc.metadata);
+  const external = externalSource(doc.metadata);
   const searchable = (doc.chunk_count ?? 0) > 0;
   return (
     <div
@@ -1166,6 +1203,11 @@ function DocumentRow({ doc, onOpen }: { doc: KnowledgeDocument; onOpen: () => vo
     >
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>{doc.title}</div>
+        {external && (
+          <div style={{ marginTop: 4 }}>
+            <ExternalSourceBadge source={external} />
+          </div>
+        )}
         {!searchable && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
             <NotSearchablePill />
@@ -1539,6 +1581,7 @@ function DocumentModal({
           >
             <TypePill category={doc.category} />
             <SourcePill source={doc.source} />
+            {externalSource(doc.metadata) && <ExternalSourceBadge source={externalSource(doc.metadata)!} />}
             {searchable ? (
               <StatusPill tone="success" dot={false}>
                 {`Searchable · ${doc.chunk_count} section${doc.chunk_count === 1 ? '' : 's'}`}
