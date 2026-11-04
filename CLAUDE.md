@@ -373,7 +373,23 @@ migration `20261104000000_knowledge_source_snapshots.sql`). Specs:
   `Species[]`; section chunks (`chunkSectionedMarkdown`, References not
   embedded). Gate ships `pending` / `false`: **Royal Canin's written
   permission must be recorded before flipping it.**
-- **Feline** — see the subsection below.
+- **Feline** (`feline:<slug>`, `knowledge/feline/README.md`): Royal Canin
+  Canada's cat assets (urinary, GI, weight, renal; permission recorded
+  2026-11-02). 59 documents from 32 of 34 files (canine CaOx guide and an
+  image-only draft excluded); the 2027 Product Guide split per product
+  family. `scripts/feline/`: `feline:extract` (pdftotext layer + word boxes,
+  pptx text + notes) → `feline:build` (Markdown per page `<!-- page N -->`;
+  tables → labelled statements, one per row / per product; canine-only
+  blocks removed and counted; BLOCKING fidelity check — every number / % /
+  ®™ name must be in that page's text layer, plus table-ambiguity and
+  coverage checks → open `reviewNotes` hold the document) → `feline:snapshot
+  -- --upload`. Scope: `species: ['cat']`; vet-facing → scoring, coach,
+  scenario-builder; owner-facing (brochures, owner guides) + roleplay; the
+  US "Behind the Science" detailer → scoring + coach, "US edition". Page
+  chunks (`chunkPagedMarkdown`: "(p. N)" header, "— p. N" citation, `pages`
+  tag); tags add `region`, `audience`, `origin:'feline'`. The Box share link
+  is ONLY in the row's `meta.sourceUrl` (DB). Gate ships `granted` /
+  `publish: false` — the owner reviews the held documents, then flips it.
 - Admin → Knowledge: "Royal Canin Academy" / "Royal Canin asset" pill (asset
   type · region) and "Open source ↗" (vetted: Academy origin / https
   `*.box.com` only, read from DB metadata). `admin-knowledge-ingest`
@@ -822,7 +838,7 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations (29 files, all hand-run; all but the last applied to production —
+Migrations (30 files, all hand-run; all applied to production —
 `npm run verify:db` proves the live project has every relation AND column
 the code uses). Each
 file's header explains it in full:
@@ -931,9 +947,13 @@ file's header explains it in full:
   one id already present skipped).
 - `20261027000000_cat_scenarios_flag.sql` — seeds `scenario.cat.enabled`
   (surface `scenario`, default OFF): the cat switch (see Routing → Feature
-  switches). **Not yet applied to production** — apply with the deploy so the
-  switch shows in Admin → Flags; until then the app behaves as if it were
-  off (the code default), which is the intended launch state.
+  switches). Applied to production (migration history: 2026-10-27); the
+  code default is off either way, which is the intended launch state.
+- `20261104000000_knowledge_source_snapshots.sql` — `knowledge_source_snapshots`
+  (corpus, slug, content, content_hash, source_hash, meta; RLS on, no
+  policies, client grants revoked): the private text of the external
+  corpora (see "External corpora"). **Applied to prod 2026-11-04**; rows
+  uploaded the same day (gates closed).
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -1377,7 +1397,12 @@ The static test catches "migration file missing"; `verify:db` catches
    they now carry a `scopeHash`). Confirm in Admin → Knowledge that
    `clinical:reference-cat` exists and `study:davies-2024` reads dog/puppy.
 10. *(Done 2026-10-13: the categories release, PR #25, is live in production.)*
-11. **Feline content** (see the Feline SoW): no seed cat scenarios; canine-only
+11. **Feline content** (see the Feline SoW): the Royal Canin feline assets
+    are imported but GATED (`knowledge/feline/manifest.json`, `publish:
+    false`; 12 documents held on fidelity review notes; the US urinary
+    detailer awaits its Canadian edition) — owner review, then flip; Studio
+    categories + cat scenarios on that corpus are a separate release. Still
+    owed: no seed cat scenarios; canine-only
     product anchors (`PRODUCT_ANCHORS`), calorie table and BCS/MCS data;
     built-in pushback examples written for dogs ("all Labs look like that",
     grain-free/DCM, walks) reach cat prompts verbatim; Pet Vision / Pet

@@ -7,6 +7,2850 @@
     "date": "2026-11-02"
   },
   "publish": false,
-  "documents": [],
-  "excluded": []
+  "documents": [
+    {
+      "slug": "product-guide-2027-urinary-overview",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Feline urinary range — overview and nutrient comparison",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        2,
+        3,
+        4
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "referencesPages": [
+        20
+      ],
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "381010fe1e66923b9ee3d3bb2d69af36999ce2dd60c9a23b9e1018e72cd745f8",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-urinary-so",
+      "approved": false,
+      "title": "Vet Health Nutrition Product Guide 2027: Urinary SO (feline) — dry and wet",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        5,
+        6,
+        7,
+        18
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 18,
+          "token": "table:p18:text-inside-value-columns",
+          "status": "open"
+        },
+        {
+          "page": 18,
+          "token": "table:p18:value-without-header-or-label",
+          "status": "open"
+        }
+      ],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides). [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "c150403cf8ef80350c47fd7f9b4df6e63ac621cb042def21ba2a06e1a7bb0cc9",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-urinary-so-moderate-calorie",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Urinary SO Moderate Calorie (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        8,
+        9
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "00eccc9e2a2ce7c1b5d7c3d7491d911b343e4ea64113be1cf5cde2f8f0f455ce",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-urinary-feline-treats",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Urinary feline treats",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        10
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "09a8a73dc515c60c051ae8ed4ad990f9a5d1c0dbafe6d80b6e9a3660ded40047",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-urinary-so-aging-calm",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Urinary SO Aging 7+ + Calm (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        11,
+        12,
+        19
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "eb2cea9ab3bebef04cec3b5351c62f6f831bdeb9a7350626409cfc1307fe0692",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-urinary-so-calm",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Urinary SO + Calm (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        13,
+        14
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "277406167c0510898db699b966c2f10369576f59b50124369a3dcf7f3b82ae0a",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-urinary-so-hydrolyzed-protein",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Urinary SO + Hydrolyzed Protein (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        15
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "9633725c4e08641bd965cdad259f4135bad3b6332e585d0a119c8fad9bce73e4",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-urinary-so-satiety",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Urinary SO + Satiety (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        16
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "3b53e4bc6b35040aad6255d2b86e63571ed9f1d9892ed7f7caf27c6019fac924",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-urinary-so-satiety-calm",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Urinary SO + Satiety + Calm (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        17
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "f6a55c9aaf696ca98d8e32b88495867398786a45a23b530331ef94867ce92368",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-weight-overview",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Feline weight management range — overview and nutrient comparison",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        22,
+        23,
+        24
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "referencesPages": [
+        34,
+        35
+      ],
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "55af86ae5ec19551c6e60a3dde77739d486307644e1fc48acdb816e880e4228e",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-satiety-support",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Satiety Support Weight Management (feline) — dry and wet",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        25,
+        26,
+        27,
+        32
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "7245ed91b5dec1c706314b1e3857df51e992ad9e4d63b36628d302785c946720",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-satiety-feline-treats",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Satiety feline treats",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        28
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "bdab17ac1c1bcf79771e0c166d437dcf5ffbd0dd8cc12f17e566988b0addf01d",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-glycoadvanced",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Glycoadvanced (feline diabetic)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        29,
+        30,
+        33
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "4fcd5d8093a33f3aa369a9f865b7799b47627b6cc8333f706e3a237bce70897c",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-satiety-hydrolyzed-protein",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Satiety + Hydrolyzed Protein (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        31
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "03703abf1faf7af118650a2cadfe6ea43a2e4cfb607fe028194eb0a6e58015c4",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-gi-overview",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Feline gastrointestinal range — overview and nutrient comparison",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        38,
+        39,
+        40
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "referencesPages": [
+        59
+      ],
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "8ef61330bdfbff0830efe4477c3bcec57593cdb359da4138f3fca1d18e49b5b8",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-gi-kitten",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Gastrointestinal Kitten — dry and wet",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        41,
+        42,
+        43,
+        44,
+        56
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "cee22942c743edf839d71617d44238847c7056da314648523c0d99a700b0aebf",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-gastrointestinal",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Gastrointestinal (feline) — dry and wet",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        45,
+        46,
+        57
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "4f54f534dd8af37e20f66a3b33bcd63afd0787197c36880e790ca52ae23af336",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-gi-moderate-calorie",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Gastrointestinal Moderate Calorie (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        47,
+        48
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "15abaf51851d75f6349ec30884832b489072aada737a9907408d015a9909113a",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-gi-fiber-response",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Gastrointestinal Fiber Response (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        49,
+        50,
+        58
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "1d2c4875b04965c4c29129293176e82db1231023318dd0319ddff2d3cfdbcf2c",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-gi-hydrolyzed-protein",
+      "approved": false,
+      "title": "Vet Health Nutrition Product Guide 2027: Gastrointestinal Hydrolyzed Protein (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        51
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 51,
+          "token": "table:p51:column-without-header",
+          "status": "open"
+        },
+        {
+          "page": 51,
+          "token": "table:p51:value-without-header-or-label",
+          "status": "open"
+        }
+      ],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides). [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "37c5f97ab01f425314842ac832be8d7acf93c0fa9362b880ee211a4d9ad875af",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-recovery",
+      "approved": false,
+      "title": "Vet Health Nutrition Product Guide 2027: Recovery and Recovery Liquid (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        52,
+        53,
+        54
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 53,
+          "token": "table:p53:value-without-header-or-label",
+          "status": "open"
+        }
+      ],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides). [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "c684fa3106d0b2dea5eecf1d3e820332bf8e0a3c3210b96428fdb2c72d0414cf",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-gi-feline-treats",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Gastrointestinal feline treats",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        55
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "9febdf61ce565a6bf40c6c2103fb18a0e8ac07661e1757aa2c401534ab3318b2",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-vital-support-overview",
+      "approved": false,
+      "title": "Vet Health Nutrition Product Guide 2027: Feline vital support range — overview and nutrient comparison",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "renal",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        62,
+        63,
+        64
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 64,
+          "token": "table:p64:column-without-header",
+          "status": "open"
+        },
+        {
+          "page": 64,
+          "token": "table:p64:text-inside-value-columns",
+          "status": "open"
+        },
+        {
+          "page": 64,
+          "token": "table:p64:value-without-header-or-label",
+          "status": "open"
+        }
+      ],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides). [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "referencesPages": [
+        80
+      ],
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "1089f714271ed171b9436424842637e7df1e057f6e15b6536cf4e6bff52600af",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-mobility-support",
+      "approved": false,
+      "title": "Vet Health Nutrition Product Guide 2027: Mobility Support (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        65
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 65,
+          "token": "table:p65:text-inside-value-columns",
+          "status": "open"
+        },
+        {
+          "page": 65,
+          "token": "table:p65:two-columns-same-header",
+          "status": "open"
+        }
+      ],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides). [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "9d3c558d17ec8db37b8d7b7650d5c2ac51e4d147459c73f216a9e644ff746386",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-renal-support-early-consult",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Renal Support Early Consult (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "renal",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        66,
+        67,
+        76
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "3bc03e031be567b05e2401c35e80b213252ace2c8374abfeec61f99b85d328e3",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-renal-support",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Renal Support A, S, P, D, E and T (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "renal",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        77,
+        78,
+        79
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "e393b56a9d0003a40b8ef1cb0a25d0dde4f2be0f6ce8078e3ba43a786d69a13a",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-renal-support-liquid",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Renal Support Liquid (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "renal",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        74
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "664d46e331f4c0273f599598e100f1fe7631c4817e33fb499064849926a7b790",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "product-guide-2027-renal-support-hydrolyzed-protein",
+      "approved": true,
+      "title": "Vet Health Nutrition Product Guide 2027: Renal Support + Hydrolyzed Protein (feline)",
+      "sourceId": "2566534331716",
+      "assetType": "product-guide",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "renal",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        75
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1,
+            21,
+            36,
+            37,
+            60,
+            61
+          ],
+          "reason": "section dividers / back covers (no content)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "speciesFilter": false,
+      "canineBlocksRemoved": [],
+      "contentHash": "4b78ddd5da491e90266bc3663780b319088ba819be6202c72afed2d544d5d8b7",
+      "sourceHash": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7"
+    },
+    {
+      "slug": "feline-sell-sheet-2027",
+      "approved": true,
+      "title": "Feline sell sheet 2027: five feline essentials to stock in clinic",
+      "sourceId": "2566540309941",
+      "assetType": "sell-sheet",
+      "edition": "2027",
+      "region": "CA",
+      "audience": "vet",
+      "focus": null,
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Vet-facing overview of the five feline diets to stock (urinary, hairball, constipation, weight, diabetes).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "e2755155c291da7a1db4b892499609717d331b0cf7e9a61660bc957c53929e7e",
+      "sourceHash": "d076392cfae8f1dcc071325f735b9c24d5dce64e6e93a5109a0cd19d4afb05db"
+    },
+    {
+      "slug": "urinary-rss-presentation",
+      "approved": true,
+      "title": "Relative supersaturation (RSS): Urinary SO and S/O Index — lunch-and-learn",
+      "sourceId": "2566533966901",
+      "assetType": "presentation",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        2,
+        8,
+        9,
+        10,
+        11,
+        15,
+        17,
+        21,
+        25
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1
+          ],
+          "reason": "title slide (presenter placeholder)"
+        },
+        {
+          "pages": [
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "reason": "animation builds of slide 8 (their text is contained in it)"
+        },
+        {
+          "pages": [
+            12,
+            13,
+            14
+          ],
+          "reason": "animation builds of slide 15"
+        },
+        {
+          "pages": [
+            16
+          ],
+          "reason": "animation build of slide 17"
+        },
+        {
+          "pages": [
+            18,
+            19,
+            20
+          ],
+          "reason": "animation builds of slide 21"
+        },
+        {
+          "pages": [
+            22,
+            23,
+            24
+          ],
+          "reason": "animation builds of slide 25"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "RSS methodology deck with speaker notes — how urinary diets are developed and compared.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "c67dfaec0c2321ece0d9f209ffafe0699b08345f191d8c001d31abad3c9a8b14",
+      "sourceHash": "24a3de7d0283b0f4b66029b444992ed057c272c2bb3bce6df8473f9182022674"
+    },
+    {
+      "slug": "urinary-health-brochure",
+      "approved": true,
+      "title": "Urinary health brochure for cat owners",
+      "sourceId": "2566541593320",
+      "assetType": "brochure",
+      "edition": "",
+      "region": "CA",
+      "audience": "owner",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1
+          ],
+          "reason": "cover"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Owner-facing: what LUTD is, why a urinary diet, water intake, transitioning, recurrence.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "f79bdffd8aa2ebdbba854427ce324260af3e2a883cbf5a30a7a3dc754d10e45c",
+      "sourceHash": "7a562c3afc2133d2a7234fd95b2094a5aff5b5ce9bfbaa10c55ae3e041e65aaf"
+    },
+    {
+      "slug": "cvuc-detailer",
+      "approved": true,
+      "title": "Canadian Veterinary Urolith Centre detailer",
+      "sourceId": "2566536498394",
+      "assetType": "detailer",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Know the stone: stone analysis service and Canadian urolith trends.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "6f47ae2acbf901668bf399995d04af59ab9c2b42d9e78154fe790bdd3fc4267c",
+      "sourceHash": "4de0ce4c7de940a158abdb819c8fae61dd44b948bc2841eef35969fe064a0884"
+    },
+    {
+      "slug": "urinary-behind-the-science-us",
+      "approved": true,
+      "title": "Urinary — Behind the Science detailer",
+      "sourceId": "2566534631871",
+      "assetType": "detailer",
+      "edition": "",
+      "region": "US",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach"
+      ],
+      "pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        17,
+        18,
+        19
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            9
+          ],
+          "reason": "canine-only page (canine calcium oxalate study)"
+        },
+        {
+          "pages": [
+            16
+          ],
+          "reason": "canine-only page (canine urate diet)"
+        },
+        {
+          "pages": [
+            20
+          ],
+          "reason": "back cover (enrolment QR code)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "US edition: clinical studies behind the feline urinary diets (dissolution, urine dilution, sodium safety, stress). Replaced when the Canadian edition arrives.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [
+        {
+          "page": 2,
+          "words": 26
+        },
+        {
+          "page": 2,
+          "words": 30
+        },
+        {
+          "page": 11,
+          "words": 21
+        }
+      ],
+      "contentHash": "f6611f812b15b0ead7245a853a8e851dd0043a6ac4d44706f20928a1d57a707d",
+      "sourceHash": "3c5dd37ef248286cb8a07900be902c105a074a0b87f5a13b8abfd7545006bcc5"
+    },
+    {
+      "slug": "urinary-jeopardy",
+      "approved": true,
+      "title": "Urinary health nutrition — in-clinic Jeopardy game",
+      "sourceId": "2566529651497",
+      "assetType": "training-game",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            2
+          ],
+          "reason": "game board (category and point labels only)"
+        },
+        {
+          "pages": [
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "reason": "canine-only category (\"Urinary Dog Diets\")"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Team training game: clue/answer slides on feline urinary diets, key features and nutrients.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "5ee2cff30d0bd50d58197027412655cdf08fb9b95be6cd25de7d61726ebaeefa",
+      "sourceHash": "1a34e3fbeddec36615448ab55d3cbf1971136b72a5fa42c4e788826f415001c0"
+    },
+    {
+      "slug": "calcium-oxalate-owner-guide-feline",
+      "approved": true,
+      "title": "Calcium oxalate management — pet owner guide (feline)",
+      "sourceId": "2566540974022",
+      "assetType": "owner-guide",
+      "edition": "",
+      "region": "CA",
+      "audience": "owner",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Owner-facing guide to managing calcium oxalate stones in cats.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "247308e825a3e5017eccd5a5a4e1e1bf4cf9ba01fd935235bb2e00020590fc8b",
+      "sourceHash": "6e844718c038e7baf21421099eccfba92de4f7fe5f81821e43d5df692fd3562d"
+    },
+    {
+      "slug": "urinalysis-tips",
+      "approved": true,
+      "title": "Tips for performing and interpreting the urinalysis and culture",
+      "sourceId": "2566540463442",
+      "assetType": "clinical-tips",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2,
+        3
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Vet-facing urinalysis and culture technique; species-neutral passages kept, canine-only passages removed.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "a82a4a8b1bd2f521b29c030cf4e06cec2ce71ec80eade2647145fa5ace07831a",
+      "sourceHash": "292e19e087177b6e67dd53eb03c3941701da0d37ed0217f15362d5c9d065682a"
+    },
+    {
+      "slug": "wet-nutrition-brochure",
+      "approved": true,
+      "title": "The health benefits of wet nutrition — brochure for cat owners",
+      "sourceId": "2566537367599",
+      "assetType": "brochure",
+      "edition": "",
+      "region": "CA",
+      "audience": "owner",
+      "focus": "urinary",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Owner-facing: weight management, hydration and palatability benefits of wet food (filed under Urinary, Royal Canin's folder).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "b9ddda2892e480ff585370687fa2f8eeaccd05d6879b4b1e2599dcc92b26aed3",
+      "sourceHash": "cdcbaef949cf89ba00677dc16dae42a2f5f9e7695b11aa3d9b918400f524ff0e"
+    },
+    {
+      "slug": "gi-detailer",
+      "approved": true,
+      "title": "Gastrointestinal detailer: supporting the microbiome with every bite",
+      "sourceId": "2566529391601",
+      "assetType": "detailer",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        19
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "reason": "canine-only pages (canine GI diets)"
+        },
+        {
+          "pages": [
+            11
+          ],
+          "reason": "image only (no text layer)"
+        },
+        {
+          "pages": [
+            18
+          ],
+          "reason": "canine-only page (canine GI case management)"
+        },
+        {
+          "pages": [
+            20
+          ],
+          "reason": "back cover (corporate boilerplate)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Vet-facing GI range: microbiome, probiotics, key nutrients, feline diets and feline case management.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [
+        {
+          "page": 16,
+          "words": 14
+        },
+        {
+          "page": 16,
+          "words": 28
+        },
+        {
+          "page": 17,
+          "words": 67
+        },
+        {
+          "page": 17,
+          "words": 56
+        }
+      ],
+      "contentHash": "d5e92c433e494e422b32f569b6231c27aee6e6556a9ef635a2ad728a67bc0a88",
+      "sourceHash": "2586f694184a397f60098b49eea012cfaff10362f91917e670ae24c3f2c204d8"
+    },
+    {
+      "slug": "probiotic-clinical-trials",
+      "approved": false,
+      "title": "Probiotic (S. boulardii) clinical trial summary",
+      "sourceId": "2566539966709",
+      "assetType": "clinical-trial-summary",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1
+          ],
+          "reason": "cover (image only)"
+        },
+        {
+          "pages": [
+            6,
+            7,
+            8,
+            9
+          ],
+          "reason": "canine-only pages (canine trials)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 3,
+          "token": "table:p3:value-without-header-or-label",
+          "status": "open"
+        },
+        {
+          "page": 5,
+          "token": "table:p5:value-without-header-or-label",
+          "status": "open"
+        }
+      ],
+      "reason": "Feline S. boulardii trials: GI health and fecal moisture results. [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "015cb184720ece6cd0e9122ed0e38dbee3884bec76686debb99c88657e4aae3a",
+      "sourceHash": "21f44f349ca5425a11305ee1d1dffc156542a4c26a9e7aaee9e0a561c37ae2b6"
+    },
+    {
+      "slug": "chronic-enteropathies-bulletin",
+      "approved": true,
+      "title": "Therapies for chronic enteropathies in dogs and cats — technical bulletin",
+      "sourceId": "2566542234747",
+      "assetType": "technical-bulletin",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Evidence for nutrition in chronic enteropathy; canine-only passages removed.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "8a5b0d50d6e3a9bb2a857c2ec1d9ccfd7efa9f939310f95f0b36a2c7f92c846d",
+      "sourceHash": "75aad92662910fcb77c0a31b8acc85caadfd4566d33c0b1790b56b9ee3fb8694"
+    },
+    {
+      "slug": "microbiome-bulletin",
+      "approved": true,
+      "title": "Microbiome synopsis — technical bulletin",
+      "sourceId": "2566536635607",
+      "assetType": "technical-bulletin",
+      "edition": "2017",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Prebiotics, microbiome and dysbiosis basics.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "3ce016251ab5af86c8aa830f293e6d0ea3b3542683c16c4848951d3b73800697",
+      "sourceHash": "e7ff68a10719df303554401ec7a5827979d8d86168d6b782dececbf29b47881d"
+    },
+    {
+      "slug": "fiber-response-bulletin",
+      "approved": true,
+      "title": "Feline Fiber Response clinical trials — technical bulletin",
+      "sourceId": "2566536623432",
+      "assetType": "technical-bulletin",
+      "edition": "2011",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Clinical trials of the feline fiber-response diet in constipation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "fa58e9d8aa114c3af64a6e1416e7d3419dd57eb6906a50b98350811d59f1d271",
+      "sourceHash": "9d3f2e91e8f91d1d0298d54181027dfb17850cdf9b4d957fb3bbf675c253bd14"
+    },
+    {
+      "slug": "fiber-response-wet-sell-sheet",
+      "approved": true,
+      "title": "Gastrointestinal Fiber Response wet — sell sheet",
+      "sourceId": "2566535452592",
+      "assetType": "sell-sheet",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Wet fibre-response formula for cats with chronic constipation.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "7d754ddd48f5d481b4125383ad4819031413c21415ab4bcc9825905b4b8f9bf8",
+      "sourceHash": "3bf0510f348301468ed25e868ac3d6520b8b14411a41e5670ce11278331ca958"
+    },
+    {
+      "slug": "probiotic-inserts-2026",
+      "approved": true,
+      "title": "Probiotic powder supplements — product guide insert 2026 (cat)",
+      "sourceId": "2566533988579",
+      "assetType": "product-insert",
+      "edition": "2026",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        2
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1
+          ],
+          "reason": "canine-only page (dog probiotic powder)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Cat probiotic powder: indications, composition, dosing.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "238d333399f5c5ec5b295e4f58aed6ea53fce7d2fc8faaabf0d774d15a6deffa",
+      "sourceHash": "0af1b0ac30dfd336d39f22f3a6014645e8453ebddd3b9c9f49148e56fe4975b6"
+    },
+    {
+      "slug": "probiotics-sell-sheet",
+      "approved": true,
+      "title": "Canine and feline probiotics — sell sheet",
+      "sourceId": "2566528038913",
+      "assetType": "sell-sheet",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Yeast-based probiotic powder; canine-only passages removed.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [
+        {
+          "page": 2,
+          "words": 173
+        }
+      ],
+      "contentHash": "85bb3d1d879ecc63a8a9301f43109dbb0b762b4644e954fd21a73ca6eaa91c10",
+      "sourceHash": "a8753737439dd3899f9b32460b63f466cede5307fbbc983a828938ecde3f0087"
+    },
+    {
+      "slug": "gi-hydrolyzed-protein-trial-detailer",
+      "approved": true,
+      "title": "Gastrointestinal Hydrolyzed Protein — clinical trial detailer",
+      "sourceId": "2566542184376",
+      "assetType": "detailer",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Feline chronic enteropathy trial (FCEAI improvement and remission).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "0e2e7ec275bc7b70642f6b5f53850b330e71d8c040a8d771c0be81ccf6b7d9b9",
+      "sourceHash": "5da75288d99851cc12e09fc9019d0e82b1680fc19462fb80b60f114d1db15327"
+    },
+    {
+      "slug": "gi-consumer-brochure",
+      "approved": true,
+      "title": "Gastrointestinal nutrition — brochure for cat owners",
+      "sourceId": "2566541612520",
+      "assetType": "brochure",
+      "edition": "",
+      "region": "CA",
+      "audience": "owner",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2,
+        3,
+        5,
+        6,
+        7,
+        8
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            4
+          ],
+          "reason": "corporate boilerplate (\"Who we are\")"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Owner-facing: digestive system, GI disorders, kitten digestion, probiotics, why a new diet.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "44232abbd8cad007ca310d60bafac81f5fc00f1f2df90d974e57dbc96c5c65ce",
+      "sourceHash": "8b75ec0742f5e0c91c534d2f5b3eda2b67819f6653a4b6adda33481901c96fc5"
+    },
+    {
+      "slug": "gi-hydrolyzed-protein-sell-sheet",
+      "approved": false,
+      "title": "Hydrolyzed protein for feline chronic enteropathies — sell sheet",
+      "sourceId": "2566540377141",
+      "assetType": "sell-sheet",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "gi",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 1,
+          "token": "100%",
+          "status": "open"
+        }
+      ],
+      "reason": "Feline GI hydrolyzed protein diet: remission data and formula. [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "596c0f8150377707f4b56b33edfc680ed0958cbe8c35f6a39259e0c062ad22c7",
+      "sourceHash": "e8037c2fa3255caef368f913b034a7f7c745cfd0ea8a679aa9f4004cb510731a"
+    },
+    {
+      "slug": "weight-detailer-2026",
+      "approved": false,
+      "title": "Weight management detailer 2026",
+      "sourceId": "2566537418013",
+      "assetType": "detailer",
+      "edition": "2026",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        12,
+        13,
+        14,
+        15
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1
+          ],
+          "reason": "cover"
+        },
+        {
+          "pages": [
+            10,
+            11
+          ],
+          "reason": "canine-only pages (canine satiety formulas)"
+        },
+        {
+          "pages": [
+            16
+          ],
+          "reason": "back cover (corporate boilerplate)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 7,
+          "token": "coverage:0.85",
+          "status": "open"
+        }
+      ],
+      "reason": "Weight conversations with owners, team approach, satiety and multifunction feline formulas, diabetes link. [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [
+        {
+          "page": 2,
+          "words": 19
+        },
+        {
+          "page": 3,
+          "words": 2
+        },
+        {
+          "page": 7,
+          "words": 180
+        },
+        {
+          "page": 12,
+          "words": 21
+        },
+        {
+          "page": 12,
+          "words": 26
+        },
+        {
+          "page": 12,
+          "words": 25
+        },
+        {
+          "page": 12,
+          "words": 59
+        },
+        {
+          "page": 12,
+          "words": 18
+        },
+        {
+          "page": 12,
+          "words": 24
+        },
+        {
+          "page": 12,
+          "words": 20
+        },
+        {
+          "page": 12,
+          "words": 24
+        },
+        {
+          "page": 12,
+          "words": 25
+        },
+        {
+          "page": 13,
+          "words": 28
+        },
+        {
+          "page": 13,
+          "words": 19
+        },
+        {
+          "page": 15,
+          "words": 13
+        },
+        {
+          "page": 15,
+          "words": 48
+        },
+        {
+          "page": 15,
+          "words": 41
+        }
+      ],
+      "contentHash": "9fecf7d5333d2cb1d1d77d72b6b789961f3666f8def90c848a1f6bc5d14e961f",
+      "sourceHash": "5bead3de2721be2fc50e2b5f9d78fe6e39f819c832da46f448ab0a79ef81fca7"
+    },
+    {
+      "slug": "glyco-detailer",
+      "approved": false,
+      "title": "Discover the difference a diet can make for diabetic cats — detailer",
+      "sourceId": "2566530537130",
+      "assetType": "detailer",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        8
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            7
+          ],
+          "reason": "canine-only page (canine diabetes)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 5,
+          "token": "table:p5:value-without-header-or-label",
+          "status": "open"
+        }
+      ],
+      "reason": "Feline diabetes, remission planning and Glycoadvanced (filed under Weight, Royal Canin's folder). [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "a497c592247f5a279d5cf6c5b3293e6745fefc5d0e171e0b90fff7159f9540cd",
+      "sourceHash": "dfc084747384dcb214b2f53202243024358b5ce006d7887e3d0ede19250fce81"
+    },
+    {
+      "slug": "obesity-bulletin",
+      "approved": false,
+      "title": "Implications of obesity in overweight and obese pets — technical bulletin",
+      "sourceId": "2566539462583",
+      "assetType": "technical-bulletin",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 1,
+          "token": "coverage:0.88",
+          "status": "open"
+        }
+      ],
+      "reason": "Health consequences of excess weight; canine-only passages removed. [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [
+        {
+          "page": 1,
+          "words": 80
+        },
+        {
+          "page": 1,
+          "words": 14
+        },
+        {
+          "page": 1,
+          "words": 318
+        }
+      ],
+      "contentHash": "791eadb6e9fb351c1a216251b042cd236b742f949c9b32c1f8bf33d668bef72c",
+      "sourceHash": "48af29c6278ff897604e2446b3a443a258c8f99e7866fd39a6403b6a084e2a07"
+    },
+    {
+      "slug": "glyco-sell-sheet",
+      "approved": false,
+      "title": "Glycoadvanced (feline) — sell sheet",
+      "sourceId": "2566537286376",
+      "assetType": "sell-sheet",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 2,
+          "token": "CANINTM®",
+          "status": "open"
+        },
+        {
+          "page": 2,
+          "token": "table:p2:value-without-header-or-label",
+          "status": "open"
+        }
+      ],
+      "reason": "Feline diabetic diet: remission and weight-loss data. [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "bf2a685e3a61d6578079c477524de021cc60c7fbb8035131a56bc748e4c2616e",
+      "sourceHash": "061220f507a5daf816b904dc7bd176241e24b462d66c36bf62f2750408ba0bda"
+    },
+    {
+      "slug": "weight-loss-brochure",
+      "approved": true,
+      "title": "Weight loss that works — brochure for cat owners",
+      "sourceId": "2566537237991",
+      "assetType": "brochure",
+      "edition": "",
+      "region": "CA",
+      "audience": "owner",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        2,
+        3,
+        4,
+        5,
+        8
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1
+          ],
+          "reason": "cover"
+        },
+        {
+          "pages": [
+            6
+          ],
+          "reason": "blank weight-tracker form"
+        },
+        {
+          "pages": [
+            7
+          ],
+          "reason": "corporate boilerplate (\"Who we are\")"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Owner-facing: overweight cats, healthy-weight tips, satiety formulas, body condition at home.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "0d6491c3146df433b73921d68e5963b4c9d28dff6a2aa1f229d4fa9b1249da30",
+      "sourceHash": "71e508cab34397d8e135f74fcd4d36f6f4957459aa2fdb0bc7e1576185545be0"
+    },
+    {
+      "slug": "satiety-sell-sheet",
+      "approved": true,
+      "title": "Satiety — essential weight loss diets to stock (canine and feline) — sell sheet",
+      "sourceId": "2566537278488",
+      "assetType": "sell-sheet",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Features of weight-loss diets; canine-only passages removed.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [
+        {
+          "page": 2,
+          "words": 63
+        },
+        {
+          "page": 2,
+          "words": 62
+        }
+      ],
+      "contentHash": "a4c6bccefec9cc751403d6a657dcba58ae16f707fb2d75d5b556eec0496f045d",
+      "sourceHash": "b9bbd1a52fa1a7fdf6b534b79109be7e19869cbe5373ad4921e835902ca44560"
+    },
+    {
+      "slug": "glyco-brochure",
+      "approved": true,
+      "title": "Discover the difference a diet can make for diabetic cats — brochure for cat owners",
+      "sourceId": "2566537221444",
+      "assetType": "brochure",
+      "edition": "",
+      "region": "CA",
+      "audience": "owner",
+      "focus": "weight",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "roleplay",
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        8
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            1
+          ],
+          "reason": "cover"
+        },
+        {
+          "pages": [
+            7
+          ],
+          "reason": "corporate boilerplate (\"Who we are\")"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Owner-facing feline diabetes care and Glycoadvanced (filed under Weight).",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "5fb9330e0c830aab9aca32862eb64991b16385c764482d7c80216872dcce1263",
+      "sourceHash": "37f13623591b377d7c126e3aea179a366ec6781f2d901f539057c7a37c4f48ab"
+    },
+    {
+      "slug": "vital-support-detailer",
+      "approved": true,
+      "title": "Renal health — Vital Support detailer (canine and feline)",
+      "sourceId": "2566542957539",
+      "assetType": "detailer",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "renal",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "pagesExcluded": [
+        {
+          "pages": [
+            12
+          ],
+          "reason": "back cover (corporate boilerplate)"
+        }
+      ],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "CKD in cats, early detection, RenalTech, renal diet nutrients; canine-only passages removed.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [
+        {
+          "page": 7,
+          "words": 1
+        }
+      ],
+      "contentHash": "09531e07632e24927687c2b4b20c8e7d4cae21c08b5543e99e35364ea22b21c8",
+      "sourceHash": "ee1e1c34138b63c8952b1084e1f225100260b3a91ce2778a4a122063376dbbbb"
+    },
+    {
+      "slug": "renal-diet-guide",
+      "approved": true,
+      "title": "A guide to the feline Renal Support diets — sell sheet",
+      "sourceId": "2566531033920",
+      "assetType": "sell-sheet",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "renal",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "The six feline renal diets and mixing them to keep cats eating.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "bffffd11fabbb5d812eb4b580df46d7bcd9346d298923a3060ad550256aecf9a",
+      "sourceHash": "54c915edadc0b8639e6852cc6122ddee3a92bcd7b698fb868967c80fc6e4a87c"
+    },
+    {
+      "slug": "ckd-consult-pearls",
+      "approved": true,
+      "title": "Case consult pearls: chronic kidney disease in cats",
+      "sourceId": "2566535493392",
+      "assetType": "consult-pearl",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "renal",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1,
+        2
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [],
+      "reason": "Veterinary case-consultation pearls on feline CKD and renal diets.",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "c66ddfaab9ee1bb054e73c85b3d595a45deb2ad2ab5e8855623d38c6b104f96d",
+      "sourceHash": "c8ea27d84eb39078c1ff68388164cfccd7672e31ce3ced60a6ab5c97e6ee1479"
+    },
+    {
+      "slug": "senior-cat-diets-bulletin",
+      "approved": false,
+      "title": "Diets for senior cats — technical bulletin",
+      "sourceId": "2566532842946",
+      "assetType": "technical-bulletin",
+      "edition": "",
+      "region": "CA",
+      "audience": "vet",
+      "focus": "renal",
+      "species": [
+        "cat"
+      ],
+      "tools": [
+        "scoring",
+        "coach",
+        "scenario-builder"
+      ],
+      "pages": [
+        1
+      ],
+      "pagesExcluded": [],
+      "transcribedPages": [],
+      "reviewNotes": [
+        {
+          "page": 1,
+          "token": "coverage:0.83",
+          "status": "open"
+        },
+        {
+          "page": 1,
+          "token": "table:p1:text-inside-value-columns",
+          "status": "open"
+        },
+        {
+          "page": 1,
+          "token": "table:p1:two-columns-same-header",
+          "status": "open"
+        }
+      ],
+      "reason": "Nutrient content of commercial senior cat diets (filed under Renal, Royal Canin's folder). [held: open fidelity review notes]",
+      "reviewedBy": "agent-review",
+      "reviewedAt": "2026-11-04",
+      "canineBlocksRemoved": [],
+      "contentHash": "be3a2effb6ccd21428f44817126585c1ac7067cf959b6f84f2ee5f510d9d4fae",
+      "sourceHash": "bc7925185cc4e09677eb04906b75dbecb0cb951e21d80eea56cfa5995df809bf"
+    }
+  ],
+  "excluded": [
+    {
+      "sourceId": "2566540914564",
+      "title": "Calcium oxalate management — pet owner guide (canine)",
+      "reason": "Canine only (owner decision 2026-11-04: feline only)."
+    },
+    {
+      "sourceId": "2566542044423",
+      "title": "GI sell sheet 2025 (JC edits)",
+      "reason": "Draft: image only (no text layer), visible FPO placeholder and review comment; a different, unreleased GI portfolio sheet. Not imported."
+    }
+  ]
 }

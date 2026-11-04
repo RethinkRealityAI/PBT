@@ -18,8 +18,8 @@ right, plus the speaker notes; `layoutText` is all of it.
 
 The source files are untrusted data: they are only ever parsed (poppler,
 python-pptx). Run with `python3 -I`. Nothing here is a model; nothing here
-rewords text. Step 2 (`build.ts`) assembles the reviewed Markdown, step 3
-(`fidelity.ts`) checks it against `layoutText`.
+rewords text. Step 2 (`build.py`) assembles the Markdown and runs the
+fidelity check against `layoutText`; step 3 (`snapshot.ts`) uploads it.
 
 Usage:
   python3 -I scripts/feline/extract.py --src <dir of <boxFileId>.bin> \
@@ -224,7 +224,7 @@ def block_json(kind, words, body_h):
         cs = cells_of(L['words'])
         if len(cs) > 1:
             # Wide gaps inside a line: the builder decides whether a run of
-            # such lines is a table (build.ts → tables.ts).
+            # such lines is a table (build.py).
             item['cells'] = [line_text(c, max(h, 0.1)) for c in cs]
             item['cellX'] = [[round(c[0]['x0'], 1), round(max(w['x1'] for w in c), 1)] for c in cs]
         jl.append(item)
@@ -254,6 +254,9 @@ def extract_pdf(path):
             'rotatedWords': rotated,
             'layoutText': layout_text(path, i),
             'blocks': [block_json(k, ws, body_h) for k, ws in blocks],
+            # Upright words (rotated ones dropped), for the table parser.
+            'words': [[round(w['x0'], 1), round(w['top'], 1), round(w['x1'], 1), round(w['bottom'], 1), w['text']]
+                      for w in words],
         })
     return pages
 

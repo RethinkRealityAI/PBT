@@ -70,3 +70,6 @@ resources/fecal-charts/*/Links/
 
 # Royal Canin Academy fetch cache (raw HTTP responses — untrusted, never committed)
 .cache/
+
+# Python bytecode (scripts/feline)
+__pycache__/
