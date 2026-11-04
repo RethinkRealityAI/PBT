@@ -92,7 +92,8 @@ touched or retired.
 1. Obtain Royal Canin's written permission. Record it in `manifest.json`:
    `permission: { status: "granted", reference: "<their reference>", grantedBy: "<name, role>", date: "YYYY-MM-DD" }`.
 2. Make sure every approved row is uploaded (`academy:snapshot -- --upload`;
-   uploaded 2026-11-04 for the current pins). Set `publish: true`, open a PR
+   as of 2026-11-04 the academy rows are NOT yet in the table — the sync
+   skips the corpus until they are). Set `publish: true`, open a PR
    (the manifest guard test requires all four permission fields), merge, deploy.
 3. The first production boot after the deploy runs `knowledge-sync-background`,
    which embeds and writes the group (~130 documents, ~1,300 chunks). Check

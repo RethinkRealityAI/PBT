@@ -1263,7 +1263,7 @@
     },
     {
       "slug": "product-guide-2027-renal-support-liquid",
-      "approved": true,
+      "approved": false,
       "title": "Vet Health Nutrition Product Guide 2027: Renal Support Liquid (feline)",
       "sourceId": "2566534331716",
       "assetType": "product-guide",
@@ -1296,8 +1296,16 @@
         }
       ],
       "transcribedPages": [],
-      "reviewNotes": [],
-      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides).",
+      "reviewNotes": [
+        {
+          "page": 74,
+          "token": "table:p74:two-row-labels-merged",
+          "status": "open",
+          "manual": true,
+          "note": "Spot check: the Taurine and Ascorbic acid guaranteed-analysis rows were merged into one statement with one value; re-read the page and fix or sign off."
+        }
+      ],
+      "reason": "Feline product family pages of the 2027 Product Guide (nutrient tables, calorie content, indications, feeding guides). [held: open fidelity review notes]",
       "reviewedBy": "agent-review",
       "reviewedAt": "2026-11-04",
       "speciesFilter": false,

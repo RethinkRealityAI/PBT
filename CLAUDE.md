@@ -952,8 +952,10 @@ file's header explains it in full:
 - `20261104000000_knowledge_source_snapshots.sql` — `knowledge_source_snapshots`
   (corpus, slug, content, content_hash, source_hash, meta; RLS on, no
   policies, client grants revoked): the private text of the external
-  corpora (see "External corpora"). **Applied to prod 2026-11-04**; rows
-  uploaded the same day (gates closed).
+  corpora (see "External corpora"). **Applied to prod 2026-11-04.** Row
+  upload is NOT complete (2 feline rows on 2026-11-04; production writes
+  are insert-only, `ON CONFLICT DO NOTHING`) — until every approved row is
+  there, a corpus whose gate is opened skips itself (loudly).
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -1399,7 +1401,7 @@ The static test catches "migration file missing"; `verify:db` catches
 10. *(Done 2026-10-13: the categories release, PR #25, is live in production.)*
 11. **Feline content** (see the Feline SoW): the Royal Canin feline assets
     are imported but GATED (`knowledge/feline/manifest.json`, `publish:
-    false`; 12 documents held on fidelity review notes; the US urinary
+    false`; 13 documents held on fidelity review notes; the US urinary
     detailer awaits its Canadian edition) — owner review, then flip; Studio
     categories + cat scenarios on that corpus are a separate release. Still
     owed: no seed cat scenarios; canine-only

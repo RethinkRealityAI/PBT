@@ -754,6 +754,8 @@ def main():
         for r in review + table_notes:
             old = prior.get((r['page'], r['token']))
             notes_out.append(old if old and old.get('status') == 'signed-off' else {**r, 'status': 'open'})
+        # A reviewer's own findings (`manual: true`) always survive a rebuild.
+        notes_out += [r for r in d.get('reviewNotes', []) if r.get('manual')]
         d['reviewNotes'] = notes_out
         # The manifest is public: page + size only. The passage openings stay in the private meta.
         d['canineBlocksRemoved'] = [{'page': c['page'], 'words': c['words']} for c in canine]
