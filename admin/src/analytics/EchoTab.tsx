@@ -781,15 +781,13 @@ function ResultsTable({
           <tr>
             <th style={th}>When</th>
             <th style={th}>Who</th>
-            <th style={th}>Source</th>
             <th style={th}>Primary / secondary</th>
             <th style={th}>Tally</th>
             <th style={{ ...th, textAlign: 'right' }}>Total</th>
-            <th style={{ ...th, textAlign: 'right' }}>Median / answer</th>
-            <th style={{ ...th, textAlign: 'right' }}>Same letter</th>
-            <th style={{ ...th, textAlign: 'right' }}>Longest run</th>
+            <th style={{ ...th, textAlign: 'right' }} title="Median time per answer">Median</th>
+            <th style={{ ...th, textAlign: 'right' }} title="Most-used letter's share of answers, and the longest run of one letter">Same letter · run</th>
             <th style={th}>Flags</th>
-            <th style={th}>Review</th>
+            <th style={{ ...th, ...STICKY_REVIEW }}>Review</th>
           </tr>
         </thead>
         <tbody>
@@ -814,8 +812,12 @@ function ResultsTable({
                         <Chip tone="mute">Staff</Chip>
                       </>
                     )}
+                    {r.source !== 'app' && (
+                      <div style={{ marginTop: 4 }}>
+                        <Chip tone="mute">Backfilled</Chip>
+                      </div>
+                    )}
                   </td>
-                  <td style={td}>{r.source === 'app' ? 'App' : 'Backfilled'}</td>
                   <td style={td}>
                     <span style={{ color: DRIVERS[r.primary_driver as DriverKey]?.color ?? COLOR.ink, fontWeight: 750 }}>{r.primary_driver}</span>
                     {r.secondary_driver && <span style={{ color: COLOR.inkMute }}> / {r.secondary_driver}</span>}
@@ -823,8 +825,10 @@ function ResultsTable({
                   <td style={{ ...td, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{tallyWords(r.tally)}</td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtMs(r.total_ms)}</td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtMs(mt.medianMs)}</td>
-                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{mt.maxLetterShare == null ? '—' : `${fmtPct(mt.maxLetterShare)} ${mt.maxLetter}`}</td>
-                  <td style={{ ...td, textAlign: 'right' }}>{mt.answered > 0 ? `${mt.longestRun} ${mt.runLetter ?? ''}` : '—'}</td>
+                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {mt.maxLetterShare == null ? '—' : `${fmtPct(mt.maxLetterShare)} ${mt.maxLetter}`}
+                    {mt.answered > 0 && <span style={{ color: COLOR.inkMute }}>{` · ${mt.longestRun} ${mt.runLetter ?? ''}`}</span>}
+                  </td>
                   <td style={td}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {flagWords(v.a).map((w) => (
@@ -835,7 +839,7 @@ function ResultsTable({
                       {!v.a.autoFlagged && <Chip tone="success">Clean</Chip>}
                     </div>
                   </td>
-                  <td style={td}>
+                  <td style={{ ...td, ...STICKY_REVIEW, background: expanded ? REVIEW_BG_OPEN : REVIEW_BG }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
                       <span style={{ fontSize: 11.5, color: reason ? 'oklch(0.48 0.18 25)' : COLOR.inkMute, fontWeight: 700 }}>
                         {reason ? 'Not counted' : 'Counted'}
@@ -849,7 +853,7 @@ function ResultsTable({
                 </tr>
                 {expanded && (
                   <tr>
-                    <td colSpan={11} style={{ ...td, background: 'rgba(255,255,255,0.45)' }}>
+                    <td colSpan={9} style={{ ...td, background: 'rgba(255,255,255,0.45)' }}>
                       <QuizDetail view={v} canReview={canReview} busy={busy === r.id} onReview={(s, note) => onReview(r, s, note)} />
                     </td>
                   </tr>
@@ -862,6 +866,23 @@ function ResultsTable({
     </div>
   );
 }
+
+/**
+ * The Review column is what an admin acts on, so it stays in view: pinned to
+ * the right edge while a narrow screen scrolls the table sideways, wide
+ * enough for its three buttons on one line. An opaque fill keeps scrolled
+ * columns from showing through it.
+ */
+const REVIEW_BG = COLOR.surface;
+const REVIEW_BG_OPEN = COLOR.surface;
+const STICKY_REVIEW: CSSProperties = {
+  position: 'sticky',
+  right: 0,
+  minWidth: 196,
+  background: REVIEW_BG,
+  boxShadow: '-8px 0 12px -10px rgba(60,20,15,0.25)',
+  zIndex: 1,
+};
 
 function ReviewButtons({ row, busy, onReview }: { row: EchoQuizRow; busy: boolean; onReview: (s: EchoReviewStatus) => void }) {
   const btn = (status: EchoReviewStatus, label: string) => (
@@ -887,7 +908,7 @@ function ReviewButtons({ row, busy, onReview }: { row: EchoQuizRow; busy: boolea
     </button>
   );
   return (
-    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>
       {btn('include', 'Include')}
       {btn('exclude', 'Exclude')}
       {btn('auto', 'Reset')}
