@@ -957,10 +957,11 @@ file's header explains it in full:
 - `20261104000000_knowledge_source_snapshots.sql` — `knowledge_source_snapshots`
   (corpus, slug, content, content_hash, source_hash, meta; RLS on, no
   policies, client grants revoked): the private text of the external
-  corpora (see "External corpora"). **Applied to prod 2026-11-04.** Row
-  upload is NOT complete (2 feline rows on 2026-11-04; production writes
-  are insert-only, `ON CONFLICT DO NOTHING`) — until every approved row is
-  there, a corpus whose gate is opened skips itself (loudly).
+  corpora (see "External corpora"). **Applied to prod 2026-11-04.** Rows
+  uploaded 2026-11-06 (academy 131 / 131, feline 59 / 59, every
+  sha256(content) = its manifest pin; production writes are insert-only,
+  `ON CONFLICT DO NOTHING`). A later pin change needs its row uploaded
+  before the gate is opened, or the corpus skips itself (loudly).
 - `20261106000000_echo_quiz_results.sql` — `echo_quiz_results` (one row per
   completed ECHO quiz: owner `user_id` XOR `anon_session_id`, `source` app |
   profile_backfill, answers / tie-breaker jsonb, server-derived drivers +
