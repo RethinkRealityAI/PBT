@@ -75,6 +75,8 @@ export const AI_ENDPOINTS = {
   scenarioInspect: '/.netlify/functions/admin-scenario-inspect',
   /** Anonymous session recording (no AI call) — see `SessionSaveRequest`. */
   sessionSave: '/.netlify/functions/session-save',
+  /** ECHO style quiz recording (no AI call) — see `EchoQuizSaveRequest`. */
+  echoQuizSave: '/.netlify/functions/echo-quiz-save',
 } as const;
 
 /**
@@ -229,6 +231,64 @@ export interface SessionClaimResponse {
    * activity (no transcript) that the app should fill from its local copy.
    */
   claimed: Array<{ id: string; complete: boolean }>;
+}
+
+// ─── ECHO style quiz recording ─────────────────────────────────────────────
+
+/** One answered quiz question as the app reports it. */
+export interface EchoQuizAnswerWire {
+  /** `QUIZ_QUESTIONS[].id` (1–15); the tie-breaker travels in `tieBreaker`. */
+  questionId: number;
+  letter: 'A' | 'B' | 'C' | 'D';
+  /** From the question being shown to the answer (clamped server-side). */
+  ms: number;
+}
+
+/**
+ * `echo-quiz-save` — a COMPLETED ECHO style quiz, recorded for the admins'
+ * ECHO analytics (data quality: rushed / straight-lined quizzes). No AI call.
+ *
+ * Trust: only the LETTERS (plus timings) are accepted. The server derives the
+ * drivers, tally, primary and secondary from the shared quiz definition
+ * (`src/shared/quiz/echoScoring.ts`) — a client tally is never read. Signed
+ * in → owned by the verified account; anonymous → by `anonSessionId` (the
+ * random per-device id, like anonymous sessions). Nothing is written with
+ * `allowTelemetry: false` or `preview: true`, and the app sends nothing
+ * before the current Terms were accepted. The trainee never sees any of it.
+ */
+export interface EchoQuizSaveRequest extends AiRequestMeta {
+  /** Client-generated UUID of this completion (idempotent retries). */
+  quizId: string;
+  /** Required when anonymous; ignored when signed in. */
+  anonSessionId?: string;
+  answers: EchoQuizAnswerWire[];
+  tieBreaker?: { letter: 'A' | 'B' | 'C' | 'D'; ms: number } | null;
+  undoCount?: number;
+  totalMs?: number;
+  /** When the device says it finished — informational; `created_at` is server time. */
+  takenAt?: string;
+}
+
+export interface EchoQuizSaveResponse {
+  persisted: boolean;
+  /** `duplicate` = that `quizId` already exists (a retry); it is never rewritten. */
+  skipped?: 'opted_out' | 'preview' | 'duplicate' | 'limit' | 'failed';
+}
+
+/**
+ * `echo-quiz-save` with `claim: true` — after sign-in, the quiz result this
+ * device holds locally (`Profile.quizResultId`) moves from the device to the
+ * account, when it is still that device's anonymous row (guarded in the
+ * statement). Signed-in callers only.
+ */
+export interface EchoQuizClaimRequest {
+  claim: true;
+  anonSessionId: string;
+  quizIds: string[];
+}
+
+export interface EchoQuizClaimResponse {
+  claimed: string[];
 }
 
 // ─── Coach hint ────────────────────────────────────────────────────────────

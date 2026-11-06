@@ -21,7 +21,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const { postAi } = vi.hoisted(() => ({ postAi: vi.fn() }));
 vi.mock('../../../services/aiApi', () => ({ postAi }));
 
-import { backfillLocalDataToCloud } from '../backfillLocalData';
+import { backfillLocalDataToCloud, hasLocalDataToBackfill } from '../backfillLocalData';
+import { PROFILE_KEY } from '../../../app/providers/ProfileProvider';
 import { writeStorage } from '../../../lib/storage';
 import { SESSIONS_KEY } from '../../../lib/sessionsKey';
 import type { SessionRecord, ScoreReport } from '../../../services/types';
@@ -240,5 +241,45 @@ describe('backfill claims sessions the server already recorded anonymously', () 
     const { sb, upserts } = fakeSupabase({ readError: { message: 'boom' } });
     await backfillLocalDataToCloud(sb as never, USER_ID);
     expect(upserts['training_sessions']).toBeUndefined();
+  });
+});
+
+
+describe('backfill claims the ECHO quiz this device took anonymously', () => {
+  const QUIZ = '77777777-7777-4777-8777-777777777777';
+  const profile = (quizResultId?: string) => ({
+    primary: 'Analyzer' as const,
+    secondary: 'Harmonizer' as const,
+    tally: { Activator: 3, Energizer: 3, Analyzer: 6, Harmonizer: 3 },
+    answers: [],
+    takenAt: new Date().toISOString(),
+    ...(quizResultId ? { quizResultId } : {}),
+  });
+
+  it('sends only the quiz id held locally', async () => {
+    writeStorage(PROFILE_KEY, profile(QUIZ));
+    expect(hasLocalDataToBackfill()).toBe(true);
+    postAi.mockResolvedValueOnce({ claimed: [QUIZ] });
+    const { sb } = fakeSupabase();
+    await backfillLocalDataToCloud(sb as never, USER_ID);
+    const [endpoint, body] = postAi.mock.calls[0];
+    expect(endpoint).toBe('/.netlify/functions/echo-quiz-save');
+    expect(body).toMatchObject({ claim: true, quizIds: [QUIZ] });
+    expect(typeof body.anonSessionId).toBe('string');
+  });
+
+  it('claims nothing for a profile without a recorded quiz (older, or hydrated from the cloud)', async () => {
+    writeStorage(PROFILE_KEY, profile());
+    expect(hasLocalDataToBackfill()).toBe(false);
+    const { sb } = fakeSupabase();
+    await backfillLocalDataToCloud(sb as never, USER_ID);
+    expect(postAi).not.toHaveBeenCalled();
+  });
+
+  it('a failed claim never stops the rest of the backfill', async () => {
+    writeStorage(PROFILE_KEY, profile(QUIZ));
+    postAi.mockRejectedValueOnce(new Error('offline'));
+    const { sb } = fakeSupabase();
+    await expect(backfillLocalDataToCloud(sb as never, USER_ID)).resolves.toBeUndefined();
   });
 });

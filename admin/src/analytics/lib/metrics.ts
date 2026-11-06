@@ -293,17 +293,19 @@ export function practiceClock(rows: readonly SessionSummary[]): number[][] {
 /**
  * Trainee's ECHO driver × AI owner's driver → average score. Shows which
  * communication-style pairings the team finds hard (an Analyzer trainee
- * facing an Activator owner, say).
+ * facing an Activator owner, say). `traineeDriverOf` names the trainee's
+ * style for a session — the account's latest quiz, or for an anonymous
+ * session the device's (`lib/echo.ts::traineeStyleResolver`); null = style
+ * unknown (no quiz, or a quiz the ECHO quality rules leave out), skipped.
  */
 export function driverMatchup(
   rows: readonly SessionSummary[],
-  traineeDriverOf: (userId: string) => string | null,
+  traineeDriverOf: (s: SessionSummary) => string | null,
 ): Map<string, { avgScore: number | null; scored: number }> {
   const acc = new Map<string, number[]>();
   for (const s of rows) {
-    // An anonymous session has no trainee, so no trainee style to pair.
-    if (!isScored(s) || !s.owner_driver || !s.user_id) continue;
-    const td = traineeDriverOf(s.user_id);
+    if (!isScored(s) || !s.owner_driver) continue;
+    const td = traineeDriverOf(s);
     if (!td) continue;
     const k = `${td}|${s.owner_driver}`;
     const list = acc.get(k);

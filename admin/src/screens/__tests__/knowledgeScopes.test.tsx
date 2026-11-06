@@ -322,3 +322,62 @@ describe('Try a search', () => {
     expect(await screen.findByText(/that’s the isolation working/i)).toBeInTheDocument();
   });
 });
+
+describe('Royal Canin Academy articles', () => {
+  const ACADEMY = doc({
+    id: 'r',
+    slug: 'academy:how-i-approach-pet-obesity',
+    title: 'How I approach... Pet obesity',
+    source: 'code-seed',
+    metadata: {
+      citation: 'Example AQ. How I approach... Pet obesity. Vet Focus 36.1 (Royal Canin Academy), 2026.',
+      tags: { focus: 'weight', origin: 'academy' },
+      source: { kind: 'academy', url: 'https://academy.royalcanin.com/en/veterinary/how-i-approach-pet-obesity' },
+    },
+  });
+
+  it('shows the library pill and an "Open source" link (new tab) in the row and the detail panel', () => {
+    state.docs = { data: [doc(), ACADEMY], loading: false, error: null };
+    renderScreen();
+    const row = within(screen.getByTestId('doc-row-academy:how-i-approach-pet-obesity'));
+    expect(row.getByText('Royal Canin Academy')).toBeInTheDocument();
+    const link = row.getByTestId('academy-source-link');
+    expect(link).toHaveAttribute('href', 'https://academy.royalcanin.com/en/veterinary/how-i-approach-pet-obesity');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    // Following the link must not also open the row.
+    fireEvent.click(link);
+    expect(screen.getAllByTestId('academy-source-link')).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId('doc-row-academy:how-i-approach-pet-obesity'));
+    expect(screen.getAllByTestId('academy-source-link')).toHaveLength(2);
+  });
+
+  it('shows neither for other documents', () => {
+    renderScreen();
+    expect(screen.queryByText('Royal Canin Academy')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('academy-source-link')).not.toBeInTheDocument();
+  });
+});
+
+describe('Royal Canin feline assets', () => {
+  it('shows the asset pill, its type and region, and the Box link', () => {
+    const ASSET = doc({
+      id: 'f',
+      slug: 'feline:synthetic-detailer',
+      title: 'Synthetic detailer',
+      source: 'code-seed',
+      metadata: {
+        citation: 'Royal Canin Canada. Synthetic detailer (detailer, 2026).',
+        tags: { focus: 'urinary', origin: 'feline', species: ['cat'] },
+        source: { kind: 'royal-canin-asset', assetType: 'detailer', region: 'CA', sourceUrl: 'https://example.app.box.com/s/x/file/1' },
+      },
+    });
+    state.docs = { data: [doc(), ASSET], loading: false, error: null };
+    renderScreen();
+    const row = within(screen.getByTestId('doc-row-feline:synthetic-detailer'));
+    expect(row.getByText('Royal Canin asset')).toBeInTheDocument();
+    expect(row.getByTestId('external-source-detail')).toHaveTextContent('Detailer · CA');
+    expect(row.getByTestId('academy-source-link')).toHaveAttribute('href', 'https://example.app.box.com/s/x/file/1');
+  });
+});

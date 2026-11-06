@@ -10,6 +10,7 @@
 import { apiFetch } from '../lib/api';
 import { useCachedQuery } from '../data/cache';
 import type {
+  EchoReport,
   EngagementReport,
   SessionSummary,
   SessionSummaryResponse,
@@ -76,6 +77,18 @@ export function useEngagement(range: Range, enabled = true) {
         tz: tzOffsetMinutes(),
       }),
     null,
+  );
+}
+
+/**
+ * Every recorded ECHO quiz (all time — a few hundred rows; the tabs split by
+ * period themselves). Readable with `insights.read`.
+ */
+export function useEchoReport(enabled = true) {
+  return useCachedQuery<EchoReport>(
+    enabled ? 'analytics:echo' : null,
+    () => apiFetch<EchoReport>('admin-analytics', { op: 'echo' }),
+    { rows: [], truncated: false, recording_since: null, history: null, can_review: false },
   );
 }
 

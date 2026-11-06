@@ -67,3 +67,9 @@ resources/fecal-charts/*/Links/
 
 # Playwright MCP screenshots/snapshots
 .playwright-mcp/
+
+# Royal Canin Academy fetch cache (raw HTTP responses — untrusted, never committed)
+.cache/
+
+# Python bytecode (scripts/feline)
+__pycache__/

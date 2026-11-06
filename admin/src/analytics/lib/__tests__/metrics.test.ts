@@ -126,14 +126,14 @@ describe('breakdowns', () => {
     expect(m.get('Analyzer|Activator')).toEqual({ avgScore: 60, scored: 2 });
   });
 
-  it('leaves anonymous sessions out of the style pairings (no trainee, no style)', () => {
-    const seen: Array<string | null> = [];
-    const m = driverMatchup([anonSession('d1', { owner_driver: 'Activator', score_overall: 20 })], (u) => {
-      seen.push(u);
-      return 'Analyzer';
-    });
-    expect(m.size).toBe(0);
-    expect(seen).toEqual([]);
+  it('pairs an anonymous session only when its device has a style on record', () => {
+    const rows = [
+      anonSession('d1', { owner_driver: 'Activator', score_overall: 20 }),
+      anonSession('d2', { owner_driver: 'Activator', score_overall: 40 }),
+    ];
+    const m = driverMatchup(rows, (s) => (s.anon_session_id === 'd1' ? 'Harmonizer' : null));
+    expect(m.get('Harmonizer|Activator')).toEqual({ avgScore: 20, scored: 1 });
+    expect(m.size).toBe(1);
   });
 
   it('counts a group\'s people as trainees, not anonymous rows', () => {

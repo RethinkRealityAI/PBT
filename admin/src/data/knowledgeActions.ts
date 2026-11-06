@@ -133,6 +133,82 @@ export function docCitation(metadata: Bag | null | undefined): string | null {
   return typeof citation === 'string' && citation.trim() ? citation.trim() : null;
 }
 
+/** Where Royal Canin Academy articles live — the only origin we link to. */
+const ACADEMY_ORIGIN = 'https://academy.royalcanin.com';
+
+/** A document from an external corpus: which library, what it is, and the way back to the source. */
+export interface ExternalSource {
+  /** 'Royal Canin Academy' | 'Royal Canin asset'. */
+  label: string;
+  /** e.g. "Detailer · CA" for a feline asset; null for an Academy article. */
+  detail: string | null;
+  /** A vetted https link, or null when the stored one is not trustworthy. */
+  url: string | null;
+}
+
+/** https only, and only on an allowed host — never a `javascript:` or off-site link behind "Open source". */
+function vettedUrl(raw: unknown, allowed: (u: URL) => boolean): string | null {
+  if (typeof raw !== 'string') return null;
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'https:' && allowed(u) ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+const ASSET_TYPE_LABELS: Record<string, string> = {
+  'product-guide': 'Product guide',
+  detailer: 'Detailer',
+  'sell-sheet': 'Sell sheet',
+  brochure: 'Owner brochure',
+  'owner-guide': 'Pet owner guide',
+  'technical-bulletin': 'Technical bulletin',
+  'consult-pearl': 'Consult pearl',
+  'clinical-trial-summary': 'Clinical trial summary',
+  'clinical-tips': 'Clinical tips',
+  presentation: 'Presentation',
+  'training-game': 'Training game',
+  'product-insert': 'Product insert',
+};
+
+/**
+ * The external corpus a document came from (`metadata.source.kind`):
+ * a Royal Canin Academy article (`academy`; link only to the Academy) or a
+ * Royal Canin feline asset (`royal-canin-asset`; asset type + region, link
+ * only to `*.box.com`). Null for every other document. Everything here is
+ * read from the database, so every link is vetted.
+ */
+export function externalSource(metadata: Bag | null | undefined): ExternalSource | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const source = metadata.source;
+  if (!source || typeof source !== 'object') return null;
+  const src = source as Bag;
+  if (src.kind === 'academy') {
+    return {
+      label: 'Royal Canin Academy',
+      detail: null,
+      url: vettedUrl(src.url, (u) => u.origin === ACADEMY_ORIGIN),
+    };
+  }
+  if (src.kind === 'royal-canin-asset') {
+    const type = typeof src.assetType === 'string' ? (ASSET_TYPE_LABELS[src.assetType] ?? src.assetType) : null;
+    const region = src.region === 'CA' || src.region === 'US' ? src.region : null;
+    return {
+      label: 'Royal Canin asset',
+      detail: [type, region].filter(Boolean).join(' · ') || null,
+      url: vettedUrl(src.sourceUrl, (u) => u.hostname === 'box.com' || u.hostname.endsWith('.box.com')),
+    };
+  }
+  return null;
+}
+
+/** The Academy page of an Academy article (vetted), else null. */
+export function academySourceUrl(metadata: Bag | null | undefined): string | null {
+  const ext = externalSource(metadata);
+  return ext?.label === 'Royal Canin Academy' ? ext.url : null;
+}
+
 // ─── Filtering ──────────────────────────────────────────────────────────────
 
 export interface KnowledgeFilters {

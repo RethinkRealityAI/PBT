@@ -1,0 +1,539 @@
+{
+  "source": "Royal Canin Canada Veterinary Division — Educational Assets_Confident Conversations (Box shared folder, delivered 2026-11-02)",
+  "count": 34,
+  "files": [
+    {
+      "sourceId": "2566540309941",
+      "fileName": "VX-0032 - 2027 Feline Sell Sheet_EN_v2 (1).pdf",
+      "folder": "",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 1116,
+      "sha256": "d076392cfae8f1dcc071325f735b9c24d5dce64e6e93a5109a0cd19d4afb05db",
+      "bytes": 812867,
+      "decision": {
+        "documents": [
+          "feline-sell-sheet-2027"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566534331716",
+      "fileName": "Vet Health Nutrition Product Guide_2027_EN_Urinary_GI_Weight_Renal.pdf",
+      "folder": "",
+      "kind": "pdf",
+      "pages": 80,
+      "words": 40777,
+      "sha256": "8f9feea9927435bb1118e0b4ff6e1d84b7f6e2ab268010624532670debb43ba7",
+      "bytes": 15181145,
+      "decision": {
+        "documents": [
+          "product-guide-2027-urinary-overview",
+          "product-guide-2027-urinary-so",
+          "product-guide-2027-urinary-so-moderate-calorie",
+          "product-guide-2027-urinary-feline-treats",
+          "product-guide-2027-urinary-so-aging-calm",
+          "product-guide-2027-urinary-so-calm",
+          "product-guide-2027-urinary-so-hydrolyzed-protein",
+          "product-guide-2027-urinary-so-satiety",
+          "product-guide-2027-urinary-so-satiety-calm",
+          "product-guide-2027-weight-overview",
+          "product-guide-2027-satiety-support",
+          "product-guide-2027-satiety-feline-treats",
+          "product-guide-2027-glycoadvanced",
+          "product-guide-2027-satiety-hydrolyzed-protein",
+          "product-guide-2027-gi-overview",
+          "product-guide-2027-gi-kitten",
+          "product-guide-2027-gastrointestinal",
+          "product-guide-2027-gi-moderate-calorie",
+          "product-guide-2027-gi-fiber-response",
+          "product-guide-2027-gi-hydrolyzed-protein",
+          "product-guide-2027-recovery",
+          "product-guide-2027-gi-feline-treats",
+          "product-guide-2027-vital-support-overview",
+          "product-guide-2027-mobility-support",
+          "product-guide-2027-renal-support-early-consult",
+          "product-guide-2027-renal-support",
+          "product-guide-2027-renal-support-liquid",
+          "product-guide-2027-renal-support-hydrolyzed-protein"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566542234747",
+      "fileName": "GI - Chronic Enteropathies - Technical Bulletin.pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 1,
+      "words": 652,
+      "sha256": "75aad92662910fcb77c0a31b8acc85caadfd4566d33c0b1790b56b9ee3fb8694",
+      "bytes": 87538,
+      "decision": {
+        "documents": [
+          "chronic-enteropathies-bulletin"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566536623432",
+      "fileName": "GI - Feline Fiber Response - Technical Bulletin.pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 1,
+      "words": 432,
+      "sha256": "9d3f2e91e8f91d1d0298d54181027dfb17850cdf9b4d957fb3bbf675c253bd14",
+      "bytes": 668505,
+      "decision": {
+        "documents": [
+          "fiber-response-bulletin"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566536635607",
+      "fileName": "GI - Microbiome - Technical Bulletin (2).pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 1,
+      "words": 401,
+      "sha256": "e7ff68a10719df303554401ec7a5827979d8d86168d6b782dececbf29b47881d",
+      "bytes": 876978,
+      "decision": {
+        "documents": [
+          "microbiome-bulletin"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566542044423",
+      "fileName": "GI Sell Sheet 2025_JC Edits.pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 0,
+      "sha256": "16089432a5b957d07494016498252fdc6f2e63f7c9e145aa15f02cc844dce8f8",
+      "bytes": 3688481,
+      "decision": {
+        "excluded": "Draft: image only (no text layer), visible FPO placeholder and review comment; a different, unreleased GI portfolio sheet. Not imported."
+      }
+    },
+    {
+      "sourceId": "2566535452592",
+      "fileName": "GI_Sell_Sheet_FiberResponse_ENG.pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 343,
+      "sha256": "3bf0510f348301468ed25e868ac3d6520b8b14411a41e5670ce11278331ca958",
+      "bytes": 2013410,
+      "decision": {
+        "documents": [
+          "fiber-response-wet-sell-sheet"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566539966709",
+      "fileName": "Probiotic - Clinical Trial Summary.pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 9,
+      "words": 1899,
+      "sha256": "21f44f349ca5425a11305ee1d1dffc156542a4c26a9e7aaee9e0a561c37ae2b6",
+      "bytes": 4907347,
+      "decision": {
+        "documents": [
+          "probiotic-clinical-trials"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566533988579",
+      "fileName": "Product Guide - 2026 Probiotic Inserts.pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 759,
+      "sha256": "0af1b0ac30dfd336d39f22f3a6014645e8453ebddd3b9c9f49148e56fe4975b6",
+      "bytes": 302524,
+      "decision": {
+        "documents": [
+          "probiotic-inserts-2026"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566542184376",
+      "fileName": "SC-0349 - GI+HP Clinical trial detailer_EN.pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 598,
+      "sha256": "5da75288d99851cc12e09fc9019d0e82b1680fc19462fb80b60f114d1db15327",
+      "bytes": 567132,
+      "decision": {
+        "documents": [
+          "gi-hydrolyzed-protein-trial-detailer"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566528038913",
+      "fileName": "Sell Sheet - Canine & Feline Probiotics (1).pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 602,
+      "sha256": "a8753737439dd3899f9b32460b63f466cede5307fbbc983a828938ecde3f0087",
+      "bytes": 1743372,
+      "decision": {
+        "documents": [
+          "probiotics-sell-sheet"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566541612520",
+      "fileName": "VG-0208 - Feline GI HP - GI CONSUMER BROCHURE_Cat_EN_v1.pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 8,
+      "words": 680,
+      "sha256": "8b75ec0742f5e0c91c534d2f5b3eda2b67819f6653a4b6adda33481901c96fc5",
+      "bytes": 2314141,
+      "decision": {
+        "documents": [
+          "gi-consumer-brochure"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566529391601",
+      "fileName": "VG-0208 - Feline GI HP - GI DETAILER_EN_v1.pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 20,
+      "words": 4229,
+      "sha256": "2586f694184a397f60098b49eea012cfaff10362f91917e670ae24c3f2c204d8",
+      "bytes": 18324106,
+      "decision": {
+        "documents": [
+          "gi-detailer"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566540377141",
+      "fileName": "VG-0208 - Feline GI HP - Sell Sheet_EN_v8 (1).pdf",
+      "folder": "GI - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 506,
+      "sha256": "e8037c2fa3255caef368f913b034a7f7c745cfd0ea8a679aa9f4004cb510731a",
+      "bytes": 1364897,
+      "decision": {
+        "documents": [
+          "gi-hydrolyzed-protein-sell-sheet"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566535493392",
+      "fileName": "Consult Pearl - Chronic Kidney Disease in Cats.pdf",
+      "folder": "Renal - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 934,
+      "sha256": "c8ea27d84eb39078c1ff68388164cfccd7672e31ce3ced60a6ab5c97e6ee1479",
+      "bytes": 795862,
+      "decision": {
+        "documents": [
+          "ckd-consult-pearls"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566542957539",
+      "fileName": "Vital Support - Detailer - Canine and Feline.pdf",
+      "folder": "Renal - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 12,
+      "words": 2543,
+      "sha256": "ee1e1c34138b63c8952b1084e1f225100260b3a91ce2778a4a122063376dbbbb",
+      "bytes": 9493525,
+      "decision": {
+        "documents": [
+          "vital-support-detailer"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566532842946",
+      "fileName": "Vital Support - Diets for Senior Cats - Technical Bulletin.pdf",
+      "folder": "Renal - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 1,
+      "words": 362,
+      "sha256": "bc7925185cc4e09677eb04906b75dbecb0cb951e21d80eea56cfa5995df809bf",
+      "bytes": 453548,
+      "decision": {
+        "documents": [
+          "senior-cat-diets-bulletin"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566531033920",
+      "fileName": "Vital Support - Sell Sheet - Renal Diet Guide - Feline.pdf",
+      "folder": "Renal - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 718,
+      "sha256": "54c915edadc0b8639e6852cc6122ddee3a92bcd7b698fb868967c80fc6e4a87c",
+      "bytes": 2605373,
+      "decision": {
+        "documents": [
+          "renal-diet-guide"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566537367599",
+      "fileName": "Brochure - The Health Benefits of Wet Nutrition - Feline.pdf",
+      "folder": "Urinary - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 641,
+      "sha256": "cdcbaef949cf89ba00677dc16dae42a2f5f9e7695b11aa3d9b918400f524ff0e",
+      "bytes": 263675,
+      "decision": {
+        "documents": [
+          "wet-nutrition-brochure"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566541593320",
+      "fileName": "Brochure - Urinary Health - Feline.pdf",
+      "folder": "Urinary - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 5,
+      "words": 633,
+      "sha256": "7a562c3afc2133d2a7234fd95b2094a5aff5b5ce9bfbaa10c55ae3e041e65aaf",
+      "bytes": 2392013,
+      "decision": {
+        "documents": [
+          "urinary-health-brochure"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566540974022",
+      "fileName": "Urianry - Pet Owner Guide - Calcium Oxalate Management - Feline.pdf",
+      "folder": "Urinary - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 440,
+      "sha256": "6e844718c038e7baf21421099eccfba92de4f7fe5f81821e43d5df692fd3562d",
+      "bytes": 427722,
+      "decision": {
+        "documents": [
+          "calcium-oxalate-owner-guide-feline"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566536498394",
+      "fileName": "Urinary - CVUC Detailer .pdf",
+      "folder": "Urinary - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 1,
+      "words": 236,
+      "sha256": "4de0ce4c7de940a158abdb819c8fae61dd44b948bc2841eef35969fe064a0884",
+      "bytes": 1541962,
+      "decision": {
+        "documents": [
+          "cvuc-detailer"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566540914564",
+      "fileName": "Urinary - Pet Owner Guide - Calcium Oxalate Management - Canine.pdf",
+      "folder": "Urinary - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 485,
+      "sha256": "d4a52a2408245cbdc32333112a164be9fff320f622acda9b123659f8d31a7f6c",
+      "bytes": 467438,
+      "decision": {
+        "excluded": "Canine only (owner decision 2026-11-04: feline only)."
+      }
+    },
+    {
+      "sourceId": "2566533966901",
+      "fileName": "Urinary - Relative Supersaturation.pptx",
+      "folder": "Urinary - Feline - Confident Conversations",
+      "kind": "pptx",
+      "pages": 25,
+      "words": 5913,
+      "sha256": "24a3de7d0283b0f4b66029b444992ed057c272c2bb3bce6df8473f9182022674",
+      "bytes": 20392490,
+      "decision": {
+        "documents": [
+          "urinary-rss-presentation"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566540463442",
+      "fileName": "Urinary - Urinalysis Tips.pdf",
+      "folder": "Urinary - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 3,
+      "words": 1571,
+      "sha256": "292e19e087177b6e67dd53eb03c3941701da0d37ed0217f15362d5c9d065682a",
+      "bytes": 634654,
+      "decision": {
+        "documents": [
+          "urinalysis-tips"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566529651497",
+      "fileName": "Urinary -Jeopardy Game.pptx",
+      "folder": "Urinary - Feline - Confident Conversations",
+      "kind": "pptx",
+      "pages": 28,
+      "words": 4546,
+      "sha256": "1a34e3fbeddec36615448ab55d3cbf1971136b72a5fa42c4e788826f415001c0",
+      "bytes": 7121429,
+      "decision": {
+        "documents": [
+          "urinary-jeopardy"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566534631871",
+      "fileName": "Urinary-Behind-the-Science-Detailer (US version).pdf",
+      "folder": "Urinary - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 20,
+      "words": 6328,
+      "sha256": "3c5dd37ef248286cb8a07900be902c105a074a0b87f5a13b8abfd7545006bcc5",
+      "bytes": 1629579,
+      "decision": {
+        "documents": [
+          "urinary-behind-the-science-us"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566537221444",
+      "fileName": "Diabetic - Discover the Difference Glyco Brochure - Feline.pdf",
+      "folder": "Weight - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 8,
+      "words": 1716,
+      "sha256": "37f13623591b377d7c126e3aea179a366ec6781f2d901f539057c7a37c4f48ab",
+      "bytes": 910328,
+      "decision": {
+        "documents": [
+          "glyco-brochure"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566530537130",
+      "fileName": "Diabetic - Glyco - Detailer  (1).pdf",
+      "folder": "Weight - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 8,
+      "words": 2670,
+      "sha256": "dfc084747384dcb214b2f53202243024358b5ce006d7887e3d0ede19250fce81",
+      "bytes": 4284022,
+      "decision": {
+        "documents": [
+          "glyco-detailer"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566537286376",
+      "fileName": "Diabetic - Sell Sheet - Glyco - Feline.pdf",
+      "folder": "Weight - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 783,
+      "sha256": "061220f507a5daf816b904dc7bd176241e24b462d66c36bf62f2750408ba0bda",
+      "bytes": 780900,
+      "decision": {
+        "documents": [
+          "glyco-sell-sheet"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566537418013",
+      "fileName": "Weight - 2026 Detailer.pdf",
+      "folder": "Weight - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 16,
+      "words": 6841,
+      "sha256": "5bead3de2721be2fc50e2b5f9d78fe6e39f819c832da46f448ab0a79ef81fca7",
+      "bytes": 13094255,
+      "decision": {
+        "documents": [
+          "weight-detailer-2026"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566539462583",
+      "fileName": "Weight - Implications of Obesity in Pets - Technical Bulletin.pdf",
+      "folder": "Weight - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 1,
+      "words": 765,
+      "sha256": "48af29c6278ff897604e2446b3a443a258c8f99e7866fd39a6403b6a084e2a07",
+      "bytes": 104966,
+      "decision": {
+        "documents": [
+          "obesity-bulletin"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566537278488",
+      "fileName": "Weight -Sell Sheet - Satiety - Canine and Feline.pdf",
+      "folder": "Weight - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 2,
+      "words": 1028,
+      "sha256": "b9bbd1a52fa1a7fdf6b534b79109be7e19869cbe5373ad4921e835902ca44560",
+      "bytes": 778785,
+      "decision": {
+        "documents": [
+          "satiety-sell-sheet"
+        ]
+      }
+    },
+    {
+      "sourceId": "2566537237991",
+      "fileName": "Weight Loss that Works Brochure - Feline.pdf",
+      "folder": "Weight - Feline - Confident Conversations",
+      "kind": "pdf",
+      "pages": 8,
+      "words": 933,
+      "sha256": "71e508cab34397d8e135f74fcd4d36f6f4957459aa2fdb0bc7e1576185545be0",
+      "bytes": 1597091,
+      "decision": {
+        "documents": [
+          "weight-loss-brochure"
+        ]
+      }
+    }
+  ]
+}

@@ -81,7 +81,7 @@ describe('hardestPairing', () => {
       session({ user_id: 'ha', owner_driver: 'Activator', score_overall: 80 }),
       session({ user_id: 'ha', owner_driver: 'Activator', score_overall: 90 }),
     ];
-    const m = driverMatchup(rows, (u) => (u === 'an' ? 'Analyzer' : 'Harmonizer'));
+    const m = driverMatchup(rows, (s) => (s.user_id === 'an' ? 'Analyzer' : 'Harmonizer'));
     expect(hardestPairing(m)).toEqual({ trainee: 'Analyzer', owner: 'Activator', avgScore: 55, scored: 2 });
     expect(hardestPairing(m, 3)).toBeNull();
   });

@@ -19,6 +19,7 @@ const state = {
 };
 
 vi.mock('../../data', () => ({
+  useEchoReport: () => q({ rows: [], truncated: false, recording_since: null, history: null, can_review: false }),
   useSessionSummaries: () => q({ rows: state.rows, truncated: false }),
   useTraineeDirectory: () => q({ rows: state.directory, emails: false }),
   useEngagement: () => q(null),

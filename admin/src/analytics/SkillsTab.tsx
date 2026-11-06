@@ -25,7 +25,9 @@ import { COLOR, DRIVER_KEYS, type DriverKey } from '../lib/tokens';
 import { pushbackLabel } from '../lib/labels';
 import { averageScoreByDifficulty } from '../lib/difficulty';
 import { CHART, FreshnessNote, Legend, Panel, SplitRow, StatTile } from './ui';
-import { useFeedbackWindow, useSessionSummaries, useTraineeDirectory } from './data';
+import { useEchoReport, useFeedbackWindow, useSessionSummaries, useTraineeDirectory } from './data';
+import { traineeStyleResolver } from './lib/echo';
+import { setEchoOptions, useEchoOptions } from './echoSettings';
 import { compareWords, pct, pctDelta, pointsDelta, rangeWords, splitByPeriod } from './lib/period';
 import {
   SKILL_HINTS,
@@ -102,6 +104,10 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
   const directory = useTraineeDirectory();
   const feedback = useFeedbackWindow(range, canFeedback);
   const teamTitles = useObjectionTitles(sessions.data.rows);
+  // The trainee's ECHO style comes from their latest quiz (the device's for an
+  // anonymous session); a quiz the ECHO quality rules leave out = style unknown.
+  const echo = useEchoReport();
+  const echoOptions = useEchoOptions();
 
   const comparable = range !== 'all';
   const windowWords = rangeWords(range);
@@ -145,16 +151,23 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
     );
 
     const driverOf = new Map(directory.data.rows.map((d) => [d.user_id, d.echo_primary]));
-    const traineeDriver = (u: string) => {
-      const d = driverOf.get(u);
-      return d && (DRIVER_KEYS as readonly string[]).includes(d) ? d : null;
-    };
-    const matchup = driverMatchup(current, traineeDriver);
+    const styleOf = traineeStyleResolver(echo.error ? [] : echo.data.rows, {
+      thresholds: echoOptions.thresholds,
+      includeFlagged: echoOptions.includeFlagged,
+      fallback: (u) => {
+        const d = driverOf.get(u);
+        return d && (DRIVER_KEYS as readonly string[]).includes(d) ? d : null;
+      },
+    });
+    const matchup = driverMatchup(current, (s) => styleOf(s).driver);
     // Same bar as the grid's cells (2+), so the sentence names a cell the reader can see.
     const pairing = hardestPairing(matchup, 2);
-    // Signed-in trainees with no quiz result, and anonymous sessions (no trainee on record) — both left out.
-    const noStyle = scored.filter((s) => s.user_id && s.owner_driver && !traineeDriver(s.user_id)).length;
-    const anonStyle = scored.filter((s) => !s.user_id && s.owner_driver).length;
+    // Sessions left out: a quiz flagged by the ECHO quality rules; a signed-in
+    // trainee with no quiz result; an anonymous device with no quiz on record.
+    const withOwner = scored.filter((s) => s.owner_driver);
+    const flaggedStyle = withOwner.filter((s) => styleOf(s).excluded).length;
+    const noStyle = withOwner.filter((s) => s.user_id && !styleOf(s).driver && !styleOf(s).excluded).length;
+    const anonStyle = withOwner.filter((s) => !s.user_id && !styleOf(s).driver && !styleOf(s).excluded).length;
 
     const moodCur = moodSplit(current);
     const moodPrev = comparable ? moodSplit(previous) : null;
@@ -195,6 +208,7 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
       pairing,
       noStyle,
       anonStyle,
+      flaggedStyle,
       histogram: scoreHistogram(current),
       languages: splitBy(current, (s) => languageKey(s.locale), languageOrder(current)),
       who: splitBy(current, (s) => (s.user_id ? 'signed_in' : 'anonymous'), ['signed_in', 'anonymous']),
@@ -209,11 +223,12 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
       fbPrev: comparable ? feedbackSummary(fb.previous) : null,
       comments,
     };
-  }, [sessions.data, sessions.updatedAt, directory.data, feedback.data, teamTitles, range, comparable]);
+  }, [sessions.data, sessions.updatedAt, directory.data, feedback.data, teamTitles, range, comparable, echo.data, echo.error, echoOptions]);
 
   const refresh = () => {
     sessions.refetch();
     directory.refetch();
+    echo.refetch();
     if (canFeedback) feedback.refetch();
   };
 
@@ -413,6 +428,16 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                 <Panel
                   title="Communication styles"
                   subtitle="Average score by the trainee’s ECHO style and the AI owner’s"
+                  actions={
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: COLOR.inkMute }}>
+                      <input
+                        type="checkbox"
+                        checked={echoOptions.includeFlagged}
+                        onChange={(e) => setEchoOptions({ includeFlagged: e.target.checked })}
+                      />
+                      Include flagged quizzes
+                    </label>
+                  }
                   footnote={
                     m.matchupHasData && (
                     <>
@@ -420,7 +445,9 @@ function SkillsBody({ range, onRange, onOpen, onNav }: AnalyticsTabProps) {
                       {m.noStyle > 0 &&
                         ` ${m.noStyle} session${m.noStyle === 1 ? '' : 's'} by trainees without a quiz result ${m.noStyle === 1 ? 'is' : 'are'} left out.`}
                       {m.anonStyle > 0 &&
-                        ` ${m.anonStyle} anonymous session${m.anonStyle === 1 ? ' is' : 's are'} left out — no trainee style is on record for them.`}
+                        ` ${m.anonStyle} anonymous session${m.anonStyle === 1 ? ' is' : 's are'} left out — no ECHO quiz is on record for that device.`}
+                      {m.flaggedStyle > 0 &&
+                        ` ${m.flaggedStyle} session${m.flaggedStyle === 1 ? ' is' : 's are'} left out because the trainee’s latest quiz was flagged as rushed or straight-lined (see Analytics → ECHO).`}
                     </>
                     )
                   }

@@ -23,6 +23,7 @@ import type {
 } from '../../../src/shared/analytics/contract';
 import { toSessionSummary } from '../../../src/shared/analytics/sessionSummary';
 import { aggregateEngagement, aggregateTraineeActivity } from '../../../src/shared/analytics/engagement';
+import { echoReport, echoReviewMock } from './mockEcho';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -753,6 +754,7 @@ export function analyticsMock(name: string, url: string): unknown | undefined {
       if (op === 'directory') return { rows: DIRECTORY, emails: true };
       if (op === 'engagement') return engagement(param(url, 'range') ?? '28d', tz);
       if (op === 'trainee') return traineeDetail(param(url, 'id') ?? '', tz) ?? { error: 'Not found' };
+      if (op === 'echo') return echoReport(DIRECTORY, ANON_DEVICES, NOW);
       return { error: 'Unknown op' };
     }
     case 'admin-ai-calls':
@@ -764,4 +766,10 @@ export function analyticsMock(name: string, url: string): unknown | undefined {
     default:
       return undefined;
   }
+}
+
+/** POST admin-analytics (the ECHO review) against the mock's quiz rows. */
+export function analyticsPostMock(body: Record<string, unknown>): unknown {
+  if (body.op === 'echo-review') return echoReviewMock(body);
+  return { error: 'Unknown op' };
 }

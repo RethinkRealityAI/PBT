@@ -15,8 +15,10 @@ import { jsonRequest, makeFakeSupabase, setFunctionEnv, type FakeSupabase, type 
 const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 
-import handler, { ENGAGEMENT_MAX_ROWS, aiUsageOf, parseTz } from '../admin-analytics';
+import handler, { ECHO_MAX_ROWS, ENGAGEMENT_MAX_ROWS, aiUsageOf, parseEchoReview, parseTz, toEchoQuizRow } from '../admin-analytics';
 import type {
+  EchoReport,
+  EchoReviewResponse,
   EngagementReport,
   TraineeDetail,
   TraineeDirectoryResponse,
@@ -124,12 +126,16 @@ afterEach(() => {
 });
 
 describe('admin-analytics — routing', () => {
-  it('is GET only', async () => {
+  it('is GET only — apart from the ECHO review POST', async () => {
     signIn(ALL_SECTIONS);
-    const res = await handler(
+    const put = await handler(
+      jsonRequest('admin-analytics?op=directory', {}, { method: 'PUT', headers: { authorization: 'Bearer admin' } }),
+    );
+    expect(put.status).toBe(405);
+    const post = await handler(
       jsonRequest('admin-analytics?op=directory', {}, { method: 'POST', headers: { authorization: 'Bearer admin' } }),
     );
-    expect(res.status).toBe(405);
+    expect(post.status).toBe(400);
   });
 
   it('refuses an unknown or missing op', async () => {
@@ -518,5 +524,129 @@ describe('aiUsageOf', () => {
         { call_type: 'unknown', calls: 1, cost_usd: 0 },
       ],
     });
+  });
+});
+
+describe('admin-analytics — ECHO quiz', () => {
+  const QUIZ = '0b1a3c9e-5d2f-4a6b-8c7d-9e0f1a2b3c4d';
+  const DEVICE = '7f3e2d1c-0b9a-4876-8543-210fedcba987';
+  function quizRow(i: number, over: Bag = {}): Bag {
+    return {
+      id: `0b1a3c9e-5d2f-4a6b-8c7d-${String(i).padStart(12, '0')}`,
+      user_id: null,
+      anon_session_id: DEVICE,
+      source: 'app',
+      created_at: new Date(NOW - i * 60_000).toISOString(),
+      taken_at: null,
+      locale: 'en',
+      answers: [{ q: 1, letter: 'A', driver: 'Harmonizer', ms: 900 }],
+      tie_breaker: null,
+      primary_driver: 'Analyzer',
+      secondary_driver: 'Harmonizer',
+      tally: { Analyzer: 6, Harmonizer: 3, Energizer: 3, Activator: 3 },
+      total_ms: 12_000,
+      undo_count: 0,
+      review_status: 'auto',
+      review_note: null,
+      reviewed_by: null,
+      reviewed_at: null,
+      ...over,
+    };
+  }
+
+  it('needs insights.read', async () => {
+    signIn(['sessions.read']);
+    expect((await get('op=echo')).status).toBe(403);
+  });
+
+  it('pages every quiz, hashes the device id and counts earlier quiz visits', async () => {
+    signIn(['insights.read']);
+    const rows = Array.from({ length: 1500 }, (_, i) => quizRow(i));
+    rows.push(quizRow(2000, { user_id: TRAINEE, anon_session_id: null, source: 'profile_backfill', answers: null }));
+    sb.setHandler('echo_quiz_results', table(rows));
+    sb.setHandler('nav_events', (call) => {
+      const fast = call.ops.some((o) => o.op === 'lt' && o.args[0] === 'dwell_ms');
+      return { data: null, count: fast ? 89 : 350, error: null };
+    });
+    const res = await get('op=echo');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EchoReport;
+    expect(body.rows).toHaveLength(1501);
+    expect(body.truncated).toBe(false);
+    expect(body.can_review).toBe(false);
+    expect(JSON.stringify(body)).not.toContain(DEVICE);
+    expect(body.rows[0].device).toMatch(/^[0-9A-F]{4}$/);
+    expect(body.rows[0].device_key).toMatch(/^[0-9a-f]{16}$/);
+    expect(body.rows[1500]).toMatchObject({ user_id: TRAINEE, device: null, source: 'profile_backfill', answers: null });
+    // Recording started with the oldest app row; visits are counted before it.
+    expect(body.recording_since).toBe(rows[1499].created_at);
+    expect(body.history).toEqual({ before: rows[1499].created_at, visits: 350, under_30s: 89 });
+    const nav = sb.callsFor('nav_events')[0].ops;
+    expect(nav).toContainEqual({ op: 'eq', args: ['screen', 'quiz'] });
+    expect(nav).toContainEqual({ op: 'eq', args: ['event_type', 'dwell'] });
+    expect(ECHO_MAX_ROWS).toBeGreaterThan(1000);
+  });
+
+  it('fails loudly when the table read fails, and degrades the visit counts', async () => {
+    signIn(['insights.read']);
+    sb.setHandler('echo_quiz_results', table([], { failWith: { message: 'relation missing' } }));
+    expect((await get('op=echo')).status).toBe(500);
+    sb.setHandler('echo_quiz_results', table([quizRow(1)]));
+    sb.setHandler('nav_events', () => ({ data: null, error: { message: 'down' } }));
+    const body = (await (await get('op=echo')).json()) as EchoReport;
+    expect(body.history).toBeNull();
+  });
+
+  it('reads stored rows defensively', () => {
+    const r = toEchoQuizRow(quizRow(1, { review_status: 'weird', tally: { Analyzer: '6', x: 'no' }, answers: [{ q: 1, letter: 'Z' }] }));
+    expect(r.review_status).toBe('auto');
+    expect(r.tally).toEqual({ Analyzer: 6 });
+    expect(r.answers).toEqual([]);
+  });
+
+  function post(body: unknown) {
+    return handler(jsonRequest('admin-analytics', body, { method: 'POST', headers: { authorization: 'Bearer admin' } }));
+  }
+
+  it('refuses a review without insights.review', async () => {
+    signIn(['insights.read']);
+    const res = await post({ op: 'echo-review', id: QUIZ, status: 'exclude' });
+    expect(res.status).toBe(403);
+    expect(sb.callsFor('echo_quiz_results')).toHaveLength(0);
+  });
+
+  it('validates a review body', () => {
+    expect(parseEchoReview({ op: 'echo-review', id: 'x', status: 'exclude' })).toMatch(/uuid/);
+    expect(parseEchoReview({ op: 'echo-review', id: QUIZ, status: 'drop' })).toMatch(/status/);
+    expect(parseEchoReview({ op: 'other', id: QUIZ, status: 'auto' })).toBe('Unknown op');
+    expect(parseEchoReview({ op: 'echo-review', id: QUIZ, status: 'include', note: `  ${'n'.repeat(900)}` })).toMatchObject({
+      note: 'n'.repeat(500),
+    });
+  });
+
+  it('stores a review, stamps the reviewer and audits it', async () => {
+    signIn(['insights.read', 'insights.review']);
+    const stored = quizRow(0, { id: QUIZ });
+    sb.setHandler('echo_quiz_results', (call) => {
+      if (call.ops[0].op === 'update') {
+        const patch = call.ops[0].args[0] as Bag;
+        return { data: { ...stored, ...patch }, error: null };
+      }
+      return { data: stored, error: null };
+    });
+    const res = await post({ op: 'echo-review', id: QUIZ, status: 'exclude', note: 'Workshop: told to click A' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EchoReviewResponse;
+    expect(body.row).toMatchObject({ review_status: 'exclude', review_note: 'Workshop: told to click A', reviewed_by: 'admin-1' });
+    const update = sb.callsFor('echo_quiz_results').find((c) => c.ops[0].op === 'update');
+    expect(update?.ops).toContainEqual({ op: 'eq', args: ['id', QUIZ] });
+    const audit = sb.firstOp('admin_audit_log', 'insert')?.args[0] as Bag;
+    expect(audit).toMatchObject({ entity_type: 'echo_quiz', entity_id: QUIZ, action: 'update', actor_id: 'admin-1' });
+  });
+
+  it('404s an unknown quiz', async () => {
+    signIn(['insights.read', 'insights.review']);
+    sb.setHandler('echo_quiz_results', () => ({ data: null, error: null }));
+    expect((await post({ op: 'echo-review', id: QUIZ, status: 'auto' })).status).toBe(404);
   });
 });

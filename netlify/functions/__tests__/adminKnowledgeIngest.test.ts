@@ -198,6 +198,60 @@ describe('admin-knowledge-ingest — knowledge scope', () => {
   });
 });
 
+describe('admin-knowledge-ingest — re-embed of an external-corpus document (synthetic text)', () => {
+  function stored(slug: string, title: string, content: string, metadata: Bag) {
+    sb.setHandler('knowledge_documents', (call: SbCall) =>
+      call.ops.some((o) => o.op === 'upsert')
+        ? { data: { id: 'doc-2' }, error: null }
+        : { data: { id: 'doc-2', slug, title, category: 'clinical', content, source: 'code-seed', metadata }, error: null },
+    );
+  }
+
+  it('re-chunks an Academy article by section like the sync (header line, section tag + citation, no references)', async () => {
+    const body = [
+      '> Stand-first.',
+      '',
+      '## Invented section',
+      '',
+      'A placeholder paragraph written for this test.',
+      '',
+      '## References',
+      '',
+      '1. Doe J, et al. An imaginary paper. 2025.',
+    ].join('\n');
+    stored('academy:synthetic-article', 'Synthetic article', body, {
+      citation: 'Example AQ. Synthetic article.',
+      tags: { focus: 'weight', tools: ['roleplay'], species: ['dog', 'puppy'], origin: 'academy' },
+      source: { kind: 'academy', url: 'https://academy.royalcanin.com/en/veterinary/synthetic-article' },
+    });
+    const res = await post({ op: 're-embed', slug: 'academy:synthetic-article' });
+    expect(res.status).toBe(200);
+    const chunks = insertedChunks();
+    expect(chunks.map((c) => (c.tags as Bag).section)).toEqual(['Overview', 'Invented section']);
+    expect(chunks[1].content).toBe('Synthetic article — Invented section\n\nA placeholder paragraph written for this test.');
+    expect(chunks[1].citation).toBe('Example AQ. Synthetic article. — "Invented section"');
+    expect(chunks[1].tags).toMatchObject({ category: 'clinical', focus: 'weight', origin: 'academy', tools: ['roleplay'] });
+    expect(chunks.some((c) => String(c.content).includes('imaginary paper'))).toBe(false);
+    expect(upsertedDoc().source).toBe('code-seed');
+  });
+
+  it('re-chunks a feline asset page by page, with "(p. N)" headers and page citations', async () => {
+    const body = ['<!-- page 2 -->', '## Made-up heading', '', 'Placeholder text on page two.', '', '<!-- page 3 -->', '', 'Text on page three.'].join('\n');
+    stored('feline:synthetic-detailer', 'Synthetic detailer', body, {
+      citation: 'Royal Canin Canada. Synthetic detailer (detailer, 2026).',
+      tags: { focus: 'urinary', tools: ['scoring'], species: ['cat'], origin: 'feline' },
+      source: { kind: 'royal-canin-asset', corpus: 'feline' },
+    });
+    const res = await post({ op: 're-embed', slug: 'feline:synthetic-detailer' });
+    expect(res.status).toBe(200);
+    const chunks = insertedChunks();
+    expect(chunks.map((c) => (c.tags as Bag).pages)).toEqual([[2], [3]]);
+    expect(chunks[0].content).toBe('Synthetic detailer — Made-up heading (p. 2)\n\nPlaceholder text on page two.');
+    expect(chunks[1].content).toBe('Synthetic detailer — Made-up heading (p. 3)\n\nText on page three.');
+    expect(chunks[1].citation).toBe('Royal Canin Canada. Synthetic detailer (detailer, 2026). — p. 3');
+  });
+});
+
 describe('admin-knowledge-ingest — retired ingest-bundled op', () => {
   it('answers 410, pointing at the automatic sync, and touches nothing', async () => {
     const fetchSpy = vi.fn();

@@ -30,7 +30,7 @@ export const terms = {
 
   'terms.section.anonymous.title': 'Anonymous by default',
   'terms.section.anonymous.body':
-    "You can use PBT without an account. Your profile and session history are kept in your browser on this device. If you don't sign in, we never ask for your name, email or any other personal details. We record only anonymous usage data and your practice sessions (the conversations and their scores), under a random ID for this device rather than your identity, and use them only to understand and improve the training. All data is encrypted in transit and at rest. You can stop this recording at any time with “Allow training data use” on the You tab. Creating an account is optional — it backs up your data to a private, encrypted cloud profile, and sessions already practised on this device move to it.",
+    "You can use PBT without an account. Your profile and session history are kept in your browser on this device. If you don't sign in, we never ask for your name, email or any other personal details. We record only anonymous usage data, your practice sessions (the conversations and their scores) and your ECHO style quiz answers, under a random ID for this device rather than your identity, and use them only to understand and improve the training. All data is encrypted in transit and at rest. You can stop this recording at any time with “Allow training data use” on the You tab. Creating an account is optional — it backs up your data to a private, encrypted cloud profile, and sessions already practised on this device move to it.",
 
   'terms.section.privacy.title': 'Privacy',
   'terms.section.privacy.body':

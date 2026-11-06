@@ -33,8 +33,23 @@
  *          section to null (logged); only a failing profile or sessions read
  *          fails the request.
  *
- * Unknown `op` → 400. Nothing here writes, and nothing is read from a
- * request body. Transcripts never leave this function (summaries only).
+ *   GET admin-analytics?op=echo
+ *        → EchoReport. Permission `insights.read`. Every recorded ECHO style
+ *          quiz (`echo_quiz_results`, paged, ≤ ECHO_MAX_ROWS) — anonymous ones
+ *          tagged by a hash of the device id (`device` / `device_key`), never
+ *          the id itself; no names (the portal joins `op=directory`). Quality
+ *          flags are computed in the portal at read time
+ *          (`src/shared/analytics/echoQuality.ts`). `history` counts quiz-
+ *          screen visits from `nav_events` before recording started (context:
+ *          visits, not results).
+ *
+ *   POST admin-analytics { op: 'echo-review', id, status, note? }
+ *        → EchoReviewResponse. Permission `insights.review`. Sets a quiz's
+ *          review (include / exclude / auto = back to the automatic flags),
+ *          stamps the reviewer, and writes an audit-log entry.
+ *
+ * Unknown `op` → 400. The only write is `echo-review`; GET reads nothing from
+ * a request body. Transcripts never leave this function (summaries only).
  * Every list pages with `.range()` (`_shared/paging.ts`): Supabase answers at
  * most 1,000 rows per request whatever `limit` says.
  */
@@ -46,6 +61,7 @@ import {
   largeJsonResponse,
   requireAdmin,
   UUID_RE,
+  writeAuditLog,
   type AdminCtx,
 } from './_shared/admin';
 import { selectAll, type PageResult, type SelectAllOptions, type SelectAllResult } from './_shared/paging';
@@ -53,6 +69,12 @@ import { authInfoByUserId, type AuthUserInfo } from './_shared/users';
 import { applyScenarioTitles } from './_shared/scenarioTitles';
 import type { Permission } from '../../src/shared/access/permissions';
 import type {
+  EchoQuizRow,
+  EchoQuizSource,
+  EchoReport,
+  EchoReviewRequest,
+  EchoReviewResponse,
+  EchoReviewStatus,
   EngagementReport,
   TraineeAiUsage,
   TraineeAnalyzerRow,
@@ -78,6 +100,8 @@ import {
   countHintsBySession,
   toSessionSummary,
 } from '../../src/shared/analytics/sessionSummary';
+import { deviceKey, deviceTag } from '../../src/shared/analytics/device';
+import { parseEchoAnswers } from '../../src/shared/analytics/echoQuality';
 
 /** Hard cap on `nav_events` rows one engagement report reads. */
 export const ENGAGEMENT_MAX_ROWS = 100_000;
@@ -89,10 +113,14 @@ export const TRAINEE_EVENTS_MAX = 20_000;
 const SECTION_MAX = 2000;
 const AI_CALLS_MAX = 100_000;
 const PROFILES_MAX = 20_000;
+/** Hard cap on ECHO quiz rows one report reads. */
+export const ECHO_MAX_ROWS = 50_000;
+/** Longest review note kept (the column CHECK says the same). */
+export const ECHO_NOTE_MAX = 500;
 /** ±14 h — the widest real UTC offsets. */
 const TZ_LIMIT_MINUTES = 840;
 
-const OPS = ['directory', 'engagement', 'trainee'] as const;
+const OPS = ['directory', 'engagement', 'trainee', 'echo'] as const;
 type Op = (typeof OPS)[number];
 
 type Row = Record<string, unknown>;
@@ -520,12 +548,160 @@ export function aiUsageOf(rows: readonly Row[]): TraineeAiUsage {
   };
 }
 
+// ─── ECHO quiz ─────────────────────────────────────────────────────────
+
+const ECHO_COLUMNS =
+  'id, user_id, anon_session_id, source, created_at, taken_at, locale, answers, tie_breaker, primary_driver, ' +
+  'secondary_driver, tally, total_ms, undo_count, review_status, review_note, reviewed_by, reviewed_at';
+
+const REVIEW_STATUSES: readonly EchoReviewStatus[] = ['auto', 'include', 'exclude'];
+
+function tallyOf(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    for (const [k, n] of Object.entries(v as Record<string, unknown>)) {
+      const x = num(n);
+      if (x != null) out[k] = x;
+    }
+  }
+  return out;
+}
+
+/** A stored row as the portal sees it — the device id only as hashes. */
+export function toEchoQuizRow(r: Row): EchoQuizRow {
+  const anon = str(r.anon_session_id);
+  const tb = parseEchoAnswers(r.tie_breaker && typeof r.tie_breaker === 'object' ? [r.tie_breaker] : null);
+  const status = REVIEW_STATUSES.includes(r.review_status as EchoReviewStatus) ? (r.review_status as EchoReviewStatus) : 'auto';
+  return {
+    id: idOf(r.id),
+    user_id: str(r.user_id),
+    device: anon ? deviceTag(anon) : null,
+    device_key: anon ? deviceKey(anon) : null,
+    source: (r.source === 'profile_backfill' ? 'profile_backfill' : 'app') as EchoQuizSource,
+    created_at: idOf(r.created_at),
+    taken_at: str(r.taken_at),
+    locale: str(r.locale),
+    answers: parseEchoAnswers(r.answers),
+    tie_breaker: tb && tb.length ? tb[0] : null,
+    primary_driver: idOf(r.primary_driver),
+    secondary_driver: str(r.secondary_driver),
+    tally: tallyOf(r.tally),
+    total_ms: num(r.total_ms),
+    undo_count: num(r.undo_count),
+    review_status: status,
+    review_note: typeof r.review_note === 'string' ? r.review_note : null,
+    reviewed_by: str(r.reviewed_by),
+    reviewed_at: str(r.reviewed_at),
+  };
+}
+
+/** Quiz-screen visits before `before` — all, and those under 30 s. Null on a failed read. */
+async function quizVisitsBefore(sb: SupabaseClient, before: string): Promise<EchoReport['history']> {
+  const base = () =>
+    sb
+      .from('nav_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('screen', 'quiz')
+      .eq('event_type', 'dwell')
+      .lt('created_at', before);
+  const [all, fast] = await Promise.all([base(), base().lt('dwell_ms', 30_000)]);
+  if (all.error || fast.error) {
+    console.warn('[admin-analytics] quiz visit counts failed', (all.error ?? fast.error)?.message);
+    return null;
+  }
+  return { before, visits: all.count ?? 0, under_30s: fast.count ?? 0 };
+}
+
+async function echo(ctx: AdminCtx): Promise<Response> {
+  const res = await selectAll<Row>(
+    (from, to) =>
+      ctx.sb
+        .from('echo_quiz_results')
+        .select(ECHO_COLUMNS)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to),
+    { max: ECHO_MAX_ROWS, concurrency: 2, dedupeBy: (r) => r.id },
+  );
+  if (res.error) return errorResponse(500, res.error.message);
+  const rows = res.rows.map(toEchoQuizRow);
+  let since: string | null = null;
+  for (const r of rows) if (r.source === 'app' && (since === null || r.created_at < since)) since = r.created_at;
+  const history = await quizVisitsBefore(ctx.sb, since ?? new Date().toISOString());
+  const body: EchoReport = {
+    rows,
+    truncated: res.truncated,
+    recording_since: since,
+    history,
+    can_review: can(ctx, 'insights.review'),
+  };
+  return largeJsonResponse(body);
+}
+
+/** Parse + validate a review body. */
+export function parseEchoReview(body: unknown): { id: string; status: EchoReviewStatus; note: string | null } | string {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Body must be a JSON object';
+  const b = body as Partial<EchoReviewRequest>;
+  if (b.op !== 'echo-review') return 'Unknown op';
+  if (typeof b.id !== 'string' || !UUID_RE.test(b.id)) return 'id must be a quiz uuid';
+  if (!REVIEW_STATUSES.includes(b.status as EchoReviewStatus)) return 'status must be auto, include or exclude';
+  if (b.note != null && typeof b.note !== 'string') return 'note must be text';
+  const note = typeof b.note === 'string' ? b.note.trim().slice(0, ECHO_NOTE_MAX) : '';
+  return { id: b.id, status: b.status as EchoReviewStatus, note: note || null };
+}
+
+async function echoReview(ctx: AdminCtx, req: Request): Promise<Response> {
+  let body: unknown;
+  try {
+    const text = await req.text();
+    if (text.length > 4096) return errorResponse(413, 'Body too large');
+    body = JSON.parse(text);
+  } catch {
+    return errorResponse(400, 'Invalid JSON');
+  }
+  const parsed = parseEchoReview(body);
+  if (typeof parsed === 'string') return errorResponse(400, parsed);
+
+  const before = await ctx.sb.from('echo_quiz_results').select(ECHO_COLUMNS).eq('id', parsed.id).maybeSingle();
+  if (before.error) return errorResponse(500, before.error.message);
+  if (!before.data) return errorResponse(404, 'Quiz not found');
+  const prev = before.data as unknown as Row;
+
+  const after = await ctx.sb
+    .from('echo_quiz_results')
+    .update({
+      review_status: parsed.status,
+      // A reset clears the note; who reset it and when stay on the row.
+      review_note: parsed.status === 'auto' ? null : parsed.note,
+      reviewed_by: ctx.user.id,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', parsed.id)
+    .select(ECHO_COLUMNS)
+    .maybeSingle();
+  if (after.error) return errorResponse(500, after.error.message);
+  if (!after.data) return errorResponse(404, 'Quiz not found');
+  const row = toEchoQuizRow(after.data as unknown as Row);
+
+  await writeAuditLog(ctx, {
+    entity_type: 'echo_quiz',
+    entity_id: parsed.id,
+    action: 'update',
+    before: { review_status: prev.review_status ?? 'auto', review_note: prev.review_note ?? null },
+    after: { review_status: row.review_status, review_note: row.review_note },
+    note: `ECHO quiz review: ${parsed.status}`,
+  });
+  const response: EchoReviewResponse = { row };
+  return jsonResponse(response);
+}
+
 // ─── Entry ─────────────────────────────────────────────────────────────
 
 const OP_PERMISSION: Record<Op, Permission> = {
   directory: 'sessions.read',
   engagement: 'analytics.read',
   trainee: 'sessions.read',
+  echo: 'insights.read',
 };
 
 function isOp(v: unknown): v is Op {
@@ -533,6 +709,15 @@ function isOp(v: unknown): v is Op {
 }
 
 export default async (req: Request) => {
+  if (req.method === 'POST') {
+    // The one write: an ECHO quiz review. The permission is checked before
+    // the body is read.
+    const op = new URL(req.url).searchParams.get('op');
+    if (op !== null && op !== 'echo-review') return errorResponse(400, 'Unknown op');
+    const ctx = await requireAdmin(req, 'insights.review');
+    if (ctx instanceof Response) return ctx;
+    return echoReview(ctx, req);
+  }
   if (req.method !== 'GET') return errorResponse(405, 'Method not allowed');
   const params = new URL(req.url).searchParams;
   const op = params.get('op');
@@ -548,5 +733,7 @@ export default async (req: Request) => {
       return engagement(ctx, params);
     case 'trainee':
       return trainee(ctx, params);
+    case 'echo':
+      return echo(ctx);
   }
 };

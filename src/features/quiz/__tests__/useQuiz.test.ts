@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useQuiz } from '../useQuiz';
 import { QUIZ_QUESTIONS } from '../../../data/quizQuestions';
@@ -97,5 +97,54 @@ describe('useQuiz undo', () => {
     // rather than completing on a tally that is still tied.
     act(() => result.current.answer('Analyzer'));
     expect(result.current.step.kind).toBe('tieBreaker');
+  });
+});
+
+describe('useQuiz capture (admin ECHO analytics)', () => {
+  it('records the final letter, driver and time per question, undos and the total', () => {
+    const now = vi.spyOn(Date, 'now');
+    let t = 1_000_000;
+    now.mockImplementation(() => t);
+    const { result } = renderHook(() => useQuiz());
+    // Q1: 3 s → Activator; Q2: Harmonizer, then undo and re-answer Analyzer after 5 s.
+    t += 3000;
+    act(() => result.current.answer('Activator', t));
+    t += 1000;
+    act(() => result.current.answer('Harmonizer', t));
+    t += 500;
+    act(() => result.current.undo());
+    t += 5000;
+    act(() => result.current.answer('Analyzer', t));
+    for (let i = 2; i < QUIZ_QUESTIONS.length; i++) {
+      t += 2000;
+      act(() => result.current.answer('Activator', t));
+    }
+    expect(result.current.step.kind).toBe('complete');
+    if (result.current.step.kind !== 'complete') return;
+    const { capture } = result.current.step;
+    expect(capture.answers).toHaveLength(15);
+    expect(capture.answers[0]).toMatchObject({ questionId: 1, driver: 'Activator', ms: 3000 });
+    const q1 = QUIZ_QUESTIONS[0].options.find((o) => o.driver === 'Activator');
+    expect(capture.answers[0].letter).toBe(q1?.letter);
+    // The undone answer is gone; the re-answer is timed from when Q2 came back.
+    expect(capture.answers[1]).toMatchObject({ questionId: 2, driver: 'Analyzer', ms: 5000 });
+    expect(capture.undoCount).toBe(1);
+    expect(capture.tieBreaker).toBeNull();
+    expect(capture.totalMs).toBe(t - 1_000_000);
+    expect(capture.id).toMatch(/^[0-9a-f-]{36}$/);
+    now.mockRestore();
+  });
+
+  it('records the tie-breaker separately', () => {
+    const { result } = renderHook(() => useQuiz());
+    for (let i = 0; i < 7; i++) act(() => result.current.answer('Activator'));
+    for (let i = 0; i < 7; i++) act(() => result.current.answer('Energizer'));
+    act(() => result.current.answer('Analyzer'));
+    act(() => result.current.answer('Energizer'));
+    expect(result.current.step.kind).toBe('complete');
+    if (result.current.step.kind !== 'complete') return;
+    expect(result.current.step.capture.answers).toHaveLength(15);
+    expect(result.current.step.capture.tieBreaker).toMatchObject({ questionId: 16, driver: 'Energizer' });
+    expect(result.current.step.result.primary).toBe('Energizer');
   });
 });

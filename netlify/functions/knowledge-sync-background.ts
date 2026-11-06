@@ -47,8 +47,11 @@
  *      extracts or embeds).
  *
  * Even an authorised caller can only ever write CODE-DEFINED content: the
- * document set comes from `buildSeedDocs()` and `BUNDLED_STUDIES`; nothing
- * in the request body is read.
+ * document set comes from `buildSeedDocs()`, `BUNDLED_STUDIES` and the
+ * external corpora (Royal Canin Academy, Royal Canin feline assets: manifests
+ * bundled with this code, text read from `knowledge_source_snapshots` and
+ * accepted only when it matches the manifest's sha256 pin, written only while
+ * that corpus's publish gate is open); nothing in the request body is read.
  *
  * Never throws: a failed sync leaves whatever is already stored, retrieval
  * fails open into the prompts' bundled text, and the app is unaffected.

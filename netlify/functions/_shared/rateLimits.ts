@@ -16,6 +16,8 @@
  *  - sessionSave / sessionCheckpoint — final saves, and a checkpoint after
  *    every exchange (updates only — the per-device daily row cap still
  *    bounds inserts)
+ *  - echoQuizSave — a whole room finishing the ECHO quiz together (and a
+ *    retry each); echoQuizClaim — sign-ins, one claim each
  *
  * They remain best-effort abuse brakes (in-memory, per function instance —
  * see `rateLimit` in `ai.ts`), not quotas. Fecal Scan and Pet Vision are not
@@ -30,6 +32,8 @@ export const RATE_LIMITS = {
   sessionSave: 120,
   sessionCheckpoint: 480,
   sessionClaim: 10,
+  echoQuizSave: 120,
+  echoQuizClaim: 20,
 } as const;
 
 /** Every limit above is per minute. */

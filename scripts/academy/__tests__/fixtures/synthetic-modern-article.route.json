@@ -1,0 +1,192 @@
+{
+  "name": "synthetic-modern-article",
+  "fields": {
+    "Title": {
+      "value": "Synthetic modern article"
+    },
+    "ArticleName": {
+      "value": "How I approach... a synthetic consult"
+    },
+    "PublicationDate": {
+      "value": "2026-08-10T00:00:00Z"
+    },
+    "Species": [
+      {
+        "fields": {
+          "Value": {
+            "value": "Cat"
+          }
+        }
+      },
+      {
+        "fields": {
+          "Value": {
+            "value": "Dog"
+          }
+        }
+      }
+    ],
+    "Lifestage": [
+      {
+        "fields": {
+          "Value": {
+            "value": "Adult"
+          }
+        }
+      }
+    ],
+    "Themes": [
+      {
+        "fields": {
+          "Value": {
+            "value": "Overweight / Obesity"
+          }
+        }
+      },
+      {
+        "fields": {
+          "Value": {
+            "value": "Healthy Weight"
+          }
+        }
+      }
+    ],
+    "ArticleTopics": [
+      {
+        "fields": {
+          "Value": {
+            "value": "Test topic"
+          }
+        }
+      }
+    ],
+    "Tags": [],
+    "MetaKeywords": {
+      "value": "alpha, beta, Alpha"
+    },
+    "ArticleDescription": {
+      "value": "<p>A synthetic description.</p>"
+    },
+    "ReadingTime": {
+      "value": "5 - 15 min"
+    },
+    "SitemapUpdated": {
+      "value": "2026-01-01T00:00:00Z"
+    }
+  },
+  "placeholders": {
+    "jss-main": [
+      {
+        "componentName": "PageHeader",
+        "fields": {
+          "LeadParagraph": {
+            "value": "<p>Written by <a href=\"#author\"><em>Alex Q. Example</em></a> </p>\n<p>A placeholder stand-first about a &ldquo;synthetic&rdquo; consult &ndash; written for this test.</p>"
+          }
+        }
+      },
+      {
+        "componentName": "Article",
+        "placeholders": {
+          "article-content": [
+            {
+              "componentName": "ContentBlocksVariant",
+              "fields": {
+                "Title": {
+                  "value": "Key points"
+                },
+                "Content": {
+                  "value": "<ul><li>First invented point.</li><li>Second invented point with 5&nbsp;kg.</li></ul>"
+                }
+              }
+            },
+            {
+              "componentName": "TitleAndParagraph",
+              "fields": {
+                "Title": {
+                  "value": "Introduction"
+                },
+                "Text": {
+                  "value": "<p>Opening paragraph of placeholder prose [<strong title=\"Doe J. Imaginary paper\">1</strong>].</p><p>Second paragraph, still invented.</p>"
+                }
+              }
+            },
+            {
+              "componentName": "ContentBlocksVariant",
+              "fields": {
+                "Title": {
+                  "value": ""
+                },
+                "Content": {
+                  "value": "<p><strong>Box 1. A made-up checklist.</strong></p><table><tr><th>Step</th><th>Value</th></tr><tr><td>One</td><td>10 %</td></tr></table>"
+                }
+              }
+            },
+            {
+              "componentName": "ImageAndCaption",
+              "fields": {
+                "Caption": {
+                  "value": "<p>Figure 1. A caption for an image that is not fetched.</p>"
+                }
+              }
+            },
+            {
+              "componentName": "QuotePanel",
+              "fields": {
+                "QuoteText": {
+                  "value": "<p>Progress, made up.</p>"
+                },
+                "Author": {
+                  "value": "Alex Q. Example"
+                }
+              }
+            },
+            {
+              "componentName": "TitleAndParagraph",
+              "fields": {
+                "Title": {
+                  "value": "Conclusion"
+                },
+                "Text": {
+                  "value": "<p>Closing placeholder sentence.</p><p>Conflict of interest statement: none, this is synthetic.</p>"
+                }
+              }
+            },
+            {
+              "componentName": "ContentBlocksVariant",
+              "fields": {
+                "Title": {
+                  "value": "Alex Q. Example"
+                },
+                "Subtitle": {
+                  "value": "DVM, Imaginary Clinic"
+                },
+                "Content": {
+                  "value": "<p id=\"author\">Dr. Example is a fictional author used in tests.</p>"
+                }
+              }
+            },
+            {
+              "componentName": "TitleAndParagraph",
+              "fields": {
+                "Title": {
+                  "value": "References"
+                },
+                "Text": {
+                  "value": "<ol><li>Doe J, Roe R. An imaginary paper. <em>J Synth</em> 2020;1:1-2.</li><li>Poe P. Another one. 2021.</li></ol>"
+                }
+              }
+            },
+            {
+              "componentName": "ArticleCarousel",
+              "fields": {
+                "Title": {
+                  "value": "Other articles in this issue"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

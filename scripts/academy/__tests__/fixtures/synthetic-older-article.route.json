@@ -1,0 +1,89 @@
+{
+  "name": "synthetic-older-article",
+  "fields": {
+    "Title": {
+      "value": "Synthetic older article"
+    },
+    "PublicationDate": {
+      "value": "2019-03-01T00:00:00Z"
+    },
+    "Species": [
+      {
+        "fields": {
+          "Value": {
+            "value": "Dog"
+          }
+        }
+      }
+    ],
+    "Themes": [
+      {
+        "fields": {
+          "Value": {
+            "value": "Dermatology"
+          }
+        }
+      }
+    ]
+  },
+  "placeholders": {
+    "jss-main": [
+      {
+        "componentName": "PageHeader",
+        "fields": {
+          "LeadParagraph": {
+            "value": "<em>Written by <a href=\"#first\">Sam Placeholder</a></em>\n<p>An older stand-first.</p>"
+          }
+        }
+      },
+      {
+        "componentName": "Article",
+        "placeholders": {
+          "article-content": [
+            {
+              "componentName": "TitleAndParagraph",
+              "fields": {
+                "Text": {
+                  "value": "<p><span style=\"font-size: 1.875rem; color: #e2001a;\">Introduction</span></p><p>Older placeholder prose (Table 1) [<strong title='Doe J. Imaginary'>3</strong>].</p>"
+                }
+              }
+            },
+            {
+              "componentName": "ContentBlocksVariant",
+              "fields": {
+                "Content": {
+                  "value": "<p><strong>Table 1. Three invented mistakes [3].</strong></p><ul><li>Not doing step one</li><li>Not doing step two</li></ul>"
+                }
+              }
+            },
+            {
+              "componentName": "ContentBlocksVariant",
+              "fields": {
+                "Content": {
+                  "value": "<h4>Sam Placeholder</h4><strong>DVM, Dip. Imaginary</strong><p>Sam Placeholder works at a fictional school.</p>"
+                }
+              }
+            },
+            {
+              "componentName": "Sources",
+              "fields": {
+                "Title": {
+                  "value": "Sources"
+                },
+                "items": [
+                  {
+                    "fields": {
+                      "Text": {
+                        "value": "<p>Roe R. A fictional source. 2018.</p>"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

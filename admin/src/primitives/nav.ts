@@ -7,7 +7,7 @@
  * destinations**, where closely-related screens are tabs of one destination
  * rather than separate entries:
  *
- *   Monitor   Analytics [overview|trainees|sessions|skills|engagement|quality|analyzer] · Feedback [sessions|reports]
+ *   Monitor   Analytics [overview|trainees|sessions|skills|echo|engagement|quality|analyzer] · Feedback [sessions|reports]
  *   People    People   [users|members|roles|invites]
  *   Content   Scenario Studio [studio|categories|trainee] · Knowledge · AI tuning
  *   Platform  Email    [templates|settings|log] · Flags · Audit · Preview
@@ -102,6 +102,8 @@ export const NAV_SECTIONS: NavSection[] = [
           { key: 'sessions', label: 'Sessions', requires: 'sessions.read' },
           // Was "Insights": how well the team handles pushback.
           { key: 'skills', label: 'Skills', requires: 'insights.read' },
+          // ECHO style quiz results, with rushed / straight-lined quizzes flagged.
+          { key: 'echo', label: 'ECHO', requires: 'insights.read' },
           // Was "Traffic": how the app is used.
           { key: 'engagement', label: 'Engagement', requires: 'analytics.read' },
           { key: 'quality', label: 'AI quality', requires: 'quality.read' },

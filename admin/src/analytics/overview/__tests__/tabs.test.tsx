@@ -25,6 +25,7 @@ const calls = {
 };
 
 vi.mock('../../data', () => ({
+  useEchoReport: () => q({ rows: [], truncated: false, recording_since: null, history: null, can_review: false }),
   useSessionSummaries: (range: string) => {
     calls.sessions(range);
     return q({ rows: state.rows, truncated: false });

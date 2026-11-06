@@ -19,7 +19,8 @@
  *
  *   Cascades from auth.users (no action needed):
  *     profiles.user_id, training_sessions.user_id, pet_records.user_id,
- *     user_scenarios.creator_id
+ *     user_scenarios.creator_id, echo_quiz_results.user_id (deleted
+ *     explicitly first anyway — see USER_OWNED_TABLES)
  *   Cascades transitively from training_sessions (no action needed, but we
  *   delete by user_id first anyway so an auth failure can't strand them):
  *     ai_call_telemetry.session_id, ai_turn_telemetry.session_id,
@@ -50,6 +51,9 @@ const USER_OWNED_TABLES = [
   'ai_call_telemetry',
   'rag_chunks',
   'rag_documents',
+  // Cascades from auth.users too, but deleted explicitly (like the rows
+  // above) so a failed auth delete can't leave the quiz answers behind.
+  'echo_quiz_results',
 ] as const;
 
 /** Number of admins who can still act (admin + not disabled). */
