@@ -25,6 +25,7 @@ import { EmptyState, LoadingShimmer } from '../primitives';
 import { Glass } from '../primitives/Glass';
 import { QueryBoundary } from '../primitives/QueryBoundary';
 import { useToast } from '../primitives/Toast';
+import { useAccess } from '../primitives/access';
 import { postJson } from '../lib/api';
 import { invalidate } from '../data/cache';
 import { COLOR, DRIVERS, DRIVER_KEYS, type DriverKey } from '../lib/tokens';
@@ -74,8 +75,11 @@ const PAGE = 50;
 
 export function EchoTab({ range, onRange, query, onQuery }: AnalyticsTabProps) {
   const toast = useToast();
+  const { can } = useAccess();
   const report = useEchoReport();
-  const directory = useTraineeDirectory();
+  // Names (and who is staff) come from the directory, which needs
+  // `sessions.read` — without it, quizzes read "Unknown trainee".
+  const directory = useTraineeDirectory(can('sessions.read'));
   const options = useEchoOptions();
   const [filters, setFilters] = useState<EchoFilters>({ ...NO_ECHO_FILTERS });
   const [overrides, setOverrides] = useState<Map<string, EchoQuizRow>>(() => new Map());

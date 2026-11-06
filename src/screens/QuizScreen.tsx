@@ -92,6 +92,8 @@ export function QuizScreen() {
   const answering = useRef(false);
   // The completion recorded on the server (never twice for one quiz).
   const recordedQuizRef = useRef<string | null>(null);
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
 
   useEffect(() => {
     if (step.kind === 'complete') {
@@ -105,12 +107,12 @@ export function QuizScreen() {
       // on Terms / preview / the training-data opt-out inside.
       if (recordedQuizRef.current !== step.capture.id) {
         recordedQuizRef.current = step.capture.id;
-        recordQuizResult(step.capture, { takenAt, locale });
+        recordQuizResult(step.capture, { takenAt, locale: localeRef.current });
       }
       /* Replace so Back from the result screen does not return to an empty quiz shell. */
       replace('result');
     }
-  }, [step, setProfile, replace, locale]);
+  }, [step, setProfile, replace]);
 
   useEffect(() => {
     setChosen(null);

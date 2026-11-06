@@ -32,7 +32,7 @@ import { AccessProvider } from '../../../primitives/access';
 
 function renderTab() {
   return render(
-    <AccessProvider permissions={['insights.read']}>
+    <AccessProvider permissions={['insights.read', 'sessions.read']}>
       <EchoTab range="28d" onRange={vi.fn()} query="" onQuery={vi.fn()} recordId={null} onOpen={vi.fn()} onNav={vi.fn()} />
     </AccessProvider>,
   );
