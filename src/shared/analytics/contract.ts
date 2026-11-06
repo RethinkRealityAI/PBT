@@ -336,3 +336,84 @@ export interface TraineeDetail {
   ai_usage: TraineeAiUsage | null; // quality.read
   withheld: Array<'activity' | 'feedback' | 'scenarios' | 'analyzer' | 'reports' | 'ai_usage'>;
 }
+
+// ─── ECHO style quiz (Analytics → ECHO) ────────────────────────────────────
+
+/** One answered question of a recorded quiz (the FINAL answer after undos). */
+export interface EchoQuizAnswer {
+  /** Question id 1–15; 16 = the tie-breaker. */
+  q: number;
+  letter: 'A' | 'B' | 'C' | 'D';
+  driver: string;
+  /** From the question being shown to the answer. */
+  ms: number;
+}
+
+/** auto = the automatic flags decide; include / exclude = an admin's decision (it wins). */
+export type EchoReviewStatus = 'auto' | 'include' | 'exclude';
+
+/** app = recorded by the trainee app; profile_backfill = copied from a profile (no answers). */
+export type EchoQuizSource = 'app' | 'profile_backfill';
+
+/**
+ * One completed ECHO quiz (`echo_quiz_results`). Never the full device id:
+ * `device` is the 4-character display tag, `device_key` a longer hash used
+ * only to match a device's anonymous sessions to its quiz.
+ */
+export interface EchoQuizRow {
+  id: string;
+  user_id: string | null;
+  device: string | null;
+  device_key: string | null;
+  source: EchoQuizSource;
+  /** Server time the row was written (authoritative). */
+  created_at: string;
+  taken_at: string | null;
+  locale: string | null;
+  answers: EchoQuizAnswer[] | null;
+  tie_breaker: EchoQuizAnswer | null;
+  primary_driver: string;
+  secondary_driver: string | null;
+  tally: Record<string, number>;
+  total_ms: number | null;
+  undo_count: number | null;
+  review_status: EchoReviewStatus;
+  review_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+}
+
+/**
+ * `GET admin-analytics?op=echo` — needs `insights.read`. Every quiz ever
+ * recorded (paged; `truncated` if the hard cap stopped it), newest first.
+ * Quality flags are NOT computed here: the portal applies the admin's
+ * thresholds at read time (`src/shared/analytics/echoQuality.ts`).
+ */
+export interface EchoReport {
+  rows: EchoQuizRow[];
+  truncated: boolean;
+  /** created_at of the first app-recorded quiz — answer-level data starts here (null = none yet). */
+  recording_since: string | null;
+  /**
+   * Context for the time before recording: quiz-SCREEN visits (nav_events
+   * dwell, `screen = 'quiz'`) before `before`. Visits, not results — one
+   * person can visit several times, and nothing says how they answered.
+   * Null when the read failed.
+   */
+  history: { before: string; visits: number; under_30s: number } | null;
+  /** The caller may Include / Exclude / Reset (`insights.review`). */
+  can_review: boolean;
+}
+
+/** `POST admin-analytics` body for a review — needs `insights.review`. */
+export interface EchoReviewRequest {
+  op: 'echo-review';
+  id: string;
+  /** 'auto' resets to the automatic flags. */
+  status: EchoReviewStatus;
+  note?: string | null;
+}
+
+export interface EchoReviewResponse {
+  row: EchoQuizRow;
+}

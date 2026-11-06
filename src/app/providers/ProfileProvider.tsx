@@ -24,6 +24,12 @@ export interface Profile {
   tally: Record<DriverKey, number>;
   answers: DriverKey[];
   takenAt: string;
+  /**
+   * Id of the server's `echo_quiz_results` row for this quiz (admin ECHO
+   * analytics), so a sign-in can claim THIS device's quiz for the account.
+   * Absent for older profiles and ones hydrated from the cloud.
+   */
+  quizResultId?: string;
 }
 
 const isDriverKey = (v: unknown): v is DriverKey =>
@@ -39,11 +45,12 @@ const isProfile = (v: unknown): v is Profile => {
     p.answers.every(isDriverKey) &&
     typeof p.tally === 'object' &&
     p.tally !== null &&
-    typeof p.takenAt === 'string'
+    typeof p.takenAt === 'string' &&
+    (p.quizResultId === undefined || typeof p.quizResultId === 'string')
   );
 };
 
-const PROFILE_KEY: StorageKeyDef<Profile | null> = {
+export const PROFILE_KEY: StorageKeyDef<Profile | null> = {
   key: 'profile',
   fallback: null,
   validate: (v): v is Profile | null => v === null || isProfile(v),

@@ -6,6 +6,7 @@ import { Icon } from '../design-system/Icon';
 import { PillButton } from '../design-system/PillButton';
 import { useDialog } from '../lib/useDialog';
 import { useQuiz } from '../features/quiz/useQuiz';
+import { recordQuizResult } from '../features/quiz/recordQuizResult';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
@@ -89,17 +90,27 @@ export function QuizScreen() {
 
   // Prevent double-fire
   const answering = useRef(false);
+  // The completion recorded on the server (never twice for one quiz).
+  const recordedQuizRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (step.kind === 'complete') {
+      const takenAt = new Date().toISOString();
       setProfile({
         ...step.result,
-        takenAt: new Date().toISOString(),
+        takenAt,
+        quizResultId: step.capture.id,
       });
+      // Admin-only data quality (letters + timings); fire-and-forget, gated
+      // on Terms / preview / the training-data opt-out inside.
+      if (recordedQuizRef.current !== step.capture.id) {
+        recordedQuizRef.current = step.capture.id;
+        recordQuizResult(step.capture, { takenAt, locale });
+      }
       /* Replace so Back from the result screen does not return to an empty quiz shell. */
       replace('result');
     }
-  }, [step, setProfile, replace]);
+  }, [step, setProfile, replace, locale]);
 
   useEffect(() => {
     setChosen(null);
@@ -136,7 +147,8 @@ export function QuizScreen() {
     if (chosen || answering.current) return;
     answering.current = true;
     setChosen(opt);
-    setTimeout(() => answer(opt.driver as DriverKey), 420);
+    const tappedAt = Date.now();
+    setTimeout(() => answer(opt.driver as DriverKey, tappedAt), 420);
   };
 
   /**

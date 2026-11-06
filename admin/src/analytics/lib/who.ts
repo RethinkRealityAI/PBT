@@ -24,6 +24,7 @@
  */
 import type { SessionSummary } from '../../../../src/shared/analytics/contract';
 import { LOCALE_LABELS } from '../../lib/labels';
+import { deviceTag } from '../../../../src/shared/analytics/device';
 
 // ─── Who ───────────────────────────────────────────────────────────────
 
@@ -34,20 +35,10 @@ export function isAnonymous(s: { user_id?: string | null }): boolean {
 
 /**
  * "4F2A" — a short, stable tag for a device id (a hash, so it never repeats
- * the stored id). Null without an id.
+ * the stored id). Null without an id. Shared with the server
+ * (`src/shared/analytics/device.ts`), which tags ECHO quiz rows the same way.
  */
-export function deviceTag(anonId: string | null | undefined): string | null {
-  const id = typeof anonId === 'string' ? anonId.trim() : '';
-  if (!id) return null;
-  // FNV-1a, 32-bit.
-  let h = 0x811c9dc5;
-  for (let i = 0; i < id.length; i++) {
-    h ^= id.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return ((h >>> 0) & 0xffff).toString(16).toUpperCase().padStart(4, '0');
-}
-
+export { deviceTag, deviceKey } from '../../../../src/shared/analytics/device';
 /** "Device 4F2A" — or "Unknown device" when the row carries no id. */
 export function deviceLabel(anonId: string | null | undefined): string {
   const tag = deviceTag(anonId);

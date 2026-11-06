@@ -30,6 +30,7 @@ export const PERMISSIONS = [
   // Insights & analytics
   'overview.read',
   'insights.read',
+  'insights.review',
   'analytics.read',
   'sessions.read',
   'quality.read',
@@ -142,6 +143,12 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       { key: 'overview.read', label: 'Overview dashboard', description: 'Headline platform metrics.' },
       { key: 'insights.read', label: 'Insights', description: 'Scoring trends, ACT dimensions, sentiment.' },
+      {
+        key: 'insights.review',
+        label: 'Review ECHO quiz data',
+        description: 'Include or exclude individual ECHO quiz results from ECHO analytics (e.g. a rushed workshop quiz).',
+        requires: ['insights.read'],
+      },
       { key: 'analytics.read', label: 'Traffic analytics', description: 'Navigation events, engagement, dwell time.' },
       {
         key: 'sessions.read',
@@ -335,10 +342,11 @@ export const SYSTEM_ROLES: RoleDefinition[] = [
     key: 'clinical_reviewer',
     name: 'Clinical Reviewer',
     description:
-      'Reviews training quality and clinical accuracy. Reads sessions and scorecards, edits knowledge content, touches nothing else.',
+      'Reviews training quality and clinical accuracy. Reads sessions and scorecards, reviews ECHO quiz data, edits knowledge content, touches nothing else.',
     permissions: [
       'overview.read',
       'insights.read',
+      'insights.review',
       'sessions.read',
       'quality.read',
       'scenarios.read',

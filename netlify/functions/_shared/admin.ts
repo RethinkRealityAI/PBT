@@ -305,7 +305,8 @@ export async function writeAuditLog(
       | 'email_settings'
       | 'email_template'
       | 'knowledge_document'
-      | 'report';
+      | 'report'
+      | 'echo_quiz';
     entity_id: string;
     action: 'create' | 'update' | 'delete' | 'revert';
     before?: unknown;

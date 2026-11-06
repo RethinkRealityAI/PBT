@@ -37,6 +37,8 @@ import {
 import type { DriverKey } from '../../design-system/tokens';
 import { normalizeDimensions } from '../../data/knowledge/scoringRubric';
 import { parseDifficulty } from '../../shared/scenarios/difficulty';
+import { PROFILE_KEY } from '../../app/providers/ProfileProvider';
+import { claimQuizResults } from '../quiz/recordQuizResult';
 
 interface SavedPetLike {
   id: string;
@@ -296,6 +298,12 @@ export async function backfillLocalDataToCloud(
   const sessions = readStorage(SESSIONS_KEY);
   const pets = readStorage(SAVED_PETS_KEY);
 
+  // ── ECHO quiz → account ──────────────────────────────────
+  // The quiz this device took anonymously (`echo-quiz-save` recorded it under
+  // the device id) moves to the account — only the one this device holds.
+  const quizId = readStorage(PROFILE_KEY)?.quizResultId;
+  if (quizId) await claimQuizResults([quizId]);
+
   // ── Sessions → training_sessions ─────────────────────────
   if (sessions.length > 0) {
     try {
@@ -366,7 +374,7 @@ export async function backfillLocalDataToCloud(
 export function hasLocalDataToBackfill(): boolean {
   const sessions = readStorage(SESSIONS_KEY);
   const pets = readStorage(SAVED_PETS_KEY);
-  return sessions.length > 0 || pets.length > 0;
+  return sessions.length > 0 || pets.length > 0 || Boolean(readStorage(PROFILE_KEY)?.quizResultId);
 }
 
 /** Surfaces the helper's view of "scenario from a session record" for tests. */
