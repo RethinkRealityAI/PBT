@@ -931,7 +931,11 @@ function QuizDetail({ view, canReview, busy, onReview }: { view: EchoView; canRe
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(230px, 100%), 1fr))', gap: 6 }}>
           {answers.map((a) => (
-            <div key={a.q} title={a.q === 16 ? 'Tie-breaker' : prompts.get(a.q)} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12 }}>
+            <div
+              key={a.q}
+              title={a.q === 16 ? 'Tie-breaker' : prompts.get(a.q)}
+              style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12, padding: '5px 9px', borderRadius: 8, background: 'rgba(60,20,15,0.04)' }}
+            >
               <span style={{ width: 26, color: COLOR.inkMute, fontWeight: 700 }}>{a.q === 16 ? 'TB' : `Q${a.q}`}</span>
               <span style={{ fontWeight: 800, color: COLOR.ink }}>{a.letter}</span>
               <span style={{ color: DRIVERS[a.driver as DriverKey]?.color ?? COLOR.inkSoft, fontWeight: 650 }}>{a.driver}</span>
@@ -941,11 +945,15 @@ function QuizDetail({ view, canReview, busy, onReview }: { view: EchoView; canRe
         </div>
       )}
       <div style={{ fontSize: 11.5, color: COLOR.inkMute }}>
-        {r.undo_count != null && `${r.undo_count} ${r.undo_count === 1 ? 'undo' : 'undos'} · `}
-        {r.taken_at && `device clock ${localStamp(r.taken_at)} · `}
-        {r.locale && `${languageLabel(r.locale.slice(0, 2))} · `}
-        {r.reviewed_at && `last reviewed ${localStamp(r.reviewed_at)}`}
-        {r.review_note && ` · note: “${r.review_note}”`}
+        {[
+          r.undo_count != null ? `${r.undo_count} ${r.undo_count === 1 ? 'undo' : 'undos'}` : null,
+          r.taken_at ? `device clock ${localStamp(r.taken_at)}` : null,
+          r.locale ? languageLabel(r.locale.slice(0, 2)) : null,
+          r.reviewed_at ? `last reviewed ${localStamp(r.reviewed_at)}` : null,
+          r.review_note ? `note: “${r.review_note}”` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
       </div>
       {canReview && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
