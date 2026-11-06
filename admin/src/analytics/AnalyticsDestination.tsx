@@ -8,6 +8,7 @@
  *   trainees    per-person analytics: roster → profile (`#/analytics/trainees/<id>`)
  *   sessions    every conversation; `#/analytics/sessions/<id>` opens one
  *   skills      how well the team handles pushback (was Insights)
+ *   echo        ECHO style quiz results + their data quality (rushed / straight-lined)
  *   engagement  how the app is used (was Traffic)
  *   quality     AI failures, speed and cost
  *   analyzer    Pet Analyzer results
@@ -22,6 +23,7 @@ import { OverviewTab } from './OverviewTab';
 import { TraineesTab } from './TraineesTab';
 import { SessionsTab } from './SessionsTab';
 import { SkillsTab } from './SkillsTab';
+import { EchoTab } from './EchoTab';
 import { EngagementTab } from './EngagementTab';
 import { QualityScreen } from '../screens/QualityScreen';
 import { AnalyzerScreen } from '../screens/AnalyzerScreen';
@@ -31,6 +33,7 @@ export type AnalyticsTab =
   | 'trainees'
   | 'sessions'
   | 'skills'
+  | 'echo'
   | 'engagement'
   | 'quality'
   | 'analyzer';
@@ -62,6 +65,8 @@ export function AnalyticsDestination({ tab, ...props }: AnalyticsTabProps & { ta
       return <SessionsTab {...props} />;
     case 'skills':
       return <SkillsTab {...props} />;
+    case 'echo':
+      return <EchoTab {...props} />;
     case 'engagement':
       return <EngagementTab {...props} />;
     case 'quality':

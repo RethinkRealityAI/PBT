@@ -117,6 +117,7 @@ long-lived key). `npm run check:bundle` fails if a key-shaped string
 | `askScenarioAgent` (admin `scenario-studio/api`) | `admin-scenario-agent` | `gemini-3-flash-preview` (JSON, low thinking) | Scenario Studio assistant (admin, `scenarios.write`) — proposals only, never writes |
 | `inspectScenario` (admin `scenario-studio/api`)  | `admin-scenario-inspect` | — (no model call)                   | Exact customer prompt + retrieved passages for a draft (admin, `scenarios.read`) |
 | `recordAnonymousSession` (useTextChat) / `claimAnonymousSessions` (backfill) | `session-save` | — (no model call) | Records an ANONYMOUS session (owned by the device id); on sign-in, hands this device's anonymous rows to the account |
+| `recordQuizResult` / `claimQuizResults` (`features/quiz/recordQuizResult.ts`) | `echo-quiz-save` | — (no model call) | Records every completed ECHO quiz (letters + timings; signed-in or device-owned); on sign-in, claims this device's quiz — see "ECHO quiz analytics" |
 
 Wire contract: `src/shared/ai/contract.ts` (read its header — it states what the
 server trusts). Transport: `src/services/aiApi.ts::postAi` attaches the Supabase
@@ -143,6 +144,9 @@ telemetry). Model IDs live in `src/shared/ai/models.ts`.
   server-side by `_overrideId` (`loadPromptOverrides`), accepted from a body
   only with `preview: true` (the Studio Test drive), and never sent to the
   customer prompt (roleplay, voice, inspector) or the public snapshot.
+- ECHO quiz results (`echo-quiz-save`) carry LETTERS and timings only: the
+  server derives drivers / tally / primary / secondary from
+  `src/shared/quiz/echoScoring.ts` and never reads a client tally.
 - Anonymous callers are allowed by design (anonymous-first product); they get
   the same AI behaviour, and their sessions ARE recorded — without identifying
   details (migration `20261015000000_anonymous_sessions.sql`): a
@@ -838,7 +842,8 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations (30 files, all hand-run; all applied to production —
+Migrations (32 files, all hand-run; all applied to production except
+`20261106000100_audit_echo_quiz_entity.sql` —
 `npm run verify:db` proves the live project has every relation AND column
 the code uses). Each
 file's header explains it in full:
@@ -956,6 +961,18 @@ file's header explains it in full:
   upload is NOT complete (2 feline rows on 2026-11-04; production writes
   are insert-only, `ON CONFLICT DO NOTHING`) — until every approved row is
   there, a corpus whose gate is opened skips itself (loudly).
+- `20261106000000_echo_quiz_results.sql` — `echo_quiz_results` (one row per
+  completed ECHO quiz: owner `user_id` XOR `anon_session_id`, `source` app |
+  profile_backfill, answers / tie-breaker jsonb, server-derived drivers +
+  tally, timings, `review_status` auto | include | exclude + note / reviewer;
+  RLS on, no policies, no client grants) + an idempotent backfill of one
+  `profile_backfill` row per profile with an `echo_tally`. **Applied to prod
+  2026-11-06** (verified: 18 columns, 14 CHECKs, 5 indexes, RLS on / no
+  policies / service_role only; 32 of 32 profiles backfilled).
+- `20261106000100_audit_echo_quiz_entity.sql` — adds `echo_quiz` to the
+  audit-log entity CHECK (re-creates the constraint). **NOT applied** (owner
+  decision); until it is, an ECHO review saves but its audit line is refused
+  (logged; reviewer + time stay on the row).
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**
@@ -970,7 +987,7 @@ branded transactional templates with a live preview, provider settings
 **Admin navigation** (`admin/src/primitives/nav.ts` + `Sidebar.tsx`): a left
 rail of 4 sections over 10 destinations, replacing the old 18-link wrapping
 pill bar. Related screens are tabs of one destination (Analytics =
-overview/trainees/sessions/skills/engagement/quality/analyzer, People =
+overview/trainees/sessions/skills/echo/engagement/quality/analyzer, People =
 users/admins/roles/invites, Scenario Studio = studio/categories/trainee-built,
 …); Knowledge and AI tuning (the old "Simulation" screen) are destinations of
 their own. Monitor holds Analytics and **Feedback** (Session feedback ·
@@ -1015,6 +1032,7 @@ which repeated each other. Tabs (`AnalyticsDestination.tsx`):
 | Trainees (`TraineesTab`, `trainee/`) | `sessions.read` | roster with status / momentum / streaks → **profile** at `#/analytics/trainees/<id>`: coaching notes, score progression vs team, skills vs team, objections, practice calendar & habits, sessions, feedback, app activity |
 | Sessions (`SessionsTab`) | `sessions.read` | every conversation, filterable / sortable / exportable; `#/analytics/sessions/<id>` opens one (transcript fetched on open) |
 | Skills (`SkillsTab`) | `insights.read` | outcomes: score trend, skills, objection × skill heat table, difficulty, ECHO driver matchups, distribution, owner mood, trainee feedback |
+| ECHO (`EchoTab`) | `insights.read` (review: `insights.review`) | ECHO quiz results and their data quality — see "ECHO quiz analytics" |
 | Engagement (`EngagementTab`) | `analytics.read` | app usage: visitors, when (weekday × hour), feature adoption, onboarding path, time per screen, return frequency, devices |
 | AI quality | `quality.read` | `screens/QualityScreen.tsx` |
 | Pet Analyzer | `analyzer.read` | `screens/AnalyzerScreen.tsx` |
@@ -1092,12 +1110,46 @@ Offline review: `npm run dev:admin-mock` serves a seeded team
 (`admin/src/dev/mockAnalytics.ts`) whose summaries, engagement and profiles
 are computed with the same shared functions the server runs.
 
+## ECHO quiz analytics (`echo_quiz_results`, Analytics → ECHO)
+
+Spec: `docs/superpowers/specs/2026-11-06-echo-quiz-analytics-design.md`.
+Workshops told trainees to "just click A" through the quiz; those results
+polluted every ECHO number.
+- **Recording**: `useQuiz` captures the FINAL letter, driver and ms per
+  question (an undo re-times it), undos, the tie-breaker apart and the total;
+  `QuizScreen` → `recordQuizResult` posts it fire-and-forget to
+  `echo-quiz-save` (Terms accepted, not preview, opt-out on → nothing sent;
+  the server also refuses `allowTelemetry: false` / `preview`). Anonymous
+  rows are owned by the device id like anonymous sessions; the sign-in
+  backfill claims `Profile.quizResultId` (guarded in the statement). Strict
+  body (15 questions once, A–D, ms 0–600 000, ≤ 16 KB), insert-if-absent by
+  the client's quiz id, per-IP `echoQuizSave` / `echoQuizClaim` buckets,
+  ≤ 50 rows / device / day. The trainee sees nothing different.
+- **Flags** (`src/shared/analytics/echoQuality.ts`, computed at READ time,
+  thresholds live in the tab): rushed = median ms / answer < 2 s;
+  straight-lined = one letter ≥ 70 % (≥ 8 answers) or a run ≥ 6; pattern
+  match = a backfilled row whose tally equals an all-same-letter fingerprint
+  (`ALL_SAME_LETTER_FINGERPRINTS`, computed from `QUIZ_QUESTIONS`, pinned in
+  a test). Review include / exclude wins; staff left out by default.
+- **Admin**: `admin-analytics?op=echo` (`insights.read`; paged; device = 4-char
+  tag + 16-hex join key from `src/shared/analytics/device.ts`, never the raw
+  id; quiz-screen visit counts before recording as labelled context) and
+  POST `op: 'echo-review'` (`insights.review`; audited as `echo_quiz`). All
+  numbers in `admin/src/analytics/lib/echo.ts`: filters → population
+  (staff / backfill toggles; KPIs) → counted (quality rules; distributions).
+  CSV per quiz or per answer, device tag only. The Skills matchup reads the
+  trainee's LATEST quiz (the device's for anonymous sessions); a flagged one
+  = style unknown unless "Include flagged quizzes" (shared settings,
+  `echoSettings.ts`, in memory). Mock: `admin/src/dev/mockEcho.ts`.
+
 ## Access control (RBAC)
 
 `src/shared/access/permissions.ts` is the single source of truth, imported by
 BOTH `admin/src/**` and `netlify/functions/**` — keep it dependency-free.
 
-- 28 permissions in 6 logical categories; some declare `requires` dependencies
+- 29 permissions in 6 logical categories (`insights.review` — review ECHO
+  quiz data — added 2026-11-06; the STORED Admin role row predates it, so an
+  owner ticks it in Team & roles); some declare `requires` dependencies
   (`scenarios.write` needs `scenarios.read`), enforced by
   `withImpliedPermissions` / `withoutDependents` in the editor and by
   `sanitizePermissions` on the server.
@@ -1197,7 +1249,7 @@ Active keys:
 - `pbt:terms_accepted_at`, `pbt:terms_version`
 - `pbt:theme` (`'light' | 'dark' | 'system'`)
 - `pbt:session_id` (uuid)
-- `pbt:profile` (Profile object)
+- `pbt:profile` (Profile object; `quizResultId` = this device's `echo_quiz_results` row, claimed on sign-in)
 - `pbt:sessions` (array of SessionRecord, capped at 50)
 - `pbt:banner_dismissed_until`
 - `pbt:locale` (`'en' | 'fr'` — kept in sync with the `Locale` union; see Translations)

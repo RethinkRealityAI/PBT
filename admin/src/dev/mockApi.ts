@@ -21,7 +21,7 @@ import {
   SYSTEM_ROLES,
 } from '../../../src/shared/access/permissions';
 import { MockHttpError, STUDIO_POST_HANDLERS, STUDIO_ROUTES } from './mockStudio';
-import { analyticsMock } from './mockAnalytics';
+import { analyticsMock, analyticsPostMock } from './mockAnalytics';
 import {
   ALL_KNOWLEDGE_SPECIES,
   DEFAULT_KNOWLEDGE_TOOLS,
@@ -709,6 +709,8 @@ const POST_HANDLERS: Record<
   // Scenario Studio: assistant, inspector and the preview-only simulator
   // (ai-roleplay / ai-evaluate) — see ./mockStudio.ts.
   ...STUDIO_POST_HANDLERS,
+  // Analytics → ECHO: Include / Exclude / Reset update the seeded quiz rows.
+  'admin-analytics': analyticsPostMock,
   'admin-knowledge-search': knowledgeSearchMock,
   'admin-knowledge-analyze': knowledgeAnalyzeMock,
   'admin-knowledge': (body) => {

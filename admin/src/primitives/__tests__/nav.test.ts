@@ -120,6 +120,7 @@ describe('visibleItems by role', () => {
       'trainees',
       'sessions',
       'skills',
+      'echo',
       'engagement',
       'quality',
       'analyzer',
@@ -149,7 +150,7 @@ describe('visibleItems by role', () => {
 });
 
 describe('Monitor is one Analytics destination', () => {
-  it('has a single Analytics destination with seven tabs, Overview first', () => {
+  it('has a single Analytics destination with eight tabs, Overview first', () => {
     const monitor = NAV_SECTIONS.find((s) => s.key === 'monitor')!;
     // Feedback rides along as Monitor's second destination; analytics is one.
     expect(monitor.items.map((i) => i.key)).toEqual(['analytics', 'feedback']);
@@ -158,6 +159,7 @@ describe('Monitor is one Analytics destination', () => {
       ['trainees', 'Trainees', 'sessions.read'],
       ['sessions', 'Sessions', 'sessions.read'],
       ['skills', 'Skills', 'insights.read'],
+      ['echo', 'ECHO', 'insights.read'],
       ['engagement', 'Engagement', 'analytics.read'],
       ['quality', 'AI quality', 'quality.read'],
       ['analyzer', 'Pet Analyzer', 'analyzer.read'],
