@@ -25,6 +25,7 @@
 // dependency-free (shared → shared imports only).
 
 import { isFocusAreaKey } from '../knowledge/focusAreas';
+import { isCategoryIconKey, type CategoryIconKey } from './categoryIcons';
 import { SCENARIO_LIMITS } from './limits';
 import { speciesOf, type ScenarioSpecies } from './species';
 
@@ -58,6 +59,12 @@ export interface ObjectionCategory {
   sortOrder: number | null;
   builtIn: boolean;
   updatedAt: string | null;
+  /**
+   * The picture a TEAM category wears (`./categoryIcons.ts`), chosen in the
+   * Studio. Absent/null = unset (the keyword guess is drawn). Never set on a
+   * built-in — those have fixed icons. Draw through `categoryIconFor`.
+   */
+  icon?: CategoryIconKey | null;
 }
 
 /** `scenario_objection_categories` row (snake_case, as stored). */
@@ -69,6 +76,8 @@ export interface ObjectionCategoryRow {
   focus_area: string | null;
   knowledge_slugs: string[] | null;
   sort_order: number | null;
+  /** Migration 20261107000100_category_icons.sql; absent before it runs. */
+  icon?: string | null;
   created_by?: string | null;
   updated_by?: string | null;
   created_at?: string | null;
@@ -227,6 +236,9 @@ export function rowToCategory(raw: unknown): ObjectionCategory | null {
   if (!name) return null;
   const focus = r.focus_area ?? r.focusArea;
   const updated = r.updated_at ?? r.updatedAt;
+  // Only a team category's valid icon is carried (a built-in's is fixed);
+  // the key is left out otherwise so an unset icon adds nothing.
+  const icon = !isBuiltInCategoryId(r.id) && isCategoryIconKey(r.icon) ? r.icon : null;
   return {
     id: r.id,
     name,
@@ -237,6 +249,7 @@ export function rowToCategory(raw: unknown): ObjectionCategory | null {
     sortOrder: cleanSortOrder(r.sort_order ?? r.sortOrder),
     builtIn: isBuiltInCategoryId(r.id),
     updatedAt: typeof updated === 'string' ? updated : null,
+    ...(icon ? { icon } : {}),
   };
 }
 
@@ -289,6 +302,17 @@ export function validateCategoryInput(raw: unknown): CategoryValidation {
   if (r.sortOrder != null && (typeof r.sortOrder !== 'number' || !Number.isFinite(r.sortOrder))) {
     return { ok: false, error: 'sortOrder must be a number' };
   }
+  if (r.icon != null && !isCategoryIconKey(r.icon)) {
+    return { ok: false, error: `Unknown category icon "${String(r.icon)}".` };
+  }
+  // A write that leaves `icon` out keeps the stored one (`undefined`: the
+  // column is not written); `null` clears it. A built-in's icon is fixed, so
+  // nothing is ever stored for one.
+  const icon: CategoryIconKey | null | undefined = isBuiltInCategoryId(r.id)
+    ? undefined
+    : r.icon === undefined
+      ? undefined
+      : ((r.icon as CategoryIconKey | null) ?? null);
   return {
     ok: true,
     value: {
@@ -299,6 +323,7 @@ export function validateCategoryInput(raw: unknown): CategoryValidation {
       focusArea: focus as string | null,
       knowledgeSlugs: cleanKnowledgeSlugs(r.knowledgeSlugs),
       sortOrder: cleanSortOrder(r.sortOrder),
+      ...(icon !== undefined ? { icon } : {}),
     },
   };
 }
@@ -308,7 +333,7 @@ export function categoryToRow(
   c: Omit<ObjectionCategory, 'updatedAt' | 'builtIn'>,
 ): Pick<
   ObjectionCategoryRow,
-  'id' | 'name' | 'name_fr' | 'description' | 'focus_area' | 'knowledge_slugs' | 'sort_order'
+  'id' | 'name' | 'name_fr' | 'description' | 'focus_area' | 'knowledge_slugs' | 'sort_order' | 'icon'
 > {
   return {
     id: c.id,
@@ -318,6 +343,8 @@ export function categoryToRow(
     focus_area: c.focusArea,
     knowledge_slugs: [...c.knowledgeSlugs],
     sort_order: c.sortOrder,
+    // Only when the write names it (see validateCategoryInput).
+    ...(c.icon !== undefined && !isBuiltInCategoryId(c.id) ? { icon: c.icon ?? null } : {}),
   };
 }
 
