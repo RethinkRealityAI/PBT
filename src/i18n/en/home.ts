@@ -38,7 +38,6 @@ export const home = {
   'home.dim.rapport': 'Rapport',
 
   // ── Training library hero card ────────────────────────────
-  'home.hero.eyebrow': 'Training',
   'home.hero.title': 'Training library',
   'home.hero.body': 'Pick a ready-made scenario or build your own to practice.',
   'home.hero.select': 'Select scenario',

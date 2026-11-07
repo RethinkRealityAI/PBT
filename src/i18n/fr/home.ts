@@ -45,7 +45,6 @@ export const home: Record<keyof typeof enHome, string> = {
   'home.dim.rapport': 'Lien de confiance',
 
   // ── Carte vedette Bibliothèque d'entraînement ─────────────
-  'home.hero.eyebrow': 'Entraînement',
   'home.hero.title': 'Bibliothèque d’entraînement',
   'home.hero.body': 'Choisissez un scénario clés en main ou créez le vôtre pour vous exercer.',
   'home.hero.select': 'Choisir un scénario',

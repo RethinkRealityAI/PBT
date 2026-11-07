@@ -282,6 +282,10 @@ const SEEN_START_HERE_KEY: StorageKeyDef<boolean> = {
 };
 
 /** Desktop column count for the quick-action row (static class names for Tailwind). */
+/** The hero orb's float box and the orb inside it (the ripples need the margin). */
+const HERO_ORB_BOX = 84;
+const HERO_ORB_SIZE = 72;
+
 const QUICK_ACTION_DESKTOP_COLS: Record<number, string> = {
   1: 'lg:grid-cols-1',
   2: 'lg:grid-cols-2',
@@ -678,16 +682,24 @@ export function HomeScreen() {
               blur={dark ? 36 : 22}
               style={{ minHeight: 200, position: 'relative', marginBottom: 14, overflow: 'hidden' }}
             >
+              <div style={{ position: 'relative', zIndex: 1 }}>
+              {/*
+               * The orb FLOATS in the top-right corner (shape-outside: a
+               * circle), so the title and body wrap around it instead of
+               * leaving a fixed-width gutter — no blank corner, no squeezed
+               * copy, at any phone width or language.
+               */}
               <div
+                aria-hidden
                 style={{
-                  position: 'absolute',
-                  top: 58,
-                  right: 16,
-                  opacity: 0.85,
+                  float: 'right',
+                  position: 'relative',
+                  width: HERO_ORB_BOX,
+                  height: HERO_ORB_BOX,
+                  margin: '-6px -6px 6px 12px',
+                  shapeOutside: 'circle(50%)',
+                  opacity: 0.9,
                   pointerEvents: 'none',
-                  zIndex: 0,
-                  width: 104,
-                  height: 104,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -760,38 +772,20 @@ export function HomeScreen() {
                       : { duration: 0 }
                   }
                 >
-                  <Orb size={88} driver={profile.primary} pulse={heroOrbMotion} />
+                  <Orb size={HERO_ORB_SIZE} driver={profile.primary} pulse={heroOrbMotion} />
                 </motion.div>
-              </div>
-
-              {/*
-               * Do not pad the whole column for the orb — only constrain title/subcopy.
-               * Otherwise prev/next + info align to a narrow column instead of the card edge.
-               */}
-              <div style={{ position: 'relative', zIndex: 1 }}>
-              <div
-                style={{
-                  margin: '2px 0 8px',
-                  paddingRight: 108,
-                  fontFamily: 'var(--pbt-font-mono)',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: '0.18em',
-                  textTransform: 'uppercase',
-                  color: 'var(--pbt-text-muted)',
-                }}
-              >
-                {t('home.hero.eyebrow')}
               </div>
               <h2
                 style={{
                   margin: '0 0 8px',
-                  fontSize: 24,
+                  // Eases down on the narrowest phones so the longest word
+                  // ("d'entraînement") still fits beside the orb.
+                  fontSize: 'clamp(21px, 6.6vw, 24px)',
                   fontWeight: 400,
                   letterSpacing: '-0.025em',
                   lineHeight: 1.1,
                   color: 'var(--pbt-text)',
-                  paddingRight: 108,
+                  textWrap: 'balance',
                 }}
               >
                 {t('home.hero.title')}
@@ -802,13 +796,16 @@ export function HomeScreen() {
                   fontSize: 13.5,
                   lineHeight: 1.45,
                   color: 'var(--pbt-text-muted)',
-                  maxWidth: 320,
-                  paddingRight: 108,
                 }}
               >
                 {t('home.hero.body')}
               </p>
-              <div className="flex w-full min-w-0 items-center justify-between gap-4">
+              {/* Wraps rather than clipping: on a narrow phone (or in French)
+                  the Start-here beacon drops under the button, right-aligned. */}
+              <div
+                className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-3"
+                style={{ clear: 'both' }}
+              >
                 <PillButton
                   onClick={openSelect}
                   icon={<Icon.arrow />}
@@ -824,6 +821,7 @@ export function HomeScreen() {
                 <motion.div
                   style={{
                     flexShrink: 0,
+                    marginLeft: 'auto',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 8,
