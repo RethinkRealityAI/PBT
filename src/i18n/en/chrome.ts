@@ -10,7 +10,8 @@ export const chrome = {
   'chrome.languageToggle.aria': 'Switch language',
   'tab.train': 'Train',
   'tab.history': 'History',
-  'tab.library': 'Library',
+  /** The clinical-resources tab (key kept from when it was "Library"). */
+  'tab.library': 'Resources',
   'tab.you': 'You',
 
   // ── TopBar ────────────────────────────────────────────────
@@ -21,7 +22,7 @@ export const chrome = {
   // ── Desktop sidebar ───────────────────────────────────────
   /** Wordmark is "PBT" (untranslated); this is the line under it. */
   'chrome.brand.tagline': 'Pushback Training',
-  // Train / History / Library reuse the tab.* keys above.
+  // Train / History / Resources reuse the tab.* keys above.
   'chrome.nav.create': 'Build scenario',
   'chrome.nav.analyzer': 'Pet Analyzer',
   'chrome.nav.fecalScan': 'Fecal scan',

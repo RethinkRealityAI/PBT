@@ -23,7 +23,7 @@ export const ADOPTION_FEATURES: readonly FeatureDef[] = [
   { key: 'scorecard', label: 'Session scorecard', from: 'screen', id: 'stats' },
   { key: 'history', label: 'Past sessions', from: 'screen', id: 'history' },
   { key: 'create', label: 'Build a scenario', from: 'screen', id: 'create' },
-  { key: 'library', label: 'Ready-made library', from: 'action', id: 'library_scenario' },
+  { key: 'library', label: 'Training library', from: 'action', id: 'library_scenario' },
   { key: 'hints', label: 'Coach hints', from: 'action', id: 'coach_hint_request' },
   { key: 'act', label: 'ACT guide', from: 'screen', id: 'actGuide' },
   { key: 'resources', label: 'Resources', from: 'screen', id: 'resources' },

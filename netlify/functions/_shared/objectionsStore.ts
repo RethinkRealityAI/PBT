@@ -157,12 +157,97 @@ export async function checkTeamObjection(
 // Categories
 // ─────────────────────────────────────────────────────────────────────────
 
-/** What the app needs of a stored category (no authorship columns). */
+/**
+ * What the app needs of a stored category (no authorship columns), BEFORE the
+ * icon migration. Prefer `categoryReadColumns()`, which adds `icon` once the
+ * column exists.
+ */
 export const CATEGORY_READ_COLUMNS =
   'id, name, name_fr, description, focus_area, knowledge_slugs, sort_order, updated_at';
 
-/** The admin list adds the lifecycle columns. */
+/** The admin list adds the lifecycle columns. Prefer `categoryAdminColumns()`. */
 export const CATEGORY_ADMIN_COLUMNS = `${CATEGORY_READ_COLUMNS}, created_at, deleted_at`;
+
+export const CATEGORY_ICONS_MIGRATION = '20261107000100_category_icons.sql';
+
+/**
+ * True when the error says `scenario_objection_categories.icon` does not
+ * exist yet (PGRST204 on a write, 42703 on a select). Named, like
+ * `isMissingCopiedFromColumn`, so no other missing column is swallowed.
+ */
+export function isMissingCategoryIconColumn(error: unknown): boolean {
+  const e = codeAndMessage(error);
+  if (!e || (e.code !== 'PGRST204' && e.code !== '42703')) return false;
+  return /\bicon\b/i.test(e.message);
+}
+
+/**
+ * When the icon column was last found missing. Remembered for ten minutes
+ * (like the species column in flags-resolve) so a project that hasn't run
+ * the migration pays one failed query per instance per ten minutes, not one
+ * per read; after that the column is tried again.
+ */
+let categoryIconColumnMissingAt: number | null = null;
+const ICON_REPROBE_MS = 10 * 60 * 1000;
+
+function iconColumnKnownMissing(now = Date.now()): boolean {
+  if (categoryIconColumnMissingAt === null) return false;
+  if (now - categoryIconColumnMissingAt < ICON_REPROBE_MS) return true;
+  categoryIconColumnMissingAt = null;
+  return false;
+}
+
+/** Test hook: forget a remembered missing icon column. */
+export function resetCategoryIconProbe(): void {
+  categoryIconColumnMissingAt = null;
+}
+
+/**
+ * The app's category columns: `icon` included unless it is known to be
+ * missing. Typed as the base list so supabase-js infers the same row shape
+ * either way (`icon` is read tolerantly by `rowToCategory`).
+ */
+export function categoryReadColumns(): typeof CATEGORY_READ_COLUMNS {
+  return (iconColumnKnownMissing()
+    ? CATEGORY_READ_COLUMNS
+    : `${CATEGORY_READ_COLUMNS}, icon`) as typeof CATEGORY_READ_COLUMNS;
+}
+
+/** The admin list's category columns (lifecycle included), `icon` as above. */
+export function categoryAdminColumns(): typeof CATEGORY_ADMIN_COLUMNS {
+  return (iconColumnKnownMissing()
+    ? CATEGORY_ADMIN_COLUMNS
+    : `${CATEGORY_ADMIN_COLUMNS}, icon`) as typeof CATEGORY_ADMIN_COLUMNS;
+}
+
+/**
+ * Runs a category query that may name the `icon` column (a select through
+ * `categoryReadColumns()` / `categoryAdminColumns()`, or a write carrying
+ * `icon`). When the database says the column isn't there yet, it is
+ * remembered and the query runs ONCE more — `run` must re-read the column
+ * list / strip the field through `withoutIconColumn` on that second call.
+ * `retried` tells the caller the icon was dropped (a save answers with a
+ * notice). Any other error is returned untouched.
+ */
+export async function withCategoryIconFallback<R extends { error: unknown }>(
+  run: () => PromiseLike<R>,
+): Promise<R & { iconDropped?: boolean }> {
+  const first = await run();
+  if (!first.error || !isMissingCategoryIconColumn(first.error)) return first;
+  categoryIconColumnMissingAt = Date.now();
+  console.warn(
+    `[objections] scenario_objection_categories.icon missing — apply ${CATEGORY_ICONS_MIGRATION}; categories read and save without their icon`,
+  );
+  const second = await run();
+  return Object.assign(second, { iconDropped: true });
+}
+
+/** A category write's columns, minus `icon` while the column is known to be missing. */
+export function withoutIconColumn<T extends Record<string, unknown>>(columns: T): T {
+  if (!iconColumnKnownMissing() || !('icon' in columns)) return columns;
+  const { icon: _icon, ...rest } = columns;
+  return rest as T;
+}
 
 export interface CategoriesRead {
   /**
@@ -191,10 +276,9 @@ export function toCategories(rows: unknown): ObjectionCategory[] {
 /** Every non-deleted stored category. Never throws. */
 export async function readCategories(sb: SupabaseClient): Promise<CategoriesRead> {
   try {
-    const { data, error } = await sb
-      .from('scenario_objection_categories')
-      .select(CATEGORY_READ_COLUMNS)
-      .is('deleted_at', null);
+    const { data, error } = await withCategoryIconFallback(() =>
+      sb.from('scenario_objection_categories').select(categoryReadColumns()).is('deleted_at', null),
+    );
     if (error) return { categories: [], missing: isMissingCategoriesTable(error), error };
     return { categories: toCategories(data), missing: false, error: null };
   } catch (err) {

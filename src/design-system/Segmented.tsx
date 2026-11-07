@@ -17,6 +17,13 @@ export interface SegmentedProps<V extends string> {
   value: V;
   onChange: (value: V) => void;
   ariaLabel?: string;
+  /**
+   * `lg` — the big animal pill at the top of a screen (Training library):
+   * taller targets, larger type. Default `md`.
+   */
+  size?: 'md' | 'lg';
+  /** Stretch to the container's width, options sharing it equally. */
+  fullWidth?: boolean;
 }
 
 export function Segmented<V extends string>({
@@ -24,16 +31,20 @@ export function Segmented<V extends string>({
   value,
   onChange,
   ariaLabel,
+  size = 'md',
+  fullWidth = false,
 }: SegmentedProps<V>) {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
+  const lg = size === 'lg';
   return (
     <div
       role="tablist"
       aria-label={ariaLabel}
       style={{
-        display: 'inline-flex',
-        padding: 3,
+        display: fullWidth ? 'flex' : 'inline-flex',
+        width: fullWidth ? '100%' : undefined,
+        padding: lg ? 4 : 3,
         borderRadius: 9999,
         background: dark
           ? 'rgba(255,255,255,0.06)'
@@ -60,11 +71,13 @@ export function Segmented<V extends string>({
             onClick={() => onChange(opt.value)}
             style={{
               border: 'none',
-              padding: '6px 14px',
-              height: 30,
+              padding: lg ? '8px 22px' : '6px 14px',
+              height: lg ? 42 : 30,
+              flex: fullWidth ? 1 : undefined,
+              justifyContent: 'center',
               borderRadius: 9999,
               fontFamily: 'var(--pbt-font-mono)',
-              fontSize: 11,
+              fontSize: lg ? 12.5 : 11,
               fontWeight: 600,
               letterSpacing: '0.10em',
               textTransform: 'uppercase',

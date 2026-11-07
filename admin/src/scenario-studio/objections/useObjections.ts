@@ -57,6 +57,8 @@ export interface CategoryInUseRefusal {
 export interface SavedCategory {
   category: AdminObjectionCategory;
   dropped: string[];
+  /** The chosen icon wasn't stored: the database needs 20261107000100_category_icons.sql. */
+  iconNotSaved?: boolean;
 }
 
 export interface ObjectionsApi extends ObjectionsSnapshot {
@@ -279,7 +281,11 @@ export async function saveCategory(
     const saved = toAdminCategory(res?.category);
     if (!saved) throw new Error('The server saved it but answered with something unexpected — reload to see it.');
     replaceLocalCategory(saved);
-    return { category: saved, dropped: stringList(res?._dropped) };
+    return {
+      category: saved,
+      dropped: stringList(res?._dropped),
+      ...(res?._notice === 'icon_column_missing' ? { iconNotSaved: true } : {}),
+    };
   } catch (err) {
     if (err instanceof ApiError && err.code === 'stale') void loadObjections(true);
     if (err instanceof ApiError && err.status === 503) {

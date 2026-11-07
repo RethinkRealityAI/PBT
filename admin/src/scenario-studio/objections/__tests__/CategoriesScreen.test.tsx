@@ -315,6 +315,8 @@ describe('CategoriesScreen', () => {
         focusArea: 'gi',
         knowledgeSlugs: ['study:gut'],
         sortOrder: null,
+        // Automatic: trainees see the icon the name suggests.
+        icon: null,
       },
     });
     expect(await screen.findByRole('region', { name: 'Dental health' })).toBeInTheDocument();
@@ -341,6 +343,47 @@ describe('CategoriesScreen', () => {
       category: { id: 'everyday-nutrition', knowledgeSlugs: ['study:obesity'] },
     });
     expect(await within(card('Everyday nutrition')).findByText('1 document')).toBeInTheDocument();
+  });
+
+  it('picks the icon trainees see: a radio group of line icons, arrow keys move, "Automatic" previews the guess', async () => {
+    postObjectionOp.mockImplementation(async (body: { category: Record<string, unknown> }) => ({
+      category: category({ ...body.category, id: 'category:kidney-care', sortOrder: 70 }),
+    }));
+    renderScreen();
+    await screen.findByRole('region', { name: 'GI' });
+    fireEvent.click(screen.getByRole('button', { name: '+ New category' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New category' });
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Kidney care' } });
+
+    const group = within(dialog).getByRole('radiogroup', { name: 'Icon' });
+    const radios = within(group).getAllByRole('radio');
+    expect(radios).toHaveLength(17);
+    // Automatic is chosen and previews what the name suggests.
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true');
+    expect(radios[0]).toHaveAccessibleName(/Automatic — kidney \(renal\), from the name/);
+    // No emoji: every option draws an svg.
+    for (const r of radios) expect(r.querySelector('svg')).not.toBeNull();
+    // One Tab stop; arrow keys move and choose.
+    expect(radios.filter((r) => r.tabIndex === 0)).toHaveLength(1);
+    fireEvent.keyDown(radios[0], { key: 'ArrowRight' });
+    expect(within(group).getByRole('radio', { name: 'Food bowl' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(within(group).getByRole('radio', { name: 'Droplet (urinary)' }));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add category' }));
+    await waitFor(() => expect(postObjectionOp).toHaveBeenCalledTimes(1));
+    expect(postObjectionOp.mock.calls[0][0]).toMatchObject({
+      op: 'upsert-category',
+      category: { name: 'Kidney care', icon: 'droplet' },
+    });
+  });
+
+  it('a built-in category shows its fixed icon, with no picker', async () => {
+    renderScreen();
+    await screen.findByRole('region', { name: 'GI' });
+    fireEvent.click(within(card('Everyday nutrition')).getByRole('button', { name: /the category “Everyday nutrition”/ }));
+    const dialog = await screen.findByRole('dialog', { name: /category/i });
+    expect(within(dialog).queryByRole('radiogroup', { name: 'Icon' })).toBeNull();
+    expect(within(dialog).getByText(/built-in categories keep their icon/)).toBeInTheDocument();
   });
 
   it('a stale category save reloads and keeps the admin’s edits', async () => {

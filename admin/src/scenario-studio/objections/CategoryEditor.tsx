@@ -38,6 +38,9 @@ import { DocumentPicker } from '../steps/DocumentPicker';
 import { docStatus } from '../steps/knowledgeModel';
 import { KnowledgeUpload } from '../steps/KnowledgeUpload';
 import { BodyPortal, Disclosure, EditorFrame, selectStyle } from './editorParts';
+import { CategoryIconPicker } from './CategoryIconPicker';
+import { CategoryIcon } from '../../../../src/design-system/CategoryIcon';
+import { CATEGORY_ICON_LABELS, categoryIconFor } from '../../../../src/shared/scenarios/categoryIcons';
 import {
   categoryAnimals,
   categoryDocReach,
@@ -103,7 +106,7 @@ function EditorBody({
   const can = useCan();
   const toast = useToast();
   const confirm = useConfirm();
-  const ids = { name: useId(), nameFr: useId(), description: useId(), topic: useId() };
+  const ids = { name: useId(), nameFr: useId(), description: useId(), topic: useId(), icon: useId() };
 
   const [baseline, setBaseline] = useState<CategoryForm>(() =>
     category ? formFromCategory(category) : emptyCategoryForm(),
@@ -229,7 +232,7 @@ function EditorBody({
     setBusy(true);
     setError(null);
     try {
-      const { category: saved, dropped } = await api.saveCategory(
+      const { category: saved, dropped, iconNotSaved } = await api.saveCategory(
         categoryFormToWrite(form),
         form.id ? base : undefined,
       );
@@ -243,6 +246,13 @@ function EditorBody({
           message: `${dropped.length === 1 ? 'One document wasn’t' : `${dropped.length} documents weren’t`} attached because ${
             dropped.length === 1 ? 'it’s' : 'they’re'
           } no longer in the library: ${dropped.join(', ')}.`,
+        });
+      }
+      if (iconNotSaved) {
+        toast({
+          tone: 'info',
+          message:
+            'Saved — but the icon needs a database update before it can be stored. Trainees see an icon picked from the name meanwhile.',
         });
       }
       onSaved?.(saved);
@@ -395,6 +405,50 @@ function EditorBody({
           style={{ minHeight: 64 }}
         />
       </FieldBlock>
+
+      {form.builtIn ? (
+        <div style={{ display: 'grid', gap: 6 }}>
+          <span id={ids.icon} style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>
+            Icon
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: COLOR.inkSoft }}>
+            <span
+              aria-hidden
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                background: COLOR.brand,
+              }}
+            >
+              <CategoryIcon icon={categoryIconFor({ id: form.id ?? '' })} size={18} />
+            </span>
+            {CATEGORY_ICON_LABELS[categoryIconFor({ id: form.id ?? '' })]} — built-in categories keep their icon.
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 6 }}>
+          <span id={ids.icon} style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>
+            Icon
+          </span>
+          <span style={{ fontSize: 12, color: COLOR.inkMute, lineHeight: 1.45 }}>
+            Trainees see it on this category’s card in the Training library.
+          </span>
+          <CategoryIconPicker
+            value={form.icon}
+            onChange={(icon) => update({ icon })}
+            disabled={!canWrite}
+            name={form.name}
+            nameFr={form.nameFr}
+            description={form.description}
+            labelledBy={ids.icon}
+          />
+        </div>
+      )}
 
       <Disclosure
         title="French version"
