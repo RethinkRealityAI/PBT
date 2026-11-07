@@ -204,6 +204,37 @@ describe('ScenarioLibraryScreen — Dog | Cat', () => {
     expect(startButtons()).toEqual(['Kitten on dry food']);
   });
 
+  it('inside an area the pill gives way to a badge naming the animal', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioLibraryScreen />);
+    await user.click(screen.getByRole('button', { name: /^GI/ }));
+    expect(animalSwitch()).toBeNull();
+    expect(screen.getByRole('img', { name: 'Dog' })).toBeInTheDocument();
+    await user.click(topBack());
+    expect(animalSwitch()).not.toBeNull();
+  });
+
+  it('returns to the first step when another tab changes the animal while an area is open', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioLibraryScreen />);
+    await user.click(screen.getByRole('button', { name: /^Everyday nutrition/ }));
+    expect(screen.getByRole('heading', { name: 'Everyday nutrition' })).toBeInTheDocument();
+    act(() => {
+      localStorage.setItem('pbt:train_species', '"cat"');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'pbt:train_species' }));
+    });
+    // Cats hold one area, so its list IS the first step — with the pill back.
+    expect(screen.queryByRole('heading', { name: 'Everyday nutrition' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Urinary health' })).toBeInTheDocument();
+    expect(within(animalSwitch()!).getByRole('tab', { name: 'Cat' })).toHaveAttribute('aria-selected', 'true');
+    // And back to dogs: the area grid, not the area that was open.
+    act(() => {
+      localStorage.setItem('pbt:train_species', '"dog"');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'pbt:train_species' }));
+    });
+    expect(groupList()).not.toBeNull();
+  });
+
   it('has no pill while scenario.cat.enabled is off, and lists no cat scenario', async () => {
     flagValues = {};
     localStorage.setItem('pbt:train_species', '"cat"');
@@ -252,7 +283,7 @@ describe('ScenarioLibraryScreen — focus areas → scenarios', () => {
     expect(groupList()!.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
     // The cat area (no icon chosen) is guessed from its name.
     await user.click(within(animalSwitch()!).getByRole('tab', { name: 'Cat' }));
-    expect(screen.getByRole('heading', { name: 'Urinary health' }).parentElement?.parentElement?.querySelector('[data-category-icon]')?.getAttribute('data-category-icon')).toBe('droplet');
+    expect(screen.getByRole('heading', { name: 'Urinary health' }).closest('section')?.querySelector('[data-category-icon]')?.getAttribute('data-category-icon')).toBe('droplet');
   });
 
   it('opens an area, narrows it by objection, and the TopBar back returns to the areas', async () => {

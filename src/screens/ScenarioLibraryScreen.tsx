@@ -10,10 +10,12 @@
  *   2. SCENARIOS in that area — the whole card starts one; objection chips
  *      narrow an area holding more than one objection.
  *
- * Dog | Cat sits on top ONLY when the resolved library holds scenarios for
- * both animals (cats are already dropped from it while `scenario.cat.enabled`
- * is off) — the same rule Home's old Today's pick used, so a stored
- * preference never empties the list.
+ * Dog | Cat sits under the step 1 heading ONLY when the resolved library
+ * holds scenarios for both animals (cats are already dropped from it while
+ * `scenario.cat.enabled` is off) — the same rule Home's old Today's pick
+ * used, so a stored preference never empties the list. Inside an area the
+ * animal is fixed: a badge says which, and a change made elsewhere (another
+ * tab) returns to step 1.
  *
  * Back (the TopBar's, the browser's / Android's) returns from step 2 to the
  * focus areas before it leaves the screen (`useBrowserBackStep`).
@@ -21,14 +23,14 @@
  * Data: `useResolvedLibraryScenarios` + `useObjectionCatalog` — no fetches.
  * Grouping rules: `features/scenarios/libraryGrouping.ts` (pure, tested).
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { LayoutGrid } from 'lucide-react';
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
 import { PillButton } from '../design-system/PillButton';
 import { Segmented, type SegmentedOption } from '../design-system/Segmented';
-import { SpeciesIcon } from '../design-system/SpeciesIcon';
+import { SpeciesBadge, SpeciesIcon } from '../design-system/SpeciesIcon';
 import { ChipScroller } from '../design-system/ChipScroller';
 import { CategoryIcon } from '../design-system/CategoryIcon';
 import { TopBar } from '../shell/TopBar';
@@ -108,6 +110,17 @@ export function ScenarioLibraryScreen() {
     showObjectionChips && objectionChips.some((o) => o.id === objectionFilter) ? objectionFilter : 'all';
   const visible =
     activeObjection === 'all' ? inGroup : inGroup.filter((r) => r.scenario.pushback.id === activeObjection);
+
+  // The animal is chosen on step 1. If it changes while an area is open
+  // (another tab, another surface), go back there: the area may not exist
+  // for the other animal.
+  const seenSpecies = useRef(species);
+  useEffect(() => {
+    if (seenSpecies.current === species) return;
+    seenSpecies.current = species;
+    setGroupId(null);
+    setObjectionFilter('all');
+  }, [species]);
 
   const leaveGroup = () => {
     setGroupId(null);
@@ -260,9 +273,21 @@ export function ScenarioLibraryScreen() {
               eyebrow={t('library.eyebrow')}
               title={current ? current.label : t('library.all.title')}
               sub={countText(inGroup.length)}
+              badge={
+                showAnimalToggle && !singleGroup ? (
+                  <SpeciesBadge
+                    species={species}
+                    size={26}
+                    background="linear-gradient(160deg, var(--pbt-driver-primary), var(--pbt-driver-accent))"
+                    title={t(species === 'cat' ? 'create.animal.cat' : 'create.animal.dog')}
+                  />
+                ) : undefined
+              }
               icon={current ? current.icon : 'all'}
             />
-            {animalToggle}
+            {/* Inside an area the animal is fixed (chosen on step 1) — a badge
+                says which; a one-area library has no step 1, so its pill stays. */}
+            {singleGroup && animalToggle}
             {showObjectionChips && (
               <ChipScroller ariaLabel={t('library.filterAria')} className="mb-3">
                 <FilterChip
@@ -336,11 +361,14 @@ function StepHeading({
   title,
   sub,
   icon,
+  badge,
 }: {
   id: string;
   eyebrow: string;
   title: string;
   sub: string;
+  /** Beside the title — the animal on step 2 when the library holds both. */
+  badge?: ReactNode;
   /** A focus area's icon beside its name on step 2 ('all' = the grid glyph). */
   icon?: CategoryIconKey | 'all';
 }) {
@@ -370,19 +398,23 @@ function StepHeading({
         >
           {eyebrow}
         </div>
-        <h2
-          id={id}
-          style={{
-            margin: 0,
-            fontSize: 26,
-            fontWeight: 400,
-            letterSpacing: '-0.025em',
-            lineHeight: 1.1,
-            color: 'var(--pbt-text)',
-          }}
-        >
-          {title}
-        </h2>
+        <div className="flex items-center" style={{ gap: 10 }}>
+          <h2
+            id={id}
+            style={{
+              margin: 0,
+              fontSize: 26,
+              fontWeight: 400,
+              letterSpacing: '-0.025em',
+              lineHeight: 1.1,
+              color: 'var(--pbt-text)',
+              minWidth: 0,
+            }}
+          >
+            {title}
+          </h2>
+          {badge}
+        </div>
         <p style={{ margin: '5px 0 0', fontSize: 13, lineHeight: 1.45, color: 'var(--pbt-text-muted)' }}>{sub}</p>
       </div>
     </div>
