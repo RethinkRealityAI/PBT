@@ -8,6 +8,7 @@ import { fecalScan } from './fecalScan';
 import { feedback } from './feedback';
 import { history } from './history';
 import { home } from './home';
+import { library } from './library';
 import { onboarding } from './onboarding';
 import { quiz } from './quiz';
 import { report } from './report';
@@ -29,6 +30,7 @@ export const en = {
   ...chat,
   ...home,
   ...create,
+  ...library,
   ...settings,
   ...analyzer,
   ...fecalScan,

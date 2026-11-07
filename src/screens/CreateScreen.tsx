@@ -1,13 +1,11 @@
-import { Fragment, useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
 import { Chip } from '../design-system/Chip';
 import { PillButton } from '../design-system/PillButton';
 import { Segmented, type SegmentedOption } from '../design-system/Segmented';
-import { ChipScroller } from '../design-system/ChipScroller';
 import { SpeciesIcon } from '../design-system/SpeciesIcon';
-import { DifficultyMeter, DIFFICULTY_METER_FILL } from '../design-system/DifficultyMeter';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
@@ -24,7 +22,6 @@ import {
   type PushbackCategory,
   type Scenario,
 } from '../data/scenarios';
-import { useResolvedLibraryScenarios, type ResolvedScenario } from '../data/useResolvedScenarios';
 import { DRIVER_KEYS, type DriverKey } from '../design-system/tokens';
 import { persistUserScenario } from '../features/scenarios/persistScenario';
 import { useCatScenariosEnabled, useTrainingSpecies } from '../features/scenarios/useTrainingSpecies';
@@ -33,37 +30,21 @@ import {
   type TrainingCategory,
   type TrainingObjection,
 } from '../features/scenarios/useObjectionCatalog';
-import { logEvent } from '../lib/analytics';
 import { SCENARIO_LIMITS } from '../shared/scenarios/limits';
-import { objectionCategoryId } from '../shared/scenarios/objectionCategories';
-import type { TeamObjection } from '../shared/scenarios/objections';
 import {
   POPULAR_BREEDS,
-  speciesOf,
   type ScenarioSpecies,
 } from '../shared/scenarios/species';
 import { useT } from '../i18n/useT';
 import { useLanguage } from '../app/providers/LanguageProvider';
-import type { Locale } from '../i18n/locales';
 import {
-  localizedScenario,
   localizedLifeStage,
   localizedPersona,
 } from '../i18n/dataL10n/scenarios';
 import {
   localizedDifficulty,
   localizedDifficultyLabel,
-  localizedPushbackCategory,
 } from '../i18n/dataL10n/pushbacks';
-
-/**
- * The screen's two views. `build` is the trainee's own builder; `library` is
- * the Ready-made list (the resolved library for the animal). The underline
- * toggle between them is gone from the top of the screen — the Ready-made
- * list is moving to a home of its own — but the view stays wired behind the
- * `view` prop so nothing about it has to be rebuilt when it moves.
- */
-export type CreateView = 'build' | 'library';
 
 const CUSTOM_PUSHBACK = PUSHBACK_CATEGORIES.find((c) => c.id === 'custom')!;
 /** Quick-pick breed chips shown per animal (the field stays free text). */
@@ -73,72 +54,12 @@ function breedChips(species: ScenarioSpecies): readonly string[] {
   return POPULAR_BREEDS[species].slice(0, BREED_CHIP_COUNT);
 }
 
-/** One "filter by category / objection" chip on the Library tab. */
-interface ObjectionFilterOption {
-  id: string;
-  label: string;
-}
-
 /**
- * The Library's group for scenarios outside every known category: "Other
- * pushback" (`custom`), or a team objection whose category this snapshot
- * doesn't carry. Never a real category id (those are built-in words or
- * `category:<slug>`).
+ * The trainee's own scenario builder ("Build your own" in Home's Select
+ * scenario dialog). Ready-made scenarios live on the Training library screen
+ * (`ScenarioLibraryScreen`), not here.
  */
-const OTHER_GROUP = '__other';
-
-/** The category group a library scenario files under (see OTHER_GROUP). */
-function libraryGroupOf(
-  item: ResolvedScenario,
-  team: readonly TeamObjection[],
-  categories: readonly TrainingCategory[],
-): string {
-  const id = objectionCategoryId(item.scenario.pushback.id, team);
-  return id && categories.some((c) => c.id === id) ? id : OTHER_GROUP;
-}
-
-/**
- * The categories present in a list of library scenarios, in category display
- * order, with the "Other" group (labelled `otherLabel`) last.
- */
-function libraryCategoryFilters(
-  items: readonly ResolvedScenario[],
-  team: readonly TeamObjection[],
-  categories: readonly TrainingCategory[],
-  otherLabel: string,
-): ObjectionFilterOption[] {
-  const present = new Set(items.map((item) => libraryGroupOf(item, team, categories)));
-  const out: ObjectionFilterOption[] = categories
-    .filter((c) => present.has(c.id))
-    .map((c) => ({ id: c.id, label: c.label }));
-  if (present.has(OTHER_GROUP)) out.push({ id: OTHER_GROUP, label: otherLabel });
-  return out;
-}
-
-/**
- * The objections present in a list of library scenarios, labelled in the
- * locale, ordered like the catalogue (built-ins, then the team's), with
- * "Other pushback" and anything the catalogue doesn't know last.
- */
-function libraryObjectionFilters(
-  items: readonly ResolvedScenario[],
-  catalogue: readonly TrainingObjection[],
-  locale: Locale,
-): ObjectionFilterOption[] {
-  const seen = new Map<string, ObjectionFilterOption>();
-  for (const { scenario } of items) {
-    const id = scenario.pushback.id;
-    if (seen.has(id)) continue;
-    seen.set(id, { id, label: localizedPushbackCategory(scenario.pushback, locale).title });
-  }
-  const rank = (id: string) => {
-    const i = catalogue.findIndex((o) => o.id === id);
-    return i >= 0 ? i : catalogue.length + (id === 'custom' ? 0 : 1);
-  };
-  return [...seen.values()].sort((a, b) => rank(a.id) - rank(b.id));
-}
-
-export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
+export function CreateScreen() {
   const { go } = useNavigation();
   const { setScenario } = useScenario();
   const { profile } = useProfile();
@@ -149,16 +70,13 @@ export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
   // the "Which animal?" row below is not rendered.
   const [species, setSpecies] = useTrainingSpecies();
   const catEnabled = useCatScenariosEnabled();
-  const { objections, teamObjections, categories, categoriesFor, objectionsIn, categoryById } =
-    useObjectionCatalog();
-  const resolvedLibrary = useResolvedLibraryScenarios();
+  const { categoriesFor, objectionsIn } = useObjectionCatalog();
   // Line icons, not emoji: white on the active gradient, muted otherwise.
   const animalOptions: SegmentedOption<ScenarioSpecies>[] = [
     { value: 'dog', label: t('create.animal.dog'), icon: <SpeciesIcon species="dog" size={14} /> },
     { value: 'cat', label: t('create.animal.cat'), icon: <SpeciesIcon species="cat" size={14} /> },
   ];
 
-  const [tab, setTab] = useState<CreateView>(view);
   // Default matches the first quick-pick chip so it renders as selected
   // on load instead of an orphan value no chip highlights.
   const [breed, setBreed] = useState(() => POPULAR_BREEDS[species][0]);
@@ -176,8 +94,6 @@ export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
   const [pushbackError, setPushbackError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [driver, setDriver] = useState<DriverKey>(profile?.primary ?? 'Activator');
-  const [libraryCategory, setLibraryCategory] = useState<string>('all');
-  const [libraryFilter, setLibraryFilter] = useState<string>('all');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Build: animal → category → objection. The categories offered are those
@@ -197,44 +113,6 @@ export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
       : (pickable.find((o) => o.id === pushbackId) ?? pickable[0] ?? null);
   const isCustomSelected = selectedObjection == null;
   const pushbackCategory: PushbackCategory = selectedObjection?.pushback ?? CUSTOM_PUSHBACK;
-
-  // Library: the RESOLVED library (admin-hidden seeds removed, scenarios the
-  // team published appended), for the chosen animal only — then category
-  // chips (when there are at least two groups), then the chosen category's
-  // objection chips (when it holds at least two objections), then the cards.
-  const libraryForAnimal = useMemo(
-    () => resolvedLibrary.filter((r) => speciesOf(r.scenario.species) === species),
-    [resolvedLibrary, species],
-  );
-  const otherLabel = t('create.pushback.otherTitle');
-  const categoryFilters = useMemo(
-    () => libraryCategoryFilters(libraryForAnimal, teamObjections, categories, otherLabel),
-    [libraryForAnimal, teamObjections, categories, otherLabel],
-  );
-  const showCategoryFilters = categoryFilters.length > 1;
-  const activeLibraryCategory =
-    showCategoryFilters && categoryFilters.some((f) => f.id === libraryCategory)
-      ? libraryCategory
-      : 'all';
-  const libraryInCategory =
-    activeLibraryCategory === 'all'
-      ? libraryForAnimal
-      : libraryForAnimal.filter(
-          (r) => libraryGroupOf(r, teamObjections, categories) === activeLibraryCategory,
-        );
-  // Objection chips narrow a CHOSEN category; under "All categories" the
-  // category row is the first step. With a single category (no category row)
-  // the objection chips work across the whole animal, as before.
-  const objectionScope =
-    showCategoryFilters && activeLibraryCategory === 'all' ? [] : libraryInCategory;
-  const libraryFilters = libraryObjectionFilters(objectionScope, objections, locale);
-  const showObjectionFilters = libraryFilters.length > 1;
-  const activeFilter =
-    showObjectionFilters && libraryFilters.some((f) => f.id === libraryFilter) ? libraryFilter : 'all';
-  const visibleLibrary =
-    activeFilter === 'all'
-      ? libraryInCategory
-      : libraryInCategory.filter((r) => r.scenario.pushback.id === activeFilter);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -266,11 +144,6 @@ export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
     setDropdownOpen(false);
   };
 
-  const selectLibraryCategory = (id: string) => {
-    setLibraryCategory(id);
-    setLibraryFilter('all');
-  };
-
   const changeSpecies = (next: ScenarioSpecies) => {
     if (next === species) return;
     // Swap the breed only when it is still one of the previous animal's
@@ -293,8 +166,6 @@ export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
         setPushbackId(nextPickable[0]?.id ?? 'custom');
       }
     }
-    setLibraryCategory('all');
-    setLibraryFilter('all');
     setDropdownOpen(false);
     setSpecies(next);
   };
@@ -335,34 +206,11 @@ export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
     go('chat');
   };
 
-  const startLibraryScenario = (item: ResolvedScenario) => {
-    const { scenario } = item;
-    logEvent({
-      type: 'card_click',
-      screen: 'create',
-      target: 'library_scenario',
-      meta: {
-        pushback: scenario.pushback.id,
-        breed: scenario.breed,
-        species: speciesOf(scenario.species),
-        scenarioId: item.scenarioId,
-      },
-    });
-    setScenario(scenario);
-    go('chat');
-  };
-
   return (
     <>
-      <TopBar showBack title={t(tab === 'library' ? 'create.titleLibrary' : 'create.title')} />
+      <TopBar showBack title={t('create.title')} />
       <Page>
-        {/*
-         * Two controls, two jobs, two looks: the pill picks the ANIMAL (it
-         * scopes both views), chips NARROW the list. (The underline view
-         * toggle that used to sit above them is gone — see `CreateView`.)
-         */}
-
-        {/* ── Which animal? — first choice, drives both views. Only with
+        {/* ── Which animal? — the first choice. Only with
             cats switched on: a one-animal app asks no question. ── */}
         {catEnabled && (
           <div
@@ -389,115 +237,14 @@ export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
           </div>
         )}
 
-        {tab === 'library' ? (
-          libraryForAnimal.length === 0 ? (
-            <Glass radius={18} padding={18}>
-              <p
-                style={{
-                  margin: '0 0 14px',
-                  fontSize: 14,
-                  lineHeight: 1.5,
-                  color: 'var(--pbt-text-muted)',
-                }}
-              >
-                {t(species === 'cat' ? 'create.library.emptyCat' : 'create.library.emptyDog')}
-              </p>
-              <PillButton icon={<Icon.spark />} onClick={() => setTab('build')}>
-                {t('create.library.emptyCta')}
-              </PillButton>
-            </Glass>
-          ) : (
-          <>
-            {showCategoryFilters && (
-              <ChipScroller
-                ariaLabel={t('create.library.categoryAria')}
-                className={showObjectionFilters ? 'mb-2' : 'mb-3'}
-              >
-                <FilterChip
-                  label={t('create.library.categoryAll')}
-                  count={libraryForAnimal.length}
-                  active={activeLibraryCategory === 'all'}
-                  onClick={() => selectLibraryCategory('all')}
-                />
-                {categoryFilters.map((f) => (
-                  <FilterChip
-                    key={f.id}
-                    label={f.label}
-                    count={
-                      libraryForAnimal.filter(
-                        (r) => libraryGroupOf(r, teamObjections, categories) === f.id,
-                      ).length
-                    }
-                    active={activeLibraryCategory === f.id}
-                    onClick={() => selectLibraryCategory(f.id)}
-                  />
-                ))}
-              </ChipScroller>
-            )}
-            {showObjectionFilters && (
-              <ChipScroller ariaLabel={t('create.library.filterAria')} className="mb-3">
-                <FilterChip
-                  label={t('create.library.filterAll')}
-                  count={libraryInCategory.length}
-                  active={activeFilter === 'all'}
-                  onClick={() => setLibraryFilter('all')}
-                />
-                {libraryFilters.map((f) => (
-                  <FilterChip
-                    key={f.id}
-                    label={f.label}
-                    count={libraryInCategory.filter((r) => r.scenario.pushback.id === f.id).length}
-                    active={activeFilter === f.id}
-                    onClick={() => setLibraryFilter(f.id)}
-                  />
-                ))}
-              </ChipScroller>
-            )}
-            <div className="lg:grid lg:grid-cols-2 lg:gap-4 flex flex-col gap-3">
-              {visibleLibrary.map((item) => {
-                const { scenario, override } = item;
-                const objectionTitle = localizedScenario(scenario, locale).pushback.title;
-                const cardTitle = override?.card_title_override?.trim() || objectionTitle;
-                const categoryLabel =
-                  categoryById(objectionCategoryId(scenario.pushback.id, teamObjections))?.label ??
-                  null;
-                // One eyebrow line: the category, plus the objection when a
-                // custom card title hides which objection this is (and the
-                // objection is what the trainee came here to pick).
-                const eyebrowObjection = cardTitle !== objectionTitle ? objectionTitle : null;
-                return (
-                  <LibraryCard
-                    key={item.scenarioId}
-                    title={cardTitle}
-                    eyebrow={[categoryLabel, eyebrowObjection].filter((x): x is string => !!x)}
-                    species={speciesOf(scenario.species)}
-                    pet={`${scenario.breed} · ${localizedLifeStage(scenario.age, locale, scenario.species)}`}
-                    owner={t('create.library.persona', {
-                      persona: localizedPersona(scenario.persona, locale),
-                    })}
-                    difficulty={scenario.difficulty}
-                    difficultyLabel={localizedDifficultyLabel(scenario.difficulty, locale)}
-                    difficultyAria={t('create.library.difficultyAria', {
-                      label: localizedDifficultyLabel(scenario.difficulty, locale),
-                      level: String(scenario.difficulty),
-                    })}
-                    startAria={t('create.library.startAria', { title: cardTitle })}
-                    onStart={() => startLibraryScenario(item)}
-                  />
-                );
-              })}
-            </div>
-          </>
-          )
-        ) : (
-          /*
-           * Build tab: two-column grid on desktop.
+        {/*
+           * Two-column grid on desktop.
            * Left col: Category, The pushback, Breed, Life stage, Owner
            *   persona, ECHO driver — category → objection first, mirroring
-           *   animal → category → objection (and the Library tab's chips).
+           *   animal → category → objection.
            * Right col: Difficulty, Additional details.
            * On mobile: single column, JSX order preserved.
-           */
+           */}
           <div className="lg:grid lg:grid-cols-2 lg:gap-8 lg:items-start">
             {/* Left column */}
             <div>
@@ -966,186 +713,25 @@ export function CreateScreen({ view = 'build' }: { view?: CreateView } = {}) {
             <div style={{ height: 90 }} className="lg:hidden" />
             </div>
           </div>
-        )}
       </Page>
 
       {/* Mobile-only sticky CTA. Desktop has the inline button above. */}
-      {tab === 'build' && (
-        <div
-          className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:hidden"
-          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
+      <div
+        className="fixed bottom-0 left-1/2 z-30 w-full max-w-[var(--pbt-layout-max)] -translate-x-1/2 px-5 lg:hidden"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 18px)' }}
+      >
+        <PillButton
+          size="lg"
+          fullWidth
+          icon={<Icon.spark />}
+          onClick={handleGenerate}
+          disabled={isSubmitting}
+          style={isSubmitting ? { opacity: 0.65 } : undefined}
         >
-          <PillButton
-            size="lg"
-            fullWidth
-            icon={<Icon.spark />}
-            onClick={handleGenerate}
-            disabled={isSubmitting}
-            style={isSubmitting ? { opacity: 0.65 } : undefined}
-          >
-            {t('create.submit')}
-          </PillButton>
-        </div>
-      )}
+          {t('create.submit')}
+        </PillButton>
+      </div>
     </>
-  );
-}
-
-/**
- * A Library filter chip: the label, plus how many scenarios it leaves. The
- * count is decoration (the list itself is the answer), so assistive tech
- * hears just the label.
- */
-function FilterChip({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Chip active={active} onClick={onClick} className="shrink-0" title={label}>
-      {label}
-      <span aria-hidden style={{ marginLeft: 7, opacity: active ? 0.85 : 0.55, fontWeight: 500 }}>
-        {count}
-      </span>
-    </Chip>
-  );
-}
-
-/**
- * One ready-made scenario. The WHOLE card starts it: one large target and
- * one affordance (the arrow), instead of a gold Start button beside a gold
- * difficulty badge that looked like a second button. Difficulty is a
- * 4-step meter (the level at a glance) with its word, and the persona
- * says "owner" — "Skeptical" is both a persona and a difficulty level.
- */
-/**
- * The card's accent text/marks: the driver colour pulled toward the text
- * colour, so a light driver (Energizer yellow) stays legible on white glass
- * and a dark one stays legible on dark glass.
- */
-const CARD_ACCENT = DIFFICULTY_METER_FILL;
-
-function LibraryCard({
-  title,
-  eyebrow,
-  species,
-  pet,
-  owner,
-  difficulty,
-  difficultyLabel,
-  difficultyAria,
-  startAria,
-  onStart,
-}: {
-  title: string;
-  eyebrow: string[];
-  species: ScenarioSpecies;
-  pet: string;
-  owner: string;
-  difficulty: Difficulty;
-  difficultyLabel: string;
-  difficultyAria: string;
-  startAria: string;
-  onStart: () => void;
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={onStart}
-      aria-label={startAria}
-      whileTap={{ scale: 0.985 }}
-      className="pbt-library-card"
-      style={{
-        display: 'block',
-        width: '100%',
-        padding: 0,
-        border: 'none',
-        background: 'none',
-        textAlign: 'left',
-        color: 'inherit',
-        font: 'inherit',
-        cursor: 'pointer',
-        borderRadius: 18,
-      }}
-    >
-      <Glass radius={18} padding={16}>
-        <div className="flex items-center gap-3">
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {eyebrow.length > 0 && (
-              <div
-                style={{
-                  fontFamily: 'var(--pbt-font-mono)',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: '0.16em',
-                  textTransform: 'uppercase',
-                  color: CARD_ACCENT,
-                  marginBottom: 6,
-                  lineHeight: 1.4,
-                }}
-              >
-                {eyebrow.map((part, i) => (
-                  <Fragment key={part}>
-                    {i > 0 && <span aria-hidden> · </span>}
-                    <span>{part}</span>
-                  </Fragment>
-                ))}
-              </div>
-            )}
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: 16,
-                lineHeight: 1.3,
-                letterSpacing: '-0.01em',
-                marginBottom: 6,
-              }}
-            >
-              {title}
-            </div>
-            <div
-              className="flex items-center gap-1.5"
-              style={{ fontSize: 13, color: 'var(--pbt-text-muted)', marginBottom: 10 }}
-            >
-              <span aria-hidden style={{ display: 'inline-flex', flexShrink: 0 }}>
-                <SpeciesIcon species={species} size={14} />
-              </span>
-              <span style={{ minWidth: 0 }}>{pet}</span>
-            </div>
-            <div
-              className="flex flex-wrap items-center"
-              style={{ columnGap: 14, rowGap: 6, fontSize: 12.5, color: 'var(--pbt-text-muted)' }}
-            >
-              <span>{owner}</span>
-              <DifficultyMeter level={difficulty} label={difficultyLabel} ariaLabel={difficultyAria} />
-            </div>
-          </div>
-          <span
-            aria-hidden
-            style={{
-              flexShrink: 0,
-              width: 40,
-              height: 40,
-              borderRadius: 9999,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: CARD_ACCENT,
-              background: 'color-mix(in oklab, var(--pbt-driver-primary) 16%, transparent)',
-              border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 30%, transparent)',
-            }}
-          >
-            <Icon.arrow />
-          </span>
-        </div>
-      </Glass>
-    </motion.button>
   );
 }
 

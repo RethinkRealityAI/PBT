@@ -236,12 +236,28 @@
   }
 }
 
-/* Library cards (whole card = button) and the view tabs: a visible ring for
-   keyboard users, none for taps. */
+/* Library cards (whole card = button), focus-area cards, the Select scenario
+   choices and the view tabs: a visible ring for keyboard users, none for taps. */
 .pbt-library-card:focus-visible,
+.pbt-library-group:focus-visible,
+.pbt-select-choice:focus-visible,
 .pbt-view-tab:focus-visible {
   outline: 2px solid var(--pbt-driver-primary);
   outline-offset: 3px;
+}
+
+/* Select scenario: a bottom sheet on phones (square bottom edge, flush with
+   the screen), a rounded dialog from `sm`. */
+.pbt-select-sheet {
+  overflow: hidden;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+@media (min-width: 640px) {
+  .pbt-select-sheet {
+    border-bottom-left-radius: 30px !important;
+    border-bottom-right-radius: 30px !important;
+  }
 }
 .pbt-view-tab:focus-visible {
   outline-offset: -2px;

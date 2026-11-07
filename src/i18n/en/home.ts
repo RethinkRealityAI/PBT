@@ -37,32 +37,24 @@ export const home = {
   'home.dim.empathy': 'Empathy',
   'home.dim.rapport': 'Rapport',
 
-  // ── Today's pick hero card ────────────────────────────────
-  'home.pick.subtitle': '{breed}, {age}. Driver: {driver}.',
-  /** A cat scenario names the animal up front so it is never mistaken for a dog. */
-  'home.pick.subtitleCat': 'Cat · {breed}, {age}. Driver: {driver}.',
-  'home.pick.speciesAria': "Animal for today's pick",
-  'home.pick.start': 'Start scenario',
-  'home.pick.prevAria': 'Previous scenario',
-  'home.pick.nextAria': 'Next scenario',
+  // ── Training library hero card ────────────────────────────
+  'home.hero.eyebrow': 'Training',
+  'home.hero.title': 'Training library',
+  'home.hero.body': 'Pick a ready-made scenario or build your own to practice.',
+  'home.hero.select': 'Select scenario',
   'home.pick.startHere': 'Start here →',
   'home.pick.scoringAria': 'How sessions are scored',
-  'home.pick.empty.title': 'No scenarios available right now',
-  'home.pick.empty.body':
-    'Every scenario is hidden at the moment. Build your own, or check back later.',
 
   // ── Quick actions ─────────────────────────────────────────
-  'home.actions.build.title': 'Build a scenario',
-  'home.actions.build.sub': 'Custom pushback',
   'home.actions.analyzer.title': 'Pet Analyzer',
   /** Clinical initialisms + unit only — identical in every locale (allowlisted). */
   'home.actions.analyzer.sub': 'BCS · MCS · kcal',
   'home.actions.fecalScan.title': 'Fecal Scan',
   'home.actions.fecalScan.sub': 'Stool score · 1–5',
 
-  // ── Library + ECHO profile cards ──────────────────────────
-  'home.library.aria': 'Library',
-  'home.library.title': 'Clinical library',
+  // ── Clinical resources + ECHO profile cards ───────────────
+  'home.library.aria': 'Clinical resources',
+  'home.library.title': 'Clinical resources',
   'home.library.sub': 'WSAVA · BCS · MCS · calorie targets',
   'home.echo.aria': 'Your ECHO driver profile',
   'home.echo.title': 'Your ECHO profile',
@@ -73,7 +65,6 @@ export const home = {
 
   // ── Modal chrome (shared by both Home modals) ─────────────
   'home.modal.close': 'Close',
-  'home.scenarioInfo.closeAria': 'Close scenario info',
 
   // ── Scoring guide modal ───────────────────────────────────
   'home.scoring.closeAria': 'Close scoring guide',

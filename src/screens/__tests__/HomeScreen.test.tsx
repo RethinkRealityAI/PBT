@@ -2,10 +2,13 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { HomeScreen } from '../HomeScreen';
-import type { Scenario } from '../../data/scenarios';
 import type { FlagSnapshot, ScenarioOverride } from '../../services/flagsClient';
 
-const { go, setScenario } = vi.hoisted(() => ({ go: vi.fn(), setScenario: vi.fn() }));
+const { go, setScenario, logEvent } = vi.hoisted(() => ({
+  go: vi.fn(),
+  setScenario: vi.fn(),
+  logEvent: vi.fn(),
+}));
 
 let flagSnapshot: FlagSnapshot | null = null;
 /** Switch values a test sets; anything absent reads its fallback (on). */
@@ -34,7 +37,7 @@ vi.mock('../../app/providers/ProfileProvider', () => ({
   }),
 }));
 vi.mock('../../features/auth/SaveProgressBanner', () => ({ SaveProgressBanner: () => null }));
-vi.mock('../../lib/analytics', () => ({ logEvent: vi.fn() }));
+vi.mock('../../lib/analytics', () => ({ logEvent }));
 vi.mock('../../app/providers/FlagProvider', async () => {
   const actual = await vi.importActual<typeof import('../../app/providers/FlagProvider')>(
     '../../app/providers/FlagProvider',
@@ -82,9 +85,6 @@ const ADMIN_CAT: ScenarioOverride = {
   species: 'cat',
 };
 
-const switchGroup = () => screen.queryByRole('tablist', { name: "Animal for today's pick" });
-const counter = () => screen.getByText(/^\d+\/\d+$/).textContent;
-
 beforeEach(() => {
   vi.clearAllMocks();
   flagSnapshot = null;
@@ -94,108 +94,88 @@ beforeEach(() => {
   localStorage.setItem('pbt:seen_start_here', 'true');
 });
 
-describe("HomeScreen — Today's pick animal switch", () => {
-  it('shows no switch while the library only holds dogs', () => {
-    render(<HomeScreen />);
-    expect(switchGroup()).toBeNull();
-    expect(counter()).toMatch(/\/3$/);
-  });
+const selectButton = () => screen.getByRole('button', { name: 'Select scenario' });
+const dialog = () => screen.queryByRole('dialog', { name: 'How would you like to practice?' });
 
-  it('never empties the hero because of a stored cat preference when there are no cat scenarios', async () => {
-    localStorage.setItem('pbt:train_species', '"cat"');
-    const user = userEvent.setup();
-    render(<HomeScreen />);
-    expect(switchGroup()).toBeNull();
-    expect(counter()).toMatch(/\/3$/);
-    await user.click(screen.getByRole('button', { name: 'Start scenario' }));
-    expect((setScenario.mock.calls[0][0] as Scenario).species).toBeUndefined();
-  });
-
-  it('shows no switch and no cat pick while scenario.cat.enabled is off, even with a cat scenario published', async () => {
+describe('HomeScreen — the Training library hero', () => {
+  it('names no scenario: no title, no prev/next, no animal switch', () => {
+    flagValues = { 'scenario.cat.enabled': true };
     flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
-    localStorage.setItem('pbt:train_species', '"cat"');
-    const user = userEvent.setup();
     render(<HomeScreen />);
-    expect(switchGroup()).toBeNull();
-    // The three shipped dogs only: the cat scenario is not in the rotation.
-    expect(counter()).toMatch(/\/3$/);
-    await user.click(screen.getByRole('button', { name: 'Start scenario' }));
-    expect((setScenario.mock.calls[0][0] as Scenario).species).toBeUndefined();
+    expect(screen.getByRole('heading', { level: 2, name: 'Training library' })).toBeInTheDocument();
+    expect(screen.getByText('Pick a ready-made scenario or build your own to practice.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Previous scenario' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Next scenario' })).toBeNull();
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByText(/^\d+\/\d+$/)).toBeNull();
+    expect(screen.queryByText(/Weight \/ obesity denial/)).toBeNull();
+    // The scoring guide stays on the hero.
+    expect(screen.getByRole('button', { name: 'How sessions are scored' })).toBeInTheDocument();
   });
 
-  it('shows Dog | Cat when the library holds both (cats switched on), and limits the rotation to the chosen animal', async () => {
+  it('"Select scenario" opens the dialog; the library choice opens the Training library', async () => {
     flagValues = { 'scenario.cat.enabled': true };
     flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
     const user = userEvent.setup();
     render(<HomeScreen />);
-    const group = switchGroup();
-    expect(group).not.toBeNull();
-    expect(within(group!).getByRole('tab', { name: 'Dog' })).toHaveAttribute('aria-selected', 'true');
-    expect(counter()).toMatch(/\/3$/);
-
-    await user.click(within(group!).getByRole('tab', { name: 'Cat' }));
-    expect(counter()).toBe('1/1');
-    // The animal is obvious on a cat card.
-    expect(screen.getByText('Cat · Maine Coon, Kitten (<1). Driver: Harmonizer.')).toBeInTheDocument();
-    expect(localStorage.getItem('pbt:train_species')).toBe('"cat"');
-
-    await user.click(screen.getByRole('button', { name: 'Start scenario' }));
-    const started = setScenario.mock.calls[0][0] as Scenario;
-    expect(started.species).toBe('cat');
-    expect(started._overrideId).toBe('admin:cat-1');
-
-    await user.click(within(switchGroup()!).getByRole('tab', { name: 'Dog' }));
-    expect(counter()).toMatch(/\/3$/);
+    expect(dialog()).toBeNull();
+    await user.click(selectButton());
+    const d = dialog()!;
+    expect(d).toHaveAttribute('aria-modal', 'true');
+    // Three shipped dogs + the published cat.
+    const library = within(d).getByRole('button', { name: /Choose from the library/ });
+    expect(library).toHaveTextContent('4 scenarios');
+    await user.click(library);
+    expect(go).toHaveBeenCalledWith('scenarioLibrary');
+    expect(setScenario).not.toHaveBeenCalled();
+    expect(logEvent).toHaveBeenCalledWith(expect.objectContaining({ target: 'select_scenario_library' }));
   });
 
-  it('draws pet icons (no emoji) on the Dog | Cat switch', () => {
-    flagValues = { 'scenario.cat.enabled': true };
-    flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
-    render(<HomeScreen />);
-    for (const name of ['Dog', 'Cat']) {
-      const tab = within(switchGroup()!).getByRole('tab', { name });
-      expect(tab.querySelector('svg')).not.toBeNull();
-      expect(tab).toHaveTextContent(new RegExp(`^${name}$`));
-    }
-  });
-
-  it("names the pick's category above its title", async () => {
-    flagValues = { 'scenario.cat.enabled': true };
-    flagSnapshot = { flags: {}, scenarioOverrides: [ADMIN_CAT], fetchedAt: 0 };
+  it('"Build your own" opens the builder', async () => {
     const user = userEvent.setup();
     render(<HomeScreen />);
-    await user.click(within(switchGroup()!).getByRole('tab', { name: 'Cat' }));
-    // The cat pick is a cost scenario → the built-in "Everyday nutrition".
-    const title = screen.getByRole('heading', { level: 2, name: /Cost/ });
-    expect(title.previousElementSibling).toHaveTextContent('Everyday nutrition');
+    await user.click(selectButton());
+    await user.click(within(dialog()!).getByRole('button', { name: /Build your own/ }));
+    expect(go).toHaveBeenCalledWith('create');
+    expect(logEvent).toHaveBeenCalledWith(expect.objectContaining({ target: 'select_scenario_build' }));
+  });
+
+  it('with the builder switched off, the dialog offers the library only', async () => {
+    flagValues = { 'screen.create.enabled': false };
+    const user = userEvent.setup();
+    render(<HomeScreen />);
+    await user.click(selectButton());
+    expect(within(dialog()!).getByRole('button', { name: /Choose from the library/ })).toBeInTheDocument();
+    expect(within(dialog()!).queryByRole('button', { name: /Build your own/ })).toBeNull();
   });
 });
 
 describe('HomeScreen — screens switched off in Admin → Flags', () => {
-  it('shows all three quick actions while every screen is on', () => {
+  it('shows the Pet Analyzer and Fecal Scan tiles — and no "Build a scenario" tile any more', () => {
     render(<HomeScreen />);
-    for (const name of ['Build a scenario', 'Pet Analyzer', 'Fecal Scan']) {
+    for (const name of ['Pet Analyzer', 'Fecal Scan']) {
       expect(screen.getByRole('button', { name })).toBeTruthy();
     }
+    expect(screen.queryByRole('button', { name: 'Build a scenario' })).toBeNull();
   });
 
   it('hides the tile of a switched-off screen instead of leaving a dead link', () => {
-    flagValues = { 'screen.fecalScan.enabled': false, 'screen.analyzer.enabled': false };
+    flagValues = { 'screen.fecalScan.enabled': false };
     render(<HomeScreen />);
-    expect(screen.getByRole('button', { name: 'Build a scenario' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Pet Analyzer' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Pet Analyzer' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Fecal Scan' })).toBeNull();
   });
 
-  it('drops the quick-action row entirely when all three screens are off', () => {
-    flagValues = {
-      'screen.create.enabled': false,
-      'screen.analyzer.enabled': false,
-      'screen.fecalScan.enabled': false,
-    };
+  it('drops the quick-action row entirely when both screens are off', () => {
+    flagValues = { 'screen.analyzer.enabled': false, 'screen.fecalScan.enabled': false };
     render(<HomeScreen />);
-    for (const name of ['Build a scenario', 'Pet Analyzer', 'Fecal Scan']) {
+    for (const name of ['Pet Analyzer', 'Fecal Scan']) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }
+  });
+
+  it('names the clinical card "Clinical resources"', () => {
+    render(<HomeScreen />);
+    expect(screen.getByRole('button', { name: 'Clinical resources' })).toBeInTheDocument();
   });
 });

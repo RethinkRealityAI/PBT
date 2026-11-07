@@ -5,12 +5,20 @@ import { cn } from '../lib/classNames';
 export interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   active?: boolean;
+  /**
+   * `label` (default) — the mono all-caps tag. `text` — sentence case in the
+   * body font, for chips that carry a phrase (an objection's title) and must
+   * stay readable at any length.
+   */
+  tone?: 'label' | 'text';
 }
 
 export function Chip({
   children,
   active = false,
+  tone = 'label',
   className,
+  style,
   type = 'button',
   ...rest
 }: ChipProps) {
@@ -42,14 +50,19 @@ export function Chip({
             ? '0 1px 0 rgba(255,255,255,0.06) inset'
             : '0 1px 0 rgba(255,255,255,0.88) inset, 0 10px 24px -12px rgba(60,20,15,0.07)',
         color: active ? '#fff' : dark ? '#fff' : 'var(--pbt-ink)',
-        fontFamily: 'var(--pbt-font-mono)',
-        fontSize: 11,
-        fontWeight: 600,
-        letterSpacing: '0.10em',
-        textTransform: 'uppercase',
+        ...(tone === 'text'
+          ? { fontSize: 13, fontWeight: 600, letterSpacing: '-0.005em' }
+          : {
+              fontFamily: 'var(--pbt-font-mono)',
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: '0.10em',
+              textTransform: 'uppercase' as const,
+            }),
         cursor: 'pointer',
         transition: 'all 0.2s',
         whiteSpace: 'nowrap',
+        ...style,
       }}
       aria-pressed={active}
       {...rest}

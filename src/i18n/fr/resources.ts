@@ -1,5 +1,5 @@
 /**
- * fr-CA — Bibliothèque / référence clinique.
+ * fr-CA — Ressources / référence clinique.
  *
  * Registre : vouvoiement, ton clinique concis.
  * Décisions de terminologie :
@@ -13,7 +13,7 @@
 import type { resources as en } from '../en/resources';
 
 export const resources: Record<keyof typeof en, string> = {
-  'resources.title': 'Bibliothèque',
+  'resources.title': 'Ressources',
   'resources.headline': 'La référence clinique,\nau rythme de la conversation.',
 
   // ── Évaluation nutritionnelle ─────────────────────────────
