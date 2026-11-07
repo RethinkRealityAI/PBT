@@ -262,6 +262,13 @@ export interface ScenarioOverrideRow {
    * 20261012000000_scenario_objections.sql; absent before it is applied.
    */
   copied_from?: string | null;
+  /**
+   * Archived in the Studio gallery ("put away"): hidden from trainees and out
+   * of the default gallery until restored. Server-managed (op=archive only);
+   * migration 20261107000000_scenario_tags_archive.sql — absent before it.
+   */
+  archived_at?: string | null;
+  archived_by?: string | null;
   deleted_at: string | null;
   created_by: string | null;
   updated_by: string | null;
@@ -295,7 +302,9 @@ export type AuditEntityType =
   | 'knowledge_document'
   | 'report'
   | 'scenario_objection'
-  | 'scenario_objection_category';
+  | 'scenario_objection_category'
+  | 'scenario_tag'
+  | 'echo_quiz';
 
 /**
  * Entity kinds the revert endpoint can actually roll back.

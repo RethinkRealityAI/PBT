@@ -20,6 +20,8 @@ import type {
 } from '../../../src/shared/ai/contract';
 import type { Scenario } from '../../../src/data/scenarios';
 import type { ObjectionWriteRequest } from '../../../src/shared/scenarios/objections';
+import type { ScenarioTagWriteRequest, ScenarioTagsResponse } from '../../../src/shared/scenarios/tags';
+import type { ScenarioOverrideRow } from '../data/types';
 import type { ChatMessage, ScoreReport } from '../../../src/services/types';
 
 /** Ask the Studio assistant for its next turn. */
@@ -96,17 +98,65 @@ export async function simulateScore(args: {
  * Resolves `undefined` when unknown (an older server, a network blip) —
  * callers treat unknown as "don't block".
  */
-export async function fetchScenarioCapabilities(): Promise<{ species?: boolean }> {
+export async function fetchScenarioCapabilities(): Promise<{ species?: boolean; archive?: boolean }> {
   try {
     const res = await apiFetch<unknown>('admin-scenario-overrides', { op: 'capabilities' });
     if (res && typeof res === 'object' && !Array.isArray(res)) {
-      const species = (res as { species?: unknown }).species;
-      return typeof species === 'boolean' ? { species } : {};
+      const { species, archive } = res as { species?: unknown; archive?: unknown };
+      return {
+        ...(typeof species === 'boolean' ? { species } : {}),
+        ...(typeof archive === 'boolean' ? { archive } : {}),
+      };
     }
     return {};
   } catch {
     return {};
   }
+}
+
+// ── Gallery card actions (admin-scenario-overrides) ──────────────────────
+
+/**
+ * Publish / Unpublish from a gallery card: writes ONLY `visible` (a library
+ * scenario stays a sparse override). `baseUpdatedAt` is the row's
+ * `updated_at` the gallery holds (null = no row); a 409 `{ code: 'stale',
+ * current }` means someone saved since. Resolves to the saved row.
+ */
+export function setScenarioVisibility(args: {
+  scenarioId: string;
+  visible: boolean;
+  baseUpdatedAt: string | null;
+}): Promise<ScenarioOverrideRow> {
+  return postJson<ScenarioOverrideRow>('admin-scenario-overrides?op=visibility', {
+    scenario_id: args.scenarioId,
+    visible: args.visible,
+    baseUpdatedAt: args.baseUpdatedAt,
+  });
+}
+
+/** Archive (hidden + out of the gallery) or Restore (back as HIDDEN). Same 409 contract. */
+export function setScenarioArchived(args: {
+  scenarioId: string;
+  archived: boolean;
+  baseUpdatedAt: string | null;
+}): Promise<ScenarioOverrideRow> {
+  return postJson<ScenarioOverrideRow>('admin-scenario-overrides?op=archive', {
+    scenario_id: args.scenarioId,
+    archived: args.archived,
+    baseUpdatedAt: args.baseUpdatedAt,
+  });
+}
+
+// ── Tags (admin-scenario-tags) ───────────────────────────────────────────
+
+/** The team's tags + who carries them. `_notice: 'tags_table_missing'` before the migration. */
+export function fetchScenarioTags(): Promise<ScenarioTagsResponse> {
+  return apiFetch<ScenarioTagsResponse>('admin-scenario-tags');
+}
+
+/** upsert-tag / delete-tag / set-tags. Throws an `ApiError` (409 duplicate / limit / stale, 503, …). */
+export function postScenarioTagOp(body: ScenarioTagWriteRequest): Promise<Record<string, unknown>> {
+  return postJson<Record<string, unknown>>('admin-scenario-tags', body);
 }
 
 // ── Objections (admin-objections) ────────────────────────────────────────

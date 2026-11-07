@@ -273,9 +273,14 @@ export function stepStatus(
         (ctx.wrongSpeciesTitles?.length ?? 0);
       if (issues > 0) return { status: 'attention', detail: 'Some attached documents can’t be used' };
       if (hasText(draft.focus_area) || (draft.knowledge_slugs?.length ?? 0) > 0) return { status: 'done' };
+      // No choice of its own = the recommended one (the category's knowledge,
+      // or the whole library when the category has none). Going Next on the
+      // step means "use that", so it is an answer — done, not "optional".
+      // Nothing is copied into the draft: inheritance keeps following later
+      // edits to the category.
       return ctx.categoryKnowledge
-        ? { status: 'optional', detail: `Using the ${ctx.categoryKnowledge.name} knowledge` }
-        : { status: 'optional', detail: 'Using the whole knowledge library' };
+        ? { status: 'done', detail: `Using the ${ctx.categoryKnowledge.name} knowledge (recommended)` }
+        : { status: 'done', detail: 'Using the whole knowledge library' };
     }
     case 'brief':
       if (hasText(draft.prompt_prefix) || hasText(draft.prompt_suffix)) {
@@ -454,6 +459,21 @@ function speciesOfDraft(draft: StudioDraft): ScenarioSpecies {
 
 export function canPublish(items: readonly ReadinessItem[]): boolean {
   return items.every((i) => i.ok || i.level !== 'required');
+}
+
+/**
+ * Publishing from a gallery card: the SAME checklist the editor's Publish
+ * step runs (`readiness`), split into what blocks and what only warns. The
+ * "test-driven this version" row is left out — a card can't know whether this
+ * admin test-drove it, and it never blocks anyway.
+ */
+export function cardPublishCheck(
+  draft: StudioDraft,
+  ctx: StudioContext,
+): { blockers: ReadinessItem[]; warnings: ReadinessItem[]; ok: boolean } {
+  const items = readiness(draft, ctx).filter((i) => i.key !== 'tested');
+  const blockers = items.filter((i) => !i.ok && i.level === 'required');
+  return { blockers, warnings: items.filter((i) => !i.ok && i.level === 'recommended'), ok: canPublish(items) };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1181,6 +1201,12 @@ export interface StudioEntry {
   status: EntryStatus;
   /** Last edit (ms), or null for a built-in nobody has touched. */
   editedAt: number | null;
+  /**
+   * Put away in the gallery's Archived view (`scenario_overrides.archived_at`):
+   * hidden from trainees and out of every other gallery view until restored.
+   * Never true for a trainee's own scenario.
+   */
+  archived: boolean;
 }
 
 function timeOf(iso: string | null | undefined): number | null {
@@ -1216,6 +1242,7 @@ export function buildStudioEntries(
       draft,
       status: draft.visible === false ? 'hidden' : 'live',
       editedAt: timeOf(o?.updated_at),
+      archived: Boolean(o?.archived_at),
     });
   }
 
@@ -1232,6 +1259,7 @@ export function buildStudioEntries(
       draft,
       status: o.visible ? 'live' : 'draft',
       editedAt: timeOf(o.updated_at),
+      archived: Boolean(o.archived_at),
     });
   }
 
@@ -1249,6 +1277,7 @@ export function buildStudioEntries(
       draft,
       status: 'trainee',
       editedAt: timeOf(o?.updated_at) ?? timeOf(s.updated_at) ?? timeOf(s.created_at),
+      archived: false,
     });
   }
   return out;
@@ -1260,9 +1289,15 @@ export function entryBase(entry: Pick<StudioEntry, 'id' | 'source' | 'manifest'>
   return buildBaseLayer({ id: entry.id, source: 'library', override: null }, entry.manifest, null);
 }
 
-export type GalleryFilter = 'all' | 'live' | 'drafts' | 'builtin' | 'trainee';
+/**
+ * The status view. `archived` is set apart from the rest on screen
+ * ("Archived (n)" at the end of the row): every other view leaves archived
+ * scenarios out, and the Archived view shows nothing else.
+ */
+export type GalleryFilter = 'all' | 'live' | 'drafts' | 'builtin' | 'trainee' | 'archived';
 
-export const GALLERY_FILTERS: Array<{ key: GalleryFilter; label: string }> = [
+/** The status views shown as one segmented control (Archived sits apart). */
+export const GALLERY_FILTERS: Array<{ key: Exclude<GalleryFilter, 'archived'>; label: string }> = [
   { key: 'all', label: 'All' },
   { key: 'live', label: 'Live' },
   { key: 'drafts', label: 'Drafts' },
@@ -1271,6 +1306,8 @@ export const GALLERY_FILTERS: Array<{ key: GalleryFilter; label: string }> = [
 ];
 
 export function matchesGalleryFilter(entry: StudioEntry, filter: GalleryFilter): boolean {
+  if (filter === 'archived') return entry.archived === true;
+  if (entry.archived) return false;
   switch (filter) {
     case 'all':
       return true;
@@ -1347,12 +1384,49 @@ export interface GallerySelection {
   /** A category id, NO_CATEGORY, or ALL_CATEGORIES (the default). */
   category?: string;
   objection: string;
+  /** Tag ids — any-of (a scenario carrying ANY of them matches). Empty = no tag filter. */
+  tags?: readonly string[];
+}
+
+/** What the gallery knows about tags: the library and who carries what. */
+export interface GalleryTagIndex {
+  tags: ReadonlyArray<{ id: string; name: string; color: string }>;
+  /** Scenario id → the ids of the (live) tags it carries. */
+  byScenario: ReadonlyMap<string, readonly string[]>;
+}
+
+export const NO_TAGS: GalleryTagIndex = { tags: [], byScenario: new Map() };
+
+/** The tags a scenario carries, in library (A→Z) order. Never any for a trainee's own. */
+export function entryTags(
+  entry: Pick<StudioEntry, 'id' | 'source'>,
+  index: GalleryTagIndex = NO_TAGS,
+): Array<{ id: string; name: string; color: string }> {
+  if (entry.source === 'user') return [];
+  const ids = index.byScenario.get(entry.id);
+  if (!ids || ids.length === 0) return [];
+  const set = new Set(ids);
+  return index.tags.filter((t) => set.has(t.id));
+}
+
+export function matchesTagFilter(
+  entry: StudioEntry,
+  tags: readonly string[] | undefined,
+  index: GalleryTagIndex = NO_TAGS,
+): boolean {
+  if (!tags || tags.length === 0) return true;
+  if (entry.source === 'user') return false;
+  const carried = index.byScenario.get(entry.id) ?? [];
+  return tags.some((t) => carried.includes(t));
 }
 
 export interface GalleryFacets {
-  /** Entries matching the search and all three filters, in gallery order. */
+  /** Entries matching the search and every filter, in gallery order. */
   shown: StudioEntry[];
-  /** Per option: how many would show with that option and the other filters as they are. */
+  /**
+   * Per option: how many would show with that option and the other filters
+   * as they are. `archived` is the "Archived (n)" count.
+   */
   status: Record<GalleryFilter, number>;
   animal: Record<AnimalFilter, number>;
   /**
@@ -1372,6 +1446,16 @@ export interface GalleryFacets {
   objections: Array<{ id: string; label: string; count: number }>;
   /** How many scenarios the objection filter's "All" would show. */
   objectionTotal: number;
+  /**
+   * Every live tag, with how many listed scenarios carry it (search, status,
+   * animal, category and objection applied — not the tag filter itself),
+   * A→Z. Empty when the library has no tags.
+   */
+  tags: Array<{ id: string; label: string; color: string; count: number }>;
+  /** The animal's scenarios in the default view (no search, no other filter) — "of 40". */
+  scopeTotal: number;
+  /** Something beyond the animal narrows the list (search or a filter) — show the summary. */
+  narrowed: boolean;
 }
 
 /**
@@ -1387,30 +1471,39 @@ export function galleryFacets(
   team: readonly GalleryObjectionRef[] = [],
   /** Every category (built-ins included), for names and order. */
   categoryList: readonly Pick<ObjectionCategory, 'id' | 'name'>[] = [],
+  /** The team's tags and who carries them (absent = no tags yet / not loaded). */
+  tagIndex: GalleryTagIndex = NO_TAGS,
 ): GalleryFacets {
   const selCategory = sel.category ?? ALL_CATEGORIES;
-  const searched = sortForGallery(entries.filter((e) => matchesGalleryQuery(e, query, team, categoryList)));
+  const selTags = sel.tags ?? [];
+  const searched = sortForGallery(entries.filter((e) => matchesGalleryQuery(e, query, team, categoryList, tagIndex)));
   const byStatus = (e: StudioEntry) => matchesGalleryFilter(e, sel.status);
   const byAnimal = (e: StudioEntry) => matchesAnimalFilter(e, sel.animal);
   const byCategory = (e: StudioEntry) => matchesCategoryFilter(e, selCategory, team);
   const byObjection = (e: StudioEntry) => matchesObjectionFilter(e, sel.objection);
+  const byTags = (e: StudioEntry) => matchesTagFilter(e, selTags, tagIndex);
 
   const status = {} as Record<GalleryFilter, number>;
-  for (const f of GALLERY_FILTERS) {
-    status[f.key] = searched.filter(
-      (e) => matchesGalleryFilter(e, f.key) && byAnimal(e) && byCategory(e) && byObjection(e),
+  for (const key of [...GALLERY_FILTERS.map((f) => f.key), 'archived' as const]) {
+    status[key] = searched.filter(
+      (e) => matchesGalleryFilter(e, key) && byAnimal(e) && byCategory(e) && byObjection(e) && byTags(e),
     ).length;
   }
   const animal = {} as Record<AnimalFilter, number>;
   for (const f of ANIMAL_FILTERS) {
     animal[f.key] = searched.filter(
-      (e) => matchesAnimalFilter(e, f.key) && byStatus(e) && byCategory(e) && byObjection(e),
+      (e) => matchesAnimalFilter(e, f.key) && byStatus(e) && byCategory(e) && byObjection(e) && byTags(e),
     ).length;
   }
+  // Every option list below is computed for the chosen animal and status.
+  // Category options ignore the category filter; objection options follow
+  // it; both follow the tag filter. Tag options follow everything but the
+  // tag filter itself.
   const base = searched.filter((e) => byStatus(e) && byAnimal(e));
+  const baseTagged = base.filter(byTags);
 
   const catCounts = new Map<string, number>();
-  for (const e of base) {
+  for (const e of baseTagged) {
     const id = entryCategoryId(e, team);
     catCounts.set(id, (catCounts.get(id) ?? 0) + 1);
   }
@@ -1425,7 +1518,7 @@ export function galleryFacets(
     }))
     .sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label));
 
-  const pool = base.filter(byCategory);
+  const pool = baseTagged.filter(byCategory);
   const counts = new Map<string, number>();
   for (const e of pool) {
     const id = e.draft.pushback_id;
@@ -1436,14 +1529,36 @@ export function galleryFacets(
     .map(([id, count]) => ({ id, label: objectionFilterLabel(id, team), count }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
+  const tagPool = base.filter((e) => byCategory(e) && byObjection(e));
+  const tags = tagIndex.tags.map((t) => ({
+    id: t.id,
+    label: t.name,
+    color: t.color,
+    count: tagPool.filter((e) => matchesTagFilter(e, [t.id], tagIndex)).length,
+  }));
+
+  // "of N": the animal's scenarios in use — or, in the Archived view, archived.
+  const scopeTotal = entries.filter(
+    (e) => matchesGalleryFilter(e, sel.status === 'archived' ? 'archived' : 'all') && byAnimal(e),
+  ).length;
+  const narrowed =
+    query.trim() !== '' ||
+    sel.status !== 'all' ||
+    selCategory !== ALL_CATEGORIES ||
+    sel.objection !== ALL_OBJECTIONS ||
+    selTags.length > 0;
+
   return {
     shown: pool.filter(byObjection),
     status,
     animal,
     categories,
-    categoryTotal: base.length,
+    categoryTotal: baseTagged.length,
     objections,
     objectionTotal: pool.length,
+    tags,
+    scopeTotal,
+    narrowed,
   };
 }
 
@@ -1472,10 +1587,11 @@ function objectionFilterLabel(id: string, team: readonly ObjectionRef[]): string
 
 /** What a gallery card says about a scenario's standing with trainees. */
 export function entryStatusText(
-  entry: Pick<StudioEntry, 'status'>,
+  entry: Pick<StudioEntry, 'status'> & { archived?: boolean },
   /** For a trainee's scenario: its saved library copies (see `libraryCopiesByTrainee`). */
   libraryCopies: readonly StudioEntry[] = [],
 ): { tone: 'success' | 'neutral' | 'warn' | 'info'; text: string } {
+  if (entry.archived) return { tone: 'neutral', text: 'Archived — hidden from trainees' };
   switch (entry.status) {
     case 'live':
       return { tone: 'success', text: 'Live in the app' };
@@ -1491,20 +1607,28 @@ export function entryStatusText(
   }
 }
 
-/** Free-text search over what the card shows (and the id, for support). */
+/**
+ * Free-text search over what the card shows — title (the card title when
+ * set), objection, category, persona, breed, tags — and the id, for support.
+ */
 export function matchesGalleryQuery(
   entry: StudioEntry,
   query: string,
   team: readonly GalleryObjectionRef[] = [],
   categoryList: readonly Pick<ObjectionCategory, 'id' | 'name'>[] = [],
+  tagIndex: GalleryTagIndex = NO_TAGS,
 ): boolean {
-  const q = query.trim().toLowerCase();
+  const q = query.trim().toLowerCase().replace(/\s+/g, ' ');
   if (!q) return true;
   const d = entry.draft;
   const haystack = [
     entry.title,
+    d.card_title_override ?? '',
+    d.title_override ?? '',
     entry.id,
     scenarioSummary(d),
+    d.persona_override ?? '',
+    ...entryTags(entry, tagIndex).map((t) => t.name),
     d.pushback_id ? objectionLabel(d.pushback_id, team) : '',
     entryCategoryName(entry, team, categoryList) ?? '',
     speciesOf(d.species),

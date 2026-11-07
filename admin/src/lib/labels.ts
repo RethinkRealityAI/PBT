@@ -236,6 +236,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   report: 'Problem report',
   scenario_objection: 'Scenario objection',
   scenario_objection_category: 'Objection category',
+  scenario_tag: 'Scenario tag',
   echo_quiz: 'ECHO quiz review',
 };
 

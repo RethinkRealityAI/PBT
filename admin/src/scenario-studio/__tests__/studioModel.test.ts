@@ -19,6 +19,9 @@ import {
   entryStatusText,
   firstStepNeeding,
   galleryFacets,
+  cardPublishCheck,
+  entryTags,
+  matchesTagFilter,
   libraryCopiesByTrainee,
   REQUIRED_ADMIN_FIELDS,
   STUDIO_STEPS,
@@ -98,6 +101,8 @@ const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id
   focus_area: 'editable',
   knowledge_slugs: 'editable',
   deleted_at: 'server',
+  archived_at: 'server',
+  archived_by: 'server',
   created_by: 'server',
   updated_by: 'server',
   updated_at: 'server',
@@ -207,9 +212,13 @@ describe('stepStatus', () => {
     ).toBe('done');
   });
 
-  it('marks the optional steps optional until they are used', () => {
-    expect(stepStatus('knowledge', {}, ctx()).status).toBe('optional');
-    expect(stepStatus('knowledge', { focus_area: 'weight' }, ctx()).status).toBe('done');
+  it('counts the recommended knowledge as an answer (done), and own knowledge too', () => {
+    expect(stepStatus('knowledge', {}, ctx())).toEqual({ status: 'done', detail: 'Using the whole knowledge library' });
+    expect(stepStatus('knowledge', { focus_area: 'weight' }, ctx())).toEqual({ status: 'done' });
+    expect(stepStatus('knowledge', { knowledge_slugs: ['a'] }, ctx())).toEqual({ status: 'done' });
+  });
+
+  it('marks the optional brief optional until it is used', () => {
     expect(stepStatus('brief', {}, ctx()).status).toBe('optional');
     expect(stepStatus('brief', { prompt_suffix: 'Never agree first.' }, ctx()).status).toBe('done');
   });
@@ -1043,7 +1052,7 @@ describe('category knowledge in the context', () => {
       categories: CATEGORIES,
     });
     expect(c.categoryKnowledge).toEqual({ id: 'category:probiotics', name: 'Probiotics' });
-    expect(stepStatus('knowledge', draft, c)).toEqual({ status: 'optional', detail: 'Using the Probiotics knowledge' });
+    expect(stepStatus('knowledge', draft, c)).toEqual({ status: 'done', detail: 'Using the Probiotics knowledge (recommended)' });
     // Its own choice wins.
     expect(stepStatus('knowledge', { ...draft, focus_area: 'weight' }, c)).toEqual({ status: 'done' });
     // A category with nothing attached: the whole library.
@@ -1057,6 +1066,83 @@ describe('category knowledge in the context', () => {
       categories: CATEGORIES,
     });
     expect(c2.categoryKnowledge ?? null).toBeNull();
-    expect(stepStatus('knowledge', bored, c2)).toEqual({ status: 'optional', detail: 'Using the whole knowledge library' });
+    expect(stepStatus('knowledge', bored, c2)).toEqual({ status: 'done', detail: 'Using the whole knowledge library' });
+  });
+});
+
+describe('galleryFacets — archive, tags, search, summary', () => {
+  const entries = buildStudioEntries(
+    [
+      row({ scenario_id: 'admin:live', species: 'dog', breed: 'Lab', pushback_id: 'cost', visible: true, persona_override: 'Skeptical' }),
+      row({ scenario_id: 'admin:put-away', species: 'dog', breed: 'Pug', pushback_id: 'cost', archived_at: '2026-11-01T00:00:00Z' }),
+      row({ scenario_id: 'admin:cat', species: 'cat', breed: 'Persian', pushback_id: 'rx-diet' }),
+    ],
+    [trainee({ species: 'dog', pushback_id: 'cost' })],
+  );
+  const dogs = { status: 'all' as const, animal: 'dog' as const, objection: ALL_OBJECTIONS };
+  const tagIndex = {
+    tags: [
+      { id: 't1', name: 'Q1 rollout', color: 'blue' },
+      { id: 't2', name: 'Workshop', color: 'green' },
+    ],
+    byScenario: new Map<string, string[]>([
+      ['admin:live', ['t1']],
+      ['admin:put-away', ['t2']],
+      ['seed:1', ['t2']],
+      ['user:u1', ['t1']],
+    ]),
+  };
+
+  it('archived scenarios leave every view but Archived, which has nothing else', () => {
+    const all = galleryFacets(entries, dogs, '', [], [], tagIndex);
+    expect(all.shown.map((e) => e.id)).not.toContain('admin:put-away');
+    expect(all.status.archived).toBe(1);
+    expect(all.status.drafts).toBe(0);
+    const archived = galleryFacets(entries, { ...dogs, status: 'archived' }, '', [], [], tagIndex);
+    expect(archived.shown.map((e) => e.id)).toEqual(['admin:put-away']);
+    expect(archived.scopeTotal).toBe(1);
+    const entry = archived.shown[0];
+    expect(entry.archived).toBe(true);
+    expect(entryStatusText(entry)).toEqual({ tone: 'neutral', text: 'Archived — hidden from trainees' });
+  });
+
+  it('filters by tags (any of), never matches a trainee’s own, and counts each tag', () => {
+    const f = galleryFacets(entries, { ...dogs, tags: ['t1', 't2'] }, '', [], [], tagIndex);
+    expect(f.shown.map((e) => e.id).sort()).toEqual(['admin:live', 'seed:1']);
+    const none = galleryFacets(entries, dogs, '', [], [], tagIndex);
+    expect(none.tags).toEqual([
+      { id: 't1', label: 'Q1 rollout', color: 'blue', count: 1 },
+      { id: 't2', label: 'Workshop', color: 'green', count: 1 },
+    ]);
+    expect(entryTags(entries.find((e) => e.id === 'user:u1')!, tagIndex)).toEqual([]);
+    expect(matchesTagFilter(entries.find((e) => e.id === 'user:u1')!, ['t1'], tagIndex)).toBe(false);
+  });
+
+  it('searches tag names and personas', () => {
+    expect(galleryFacets(entries, dogs, 'workshop', [], [], tagIndex).shown.map((e) => e.id)).toEqual(['seed:1']);
+    expect(galleryFacets(entries, dogs, 'skeptical', [], [], tagIndex).shown.map((e) => e.id)).toContain('admin:live');
+  });
+
+  it('says when something beyond the animal narrows the list, and out of how many', () => {
+    const plain = galleryFacets(entries, dogs, '', [], [], tagIndex);
+    expect(plain.narrowed).toBe(false);
+    expect(plain.scopeTotal).toBe(5); // 3 built-ins + admin:live + the trainee's
+    expect(galleryFacets(entries, { ...dogs, status: 'live' }, '', [], [], tagIndex).narrowed).toBe(true);
+    expect(galleryFacets(entries, dogs, 'lab', [], [], tagIndex).narrowed).toBe(true);
+    expect(galleryFacets(entries, { ...dogs, tags: ['t1'] }, '', [], [], tagIndex).narrowed).toBe(true);
+  });
+});
+
+describe('cardPublishCheck — the editor’s readiness, from a card', () => {
+  it('splits the shared checklist into blockers and warnings, leaving out the test-drive row', () => {
+    const draft = { scenario_id: 'admin:x', breed: 'Lab', life_stage: 'Adult (3-7)', pushback_id: 'cost' };
+    const check = cardPublishCheck(draft, ctx({ tested: false }));
+    expect(check.ok).toBe(false);
+    expect(check.blockers.map((b) => b.key)).toEqual(['core']);
+    expect(check.warnings.map((w) => w.key)).not.toContain('tested');
+    const ready = cardPublishCheck({ ...draft, suggested_driver: 'Analyzer' }, ctx({ tested: false }));
+    expect(ready).toMatchObject({ ok: true, blockers: [] });
+    // The same verdict as the editor's Publish step.
+    expect(ready.ok).toBe(canPublish(readiness({ ...draft, suggested_driver: 'Analyzer' }, ctx())));
   });
 });
