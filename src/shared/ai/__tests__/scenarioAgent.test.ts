@@ -10,6 +10,7 @@ import {
   AGENT_LIMITS,
   ASK_FIELDS,
   OFFER_FIELDS,
+  RETIRED_CARD_FIELDS,
   STUDIO_STEP_KEYS,
   STUDIO_STEP_LABELS,
   applyAgentAction,
@@ -157,8 +158,8 @@ describe('enum normalisers', () => {
     expect(normalizeFieldValue('opening_line_override', 'y'.repeat(900))).toHaveLength(
       SCENARIO_PROSE_CAPS.openingLine,
     );
-    expect(normalizeFieldValue('start_button_label', 'z'.repeat(90))).toHaveLength(
-      SCENARIO_LIMITS.startButtonMax,
+    expect(normalizeFieldValue('card_subtitle_override', 'z'.repeat(400))).toHaveLength(
+      SCENARIO_LIMITS.cardSubtitleMax,
     );
     expect(normalizeFieldValue('prompt_prefix', 'p'.repeat(2000))).toHaveLength(SCENARIO_LIMITS.promptMax);
     // Line breaks survive (a backstory can be two paragraphs); CRLF is folded.
@@ -219,6 +220,32 @@ describe('normalizeAgentActions — shape', () => {
 });
 
 describe('normalizeAgentActions — update_fields', () => {
+  it('drops the retired card fields, even from an old persisted card', () => {
+    // A card saved before 2026-11-07 may still propose a start button or the
+    // "More info" panel; re-normalising it on confirm keeps the rest.
+    const a = one({
+      tool: 'update_fields',
+      fields: {
+        card_title_override: 'The price talk',
+        start_button_label: 'Go',
+        info_modal_title: 'About',
+        info_modal_body: 'What to know.',
+      },
+    });
+    expect(a).toEqual({ tool: 'update_fields', fields: { card_title_override: 'The price talk' } });
+    // Only retired fields: nothing left to apply, the card is dropped.
+    expect(
+      norm([{ tool: 'update_fields', fields: { start_button_label: 'Go', info_modal_body: 'x' } }]),
+    ).toEqual([]);
+    for (const f of RETIRED_CARD_FIELDS) {
+      expect(AGENT_FIELDS as readonly string[]).not.toContain(f);
+      expect(OFFER_FIELDS as readonly string[]).not.toContain(f);
+    }
+    expect(pickAgentDraft({ breed: 'Lab', start_button_label: 'Go', info_modal_body: 'x' })).toEqual({
+      breed: 'Lab',
+    });
+  });
+
   it('normalises every enum and drops unknown fields', () => {
     const a = one({
       tool: 'update_fields',

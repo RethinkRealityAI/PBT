@@ -9,47 +9,20 @@
  */
 import { motion } from 'motion/react';
 import { Glass } from '../../design-system/Glass';
-import { Icon } from '../../design-system/Icon';
 import { Chip } from '../../design-system/Chip';
-import { SpeciesIcon } from '../../design-system/SpeciesIcon';
-import { DifficultyMeter, DIFFICULTY_METER_FILL } from '../../design-system/DifficultyMeter';
-import type { Difficulty } from '../../data/scenarios';
-import type { ScenarioSpecies } from '../../shared/scenarios/species';
+import { LibraryScenarioCardBody, type LibraryScenarioCardBodyProps } from './LibraryScenarioCardBody';
 
 /**
- * The card's accent text/marks: the driver colour pulled toward the text
- * colour, so a light driver (Energizer yellow) stays legible on white glass
- * and a dark one stays legible on dark glass.
+ * The tappable card: a Glass button around `LibraryScenarioCardBody` — the
+ * provider-free inside the admin's Studio preview renders too, so the two
+ * cannot drift. The text rules (title vs objection, pet line) are
+ * `libraryCardTitles` / `libraryCardPetLine` in `./libraryCardText`.
  */
-const CARD_ACCENT = DIFFICULTY_METER_FILL;
-
 export function LibraryScenarioCard({
-  title,
-  category,
-  objection,
-  species,
-  pet,
-  owner,
-  difficulty,
-  difficultyLabel,
-  difficultyAria,
   startAria,
   onStart,
-}: {
-  title: string;
-  /** The focus area, as a mono eyebrow (left out inside that area). */
-  category?: string | null;
-  /**
-   * The objection, when a custom card title hides which one this is — in
-   * sentence case: it is a phrase, unreadable in mono capitals.
-   */
-  objection?: string | null;
-  species: ScenarioSpecies;
-  pet: string;
-  owner: string;
-  difficulty: Difficulty;
-  difficultyLabel: string;
-  difficultyAria: string;
+  ...body
+}: LibraryScenarioCardBodyProps & {
   startAria: string;
   onStart: () => void;
 }) {
@@ -76,83 +49,7 @@ export function LibraryScenarioCard({
       }}
     >
       <Glass radius={18} padding={16} style={{ height: '100%' }}>
-        <div className="flex h-full items-center gap-3">
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {category && (
-              <div
-                style={{
-                  fontFamily: 'var(--pbt-font-mono)',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: '0.16em',
-                  textTransform: 'uppercase',
-                  color: CARD_ACCENT,
-                  marginBottom: 6,
-                  lineHeight: 1.4,
-                }}
-              >
-                {category}
-              </div>
-            )}
-            {objection && (
-              <div
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  lineHeight: 1.35,
-                  color: CARD_ACCENT,
-                  marginBottom: 4,
-                }}
-              >
-                {objection}
-              </div>
-            )}
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: 16,
-                lineHeight: 1.3,
-                letterSpacing: '-0.01em',
-                marginBottom: 6,
-              }}
-            >
-              {title}
-            </div>
-            <div
-              className="flex items-center gap-1.5"
-              style={{ fontSize: 13, color: 'var(--pbt-text-muted)', marginBottom: 10 }}
-            >
-              <span aria-hidden style={{ display: 'inline-flex', flexShrink: 0 }}>
-                <SpeciesIcon species={species} size={14} />
-              </span>
-              <span style={{ minWidth: 0 }}>{pet}</span>
-            </div>
-            <div
-              className="flex flex-wrap items-center"
-              style={{ columnGap: 14, rowGap: 6, fontSize: 12.5, color: 'var(--pbt-text-muted)' }}
-            >
-              <span>{owner}</span>
-              <DifficultyMeter level={difficulty} label={difficultyLabel} ariaLabel={difficultyAria} />
-            </div>
-          </div>
-          <span
-            aria-hidden
-            style={{
-              flexShrink: 0,
-              width: 40,
-              height: 40,
-              borderRadius: 9999,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: CARD_ACCENT,
-              background: 'color-mix(in oklab, var(--pbt-driver-primary) 16%, transparent)',
-              border: '1px solid color-mix(in oklab, var(--pbt-driver-primary) 30%, transparent)',
-            }}
-          >
-            <Icon.arrow />
-          </span>
-        </div>
+        <LibraryScenarioCardBody {...body} />
       </Glass>
     </motion.button>
   );

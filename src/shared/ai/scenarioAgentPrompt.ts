@@ -136,7 +136,7 @@ const STEP_SCOPE: Record<StudioStepKey, string> = {
   knowledge: 'which documents or topic the AI customer draws its facts from',
   brief: "optional notes wrapped around the AI customer's standard briefing",
   test: 'a real practice conversation with the AI customer',
-  publish: 'the card trainees see (title, subtitle, button, info text), then publishing',
+  publish: 'the card trainees see in the Training library (its title), then publishing',
 };
 
 /** The legal value (or shape) of each `update_fields` field. */
@@ -153,11 +153,8 @@ const FIELD_SPECS: Record<AgentField, string> = {
   persona_override: 'one value from PERSONAS below',
   difficulty_override: `${oneOf(SCENARIO_LIMITS.difficultyLevels)} (a number) — see DIFFICULTY below`,
   opening_line_override: `text ≤${SCENARIO_PROSE_CAPS.openingLine} chars — the owner's first line`,
-  card_title_override: `text ≤${SCENARIO_LIMITS.cardTitleMax} chars — the title on the trainee's scenario card`,
+  card_title_override: `text ≤${SCENARIO_LIMITS.cardTitleMax} chars — the title on the trainee's Training library card (empty = the objection's name)`,
   card_subtitle_override: `text ≤${SCENARIO_LIMITS.cardSubtitleMax} chars — a one-line teaser under the title`,
-  start_button_label: `text ≤${SCENARIO_LIMITS.startButtonMax} chars — the card's start button`,
-  info_modal_title: `text ≤${SCENARIO_PROSE_CAPS.infoTitle} chars — title of the card's info sheet`,
-  info_modal_body: `text ≤${SCENARIO_LIMITS.infoBodyMax} chars — what trainees read before starting`,
 };
 
 function stepsSection(): string {

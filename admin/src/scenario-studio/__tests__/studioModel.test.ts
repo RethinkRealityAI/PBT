@@ -59,7 +59,7 @@ import {
   type StudioContext,
   type StudioDraft,
 } from '../studioModel';
-import { STUDIO_STEP_KEYS } from '../../../../src/shared/ai/scenarioAgent';
+import { RETIRED_CARD_FIELDS, STUDIO_STEP_KEYS } from '../../../../src/shared/ai/scenarioAgent';
 import { PERSONAS, PUSHBACK_IDS } from '../../../../src/shared/scenarios/enums';
 import { SERVER_MANAGED_COLUMNS } from '../../data/scenarioManifest';
 import type { ScenarioOverrideRow, UserScenario } from '../../data/types';
@@ -70,7 +70,10 @@ import { BUILT_IN_CATEGORIES, type ObjectionCategory } from '../../../../src/sha
  * `keyof ScenarioOverrideRow` is exhaustive at compile time: adding a column
  * to the type without deciding whether the Studio edits it fails `tsc`.
  */
-const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id' | 'provenance'> = {
+const COLUMN_KIND: Record<
+  keyof ScenarioOverrideRow,
+  'editable' | 'retired' | 'server' | 'id' | 'provenance'
+> = {
   scenario_id: 'id',
   // Where an `admin:` copy came from — set once with its first save (Add to
   // library / Duplicate), shown on the trainee's card, never edited in a step.
@@ -87,9 +90,13 @@ const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id
   success_criteria: 'editable',
   card_title_override: 'editable',
   card_subtitle_override: 'editable',
-  info_modal_title: 'editable',
-  info_modal_body: 'editable',
-  start_button_label: 'editable',
+  // Retired — not shown to trainees since 2026-11-07 (the Training library
+  // card has no start button and no "More info" panel). The columns and
+  // their stored values stay and the server still validates them, but no
+  // Studio step edits them and the assistant can't propose them.
+  info_modal_title: 'retired',
+  info_modal_body: 'retired',
+  start_button_label: 'retired',
   card_driver_override: 'editable',
   breed: 'editable',
   life_stage: 'editable',
@@ -110,6 +117,9 @@ const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id
 
 const EDITABLE_COLUMNS = (Object.keys(COLUMN_KIND) as Array<keyof ScenarioOverrideRow>).filter(
   (k) => COLUMN_KIND[k] === 'editable',
+);
+const RETIRED_COLUMNS = (Object.keys(COLUMN_KIND) as Array<keyof ScenarioOverrideRow>).filter(
+  (k) => COLUMN_KIND[k] === 'retired',
 );
 
 const ctx = (over: Partial<StudioContext> = {}): StudioContext => ({
@@ -139,6 +149,18 @@ describe('STUDIO_STEPS', () => {
     const all = STUDIO_STEPS.flatMap((s) => s.fields);
     expect(new Set(all).size).toBe(all.length);
     expect([...all].sort()).toEqual([...EDITABLE_COLUMNS].sort());
+  });
+
+  it('edits none of the retired card columns, and the shared list names exactly them', () => {
+    const all = STUDIO_STEPS.flatMap((s) => s.fields) as string[];
+    for (const col of RETIRED_COLUMNS) expect(all).not.toContain(col);
+    expect([...RETIRED_CARD_FIELDS].sort()).toEqual([...RETIRED_COLUMNS].sort());
+  });
+
+  it('never blocks a save on a retired card column it no longer edits', () => {
+    expect(
+      draftProblems({ ...complete, start_button_label: 'x'.repeat(500), info_modal_body: 'x'.repeat(9000) }),
+    ).toEqual([]);
   });
 
   it('agrees with the server about which columns are the server’s', () => {

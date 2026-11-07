@@ -480,7 +480,10 @@ from `readinessWarnings.ts` that never block: a team objection with no
 hidden concerns, and inherited category documents none of which is filed for
 scoring for the scenario's animal; the Categories tab and the Pushback step
 flag the first one inline with "Add them"). `STUDIO_STEPS` covers every
-editable `scenario_overrides` column exactly once (unit-tested).
+editable `scenario_overrides` column exactly once (unit-tested) — except
+`RETIRED_CARD_FIELDS` (start button, "More info" panel: the Training library
+card shows neither since 2026-11-07; columns kept, never edited or proposed).
+The Publish preview IS the trainee card (`LibraryScenarioCardBody`).
 
 - **Assistant = A2UI orchestration, ported from PhotoBoothAR.** The model
   never writes UI or data: `admin-scenario-agent` returns `{reply,

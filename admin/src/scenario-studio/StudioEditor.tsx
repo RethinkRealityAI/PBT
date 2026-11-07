@@ -1067,6 +1067,7 @@ export function StudioEditor(props: StudioEditorProps) {
             busy={busy === 'save' || busy === 'publish' || busy === 'unpublish' ? busy : null}
             speciesPending={speciesPending}
             fallbackTitle={fallbackTitle}
+            previewDraft={effectiveDraft}
             onPublish={() => void publish()}
             onSaveDraft={() => void persist('save')}
             onUnpublish={() => void persist('unpublish')}

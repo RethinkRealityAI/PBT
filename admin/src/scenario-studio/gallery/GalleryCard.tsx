@@ -1,6 +1,11 @@
 /**
  * One scenario in the Studio gallery.
  *
+ * On top: the card exactly as trainees see it in the Training library
+ * (`CardPreview` compact — title, objection, pet, owner, difficulty), so the
+ * details below only add what the card doesn't say: focus area, tags, the
+ * owner's ECHO driver, status and provenance.
+ *
  * Action row: "Edit" (or "View" for a read-only role) and Publish /
  * Unpublish as labelled buttons — the label says what it does, following
  * the state — then compact icon actions with tooltips: Tags, Duplicate,
@@ -18,18 +23,15 @@ import { Archive, ArchiveRestore, Copy, EyeOff, Pencil, Send, Tag, Tags } from '
 import { Button } from '../../primitives/form';
 import { COLOR } from '../../lib/tokens';
 import { speciesOf } from '../../../../src/shared/scenarios/species';
-import { PetBadge, StatusDot } from '../ui';
+import { StatusDot } from '../ui';
 import { CardPreview } from '../CardPreview';
 import {
   SOURCE_LABELS,
-  difficultyText,
   entryStatusText,
   relativeTime,
-  scenarioSummary,
   type GalleryObjectionRef,
   type StudioEntry,
 } from '../studioModel';
-import { objectionLabel } from '../objections/objectionsModel';
 import { IconAction, TagPill } from './galleryUi';
 import type { CardActionKind } from './CardActionDialog';
 
@@ -74,8 +76,6 @@ const MAX_PILLS = 2;
 export function GalleryCard(props: GalleryCardProps) {
   const { entry, canWrite, copies } = props;
   const status = entryStatusText(entry, copies);
-  const difficulty = difficultyText(entry.draft.difficulty_override);
-  const species = speciesOf(entry.draft.species);
   const trainee = entry.source === 'user';
   const libraryVersion = copies[0] ?? null;
   const openLabel = canWrite ? 'Edit' : 'View';
@@ -107,15 +107,22 @@ export function GalleryCard(props: GalleryCardProps) {
       }}
     >
       <div style={{ position: 'relative', opacity: entry.archived ? 0.72 : 1 }}>
-        <CardPreview draft={{ ...entry.draft, card_title_override: entry.title }} compact />
+        {/* A trainee's own scenario reaches the library only as a copy carrying
+            its title, so its card is shown with that title. */}
+        <CardPreview
+          draft={trainee ? { ...entry.draft, card_title_override: entry.title } : entry.draft}
+          fallbackTitle={entry.title}
+          compact
+        />
         {live && !entry.archived && (
           // Live vs not, scannable at a glance (the status line says it in full).
+          // On the card's top edge: never over its text.
           <span
             aria-hidden
             style={{
               position: 'absolute',
-              left: 10,
-              bottom: 10,
+              left: 12,
+              top: -9,
               display: 'inline-flex',
               alignItems: 'center',
               gap: 5,
@@ -191,19 +198,12 @@ export function GalleryCard(props: GalleryCardProps) {
             )}
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: COLOR.ink, fontWeight: 650, minWidth: 0 }}>
-          <PetBadge species={species} size={22} />
-          <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-            {species === 'cat' ? 'Cat' : 'Dog'} ·{' '}
-            <span style={{ fontWeight: 700 }}>
-              {entry.draft.pushback_id ? objectionLabel(entry.draft.pushback_id, props.objections) : 'No objection yet'}
-            </span>
-          </span>
+        <div style={{ fontSize: 12.5, color: COLOR.inkSoft, overflowWrap: 'anywhere' }}>
+          {speciesOf(entry.draft.species) === 'cat' ? 'Cat' : 'Dog'} ·{' '}
+          {entry.draft.suggested_driver ? `ECHO driver: ${entry.draft.suggested_driver}` : 'No ECHO driver yet'}
         </div>
-        <div style={{ fontSize: 12.5, color: COLOR.inkSoft, overflowWrap: 'anywhere' }}>{scenarioSummary(entry.draft)}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <StatusDot tone={status.tone}>{status.text}</StatusDot>
-          {difficulty && <span style={{ fontSize: 12, color: COLOR.inkMute }}>{difficulty}</span>}
         </div>
         <div style={{ fontSize: 11.5, color: COLOR.inkMute }}>
           {SOURCE_LABELS[entry.source]}

@@ -44,6 +44,7 @@ import { useResolvedLibraryScenarios, type ResolvedScenario } from '../data/useR
 import { useTrainingSpecies } from '../features/scenarios/useTrainingSpecies';
 import { useObjectionCatalog } from '../features/scenarios/useObjectionCatalog';
 import { FilterChip, LibraryScenarioCard } from '../features/scenarios/LibraryScenarioCard';
+import { libraryCardTitles, libraryCardPetLine } from '../features/scenarios/libraryCardText';
 import {
   libraryForAnimal,
   libraryGroupOf,
@@ -314,16 +315,16 @@ export function ScenarioLibraryScreen() {
             >
               {visible.map((item) => {
                 const { scenario, override } = item;
-                const objectionTitle = localizedScenario(scenario, locale).pushback.title;
-                const cardTitle = override?.card_title_override?.trim() || objectionTitle;
+                const { title: cardTitle, objection: eyebrowObjection } = libraryCardTitles(
+                  override?.card_title_override,
+                  localizedScenario(scenario, locale).pushback.title,
+                );
                 // Inside one focus area its name would only repeat the
                 // heading; under "All scenarios" it says where each one lives.
                 const categoryLabel =
                   activeGroup === ALL && !singleGroup
                     ? (categoryById(objectionCategoryId(scenario.pushback.id, teamObjections))?.label ?? null)
                     : null;
-                // The objection, when a custom card title hides which one it is.
-                const eyebrowObjection = cardTitle !== objectionTitle ? objectionTitle : null;
                 const difficultyLabel = localizedDifficultyLabel(scenario.difficulty, locale);
                 return (
                   <div role="listitem" key={item.scenarioId}>
@@ -332,7 +333,7 @@ export function ScenarioLibraryScreen() {
                       category={categoryLabel}
                       objection={eyebrowObjection}
                       species={speciesOf(scenario.species)}
-                      pet={`${scenario.breed} · ${localizedLifeStage(scenario.age, locale, scenario.species)}`}
+                      pet={libraryCardPetLine(scenario.breed, localizedLifeStage(scenario.age, locale, scenario.species))}
                       owner={t('library.card.persona', { persona: localizedPersona(scenario.persona, locale) })}
                       difficulty={scenario.difficulty}
                       difficultyLabel={difficultyLabel}

@@ -19,9 +19,13 @@ export interface ScenarioDraftForAi {
   opening_line_override?: string | null;
   card_title_override?: string | null;
   card_subtitle_override?: string | null;
-  info_modal_body?: string | null;
 }
 
+/**
+ * `info_modal_body` was a wizard field until 2026-11-07: the Training library
+ * card has no "More info" panel, so it is retired (RETIRED_CARD_FIELDS in
+ * `scenarioAgent.ts`) and the server refuses it as an unknown field.
+ */
 export type WizardField =
   | 'breed'
   | 'life_stage'
@@ -34,7 +38,6 @@ export type WizardField =
   | 'context_override'
   | 'card_title_override'
   | 'card_subtitle_override'
-  | 'info_modal_body'
   | 'prompt_prefix'
   | 'prompt_suffix';
 
@@ -50,7 +53,6 @@ export const WIZARD_FIELDS: readonly WizardField[] = [
   'context_override',
   'card_title_override',
   'card_subtitle_override',
-  'info_modal_body',
   'prompt_prefix',
   'prompt_suffix',
 ] as const;
@@ -81,8 +83,6 @@ export const FIELD_DESCRIPTIONS: Record<WizardField, string> = {
     'A short 2-5 word library card title that names this scenario clearly.',
   card_subtitle_override:
     'A short subtitle (under 80 chars) for the library card. Format: "{breed}, {life stage}. Driver: {driver}." or freer phrasing.',
-  info_modal_body:
-    'A 2-3 paragraph plain-text description for the per-scenario info modal: what is the trap, why is this hard, what should the trainee watch for. No markdown.',
   prompt_prefix:
     'A brief admin note (under 1500 chars) inserted at the very top of the customer system prompt. Use to nudge tone, accent, or a clinical specifier without overriding canonical sections.',
   prompt_suffix:
@@ -102,7 +102,6 @@ export const DRAFT_KEYS: readonly (keyof ScenarioDraftForAi)[] = [
   'opening_line_override',
   'card_title_override',
   'card_subtitle_override',
-  'info_modal_body',
 ] as const;
 
 export function describeDraft(draft: ScenarioDraftForAi): string {

@@ -2,15 +2,18 @@
  * Step 7 · Publish — how trainees will see it, whether it's ready, and the
  * switch that puts it in front of them.
  *
- * The card fields only change the Home card (never the AI), so every empty
- * box shows, as its placeholder, exactly what the app will print instead.
+ * The preview is the Training library card trainees tap (the trainee app's
+ * own card body — see CardPreview). The card fields never change the AI.
+ * The card's start button and "More info" panel are retired (2026-11-07):
+ * the library card has neither, so the Studio no longer asks for them — the
+ * stored values are kept, untouched (see RETIRED_CARD_FIELDS).
  * The readiness checklist is the same `readiness()` the header's Publish
  * button consults, with a "Fix it →" jump to the step that fixes each item.
  */
 import type { ReactNode } from 'react';
 import { COLOR, DRIVERS, DRIVER_KEYS, type DriverKey } from '../../lib/tokens';
 import { Button, InlineAlert } from '../../primitives/form';
-import { SCENARIO_LIMITS, SCENARIO_PROSE_CAPS } from '../../../../src/shared/scenarios/limits';
+import { SCENARIO_LIMITS } from '../../../../src/shared/scenarios/limits';
 import { speciesOf } from '../../../../src/shared/scenarios/species';
 import {
   Explainer,
@@ -18,11 +21,10 @@ import {
   Kicker,
   StatusDot,
   StudioSection,
-  TextArea,
   TextInput,
   useFieldId,
 } from '../ui';
-import { CardPreview, cardText } from '../CardPreview';
+import { CardPreview, libraryCardPreview } from '../CardPreview';
 import { STUDIO_STEPS, canPublish, readiness, stepIndex, type ReadinessItem } from '../studioModel';
 import type { StepProps } from '../types';
 import { useObjectionsContext } from '../objections/ObjectionsContext';
@@ -38,6 +40,11 @@ export interface PublishStepProps extends StepProps {
   /** The last save couldn't store the species (the column isn't there yet). */
   speciesPending: boolean;
   fallbackTitle?: string | null;
+  /**
+   * What trainees get: for a library scenario, blank fields inherit the
+   * built-in values (`withBaseFallback`). Defaults to `draft`.
+   */
+  previewDraft?: StepProps['draft'];
   onPublish: () => void;
   onSaveDraft: () => void;
   onUnpublish: () => void;
@@ -60,22 +67,21 @@ export function PublishStep(props: PublishStepProps) {
     speciesPending,
     fallbackTitle,
   } = props;
-  const { objections } = useObjectionsContext();
-  const text = cardText(
-    { ...draft, card_title_override: null, card_subtitle_override: null, start_button_label: null },
-    fallbackTitle,
-    objections,
-  );
+  const previewDraft = props.previewDraft ?? draft;
+  const { objections, categories } = useObjectionsContext();
+  // The title the card prints when the box is empty (the objection's name).
+  const defaultTitle = libraryCardPreview(
+    { ...previewDraft, card_title_override: null },
+    { fallbackTitle, objections, categories },
+  ).title;
+  const ownerDriver = asDriver(previewDraft.suggested_driver);
   const items = readiness(draft, ctx);
   const ready = canPublish(items);
   const requiredOpen = items.filter((i) => !i.ok && i.level === 'required').length;
 
   const titleId = useFieldId();
   const subtitleId = useFieldId();
-  const buttonId = useFieldId();
   const sortId = useFieldId();
-  const infoTitleId = useFieldId();
-  const infoBodyId = useFieldId();
   const L = SCENARIO_LIMITS;
 
   return (
@@ -102,15 +108,16 @@ export function PublishStep(props: PublishStepProps) {
       >
         <div style={{ flex: '0 1 340px', minWidth: 'min(280px, 100%)', display: 'grid', gap: 10 }}>
           <Kicker>What trainees see</Kicker>
-          <CardPreview draft={draft} fallbackTitle={fallbackTitle} />
+          <CardPreview draft={previewDraft} fallbackTitle={fallbackTitle} />
           <div style={{ fontSize: 12, color: COLOR.inkMute, lineHeight: 1.5 }}>
-            Updates as you type. The card changes how the scenario looks on the Home screen — never
-            how the AI owner behaves.
+            Updates as you type. This is the card in the Training library — trainees tap it to
+            start. It never changes how the AI owner behaves. In the app it takes each trainee’s
+            own ECHO colour.
           </div>
         </div>
 
         <div style={{ flex: '1 1 380px', minWidth: 0, display: 'grid', gap: 18 }}>
-          <StudioSection title="The card" hint="Every box is optional — leave one empty and the app fills it in, as shown in grey.">
+          <StudioSection title="The card" hint="Every box is optional — an empty one shows, in grey, what the app prints instead.">
             <FieldBlock
               label="Card title"
               htmlFor={titleId}
@@ -122,7 +129,7 @@ export function PublishStep(props: PublishStepProps) {
                 id={titleId}
                 value={draft.card_title_override ?? ''}
                 maxLength={L.cardTitleMax}
-                placeholder={text.title}
+                placeholder={defaultTitle}
                 disabled={!canWrite}
                 onChange={(e) => patch({ card_title_override: e.target.value })}
               />
@@ -132,40 +139,24 @@ export function PublishStep(props: PublishStepProps) {
               htmlFor={subtitleId}
               optional
               count={{ value: (draft.card_subtitle_override ?? '').length, max: L.cardSubtitleMax }}
-              hint="Empty = the pet and the owner’s driver, as in the preview."
+              hint="Not shown on the Training library card at the moment."
             >
               <TextInput
                 id={subtitleId}
                 value={draft.card_subtitle_override ?? ''}
                 maxLength={L.cardSubtitleMax}
-                placeholder={text.subtitle}
                 disabled={!canWrite}
                 onChange={(e) => patch({ card_subtitle_override: e.target.value })}
               />
             </FieldBlock>
-            <FieldBlock
-              label="Start button"
-              htmlFor={buttonId}
-              optional
-              count={{ value: (draft.start_button_label ?? '').length, max: L.startButtonMax }}
-            >
-              <TextInput
-                id={buttonId}
-                value={draft.start_button_label ?? ''}
-                maxLength={L.startButtonMax}
-                placeholder="Start scenario"
-                disabled={!canWrite}
-                onChange={(e) => patch({ start_button_label: e.target.value })}
-              />
-            </FieldBlock>
             <CardColour
               value={draft.card_driver_override ?? null}
-              ownerDriver={text.driver}
+              ownerDriver={ownerDriver}
               disabled={!canWrite}
               onChange={(v) => patch({ card_driver_override: v })}
             />
             <FieldBlock
-              label="Position on the Home screen"
+              label="Position in the Training library"
               htmlFor={sortId}
               optional
               hint="Lower numbers come first. Leave empty for the usual order."
@@ -189,44 +180,6 @@ export function PublishStep(props: PublishStepProps) {
                       raw === '' || !Number.isFinite(n) ? null : Math.max(-max, Math.min(max, Math.round(n))),
                   });
                 }}
-              />
-            </FieldBlock>
-          </StudioSection>
-
-          <StudioSection
-            title="“More info” panel"
-            optional
-            hint="Shown when a trainee taps ⓘ on the card. Leave it empty and they get the standard “how scoring works” panel."
-          >
-            <FieldBlock
-              label="Panel title"
-              htmlFor={infoTitleId}
-              optional
-              count={{ value: (draft.info_modal_title ?? '').length, max: SCENARIO_PROSE_CAPS.infoTitle }}
-            >
-              <TextInput
-                id={infoTitleId}
-                value={draft.info_modal_title ?? ''}
-                maxLength={SCENARIO_PROSE_CAPS.infoTitle}
-                placeholder={draft.card_title_override?.trim() || text.title}
-                disabled={!canWrite}
-                onChange={(e) => patch({ info_modal_title: e.target.value })}
-              />
-            </FieldBlock>
-            <FieldBlock
-              label="Panel text"
-              htmlFor={infoBodyId}
-              optional
-              count={{ value: (draft.info_modal_body ?? '').length, max: L.infoBodyMax }}
-              hint="Plain text — what to know before starting, what a good outcome looks like."
-            >
-              <TextArea
-                id={infoBodyId}
-                rows={5}
-                value={draft.info_modal_body ?? ''}
-                maxLength={L.infoBodyMax}
-                disabled={!canWrite}
-                onChange={(e) => patch({ info_modal_body: e.target.value })}
               />
             </FieldBlock>
           </StudioSection>
@@ -429,6 +382,12 @@ function FixLink({ onClick, label, children }: { onClick: () => void; label: str
   );
 }
 
+const DRIVER_SET = new Set<string>(DRIVER_KEYS);
+
+function asDriver(v: unknown): DriverKey | null {
+  return typeof v === 'string' && DRIVER_SET.has(v) ? (v as DriverKey) : null;
+}
+
 /** Card colour: follow the owner's driver (default) or pick one. */
 function CardColour({
   value,
@@ -499,7 +458,10 @@ function CardColour({
           );
         })}
       </div>
-      <div style={{ fontSize: 12, color: COLOR.inkMute }}>Only tints the card — it doesn’t change the owner’s personality.</div>
+      <div style={{ fontSize: 12, color: COLOR.inkMute }}>
+        Not used by the Training library card at the moment (it takes each trainee’s own ECHO
+        colour). It never changes the owner’s personality.
+      </div>
     </div>
   );
 }

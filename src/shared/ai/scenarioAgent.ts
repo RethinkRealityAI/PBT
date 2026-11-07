@@ -113,11 +113,21 @@ export interface ScenarioAgentDraft {
   prompt_suffix?: string | null;
   card_title_override?: string | null;
   card_subtitle_override?: string | null;
-  start_button_label?: string | null;
-  info_modal_title?: string | null;
-  info_modal_body?: string | null;
   visible?: boolean | null;
 }
+
+/**
+ * Card columns RETIRED from the Studio on 2026-11-07: the Training library
+ * card (src/features/scenarios/LibraryScenarioCard.tsx) has no start button
+ * and no "More info" panel, so trainees never see these. The columns and
+ * their stored values stay (no migration) and the server still validates
+ * them; the Studio no longer asks for them and the assistant can no longer
+ * propose them — an old persisted card that does is re-normalised on confirm
+ * and these fields are dropped (`normalizeAgentActions` reads AGENT_FIELDS
+ * only).
+ */
+export const RETIRED_CARD_FIELDS = ['start_button_label', 'info_modal_title', 'info_modal_body'] as const;
+export type RetiredCardField = (typeof RETIRED_CARD_FIELDS)[number];
 
 /** Every key of `ScenarioAgentDraft`, for whitelisting request bodies. */
 export const AGENT_DRAFT_KEYS: readonly (keyof ScenarioAgentDraft)[] = [
@@ -139,9 +149,6 @@ export const AGENT_DRAFT_KEYS: readonly (keyof ScenarioAgentDraft)[] = [
   'prompt_suffix',
   'card_title_override',
   'card_subtitle_override',
-  'start_button_label',
-  'info_modal_title',
-  'info_modal_body',
   'visible',
 ];
 
@@ -160,9 +167,6 @@ export const AGENT_FIELDS = [
   'opening_line_override',
   'card_title_override',
   'card_subtitle_override',
-  'start_button_label',
-  'info_modal_title',
-  'info_modal_body',
 ] as const;
 export type AgentField = (typeof AGENT_FIELDS)[number];
 
@@ -205,9 +209,6 @@ export type AgentFieldValues = {
   opening_line_override?: string;
   card_title_override?: string;
   card_subtitle_override?: string;
-  start_button_label?: string;
-  info_modal_title?: string;
-  info_modal_body?: string;
 };
 
 export type KnowledgeMode = 'library' | 'focus' | 'documents';
@@ -294,9 +295,6 @@ export const AGENT_FIELD_LABELS: Record<AgentField | OfferField | 'focus_area' |
   opening_line_override: 'Opening line',
   card_title_override: 'Card title',
   card_subtitle_override: 'Card subtitle',
-  start_button_label: 'Start button',
-  info_modal_title: 'Info title',
-  info_modal_body: 'Info text',
   prompt_prefix: 'Opening notes for the AI',
   prompt_suffix: 'Final reminders for the AI',
   focus_area: 'Focus topic',
@@ -329,9 +327,6 @@ const PROSE_CAPS: Record<string, number> = {
   opening_line_override: SCENARIO_PROSE_CAPS.openingLine,
   card_title_override: SCENARIO_LIMITS.cardTitleMax,
   card_subtitle_override: SCENARIO_LIMITS.cardSubtitleMax,
-  start_button_label: SCENARIO_LIMITS.startButtonMax,
-  info_modal_title: SCENARIO_PROSE_CAPS.infoTitle,
-  info_modal_body: SCENARIO_LIMITS.infoBodyMax,
   prompt_prefix: SCENARIO_LIMITS.promptMax,
   prompt_suffix: SCENARIO_LIMITS.promptMax,
   breed: SCENARIO_LIMITS.breedMax,

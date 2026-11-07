@@ -15,6 +15,7 @@ import {
   type SeedScenarioManifest,
 } from '../data/scenarioManifest';
 import {
+  RETIRED_CARD_FIELDS,
   STUDIO_STEP_KEYS,
   type StudioStepKey,
 } from '../../../src/shared/ai/scenarioAgent';
@@ -54,6 +55,8 @@ import {
 } from './readinessWarnings';
 
 export type { StudioStepKey } from '../../../src/shared/ai/scenarioAgent';
+/** Card columns the Studio no longer edits (kept in the DB) — see the shared definition. */
+export { RETIRED_CARD_FIELDS } from '../../../src/shared/ai/scenarioAgent';
 
 /** The editor's working copy: a (possibly partial) override row. */
 export type StudioDraft = Partial<ScenarioOverrideRow>;
@@ -151,9 +154,8 @@ export const STUDIO_STEPS: StudioStepDef[] = [
       'card_driver_override',
       'card_title_override',
       'card_subtitle_override',
-      'start_button_label',
-      'info_modal_title',
-      'info_modal_body',
+      // Not here on purpose: RETIRED_CARD_FIELDS (start button, "More info"
+      // panel) — the Training library card shows neither since 2026-11-07.
     ],
   },
 ];
@@ -579,8 +581,9 @@ export function draftProblems(draft: StudioDraft): string[] {
   tooLong(draft.breed, L.breedMax, 'Breed');
   tooLong(draft.card_title_override, L.cardTitleMax, 'Card title');
   tooLong(draft.card_subtitle_override, L.cardSubtitleMax, 'Card subtitle');
-  tooLong(draft.start_button_label, L.startButtonMax, 'Start button label');
-  tooLong(draft.info_modal_body, L.infoBodyMax, 'Info text');
+  // The retired card fields (RETIRED_CARD_FIELDS) aren't checked: the Studio
+  // no longer edits them, so a problem there is one the admin couldn't fix.
+  // Their stored values were validated by the server when written.
   tooLong(draft.prompt_prefix, L.promptMax, 'Opening notes');
   tooLong(draft.prompt_suffix, L.promptMax, 'Final reminders');
   tooLong(draft.success_criteria, L.successCriteriaMax, 'What a great answer includes');
@@ -929,6 +932,7 @@ function stripUnrebased(d: StudioDraft): StudioDraft {
  */
 const NOT_AI_RELEVANT: ReadonlySet<string> = new Set<string>([
   ...STUDIO_STEPS.find((s) => s.key === 'publish')!.fields,
+  ...RETIRED_CARD_FIELDS,
   ...SERVER_MANAGED_COLUMNS,
   'scenario_id',
   'copied_from',
