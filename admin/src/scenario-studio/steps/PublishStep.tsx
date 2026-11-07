@@ -4,14 +4,15 @@
  *
  * The preview is the Training library card trainees tap (the trainee app's
  * own card body — see CardPreview). The card fields never change the AI.
- * The card's start button and "More info" panel are retired (2026-11-07):
- * the library card has neither, so the Studio no longer asks for them — the
- * stored values are kept, untouched (see RETIRED_CARD_FIELDS).
+ * The card's start button, "More info" panel, subtitle and colour are retired
+ * (2026-11-07): the library card has none of them (it takes each trainee's
+ * own ECHO colour), so the Studio no longer asks for them — the stored values
+ * are kept, untouched (see RETIRED_CARD_FIELDS).
  * The readiness checklist is the same `readiness()` the header's Publish
  * button consults, with a "Fix it →" jump to the step that fixes each item.
  */
 import type { ReactNode } from 'react';
-import { COLOR, DRIVERS, DRIVER_KEYS, type DriverKey } from '../../lib/tokens';
+import { COLOR } from '../../lib/tokens';
 import { Button, InlineAlert } from '../../primitives/form';
 import { SCENARIO_LIMITS } from '../../../../src/shared/scenarios/limits';
 import { speciesOf } from '../../../../src/shared/scenarios/species';
@@ -74,13 +75,11 @@ export function PublishStep(props: PublishStepProps) {
     { ...previewDraft, card_title_override: null },
     { fallbackTitle, objections, categories },
   ).title;
-  const ownerDriver = asDriver(previewDraft.suggested_driver);
   const items = readiness(draft, ctx);
   const ready = canPublish(items);
   const requiredOpen = items.filter((i) => !i.ok && i.level === 'required').length;
 
   const titleId = useFieldId();
-  const subtitleId = useFieldId();
   const sortId = useFieldId();
   const L = SCENARIO_LIMITS;
 
@@ -134,27 +133,6 @@ export function PublishStep(props: PublishStepProps) {
                 onChange={(e) => patch({ card_title_override: e.target.value })}
               />
             </FieldBlock>
-            <FieldBlock
-              label="Subtitle"
-              htmlFor={subtitleId}
-              optional
-              count={{ value: (draft.card_subtitle_override ?? '').length, max: L.cardSubtitleMax }}
-              hint="Not shown on the Training library card at the moment."
-            >
-              <TextInput
-                id={subtitleId}
-                value={draft.card_subtitle_override ?? ''}
-                maxLength={L.cardSubtitleMax}
-                disabled={!canWrite}
-                onChange={(e) => patch({ card_subtitle_override: e.target.value })}
-              />
-            </FieldBlock>
-            <CardColour
-              value={draft.card_driver_override ?? null}
-              ownerDriver={ownerDriver}
-              disabled={!canWrite}
-              onChange={(v) => patch({ card_driver_override: v })}
-            />
             <FieldBlock
               label="Position in the Training library"
               htmlFor={sortId}
@@ -379,89 +357,5 @@ function FixLink({ onClick, label, children }: { onClick: () => void; label: str
     >
       {children}
     </button>
-  );
-}
-
-const DRIVER_SET = new Set<string>(DRIVER_KEYS);
-
-function asDriver(v: unknown): DriverKey | null {
-  return typeof v === 'string' && DRIVER_SET.has(v) ? (v as DriverKey) : null;
-}
-
-/** Card colour: follow the owner's driver (default) or pick one. */
-function CardColour({
-  value,
-  ownerDriver,
-  disabled,
-  onChange,
-}: {
-  value: DriverKey | null;
-  ownerDriver: DriverKey | null;
-  disabled: boolean;
-  onChange: (v: DriverKey | null) => void;
-}) {
-  const labelId = useFieldId();
-  const options: Array<{ key: DriverKey | null; label: string; color: string }> = [
-    {
-      key: null,
-      label: ownerDriver ? `Match the owner (${ownerDriver})` : 'Match the owner’s driver',
-      color: DRIVERS[ownerDriver ?? 'Activator'].color,
-    },
-    ...DRIVER_KEYS.map((k) => ({ key: k, label: k, color: DRIVERS[k].color })),
-  ];
-  return (
-    <div role="group" aria-labelledby={labelId} style={{ display: 'grid', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span id={labelId} style={{ fontSize: 13, fontWeight: 700, color: COLOR.ink }}>
-          Card colour
-        </span>
-      </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {options.map((o) => {
-          const on = value === o.key;
-          return (
-            <button
-              key={o.key ?? 'match'}
-              type="button"
-              className="pbt-studio-chip"
-              aria-pressed={on}
-              disabled={disabled}
-              onClick={() => onChange(o.key)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '7px 13px 7px 9px',
-                borderRadius: 999,
-                border: `1.5px solid ${on ? o.color : 'rgba(60,20,15,0.10)'}`,
-                background: on ? `color-mix(in oklab, ${o.color} 10%, white)` : 'rgba(255,255,255,0.75)',
-                color: COLOR.ink,
-                fontSize: 12.5,
-                fontWeight: on ? 800 : 650,
-                fontFamily: 'var(--pbt-font)',
-                cursor: disabled ? 'not-allowed' : 'pointer',
-                opacity: disabled ? 0.55 : 1,
-              }}
-            >
-              <span
-                aria-hidden
-                style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: 999,
-                  background: o.color,
-                  boxShadow: on ? `0 0 0 2px white, 0 0 0 3.5px ${o.color}` : 'none',
-                }}
-              />
-              {o.label}
-            </button>
-          );
-        })}
-      </div>
-      <div style={{ fontSize: 12, color: COLOR.inkMute }}>
-        Not used by the Training library card at the moment (it takes each trainee’s own ECHO
-        colour). It never changes the owner’s personality.
-      </div>
-    </div>
   );
 }

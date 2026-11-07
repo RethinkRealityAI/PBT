@@ -154,7 +154,6 @@ const FIELD_SPECS: Record<AgentField, string> = {
   difficulty_override: `${oneOf(SCENARIO_LIMITS.difficultyLevels)} (a number) — see DIFFICULTY below`,
   opening_line_override: `text ≤${SCENARIO_PROSE_CAPS.openingLine} chars — the owner's first line`,
   card_title_override: `text ≤${SCENARIO_LIMITS.cardTitleMax} chars — the title on the trainee's Training library card (empty = the objection's name)`,
-  card_subtitle_override: `text ≤${SCENARIO_LIMITS.cardSubtitleMax} chars — a one-line teaser under the title`,
 };
 
 function stepsSection(): string {

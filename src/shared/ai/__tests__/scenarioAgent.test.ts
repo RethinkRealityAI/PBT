@@ -158,8 +158,8 @@ describe('enum normalisers', () => {
     expect(normalizeFieldValue('opening_line_override', 'y'.repeat(900))).toHaveLength(
       SCENARIO_PROSE_CAPS.openingLine,
     );
-    expect(normalizeFieldValue('card_subtitle_override', 'z'.repeat(400))).toHaveLength(
-      SCENARIO_LIMITS.cardSubtitleMax,
+    expect(normalizeFieldValue('card_title_override', 'z'.repeat(400))).toHaveLength(
+      SCENARIO_LIMITS.cardTitleMax,
     );
     expect(normalizeFieldValue('prompt_prefix', 'p'.repeat(2000))).toHaveLength(SCENARIO_LIMITS.promptMax);
     // Line breaks survive (a backstory can be two paragraphs); CRLF is folded.
@@ -230,6 +230,8 @@ describe('normalizeAgentActions — update_fields', () => {
         start_button_label: 'Go',
         info_modal_title: 'About',
         info_modal_body: 'What to know.',
+        card_subtitle_override: 'A teaser.',
+        card_driver_override: 'Energizer',
       },
     });
     expect(a).toEqual({ tool: 'update_fields', fields: { card_title_override: 'The price talk' } });
@@ -241,7 +243,9 @@ describe('normalizeAgentActions — update_fields', () => {
       expect(AGENT_FIELDS as readonly string[]).not.toContain(f);
       expect(OFFER_FIELDS as readonly string[]).not.toContain(f);
     }
-    expect(pickAgentDraft({ breed: 'Lab', start_button_label: 'Go', info_modal_body: 'x' })).toEqual({
+    expect(
+      pickAgentDraft({ breed: 'Lab', start_button_label: 'Go', info_modal_body: 'x', card_subtitle_override: 'y' }),
+    ).toEqual({
       breed: 'Lab',
     });
   });

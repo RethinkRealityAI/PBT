@@ -89,15 +89,16 @@ const COLUMN_KIND: Record<
   prompt_suffix: 'editable',
   success_criteria: 'editable',
   card_title_override: 'editable',
-  card_subtitle_override: 'editable',
   // Retired — not shown to trainees since 2026-11-07 (the Training library
-  // card has no start button and no "More info" panel). The columns and
-  // their stored values stay and the server still validates them, but no
-  // Studio step edits them and the assistant can't propose them.
+  // card has no start button, no "More info" panel and no subtitle, and takes
+  // each trainee's own ECHO colour). The columns and their stored values stay
+  // and the server still validates them, but no Studio step edits them and
+  // the assistant can't propose them.
+  card_subtitle_override: 'retired',
   info_modal_title: 'retired',
   info_modal_body: 'retired',
   start_button_label: 'retired',
-  card_driver_override: 'editable',
+  card_driver_override: 'retired',
   breed: 'editable',
   life_stage: 'editable',
   pushback_id: 'editable',
@@ -159,7 +160,12 @@ describe('STUDIO_STEPS', () => {
 
   it('never blocks a save on a retired card column it no longer edits', () => {
     expect(
-      draftProblems({ ...complete, start_button_label: 'x'.repeat(500), info_modal_body: 'x'.repeat(9000) }),
+      draftProblems({
+        ...complete,
+        start_button_label: 'x'.repeat(500),
+        info_modal_body: 'x'.repeat(9000),
+        card_subtitle_override: 'x'.repeat(900),
+      }),
     ).toEqual([]);
   });
 

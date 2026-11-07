@@ -151,11 +151,10 @@ export const STUDIO_STEPS: StudioStepDef[] = [
     fields: [
       'visible',
       'sort_order',
-      'card_driver_override',
       'card_title_override',
-      'card_subtitle_override',
       // Not here on purpose: RETIRED_CARD_FIELDS (start button, "More info"
-      // panel) — the Training library card shows neither since 2026-11-07.
+      // panel, subtitle, card colour) — the Training library card shows none
+      // of them since 2026-11-07.
     ],
   },
 ];
@@ -580,7 +579,6 @@ export function draftProblems(draft: StudioDraft): string[] {
 
   tooLong(draft.breed, L.breedMax, 'Breed');
   tooLong(draft.card_title_override, L.cardTitleMax, 'Card title');
-  tooLong(draft.card_subtitle_override, L.cardSubtitleMax, 'Card subtitle');
   // The retired card fields (RETIRED_CARD_FIELDS) aren't checked: the Studio
   // no longer edits them, so a problem there is one the admin couldn't fix.
   // Their stored values were validated by the server when written.
