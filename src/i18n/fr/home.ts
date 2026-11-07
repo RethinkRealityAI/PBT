@@ -47,7 +47,7 @@ export const home: Record<keyof typeof enHome, string> = {
   // ── Carte vedette Bibliothèque d'entraînement ─────────────
   'home.hero.eyebrow': 'Entraînement',
   'home.hero.title': 'Bibliothèque d’entraînement',
-  'home.hero.body': 'Choisissez un scénario clés en main ou créez le vôtre pour pratiquer.',
+  'home.hero.body': 'Choisissez un scénario clés en main ou créez le vôtre pour vous exercer.',
   'home.hero.select': 'Choisir un scénario',
   'home.pick.startHere': 'Commencez ici →',
   'home.pick.scoringAria': 'Comment les séances sont évaluées',
