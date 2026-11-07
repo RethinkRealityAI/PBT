@@ -69,6 +69,12 @@
  *     across the MERGED list. Document slugs that are not a live
  *     `knowledge_documents` row are dropped and named in `_dropped` (the
  *     save still succeeds — a document may have been deleted meanwhile).
+ *     A team category may carry `icon` — a key from CATEGORY_ICON_KEYS
+ *     (src/shared/scenarios/categoryIcons.ts; anything else → 400), `null`
+ *     clears it, leaving it out keeps the stored one; a built-in's icon is
+ *     fixed and never stored. Until 20261107000100_category_icons.sql runs
+ *     the save goes through without it (`_notice: 'icon_column_missing'`)
+ *     and every read retries without the column.
  *   • delete-category: a built-in → 400 (rename it instead); a team category
  *     with any non-deleted objection filed under it → 409 `in_use` with
  *     those objections; else a soft delete. restore-category re-checks the
@@ -90,11 +96,13 @@ import {
   type AdminCtx,
 } from './_shared/admin';
 import {
-  CATEGORY_ADMIN_COLUMNS,
   OBJECTION_ADMIN_COLUMNS,
   OBJECTIONS_MIGRATION,
+  categoryAdminColumns,
   isMissingObjectionsMigration,
   toCategories,
+  withCategoryIconFallback,
+  withoutIconColumn,
 } from './_shared/objectionsStore';
 import { PUSHBACK_LABELS } from '../../src/shared/scenarios/enums';
 import { SCENARIO_WIRE_MAX } from '../../src/shared/scenarios/limits';
@@ -136,6 +144,8 @@ export const MIGRATION_NEEDED_MESSAGE = `Objections need a database update first
 export const DELETED_OBJECTION_MESSAGE =
   'This objection was deleted. Restore it from "Recently deleted" before editing it.';
 export const CATEGORY_GONE_MESSAGE = 'That category no longer exists — pick another.';
+/** `_notice` on a category save that chose an icon the database can't store yet. */
+export const ICON_COLUMN_MISSING = 'icon_column_missing';
 export const RESTORE_CATEGORY_FIRST_MESSAGE =
   'Its category was deleted. Restore the category from "Recently deleted" first, then this objection.';
 export const CATEGORY_DELETED_WHILE_SAVING_MESSAGE =
@@ -416,9 +426,11 @@ function migrationPendingList(): Response {
 async function list(sb: SupabaseClient, includeDeleted: boolean): Promise<Response> {
   let objectionsQuery = sb.from('scenario_objections').select(OBJECTION_ADMIN_COLUMNS);
   if (!includeDeleted) objectionsQuery = objectionsQuery.is('deleted_at', null);
-  let categoriesQuery = sb.from('scenario_objection_categories').select(CATEGORY_ADMIN_COLUMNS);
-  if (!includeDeleted) categoriesQuery = categoriesQuery.is('deleted_at', null);
-  const [objRes, catRes] = await Promise.all([objectionsQuery, categoriesQuery]);
+  const categoriesQuery = () => {
+    const q = sb.from('scenario_objection_categories').select(categoryAdminColumns());
+    return includeDeleted ? q : q.is('deleted_at', null);
+  };
+  const [objRes, catRes] = await Promise.all([objectionsQuery, withCategoryIconFallback(categoriesQuery)]);
   if (isMissingObjectionsMigration(objRes.error) || isMissingObjectionsMigration(catRes.error)) {
     return migrationPendingList();
   }
@@ -781,7 +793,9 @@ function categoryWriteFailure(error: DbError): Response {
 
 /** Every stored category row, deleted included (ids stay taken; Restore needs them). */
 async function readCategoryRows(sb: SupabaseClient): Promise<StoredCategoryRow[] | Response> {
-  const all = await sb.from('scenario_objection_categories').select(CATEGORY_ADMIN_COLUMNS);
+  const all = await withCategoryIconFallback(() =>
+    sb.from('scenario_objection_categories').select(categoryAdminColumns()),
+  );
   if (all.error) return readFailure(all.error);
   return (all.data ?? []) as StoredCategoryRow[];
 }
@@ -889,11 +903,9 @@ async function upsertCategory(ctx: AdminCtx, body: Record<string, unknown>): Pro
   const existing = found && !found.deleted_at ? found : null;
 
   const stale = async (): Promise<Response> => {
-    const cur = await ctx.sb
-      .from('scenario_objection_categories')
-      .select(CATEGORY_ADMIN_COLUMNS)
-      .eq('id', id)
-      .maybeSingle();
+    const cur = await withCategoryIconFallback(() =>
+      ctx.sb.from('scenario_objection_categories').select(categoryAdminColumns()).eq('id', id).maybeSingle(),
+    );
     const row = cur.data as StoredCategoryRow | null;
     const usage = await categoryUsageOf(ctx.sb, id);
     let current: AdminObjectionCategory | null;
@@ -920,20 +932,21 @@ async function upsertCategory(ctx: AdminCtx, body: Record<string, unknown>): Pro
     if (!builtIn && liveTeamCategoryCount(rows) >= CATEGORY_LIMITS.maxTeamCategories) {
       return categoryLimitResponse();
     }
-    const write = found
-      ? // the revived built-in row (see above)
-        ctx.sb
-          .from('scenario_objection_categories')
-          .update({ ...columns, deleted_at: null, updated_by: ctx.user.id })
-          .eq('id', id)
-          .select(CATEGORY_ADMIN_COLUMNS)
-          .single()
-      : ctx.sb
-          .from('scenario_objection_categories')
-          .insert({ id, ...columns, created_by: ctx.user.id, updated_by: ctx.user.id })
-          .select(CATEGORY_ADMIN_COLUMNS)
-          .single();
-    const ins = await write;
+    const write = () =>
+      found
+        ? // the revived built-in row (see above)
+          ctx.sb
+            .from('scenario_objection_categories')
+            .update({ ...withoutIconColumn(columns), deleted_at: null, updated_by: ctx.user.id })
+            .eq('id', id)
+            .select(categoryAdminColumns())
+            .single()
+        : ctx.sb
+            .from('scenario_objection_categories')
+            .insert({ id, ...withoutIconColumn(columns), created_by: ctx.user.id, updated_by: ctx.user.id })
+            .select(categoryAdminColumns())
+            .single();
+    const ins = await withCategoryIconFallback(write);
     if (ins.error) {
       // Two admins editing the same never-edited built-in: whoever lands
       // second is told, like any other concurrent edit.
@@ -948,16 +961,23 @@ async function upsertCategory(ctx: AdminCtx, body: Record<string, unknown>): Pro
       after: ins.data,
     });
     const usage = await categoryUsageOf(ctx.sb, id);
-    return jsonResponse({ category: toAdminCategory(ins.data, usage), _dropped: dropped });
+    return jsonResponse({
+      category: toAdminCategory(ins.data, usage),
+      _dropped: dropped,
+      ...iconNotice(ins.iconDropped, columns),
+    });
   }
 
-  let q = ctx.sb
-    .from('scenario_objection_categories')
-    .update({ ...columns, updated_by: ctx.user.id })
-    .eq('id', id)
-    .is('deleted_at', null);
-  if (checked && existing.updated_at) q = q.eq('updated_at', existing.updated_at);
-  const upd = await q.select(CATEGORY_ADMIN_COLUMNS).maybeSingle();
+  const update = () => {
+    let q = ctx.sb
+      .from('scenario_objection_categories')
+      .update({ ...withoutIconColumn(columns), updated_by: ctx.user.id })
+      .eq('id', id)
+      .is('deleted_at', null);
+    if (checked && existing.updated_at) q = q.eq('updated_at', existing.updated_at);
+    return q.select(categoryAdminColumns()).maybeSingle();
+  };
+  const upd = await withCategoryIconFallback(update);
   if (upd.error) return categoryWriteFailure(upd.error);
   if (!upd.data) return stale();
   await writeAuditLog(ctx, {
@@ -968,15 +988,27 @@ async function upsertCategory(ctx: AdminCtx, body: Record<string, unknown>): Pro
     after: upd.data,
   });
   const usage = await categoryUsageOf(ctx.sb, id);
-  return jsonResponse({ category: toAdminCategory(upd.data, usage), _dropped: dropped });
+  return jsonResponse({
+    category: toAdminCategory(upd.data, usage),
+    _dropped: dropped,
+    ...iconNotice(upd.iconDropped, columns),
+  });
+}
+
+/**
+ * The notice a save answers with when the admin chose an icon but the
+ * database can't store it yet (migration 20261107000100 pending): the
+ * category is saved without it and the Studio says so.
+ */
+function iconNotice(dropped: boolean | undefined, columns: Record<string, unknown>): { _notice?: string } {
+  const wanted = 'icon' in columns && columns.icon != null;
+  return wanted && (dropped || withoutIconColumn(columns) !== columns) ? { _notice: ICON_COLUMN_MISSING } : {};
 }
 
 async function readOneCategory(ctx: AdminCtx, id: string): Promise<{ row: StoredCategoryRow | null } | Response> {
-  const cur = await ctx.sb
-    .from('scenario_objection_categories')
-    .select(CATEGORY_ADMIN_COLUMNS)
-    .eq('id', id)
-    .maybeSingle();
+  const cur = await withCategoryIconFallback(() =>
+    ctx.sb.from('scenario_objection_categories').select(categoryAdminColumns()).eq('id', id).maybeSingle(),
+  );
   if (cur.error) return readFailure(cur.error);
   return { row: (cur.data as StoredCategoryRow | null) ?? null };
 }
@@ -1011,13 +1043,16 @@ async function removeCategory(ctx: AdminCtx, id: string): Promise<Response> {
     );
   }
 
-  const del = await ctx.sb
-    .from('scenario_objection_categories')
-    .update({ deleted_at: new Date().toISOString(), updated_by: ctx.user.id })
-    .eq('id', id)
-    .is('deleted_at', null)
-    .select(CATEGORY_ADMIN_COLUMNS)
-    .maybeSingle();
+  const deletedAt = new Date().toISOString();
+  const del = await withCategoryIconFallback(() =>
+    ctx.sb
+      .from('scenario_objection_categories')
+      .update({ deleted_at: deletedAt, updated_by: ctx.user.id })
+      .eq('id', id)
+      .is('deleted_at', null)
+      .select(categoryAdminColumns())
+      .maybeSingle(),
+  );
   if (del.error) return categoryWriteFailure(del.error);
   // An objection filed under it between the check above and this write
   // (another admin saving at the same moment): undo the delete.
@@ -1071,12 +1106,14 @@ async function restoreCategory(ctx: AdminCtx, id: string): Promise<Response> {
     );
   }
 
-  const res = await ctx.sb
-    .from('scenario_objection_categories')
-    .update({ deleted_at: null, updated_by: ctx.user.id })
-    .eq('id', id)
-    .select(CATEGORY_ADMIN_COLUMNS)
-    .maybeSingle();
+  const res = await withCategoryIconFallback(() =>
+    ctx.sb
+      .from('scenario_objection_categories')
+      .update({ deleted_at: null, updated_by: ctx.user.id })
+      .eq('id', id)
+      .select(categoryAdminColumns())
+      .maybeSingle(),
+  );
   if (res.error) return categoryWriteFailure(res.error);
   if (!res.data) return errorResponse(404, 'Category not found');
   await writeAuditLog(ctx, {

@@ -1,12 +1,12 @@
 /**
- * Library / clinical-reference screen. The accordion content lives inline in
+ * Resources / clinical-reference screen. The accordion content lives inline in
  * `ResourcesScreen.tsx` (it is screen copy, not a data module), so the whole
  * body of the screen is extracted here.
  *
  * Glossary: BCS / MCS / WSAVA / NRC stay untranslated in every locale.
  */
 export const resources = {
-  'resources.title': 'Library',
+  'resources.title': 'Resources',
   'resources.headline': 'Clinical reference,\nat the speed of conversation.',
 
   // ── Nutrition assessment ──────────────────────────────────

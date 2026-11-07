@@ -32,6 +32,23 @@ vi.mock('../../data/queries', () => ({
   duplicateScenario,
 }));
 
+// Gallery card actions + tags: stubbed calls (the real ones are server-tested).
+const galleryApi = vi.hoisted(() => ({
+  capabilities: { species: true, archive: true } as { species?: boolean; archive?: boolean },
+  tags: { tags: [] as unknown[], assignments: [] as unknown[] } as Record<string, unknown>,
+  setScenarioVisibility: vi.fn(),
+  setScenarioArchived: vi.fn(),
+  postScenarioTagOp: vi.fn(),
+}));
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  fetchScenarioCapabilities: async () => galleryApi.capabilities,
+  fetchScenarioTags: async () => galleryApi.tags,
+  setScenarioVisibility: galleryApi.setScenarioVisibility,
+  setScenarioArchived: galleryApi.setScenarioArchived,
+  postScenarioTagOp: galleryApi.postScenarioTagOp,
+}));
+
 // The team's objections: a loaded list, no fetching.
 const objectionsState = vi.hoisted(() => ({
   objections: [] as unknown[],
@@ -184,6 +201,11 @@ function overrideRow(over: Record<string, unknown>) {
 }
 
 const heading = (name: string | RegExp) => screen.findByRole('heading', { level: 2, name });
+/** The composer's "The patient is a" choice (the gallery has its own Dog | Cat). */
+const composerRadio = (name: RegExp) =>
+  within(screen.getByRole('radiogroup', { name: 'The patient is a' })).getByRole('radio', { name });
+/** The gallery's big Dog | Cat switch. */
+const animalRadio = (name: RegExp) => within(screen.getByRole('radiogroup', { name: 'Animal' })).getByRole('radio', { name });
 
 const PROBIOTICS = {
   id: 'team:probiotics-not-needed',
@@ -233,6 +255,11 @@ beforeEach(() => {
   state.overrides = { data: [], loading: false, error: null, refetch: vi.fn() };
   state.userScenarios = { data: [], loading: false, error: null, refetch: vi.fn() };
   state.docs = { data: [], loading: false, error: null, refetch: vi.fn() };
+  galleryApi.capabilities = { species: true, archive: true };
+  galleryApi.tags = { tags: [], assignments: [] };
+  galleryApi.setScenarioVisibility.mockReset();
+  galleryApi.setScenarioArchived.mockReset();
+  galleryApi.postScenarioTagOp.mockReset();
   upsertScenarioOverride.mockClear();
   deleteScenarioOverride.mockClear();
   duplicateScenario.mockClear();
@@ -293,7 +320,7 @@ describe('StudioHome composer', () => {
     fireEvent.change(screen.getByLabelText('Describe the conversation'), {
       target: { value: 'An owner who thinks her cat is fine without the renal diet' },
     });
-    fireEvent.click(screen.getByRole('radio', { name: /Cat/ }));
+    fireEvent.click(composerRadio(/Cat/));
     fireEvent.click(screen.getByRole('button', { name: /Build it with the assistant/ }));
 
     expect(await heading('Who is the patient?')).toBeInTheDocument();
@@ -309,7 +336,7 @@ describe('StudioHome composer', () => {
     expect(screen.getByLabelText('Describe the conversation')).toHaveValue(
       'A busy Lab owner who thinks the weight-loss food is too expensive',
     );
-    expect(screen.getByRole('radio', { name: /Dog/ })).toHaveAttribute('aria-checked', 'true');
+    expect(composerRadio(/Dog/)).toHaveAttribute('aria-checked', 'true');
   });
 
   it('starts step by step without an assistant message', async () => {
@@ -479,6 +506,7 @@ describe('StudioEditor', () => {
   it('never edits a trainee’s own scenario — "Add to library" opens a hidden admin copy', async () => {
     state.userScenarios = { ...state.userScenarios, data: [traineeRow({ species: 'cat', breed: 'Persian' })] };
     renderScreen();
+    fireEvent.click(animalRadio(/^Cat/));
     const card = screen.getByRole('article', { name: 'My tricky client' });
     // The trainee's card has no Edit — only Add to library.
     expect(within(card).queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument();
@@ -566,15 +594,18 @@ describe('StudioEditor', () => {
       ],
     };
     renderScreen();
+    // Dogs first (the remembered animal defaults to dog): the cat scenario isn't listed.
+    expect(animalRadio(/^Dog/)).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByRole('article', { name: PROBIOTICS.title })).not.toBeInTheDocument();
+    fireEvent.click(animalRadio(/^Cat/));
     // Untitled → named by its objection, never by the raw team: id.
     const card = screen.getByRole('article', { name: PROBIOTICS.title });
     expect(within(card).getByText(/Cat ·/)).toBeInTheDocument();
     expect(screen.queryByText(/team:probiotics/)).not.toBeInTheDocument();
-
-    fireEvent.click(within(screen.getByRole('group', { name: 'Animal' })).getByRole('button', { name: /^Cats/ }));
     expect(screen.getAllByRole('article')).toHaveLength(1);
+    // Remembered for this admin.
+    expect(localStorage.getItem('pbt:admin:studio_species')).toContain('cat');
 
-    fireEvent.click(within(screen.getByRole('group', { name: 'Animal' })).getByRole('button', { name: /^All animals/ }));
     const picker = screen.getByLabelText('Objection');
     expect(within(picker).getByRole('option', { name: `${PROBIOTICS.title} (1)` })).toBeInTheDocument();
     fireEvent.change(picker, { target: { value: PROBIOTICS.id } });
@@ -585,15 +616,17 @@ describe('StudioEditor', () => {
 // ── Gallery: an empty filter offers the scenario it was looking for ──
 
 describe('StudioHome empty gallery', () => {
-  const animalChip = (name: RegExp) =>
-    within(screen.getByRole('group', { name: 'Animal' })).getByRole('button', { name });
+  const animalChip = animalRadio;
+  const categoryChip = (name: RegExp) =>
+    within(screen.getByRole('group', { name: 'Category' })).getByRole('button', { name });
 
   it('"Cats 0": create the first cat scenario — the builder starts with the cat', async () => {
     renderScreen();
-    fireEvent.click(animalChip(/^Cats/));
+    fireEvent.click(animalChip(/^Cat/));
     expect(screen.getByText('No cat scenarios yet')).toBeInTheDocument();
-    // "Show all scenarios" stays, as the quiet way back.
-    expect(screen.getByRole('button', { name: 'Show all scenarios' })).toBeInTheDocument();
+    // The way back is the other animal, which has the three built-ins.
+    expect(screen.getByRole('button', { name: 'Show the 3 dog scenarios' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show all scenarios' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Create your first cat scenario' }));
     expect(await heading('Who is the patient?')).toBeInTheDocument();
@@ -603,8 +636,8 @@ describe('StudioHome empty gallery', () => {
 
   it('with a category filter, the Pushback step opens on that category', async () => {
     renderScreen();
-    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'weight' } });
-    fireEvent.click(animalChip(/^Cats/));
+    fireEvent.click(categoryChip(/^Weight management/));
+    fireEvent.click(animalChip(/^Cat/));
     expect(screen.getByText('No cat scenarios in Weight management yet')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Create a cat scenario in Weight management' }));
     await heading('Who is the patient?');
@@ -616,7 +649,7 @@ describe('StudioHome empty gallery', () => {
   it('with an objection filter, the new scenario starts from that objection', async () => {
     renderScreen();
     fireEvent.change(screen.getByLabelText('Objection'), { target: { value: 'cost' } });
-    fireEvent.click(animalChip(/^Cats/));
+    fireEvent.click(animalChip(/^Cat/));
     fireEvent.click(
       screen.getByRole('button', { name: `Add a cat scenario for “${PUSHBACK_LABELS.cost}”` }),
     );
@@ -630,14 +663,14 @@ describe('StudioHome empty gallery', () => {
   it('never offers to create a trainee-built scenario', () => {
     renderScreen();
     fireEvent.click(within(screen.getByRole('group', { name: 'Show' })).getByRole('button', { name: /^From trainees/ }));
-    expect(screen.getByText('No trainee-built scenarios yet')).toBeInTheDocument();
+    expect(screen.getByText('No trainee-built dog scenarios')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Create|^Add a/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show all scenarios' })).toBeInTheDocument();
   });
 
   it('a read-only role sees the words without the create action', () => {
     renderScreen(['scenarios.read']);
-    fireEvent.click(animalChip(/^Cats/));
+    fireEvent.click(animalChip(/^Cat/));
     expect(screen.getByText('No cat scenarios yet')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Create your first cat scenario/ })).not.toBeInTheDocument();
   });
@@ -709,5 +742,242 @@ describe('StudioEditor assistant placement', () => {
     expect(screen.getByTestId('copilot')).toHaveAttribute('data-variant', 'drawer');
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(await screen.findByRole('button', { name: 'Open the assistant' })).toBeInTheDocument();
+  });
+});
+
+// ── Gallery card actions: publish / unpublish / archive / restore / tags ──
+
+describe('StudioHome card actions', () => {
+  const READY = {
+    scenario_id: 'admin:ready',
+    breed: 'Labrador Retriever',
+    life_stage: 'Adult (3-7)',
+    pushback_id: 'cost',
+    suggested_driver: 'Analyzer',
+    card_title_override: 'Ready one',
+    updated_at: '2026-11-01T10:00:00Z',
+  };
+  const card = (name: string) => screen.getByRole('article', { name });
+
+  it('publish: confirms, writes visible with the row’s token, and says so', async () => {
+    state.overrides = { ...state.overrides, data: [overrideRow(READY)] };
+    galleryApi.setScenarioVisibility.mockResolvedValue({ ...overrideRow(READY), visible: true, updated_at: 'T2' });
+    renderScreen();
+    fireEvent.click(within(card('Ready one')).getByRole('button', { name: 'Publish “Ready one”' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Publish “Ready one”?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Publish' }));
+    await waitFor(() =>
+      expect(galleryApi.setScenarioVisibility).toHaveBeenCalledWith({
+        scenarioId: 'admin:ready',
+        visible: true,
+        baseUpdatedAt: '2026-11-01T10:00:00Z',
+      }),
+    );
+    expect(await screen.findByText('“Ready one” is live — trainees can practise it now.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('publish is blocked by the editor’s own readiness checks — offers the builder instead', async () => {
+    state.overrides = {
+      ...state.overrides,
+      data: [overrideRow({ ...READY, suggested_driver: null, card_title_override: 'Half done' })],
+    };
+    renderScreen();
+    fireEvent.click(within(card('Half done')).getByRole('button', { name: 'Publish “Half done”' }));
+    const dialog = await screen.findByRole('dialog', { name: '“Half done” isn’t ready to publish' });
+    expect(within(dialog).getByText(/Missing: ECHO driver/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open in builder' }));
+    expect(await heading('Who is the patient?')).toBeInTheDocument();
+    expect(galleryApi.setScenarioVisibility).not.toHaveBeenCalled();
+  });
+
+  it('publish warns when unsaved work is kept in this browser', async () => {
+    state.overrides = { ...state.overrides, data: [overrideRow(READY)] };
+    localStorage.setItem(
+      LOCAL_DRAFTS_KEY,
+      JSON.stringify({
+        'admin:ready': {
+          draft: { ...READY, breed: 'Golden Retriever' },
+          baseline: JSON.stringify({ ...READY }),
+          step: 'pet',
+          transcript: EMPTY_TRANSCRIPT,
+          tested: false,
+          title: 'Ready one',
+          savedAt: Date.now() - 60 * 1000,
+        },
+      }),
+    );
+    renderScreen();
+    fireEvent.click(within(card('Ready one')).getByRole('button', { name: 'Publish “Ready one”' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Publish “Ready one”?' });
+    expect(within(dialog).getByText(/This publishes the last SAVED version/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Open in builder' })).toBeInTheDocument();
+  });
+
+  it('unpublish: the last live scenario gets the editor’s warning', async () => {
+    // The three built-ins hidden, one live Studio scenario.
+    state.overrides = {
+      ...state.overrides,
+      data: [
+        overrideRow({ ...READY, visible: true }),
+        overrideRow({ scenario_id: 'seed:0', visible: false }),
+        overrideRow({ scenario_id: 'seed:1', visible: false }),
+        overrideRow({ scenario_id: 'seed:2', visible: false }),
+      ],
+    };
+    galleryApi.setScenarioVisibility.mockResolvedValue({ ...overrideRow(READY), visible: false });
+    renderScreen();
+    fireEvent.click(within(card('Ready one')).getByRole('button', { name: 'Unpublish “Ready one”' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Unpublish “Ready one”?' });
+    expect(within(dialog).getByText(/Trainees will no longer see “Ready one”/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/It is the only scenario trainees can see/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Unpublish anyway' }));
+    await waitFor(() =>
+      expect(galleryApi.setScenarioVisibility).toHaveBeenCalledWith(expect.objectContaining({ visible: false })),
+    );
+  });
+
+  it('a 409 stale keeps the dialog open on the latest version and asks again', async () => {
+    state.overrides = { ...state.overrides, data: [overrideRow(READY)] };
+    const { ApiError } = await import('../../lib/api');
+    galleryApi.setScenarioVisibility.mockRejectedValueOnce(
+      new ApiError(409, { code: 'stale', current: { ...overrideRow(READY), updated_at: 'T9' } }),
+    );
+    renderScreen();
+    fireEvent.click(within(card('Ready one')).getByRole('button', { name: 'Publish “Ready one”' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Publish “Ready one”?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Publish' }));
+    expect(await within(dialog).findByText(/Someone else changed this scenario just now/)).toBeInTheDocument();
+    galleryApi.setScenarioVisibility.mockResolvedValueOnce({ ...overrideRow(READY), visible: true });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Publish' }));
+    await waitFor(() =>
+      expect(galleryApi.setScenarioVisibility).toHaveBeenLastCalledWith(expect.objectContaining({ baseUpdatedAt: 'T9' })),
+    );
+  });
+
+  it('archive moves it to Archived; Restore brings it back hidden', async () => {
+    state.overrides = { ...state.overrides, data: [overrideRow(READY)] };
+    galleryApi.setScenarioArchived.mockImplementation(async ({ archived }: { archived: boolean }) => ({
+      ...overrideRow(READY),
+      visible: false,
+      archived_at: archived ? '2026-11-07T10:00:00Z' : null,
+    }));
+    renderScreen();
+    fireEvent.click(within(card('Ready one')).getByRole('button', { name: 'Archive “Ready one”' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Archive “Ready one”?' });
+    expect(within(dialog).getByText(/You can restore it any time/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Archive' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Ready one' })).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /^Archived/ }));
+    expect(screen.getByText(/1 archived scenario/)).toBeInTheDocument();
+    const archived = card('Ready one');
+    expect(within(archived).getByText('Archived — hidden from trainees')).toBeInTheDocument();
+    expect(within(archived).queryByRole('button', { name: /^Publish/ })).not.toBeInTheDocument();
+    fireEvent.click(within(archived).getByRole('button', { name: 'Restore “Ready one”' }));
+    await waitFor(() =>
+      expect(galleryApi.setScenarioArchived).toHaveBeenLastCalledWith(expect.objectContaining({ archived: false })),
+    );
+    expect((await screen.findAllByText(/restored — it’s hidden from trainees until you publish it/)).length).toBeGreaterThan(0);
+  });
+
+  it('archive is disabled, with a reason, until the database can store it', async () => {
+    galleryApi.capabilities = { species: true, archive: false };
+    state.overrides = { ...state.overrides, data: [overrideRow(READY)] };
+    renderScreen();
+    const button = await within(card('Ready one')).findByRole('button', { name: 'Archive “Ready one”' });
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'));
+    fireEvent.click(button);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(within(card('Ready one')).getByText('Archive needs a database update')).toBeInTheDocument();
+  });
+
+  it('a read-only role sees Open only — no publish, tags, duplicate or archive', () => {
+    state.overrides = { ...state.overrides, data: [overrideRow(READY)] };
+    renderScreen(['scenarios.read']);
+    const c = card('Ready one');
+    expect(within(c).getByRole('button', { name: 'View “Ready one”' })).toBeInTheDocument();
+    expect(within(c).queryByRole('button', { name: /^(Publish|Unpublish|Tags for|Duplicate|Archive)/ })).not.toBeInTheDocument();
+  });
+
+  it('tags: pills on the card filter the gallery; the popover creates and assigns in one go', async () => {
+    const Q1 = { id: '00000000-0000-4000-8000-000000000001', name: 'Q1 rollout', color: 'blue', updatedAt: 'T', usage: 1 };
+    galleryApi.tags = { tags: [Q1], assignments: [{ scenarioId: 'admin:ready', tagId: Q1.id }] };
+    state.overrides = { ...state.overrides, data: [overrideRow(READY)] };
+    galleryApi.postScenarioTagOp.mockImplementation(async (body: { op: string; scenarioId?: string; tagIds?: string[] }) =>
+      body.op === 'upsert-tag'
+        ? { tag: { id: '00000000-0000-4000-8000-000000000002', name: 'Spring cohort', color: 'green', updatedAt: 'T' } }
+        : { scenarioId: body.scenarioId, tagIds: body.tagIds, _dropped: [] },
+    );
+    renderScreen();
+    const pill = await within(card('Ready one')).findByRole('button', { name: 'Q1 rollout' });
+    fireEvent.click(pill);
+    expect(screen.getAllByRole('article').map((a) => a.getAttribute('aria-label'))).toEqual(['Ready one']);
+    expect(screen.getByText(/Showing/)).toHaveTextContent('Showing 1 of 4');
+
+    fireEvent.click(within(card('Ready one')).getByRole('button', { name: 'Tags for “Ready one”' }));
+    const popover = await screen.findByRole('dialog', { name: 'Tags for “Ready one”' });
+    const input = within(popover).getByLabelText('Search or create a tag');
+    fireEvent.change(input, { target: { value: 'Spring cohort' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() =>
+      expect(galleryApi.postScenarioTagOp).toHaveBeenLastCalledWith({
+        op: 'set-tags',
+        scenarioId: 'admin:ready',
+        tagIds: [Q1.id, '00000000-0000-4000-8000-000000000002'],
+      }),
+    );
+    expect(galleryApi.postScenarioTagOp.mock.calls[0][0]).toMatchObject({ op: 'upsert-tag', tag: { name: 'Spring cohort' } });
+    // Escape closes the popover and returns focus to its button.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tags for “Ready one”' })).not.toBeInTheDocument());
+    expect(within(card('Ready one')).getByRole('button', { name: 'Tags for “Ready one”' })).toHaveFocus();
+  });
+
+  it('a failed tag change rolls back and says so', async () => {
+    const Q1 = { id: '00000000-0000-4000-8000-000000000001', name: 'Q1 rollout', color: 'blue', updatedAt: 'T', usage: 0 };
+    galleryApi.tags = { tags: [Q1], assignments: [] };
+    galleryApi.postScenarioTagOp.mockRejectedValue(new Error('network down'));
+    state.overrides = { ...state.overrides, data: [overrideRow(READY)] };
+    renderScreen();
+    fireEvent.click(await within(card('Ready one')).findByRole('button', { name: 'Tags for “Ready one”' }));
+    const popover = await screen.findByRole('dialog', { name: 'Tags for “Ready one”' });
+    fireEvent.click(within(popover).getByRole('checkbox', { name: 'Q1 rollout' }));
+    expect((await screen.findAllByText(/Couldn’t save the tags — network down/)).length).toBeGreaterThan(0);
+    expect(within(popover).getByRole('checkbox', { name: 'Q1 rollout' })).not.toBeChecked();
+  });
+
+  it('search: "/" focuses it and it matches tag names and personas', async () => {
+    const Q1 = { id: '00000000-0000-4000-8000-000000000001', name: 'Workshop', color: 'blue', updatedAt: 'T', usage: 1 };
+    galleryApi.tags = { tags: [Q1], assignments: [{ scenarioId: 'admin:ready', tagId: Q1.id }] };
+    state.overrides = { ...state.overrides, data: [overrideRow(READY)] };
+    let q = '';
+    const view = render(
+      <AccessProvider permissions={WRITER}>
+        <ToastProvider>
+          <ConfirmProvider>
+            <ScenarioStudioScreen query={q} onQuery={(next) => (q = next)} />
+          </ConfirmProvider>
+        </ToastProvider>
+      </AccessProvider>,
+    );
+    fireEvent.keyDown(document.body, { key: '/' });
+    const box = screen.getByLabelText('Search scenarios');
+    expect(box).toHaveFocus();
+    fireEvent.change(box, { target: { value: 'workshop' } });
+    await waitFor(() => expect(q).toBe('workshop'));
+    view.rerender(
+      <AccessProvider permissions={WRITER}>
+        <ToastProvider>
+          <ConfirmProvider>
+            <ScenarioStudioScreen query={q} onQuery={(next) => (q = next)} />
+          </ConfirmProvider>
+        </ToastProvider>
+      </AccessProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getAllByRole('article').map((a) => a.getAttribute('aria-label'))).toEqual(['Ready one']),
+    );
   });
 });

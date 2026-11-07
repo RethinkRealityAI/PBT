@@ -24,6 +24,7 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 import handler, {
   BUILT_IN_CATEGORY_DELETE_MESSAGE,
   CATEGORY_GONE_MESSAGE,
+  ICON_COLUMN_MISSING,
   MIGRATION_NEEDED_MESSAGE,
   OBJECTIONS_TABLE_MISSING,
   adminCategories,
@@ -34,6 +35,7 @@ import handler, {
   toAdminObjection,
 } from '../admin-objections';
 import { OBJECTION_LIMITS } from '../../../src/shared/scenarios/objections';
+import { resetCategoryIconProbe } from '../_shared/objectionsStore';
 import { BUILT_IN_CATEGORIES, CATEGORY_LIMITS } from '../../../src/shared/scenarios/objectionCategories';
 
 type Bag = Record<string, unknown>;
@@ -1212,5 +1214,94 @@ describe('helpers', () => {
     expect(titleClash('raw feeding', 'team:a', rows)).toBeNull();
     expect(titleClash('gone', 'team:new', rows)).toBeNull();
     expect(titleClash('OTHER PUSHBACK', 'team:new', rows)).toBe('Other pushback');
+  });
+});
+
+// ── Category icons (20261107000100_category_icons.sql) ───────────────────
+
+describe('admin-objections — category icons', () => {
+  const NEW_CATEGORY = { name: 'Kidney care', description: 'Cats on renal diets.' };
+
+  /**
+   * The categories table as it is before the icon migration: any read that
+   * names `icon`, or a write that sets it, is Postgres' "no such column".
+   */
+  function withoutIconColumn(inner: (call: SbCall) => SbResult) {
+    return (call: SbCall): SbResult => {
+      const select = call.ops.find((o) => o.op === 'select');
+      const write = call.ops.find((o) => o.op === 'insert' || o.op === 'update');
+      if (/\bicon\b/.test(String(select?.args[0] ?? '')) || (write && 'icon' in (write.args[0] as Bag))) {
+        return {
+          data: null,
+          error: { code: '42703', message: 'column scenario_objection_categories.icon does not exist' },
+        };
+      }
+      return inner(call);
+    };
+  }
+
+  beforeEach(() => {
+    resetCategoryIconProbe();
+  });
+
+  it('stores a vocabulary icon on a team category and answers with it', async () => {
+    const res = await post({ op: 'upsert-category', category: { ...NEW_CATEGORY, icon: 'kidney' } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { category: Bag; _notice?: string };
+    expect(body.category.icon).toBe('kidney');
+    expect(body._notice).toBeUndefined();
+    expect(writes('scenario_objection_categories')[0].payload.icon).toBe('kidney');
+    // Reads ask for the column.
+    const read = sb.callsFor('scenario_objection_categories')[0];
+    expect(String(read.ops.find((o) => o.op === 'select')?.args[0])).toMatch(/\bicon\b/);
+  });
+
+  it('refuses an icon outside the vocabulary (no emoji, no URL) with a 400 and writes nothing', async () => {
+    for (const icon of ['🦴', 'https://example.com/x.svg', 'rocket', 7]) {
+      const res = await post({ op: 'upsert-category', category: { ...NEW_CATEGORY, icon } });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toMatch(/icon/i);
+    }
+    expect(writes('scenario_objection_categories')).toHaveLength(0);
+  });
+
+  it('null clears it; leaving it out keeps the stored one', async () => {
+    categories[0].icon = 'sprout';
+    await post({ op: 'upsert-category', category: { id: 'category:probiotics', name: 'Probiotics' } });
+    expect(writes('scenario_objection_categories')[0].payload).not.toHaveProperty('icon');
+    expect(categories[0].icon).toBe('sprout');
+    await post({ op: 'upsert-category', category: { id: 'category:probiotics', name: 'Probiotics', icon: null } });
+    expect(writes('scenario_objection_categories')[1].payload).toHaveProperty('icon', null);
+  });
+
+  it('never stores an icon for a built-in (theirs is fixed)', async () => {
+    const res = await post({ op: 'upsert-category', category: { id: 'weight', name: 'Weight', icon: 'heart' } });
+    expect(res.status).toBe(200);
+    expect(writes('scenario_objection_categories')[0].payload).not.toHaveProperty('icon');
+  });
+
+  it('lists categories with their icon', async () => {
+    categories[0].icon = 'sprout';
+    const body = (await (await get()).json()) as { categories: Bag[] };
+    expect(body.categories.find((c) => c.id === 'category:probiotics')?.icon).toBe('sprout');
+  });
+
+  it('before the migration: the list still loads and a save goes through without the icon, with a notice', async () => {
+    sb.setHandler('scenario_objection_categories', withoutIconColumn(table(categories)));
+    const list = await get();
+    expect(list.status).toBe(200);
+    expect(((await list.json()) as { categories: Bag[] }).categories.map((c) => c.id)).toContain(
+      'category:probiotics',
+    );
+
+    const res = await post({ op: 'upsert-category', category: { ...NEW_CATEGORY, icon: 'kidney' } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { category: Bag; _notice?: string };
+    expect(body._notice).toBe(ICON_COLUMN_MISSING);
+    expect(body.category.id).toBe('category:kidney-care');
+    expect(body.category).not.toHaveProperty('icon');
+    const inserts = writes('scenario_objection_categories').filter((w) => w.op === 'insert');
+    expect(inserts.at(-1)?.payload).not.toHaveProperty('icon');
+    expect(categories.some((c) => c.id === 'category:kidney-care')).toBe(true);
   });
 });

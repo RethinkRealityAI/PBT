@@ -380,7 +380,15 @@ export function publicOverrideRows(rows: OverrideRow[]): OverrideRow[] {
         sort_order: row.sort_order ?? null,
       } as OverrideRow;
     }
-    const { copied_from: _provenance, ...rest } = row as OverrideRow & { copied_from?: unknown };
+    // `archived_at` / `archived_by` (Studio gallery "Archive") are admin-only
+    // too; an archived row is hidden (visible = false) so it never gets here,
+    // but a future select('*') must not carry them either.
+    const {
+      copied_from: _provenance,
+      archived_at: _archivedAt,
+      archived_by: _archivedBy,
+      ...rest
+    } = row as OverrideRow & { copied_from?: unknown; archived_at?: unknown; archived_by?: unknown };
     return { ...rest, prompt_prefix: null, prompt_suffix: null };
   });
 }

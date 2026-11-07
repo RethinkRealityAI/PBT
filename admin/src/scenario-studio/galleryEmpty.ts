@@ -10,6 +10,12 @@
  * scenarios are made by trainees in the app, and a Live filter with drafts
  * waiting is better answered by those drafts.
  *
+ * The animal (Dog | Cat, the gallery's top control) is never "a filter to
+ * clear": "Show all scenarios" resets everything below it, and when the
+ * OTHER animal has scenarios under the same filters the state offers to
+ * switch to them. Search and tags can't be pre-filled into a new scenario,
+ * so they never shape the scenario offered — only the words.
+ *
  * Pure — no React. Unit-tested in ./__tests__/galleryEmpty.test.ts.
  */
 import type { ScenarioSpecies } from '../../../src/shared/scenarios/species';
@@ -49,6 +55,8 @@ export interface EmptyGalleryState {
   showAll: boolean;
   /** A search is narrowing the list — offer "Clear search". */
   clearSearch: boolean;
+  /** The other animal has this many scenarios under the same filters — offer to switch. */
+  otherAnimal: { species: ScenarioSpecies; count: number } | null;
 }
 
 export interface EmptyGalleryInput {
@@ -63,6 +71,10 @@ export interface EmptyGalleryInput {
   team: readonly GalleryObjectionRef[];
   /** Every live category (built-ins included), for names. */
   categories: readonly Pick<ObjectionCategory, 'id' | 'name'>[];
+  /** How many scenarios the OTHER animal has under the same filters (facets.animal). */
+  otherAnimalCount?: number;
+  /** Names of the selected tags (for the words only — a new scenario can't start tagged). */
+  tagNames?: readonly string[];
 }
 
 /** Objection names can be long sentences; a button shouldn't be. */
@@ -161,22 +173,31 @@ function scopeNoun(input: EmptyGalleryInput): { noun: string; narrowed: boolean 
     const name = categoryLabel(sel.category as string, categories);
     qualifier = ` in ${clip(name ?? 'this category')}`;
   }
+  const tagNames = input.tagNames ?? [];
+  if ((sel.tags?.length ?? 0) > 0) {
+    qualifier +=
+      tagNames.length === 1 ? ` tagged “${clip(tagNames[0])}”` : ' with the chosen tags';
+  }
   return { noun: `${animal}scenarios${qualifier}`, narrowed: Boolean(animal || qualifier) };
 }
 
 export function emptyGalleryState(input: EmptyGalleryInput): EmptyGalleryState {
   const { selection: sel, canWrite } = input;
   const q = input.query.trim();
+  // The animal is the overarching choice, not a filter "Show all" clears.
   const filtered =
     sel.status !== 'all' ||
-    sel.animal !== 'all' ||
     (sel.category ?? ALL_CATEGORIES) !== ALL_CATEGORIES ||
-    sel.objection !== ALL_OBJECTIONS;
+    sel.objection !== ALL_OBJECTIONS ||
+    (sel.tags?.length ?? 0) > 0;
+  const other: ScenarioSpecies | null = sel.animal === 'dog' ? 'cat' : sel.animal === 'cat' ? 'dog' : null;
   const none: Omit<EmptyGalleryState, 'title' | 'body'> = {
     create: null,
     draftsWaiting: 0,
     showAll: filtered,
     clearSearch: false,
+    otherAnimal:
+      other && (input.otherAnimalCount ?? 0) > 0 ? { species: other, count: input.otherAnimalCount ?? 0 } : null,
   };
   const plan = () => (canWrite ? galleryCreatePlan(input) : null);
 
@@ -191,7 +212,16 @@ export function emptyGalleryState(input: EmptyGalleryInput): EmptyGalleryState {
     };
   }
 
-  if (!filtered) {
+  if (sel.status === 'archived') {
+    const { noun, narrowed } = scopeNoun(input);
+    return {
+      ...none,
+      title: narrowed ? `No archived ${noun}` : 'Nothing is archived',
+      body: 'Archive a scenario from its card to put it away without deleting it — it can be restored any time.',
+    };
+  }
+
+  if (!filtered && sel.animal === 'all') {
     return {
       ...none,
       title: 'No scenarios yet',

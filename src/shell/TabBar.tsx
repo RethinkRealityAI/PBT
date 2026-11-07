@@ -64,7 +64,8 @@ export function TabBar() {
       >
         <div className="flex items-center justify-between gap-1">
           {visibleTabs.map((tab) => {
-            const active = current === tab.screen;
+            const active =
+              current === tab.screen || (tab.screen === 'home' && current === 'scenarioLibrary');
             const IconCmp = Icon[tab.iconKey];
             const label = TAB_LABEL_KEY[tab.screen]
               ? t(TAB_LABEL_KEY[tab.screen])
@@ -81,7 +82,11 @@ export function TabBar() {
                   justifyContent: 'center',
                   gap: 6,
                   height: 42,
-                  flex: 1,
+                  // The active tab sizes to its label ("Resources",
+                  // "Historique") so it never clips; the others share the rest.
+                  flex: active ? '0 0 auto' : 1,
+                  padding: active ? '0 16px' : 0,
+                  whiteSpace: 'nowrap',
                   border: active
                     ? '1px solid color-mix(in oklab, var(--pbt-driver-primary) 35%, rgba(255,255,255,0.25))'
                     : '1px solid transparent',

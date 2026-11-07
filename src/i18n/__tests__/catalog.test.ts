@@ -5,6 +5,7 @@ import { chrome as enChrome } from '../en/chrome';
 import { chat as enChat } from '../en/chat';
 import { home as enHome } from '../en/home';
 import { create as enCreate } from '../en/create';
+import { library as enLibrary } from '../en/library';
 import { settings as enSettings } from '../en/settings';
 import { analyzer as enAnalyzer } from '../en/analyzer';
 import { fecalScan as enFecalScan } from '../en/fecalScan';
@@ -108,6 +109,7 @@ describe('locale catalogs', () => {
       enChat,
       enHome,
       enCreate,
+      enLibrary,
       enSettings,
       enAnalyzer,
       enFecalScan,

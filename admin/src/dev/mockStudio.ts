@@ -12,7 +12,10 @@
  * the client's spreadsheet, one recently deleted; writes are kept in memory
  * for the session), a few trainee-built scenarios (a cat
  * one with no ECHO driver, a dog one already added to the library) and a few
- * saved scenario rows so the gallery isn't empty.
+ * saved scenario rows so the gallery isn't empty — two of them archived — and
+ * the team's tag library (admin-scenario-tags: a few tags, assignments, every
+ * op kept in memory) plus the gallery's card actions (publish / unpublish,
+ * archive / restore) on admin-scenario-overrides.
  *
  * The assistant here is a small keyword script, not a model — enough to
  * review every card type (ask, update_fields, offer_options, set_ai_notes,
@@ -59,6 +62,15 @@ import {
 import type { Scenario } from '../../../src/data/scenarios';
 import type { AiEmotion, ChatMessage, ScoreReport } from '../../../src/services/types';
 import type { ScenarioOverrideRow, UserScenario } from '../data/types';
+import {
+  TAG_LIMITS,
+  nextTagColor,
+  normalizeTagName,
+  sortTags,
+  tagNameKey,
+  type AdminScenarioTag,
+  type TagColor,
+} from '../../../src/shared/scenarios/tags';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -969,7 +981,144 @@ const SCENARIO_ROWS: ScenarioOverrideRow[] = [
     card_title_override: 'My tricky client',
     copied_from: 'user:2b3c4d5e-6f70-4a81-9b2c-3d4e5f607182',
   }),
+  // Archived: put away last month (hidden from trainees, under "Archived").
+  overrideRow('admin:0a1b2c3d-4e5f-4a60-8b71-c2d3e4f5a6b7', 34 * DAY, {
+    visible: false,
+    species: 'dog',
+    breed: 'Dachshund',
+    life_stage: 'Senior (7+)',
+    pushback_id: 'raw-food',
+    suggested_driver: 'Energizer',
+    persona_override: 'Devoted',
+    difficulty_override: 2,
+    card_title_override: 'Summer raw-feeding workshop',
+    archived_at: ago(30 * DAY),
+    archived_by: ME,
+  }),
+  overrideRow('admin:1b2c3d4e-5f60-4a71-8c82-d3e4f5a6b7c8', 20 * DAY, {
+    visible: false,
+    species: 'cat',
+    breed: 'Ragdoll',
+    life_stage: 'Adult (3-7)',
+    pushback_id: 'brand-switch',
+    suggested_driver: 'Harmonizer',
+    persona_override: 'Anxious',
+    difficulty_override: 1,
+    card_title_override: 'Old onboarding example',
+    archived_at: ago(12 * DAY),
+    archived_by: ME,
+  }),
 ];
+
+// ── Gallery card actions (admin-scenario-overrides POST) ────────────────
+
+/**
+ * Publish / Unpublish (`?op=visibility`) and Archive / Restore
+ * (`?op=archive`) are told apart by their bodies (the mock router passes the
+ * body only); anything else is an editor save, answered with the row.
+ */
+function overridesPostMock(body: Record<string, unknown>): unknown {
+  const id = String(body.scenario_id ?? '');
+  const at = SCENARIO_ROWS.findIndex((r) => r.scenario_id === id);
+  const current = at >= 0 ? SCENARIO_ROWS[at] : null;
+  const stamp = new Date().toISOString();
+  const write = (patch: Partial<ScenarioOverrideRow>) => {
+    const next = { ...(current ?? overrideRow(id, 0, {})), ...patch, updated_at: stamp };
+    if (at >= 0) SCENARIO_ROWS[at] = next;
+    else SCENARIO_ROWS.push(next);
+    return next;
+  };
+  if ('archived' in body) {
+    return body.archived
+      ? write({ archived_at: stamp, archived_by: ME, visible: false })
+      : write({ archived_at: null, archived_by: null });
+  }
+  const keys = Object.keys(body).filter((k) => k !== 'baseUpdatedAt');
+  if (keys.length === 2 && keys.includes('visible')) {
+    if (body.visible && current?.archived_at) {
+      return new MockHttpError(400, { error: 'This scenario is archived. Restore it first, then publish it.' });
+    }
+    return write({ visible: body.visible === true });
+  }
+  const { baseUpdatedAt: _b, ...row } = body;
+  return write(row as Partial<ScenarioOverrideRow>);
+}
+
+// ── Tags (admin-scenario-tags) ──────────────────────────────────────────
+
+const tagId = (n: number) => `7a9c0000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+let tagSeq = 20;
+
+const TAGS: AdminScenarioTag[] = [
+  { id: tagId(1), name: 'Q1 rollout', color: 'blue', updatedAt: ago(9 * DAY), usage: 0 },
+  { id: tagId(2), name: 'Needs vet review', color: 'amber', updatedAt: ago(4 * DAY), usage: 0 },
+  { id: tagId(3), name: 'Workshop', color: 'green', updatedAt: ago(20 * DAY), usage: 0 },
+  { id: tagId(4), name: 'Feline launch', color: 'purple', updatedAt: ago(2 * DAY), usage: 0 },
+  { id: tagId(5), name: 'Beginner friendly', color: 'teal', updatedAt: ago(14 * DAY), usage: 0 },
+];
+
+let TAG_ASSIGNMENTS: Array<{ scenarioId: string; tagId: string }> = [
+  { scenarioId: 'admin:3f6c2a1e-8b7d-4c5e-9a10-2b3c4d5e6f70', tagId: tagId(1) },
+  { scenarioId: 'admin:3f6c2a1e-8b7d-4c5e-9a10-2b3c4d5e6f70', tagId: tagId(3) },
+  { scenarioId: 'admin:3f6c2a1e-8b7d-4c5e-9a10-2b3c4d5e6f70', tagId: tagId(5) },
+  { scenarioId: 'admin:7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d', tagId: tagId(4) },
+  { scenarioId: 'admin:7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d', tagId: tagId(2) },
+  { scenarioId: 'seed:1', tagId: tagId(1) },
+  { scenarioId: 'admin:5e1f0a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b', tagId: tagId(2) },
+  { scenarioId: 'admin:0a1b2c3d-4e5f-4a60-8b71-c2d3e4f5a6b7', tagId: tagId(3) },
+];
+
+function tagsAnswer() {
+  const usage = new Map<string, number>();
+  for (const a of TAG_ASSIGNMENTS) usage.set(a.tagId, (usage.get(a.tagId) ?? 0) + 1);
+  return {
+    tags: sortTags(TAGS).map((t) => ({ ...t, usage: usage.get(t.id) ?? 0 })),
+    assignments: TAG_ASSIGNMENTS,
+  };
+}
+
+function tagsPostMock(body: Record<string, unknown>): unknown {
+  switch (body.op) {
+    case 'upsert-tag': {
+      const t = (body.tag ?? {}) as { id?: string; name?: string; color?: TagColor };
+      const name = normalizeTagName(String(t.name ?? ''));
+      if (!name || name.length > TAG_LIMITS.nameMax) return new MockHttpError(400, { error: 'Give the tag a name.' });
+      if (TAGS.some((x) => x.id !== t.id && tagNameKey(x.name) === tagNameKey(name))) {
+        return new MockHttpError(409, { error: `There is already a tag called “${name}”.`, code: 'duplicate' });
+      }
+      const color = t.color ?? nextTagColor(TAGS.map((x) => x.color));
+      const existing = t.id ? TAGS.find((x) => x.id === t.id) : null;
+      if (existing) {
+        Object.assign(existing, { name, color, updatedAt: new Date().toISOString() });
+        return { tag: existing };
+      }
+      tagSeq += 1;
+      const tag: AdminScenarioTag = { id: tagId(tagSeq), name, color, updatedAt: new Date().toISOString(), usage: 0 };
+      TAGS.push(tag);
+      return { tag };
+    }
+    case 'delete-tag': {
+      const i = TAGS.findIndex((x) => x.id === body.id);
+      if (i < 0) return new MockHttpError(404, { error: 'That tag no longer exists.' });
+      TAGS.splice(i, 1);
+      const removed = TAG_ASSIGNMENTS.filter((a) => a.tagId === body.id).length;
+      TAG_ASSIGNMENTS = TAG_ASSIGNMENTS.filter((a) => a.tagId !== body.id);
+      return { ok: true, removed };
+    }
+    case 'set-tags': {
+      const scenarioId = String(body.scenarioId ?? '');
+      const wanted = Array.isArray(body.tagIds) ? (body.tagIds as string[]) : [];
+      const keep = wanted.filter((id) => TAGS.some((t) => t.id === id)).slice(0, TAG_LIMITS.perScenario);
+      TAG_ASSIGNMENTS = [
+        ...TAG_ASSIGNMENTS.filter((a) => a.scenarioId !== scenarioId),
+        ...keep.map((id) => ({ scenarioId, tagId: id })),
+      ];
+      return { scenarioId, tagIds: keep, _dropped: wanted.filter((id) => !keep.includes(id)) };
+    }
+    default:
+      return new MockHttpError(400, { error: 'Unknown op' });
+  }
+}
 
 // ── Trainee-built scenarios (admin-scenarios) ────────────────────────────
 
@@ -1030,7 +1179,13 @@ const TRAINEE_SCENARIOS: UserScenario[] = [
 // ── Exports ──────────────────────────────────────────────────────────────
 
 export const STUDIO_ROUTES: Record<string, unknown> = {
-  'admin-scenario-overrides': SCENARIO_ROWS,
+  // Getters, so the gallery reflects this session's writes.
+  get 'admin-scenario-overrides'() {
+    return SCENARIO_ROWS.filter((r) => !r.deleted_at);
+  },
+  get 'admin-scenario-tags'() {
+    return tagsAnswer();
+  },
   'admin-scenarios': TRAINEE_SCENARIOS,
   // A getter, so the list reflects this session's writes.
   get 'admin-objections'() {
@@ -1045,6 +1200,8 @@ export const STUDIO_POST_HANDLERS: Record<
   'admin-scenario-agent': agentMock,
   'admin-scenario-inspect': inspectMock,
   'admin-objections': objectionsMock,
+  'admin-scenario-overrides': overridesPostMock,
+  'admin-scenario-tags': tagsPostMock,
   'ai-roleplay': roleplayMock,
   'ai-evaluate': evaluateMock,
 };

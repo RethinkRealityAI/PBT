@@ -97,8 +97,6 @@ const LONG_FIELDS: ReadonlySet<AgentField> = new Set<AgentField>([
   'pushback_notes',
   'context_override',
   'opening_line_override',
-  'card_subtitle_override',
-  'info_modal_body',
 ]);
 
 /** How a proposed field is edited on the card. */
@@ -119,10 +117,6 @@ export const FIELD_MAX: Partial<Record<AgentField | 'prompt_prefix' | 'prompt_su
   context_override: SCENARIO_PROSE_CAPS.context,
   opening_line_override: SCENARIO_PROSE_CAPS.openingLine,
   card_title_override: SCENARIO_LIMITS.cardTitleMax,
-  card_subtitle_override: SCENARIO_LIMITS.cardSubtitleMax,
-  start_button_label: SCENARIO_LIMITS.startButtonMax,
-  info_modal_title: SCENARIO_PROSE_CAPS.infoTitle,
-  info_modal_body: SCENARIO_LIMITS.infoBodyMax,
   prompt_prefix: SCENARIO_LIMITS.promptMax,
   prompt_suffix: SCENARIO_LIMITS.promptMax,
 };

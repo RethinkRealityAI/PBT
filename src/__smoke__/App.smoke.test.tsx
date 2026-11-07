@@ -66,7 +66,7 @@ describe('App — Terms updated since this device accepted them', () => {
     expect(screen.getByRole('note')).toHaveTextContent(/We've updated these terms/);
     await agree(user);
 
-    expect(await screen.findByRole('button', { name: 'Build a scenario' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Select scenario' })).toBeTruthy();
     expect(screen.queryByText('ECHO Driver Quiz')).toBeNull();
     expect(hasAcceptedCurrentTerms()).toBe(true);
   });
@@ -87,7 +87,7 @@ describe('App — Terms updated since this device accepted them', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('button', { name: 'Build a scenario' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Select scenario' })).toBeTruthy();
     expect(screen.queryByRole('note')).toBeNull();
   });
 

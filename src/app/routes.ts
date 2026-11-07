@@ -5,6 +5,8 @@ export type Screen =
   | 'result'
   | 'home'
   | 'create'
+  /** The Training library: focus areas → ready-made scenarios. */
+  | 'scenarioLibrary'
   | 'chat'
   | 'stats'
   | 'history'
@@ -17,6 +19,8 @@ export type Screen =
 
 export const SCREENS_WITH_TAB_BAR: Screen[] = [
   'home',
+  // Reached from Train (Home's hero); the Train tab stays lit there.
+  'scenarioLibrary',
   'history',
   'resources',
   'settings',
@@ -47,6 +51,6 @@ export interface TabDef {
 export const TABS: TabDef[] = [
   { screen: 'home', label: 'Train', iconKey: 'flame' },
   { screen: 'history', label: 'History', iconKey: 'history' },
-  { screen: 'resources', label: 'Library', iconKey: 'book' },
+  { screen: 'resources', label: 'Resources', iconKey: 'book' },
   { screen: 'settings', label: 'You', iconKey: 'user' },
 ];

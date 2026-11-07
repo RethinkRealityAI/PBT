@@ -11,30 +11,14 @@
  * localized through the data-overlay registry, not this catalog.
  */
 export const create = {
-  // ── Screen chrome / tabs ──────────────────────────────────
+  // ── Screen chrome ─────────────────────────────────────────
   'create.title': 'Build a scenario',
-  'create.titleLibrary': 'Ready-made scenarios',
-  'create.tabsAria': 'Scenario tabs',
-  'create.tab.build': 'Build your own',
-  'create.tab.library': 'Ready-made',
 
-  // ── Which animal? (shared by both tabs + Home's Today's pick) ──
+  // ── Which animal? (the builder + the Training library) ────
   'create.animal.title': 'Which animal?',
   'create.animal.aria': 'Animal to train on',
   'create.animal.dog': 'Dog',
   'create.animal.cat': 'Cat',
-
-  // ── Ready-made tab (keys keep their old `library` name) ───
-  'create.library.startAria': 'Start: {title}',
-  'create.library.filterAria': 'Filter by objection',
-  'create.library.filterAll': 'All',
-  'create.library.categoryAria': 'Filter by category',
-  'create.library.categoryAll': 'All',
-  'create.library.persona': '{persona} owner',
-  'create.library.difficultyAria': 'Difficulty: {label}, level {level} of 4',
-  'create.library.emptyDog': 'No ready-made dog scenarios yet.',
-  'create.library.emptyCat': 'No ready-made cat scenarios yet.',
-  'create.library.emptyCta': 'Build one',
 
   // ── Section headers ───────────────────────────────────────
   'create.section.breed': 'Breed',

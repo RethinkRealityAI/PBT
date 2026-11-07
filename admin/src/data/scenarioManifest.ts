@@ -113,6 +113,10 @@ export const SERVER_MANAGED_COLUMNS = [
   'created_by',
   'updated_by',
   'deleted_at',
+  // Archive state: written only by `admin-scenario-overrides?op=archive`
+  // (the gallery's Archive / Restore), never by an editor save.
+  'archived_at',
+  'archived_by',
 ] as const;
 
 export interface ScenarioDraftEntry {

@@ -19,7 +19,7 @@ interface NavItem {
   flag?: FlagKey;
 }
 
-/** Train / History / Library share the tab-bar labels; the rest are sidebar-only. */
+/** Train / History / Resources share the tab-bar labels; the rest are sidebar-only. */
 const NAV_ITEMS: NavItem[] = [
   { screen: 'home', labelKey: 'tab.train', icon: Icon.flame },
   { screen: 'create', labelKey: 'chrome.nav.create', icon: Icon.plus, flag: 'nav.sidebar.create.enabled' },
@@ -123,7 +123,8 @@ export function Sidebar() {
         }}
       >
         {visibleNav.map(({ screen, labelKey, icon: IconCmp }) => {
-          const active = current === screen;
+          // The Training library is reached from Train (Home's hero).
+          const active = current === screen || (screen === 'home' && current === 'scenarioLibrary');
           const label = t(labelKey);
           return (
             <button

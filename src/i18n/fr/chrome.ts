@@ -7,7 +7,7 @@ export const chrome: Record<keyof typeof enChrome, string> = {
   'chrome.languageToggle.aria': 'Changer de langue',
   'tab.train': 'Pratique',
   'tab.history': 'Historique',
-  'tab.library': 'Bibliothèque',
+  'tab.library': 'Ressources',
   'tab.you': 'Vous',
 
   // ── Barre supérieure ──────────────────────────────────────

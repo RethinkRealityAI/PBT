@@ -19,6 +19,9 @@ import {
   entryStatusText,
   firstStepNeeding,
   galleryFacets,
+  cardPublishCheck,
+  entryTags,
+  matchesTagFilter,
   libraryCopiesByTrainee,
   REQUIRED_ADMIN_FIELDS,
   STUDIO_STEPS,
@@ -56,7 +59,7 @@ import {
   type StudioContext,
   type StudioDraft,
 } from '../studioModel';
-import { STUDIO_STEP_KEYS } from '../../../../src/shared/ai/scenarioAgent';
+import { RETIRED_CARD_FIELDS, STUDIO_STEP_KEYS } from '../../../../src/shared/ai/scenarioAgent';
 import { PERSONAS, PUSHBACK_IDS } from '../../../../src/shared/scenarios/enums';
 import { SERVER_MANAGED_COLUMNS } from '../../data/scenarioManifest';
 import type { ScenarioOverrideRow, UserScenario } from '../../data/types';
@@ -67,7 +70,10 @@ import { BUILT_IN_CATEGORIES, type ObjectionCategory } from '../../../../src/sha
  * `keyof ScenarioOverrideRow` is exhaustive at compile time: adding a column
  * to the type without deciding whether the Studio edits it fails `tsc`.
  */
-const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id' | 'provenance'> = {
+const COLUMN_KIND: Record<
+  keyof ScenarioOverrideRow,
+  'editable' | 'retired' | 'server' | 'id' | 'provenance'
+> = {
   scenario_id: 'id',
   // Where an `admin:` copy came from — set once with its first save (Add to
   // library / Duplicate), shown on the trainee's card, never edited in a step.
@@ -83,11 +89,16 @@ const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id
   prompt_suffix: 'editable',
   success_criteria: 'editable',
   card_title_override: 'editable',
-  card_subtitle_override: 'editable',
-  info_modal_title: 'editable',
-  info_modal_body: 'editable',
-  start_button_label: 'editable',
-  card_driver_override: 'editable',
+  // Retired — not shown to trainees since 2026-11-07 (the Training library
+  // card has no start button, no "More info" panel and no subtitle, and takes
+  // each trainee's own ECHO colour). The columns and their stored values stay
+  // and the server still validates them, but no Studio step edits them and
+  // the assistant can't propose them.
+  card_subtitle_override: 'retired',
+  info_modal_title: 'retired',
+  info_modal_body: 'retired',
+  start_button_label: 'retired',
+  card_driver_override: 'retired',
   breed: 'editable',
   life_stage: 'editable',
   pushback_id: 'editable',
@@ -98,6 +109,8 @@ const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id
   focus_area: 'editable',
   knowledge_slugs: 'editable',
   deleted_at: 'server',
+  archived_at: 'server',
+  archived_by: 'server',
   created_by: 'server',
   updated_by: 'server',
   updated_at: 'server',
@@ -105,6 +118,9 @@ const COLUMN_KIND: Record<keyof ScenarioOverrideRow, 'editable' | 'server' | 'id
 
 const EDITABLE_COLUMNS = (Object.keys(COLUMN_KIND) as Array<keyof ScenarioOverrideRow>).filter(
   (k) => COLUMN_KIND[k] === 'editable',
+);
+const RETIRED_COLUMNS = (Object.keys(COLUMN_KIND) as Array<keyof ScenarioOverrideRow>).filter(
+  (k) => COLUMN_KIND[k] === 'retired',
 );
 
 const ctx = (over: Partial<StudioContext> = {}): StudioContext => ({
@@ -134,6 +150,23 @@ describe('STUDIO_STEPS', () => {
     const all = STUDIO_STEPS.flatMap((s) => s.fields);
     expect(new Set(all).size).toBe(all.length);
     expect([...all].sort()).toEqual([...EDITABLE_COLUMNS].sort());
+  });
+
+  it('edits none of the retired card columns, and the shared list names exactly them', () => {
+    const all = STUDIO_STEPS.flatMap((s) => s.fields) as string[];
+    for (const col of RETIRED_COLUMNS) expect(all).not.toContain(col);
+    expect([...RETIRED_CARD_FIELDS].sort()).toEqual([...RETIRED_COLUMNS].sort());
+  });
+
+  it('never blocks a save on a retired card column it no longer edits', () => {
+    expect(
+      draftProblems({
+        ...complete,
+        start_button_label: 'x'.repeat(500),
+        info_modal_body: 'x'.repeat(9000),
+        card_subtitle_override: 'x'.repeat(900),
+      }),
+    ).toEqual([]);
   });
 
   it('agrees with the server about which columns are the server’s', () => {
@@ -207,9 +240,13 @@ describe('stepStatus', () => {
     ).toBe('done');
   });
 
-  it('marks the optional steps optional until they are used', () => {
-    expect(stepStatus('knowledge', {}, ctx()).status).toBe('optional');
-    expect(stepStatus('knowledge', { focus_area: 'weight' }, ctx()).status).toBe('done');
+  it('counts the recommended knowledge as an answer (done), and own knowledge too', () => {
+    expect(stepStatus('knowledge', {}, ctx())).toEqual({ status: 'done', detail: 'Using the whole knowledge library' });
+    expect(stepStatus('knowledge', { focus_area: 'weight' }, ctx())).toEqual({ status: 'done' });
+    expect(stepStatus('knowledge', { knowledge_slugs: ['a'] }, ctx())).toEqual({ status: 'done' });
+  });
+
+  it('marks the optional brief optional until it is used', () => {
     expect(stepStatus('brief', {}, ctx()).status).toBe('optional');
     expect(stepStatus('brief', { prompt_suffix: 'Never agree first.' }, ctx()).status).toBe('done');
   });
@@ -1043,7 +1080,7 @@ describe('category knowledge in the context', () => {
       categories: CATEGORIES,
     });
     expect(c.categoryKnowledge).toEqual({ id: 'category:probiotics', name: 'Probiotics' });
-    expect(stepStatus('knowledge', draft, c)).toEqual({ status: 'optional', detail: 'Using the Probiotics knowledge' });
+    expect(stepStatus('knowledge', draft, c)).toEqual({ status: 'done', detail: 'Using the Probiotics knowledge (recommended)' });
     // Its own choice wins.
     expect(stepStatus('knowledge', { ...draft, focus_area: 'weight' }, c)).toEqual({ status: 'done' });
     // A category with nothing attached: the whole library.
@@ -1057,6 +1094,83 @@ describe('category knowledge in the context', () => {
       categories: CATEGORIES,
     });
     expect(c2.categoryKnowledge ?? null).toBeNull();
-    expect(stepStatus('knowledge', bored, c2)).toEqual({ status: 'optional', detail: 'Using the whole knowledge library' });
+    expect(stepStatus('knowledge', bored, c2)).toEqual({ status: 'done', detail: 'Using the whole knowledge library' });
+  });
+});
+
+describe('galleryFacets — archive, tags, search, summary', () => {
+  const entries = buildStudioEntries(
+    [
+      row({ scenario_id: 'admin:live', species: 'dog', breed: 'Lab', pushback_id: 'cost', visible: true, persona_override: 'Skeptical' }),
+      row({ scenario_id: 'admin:put-away', species: 'dog', breed: 'Pug', pushback_id: 'cost', archived_at: '2026-11-01T00:00:00Z' }),
+      row({ scenario_id: 'admin:cat', species: 'cat', breed: 'Persian', pushback_id: 'rx-diet' }),
+    ],
+    [trainee({ species: 'dog', pushback_id: 'cost' })],
+  );
+  const dogs = { status: 'all' as const, animal: 'dog' as const, objection: ALL_OBJECTIONS };
+  const tagIndex = {
+    tags: [
+      { id: 't1', name: 'Q1 rollout', color: 'blue' },
+      { id: 't2', name: 'Workshop', color: 'green' },
+    ],
+    byScenario: new Map<string, string[]>([
+      ['admin:live', ['t1']],
+      ['admin:put-away', ['t2']],
+      ['seed:1', ['t2']],
+      ['user:u1', ['t1']],
+    ]),
+  };
+
+  it('archived scenarios leave every view but Archived, which has nothing else', () => {
+    const all = galleryFacets(entries, dogs, '', [], [], tagIndex);
+    expect(all.shown.map((e) => e.id)).not.toContain('admin:put-away');
+    expect(all.status.archived).toBe(1);
+    expect(all.status.drafts).toBe(0);
+    const archived = galleryFacets(entries, { ...dogs, status: 'archived' }, '', [], [], tagIndex);
+    expect(archived.shown.map((e) => e.id)).toEqual(['admin:put-away']);
+    expect(archived.scopeTotal).toBe(1);
+    const entry = archived.shown[0];
+    expect(entry.archived).toBe(true);
+    expect(entryStatusText(entry)).toEqual({ tone: 'neutral', text: 'Archived — hidden from trainees' });
+  });
+
+  it('filters by tags (any of), never matches a trainee’s own, and counts each tag', () => {
+    const f = galleryFacets(entries, { ...dogs, tags: ['t1', 't2'] }, '', [], [], tagIndex);
+    expect(f.shown.map((e) => e.id).sort()).toEqual(['admin:live', 'seed:1']);
+    const none = galleryFacets(entries, dogs, '', [], [], tagIndex);
+    expect(none.tags).toEqual([
+      { id: 't1', label: 'Q1 rollout', color: 'blue', count: 1 },
+      { id: 't2', label: 'Workshop', color: 'green', count: 1 },
+    ]);
+    expect(entryTags(entries.find((e) => e.id === 'user:u1')!, tagIndex)).toEqual([]);
+    expect(matchesTagFilter(entries.find((e) => e.id === 'user:u1')!, ['t1'], tagIndex)).toBe(false);
+  });
+
+  it('searches tag names and personas', () => {
+    expect(galleryFacets(entries, dogs, 'workshop', [], [], tagIndex).shown.map((e) => e.id)).toEqual(['seed:1']);
+    expect(galleryFacets(entries, dogs, 'skeptical', [], [], tagIndex).shown.map((e) => e.id)).toContain('admin:live');
+  });
+
+  it('says when something beyond the animal narrows the list, and out of how many', () => {
+    const plain = galleryFacets(entries, dogs, '', [], [], tagIndex);
+    expect(plain.narrowed).toBe(false);
+    expect(plain.scopeTotal).toBe(5); // 3 built-ins + admin:live + the trainee's
+    expect(galleryFacets(entries, { ...dogs, status: 'live' }, '', [], [], tagIndex).narrowed).toBe(true);
+    expect(galleryFacets(entries, dogs, 'lab', [], [], tagIndex).narrowed).toBe(true);
+    expect(galleryFacets(entries, { ...dogs, tags: ['t1'] }, '', [], [], tagIndex).narrowed).toBe(true);
+  });
+});
+
+describe('cardPublishCheck — the editor’s readiness, from a card', () => {
+  it('splits the shared checklist into blockers and warnings, leaving out the test-drive row', () => {
+    const draft = { scenario_id: 'admin:x', breed: 'Lab', life_stage: 'Adult (3-7)', pushback_id: 'cost' };
+    const check = cardPublishCheck(draft, ctx({ tested: false }));
+    expect(check.ok).toBe(false);
+    expect(check.blockers.map((b) => b.key)).toEqual(['core']);
+    expect(check.warnings.map((w) => w.key)).not.toContain('tested');
+    const ready = cardPublishCheck({ ...draft, suggested_driver: 'Analyzer' }, ctx({ tested: false }));
+    expect(ready).toMatchObject({ ok: true, blockers: [] });
+    // The same verdict as the editor's Publish step.
+    expect(ready.ok).toBe(canPublish(readiness({ ...draft, suggested_driver: 'Analyzer' }, ctx())));
   });
 });
