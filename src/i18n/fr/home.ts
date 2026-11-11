@@ -50,6 +50,7 @@ export const home: Record<keyof typeof enHome, string> = {
   'home.hero.select': 'Choisir un scénario',
   'home.pick.startHere': 'Commencez ici →',
   'home.pick.scoringAria': 'Comment les séances sont évaluées',
+  'home.pick.scoringInfo': 'Infos sur l’évaluation',
 
   // ── Actions rapides ───────────────────────────────────────
   'home.actions.analyzer.title': 'Analyseur animal',

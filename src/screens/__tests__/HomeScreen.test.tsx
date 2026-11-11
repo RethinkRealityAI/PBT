@@ -110,7 +110,9 @@ describe('HomeScreen — the Training library hero', () => {
     expect(screen.queryByText(/^\d+\/\d+$/)).toBeNull();
     expect(screen.queryByText(/Weight \/ obesity denial/)).toBeNull();
     // The scoring guide stays on the hero.
-    expect(screen.getByRole('button', { name: 'How sessions are scored' })).toBeInTheDocument();
+    // Visible "Scoring info" label is its name; the tooltip text describes it.
+    const scoring = screen.getByRole('button', { name: 'Scoring info' });
+    expect(scoring).toHaveAccessibleDescription('How sessions are scored');
   });
 
   it('"Select scenario" opens the dialog; the library choice opens the Training library', async () => {

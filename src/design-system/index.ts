@@ -10,3 +10,4 @@ export * from './ScoreRing';
 export * from './ScoreChip';
 export * from './Chip';
 export * from './Segmented';
+export * from './Tooltip';

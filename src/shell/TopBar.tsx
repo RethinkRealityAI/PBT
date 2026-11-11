@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
+import { Tooltip } from '../design-system/Tooltip';
 import { useNavigation } from '../app/providers/NavigationProvider';
-import { useTheme } from '../app/providers/ThemeProvider';
 import { LocaleToggle } from './LocaleToggle';
+import { ThemeIconButton } from './ThemeIconButton';
 import { useT } from '../i18n/useT';
 
 export interface TopBarProps {
@@ -28,7 +29,6 @@ export function TopBar({
   onBack,
 }: TopBarProps) {
   const { back } = useNavigation();
-  const { resolvedTheme, toggle } = useTheme();
   const t = useT();
   const handleBack = onBack ?? back;
 
@@ -52,6 +52,7 @@ export function TopBar({
     <div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(env(safe-area-inset-top),22px)] pb-4 lg:hidden">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {showBack && (
+          <Tooltip label={t('chrome.back')} placement="bottom" className="shrink-0">
           <Glass
             radius={9999}
             padding={0}
@@ -64,6 +65,7 @@ export function TopBar({
           >
             <Icon.back />
           </Glass>
+          </Tooltip>
         )}
         {middle && (
           <div className="min-w-0 flex-1 text-left">{middle}</div>
@@ -71,22 +73,8 @@ export function TopBar({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {trailing}
-        <LocaleToggle />
-        <Glass
-          radius={9999}
-          padding={0}
-          tint={0.3}
-          shine={false}
-          onClick={toggle}
-          ariaLabel={
-            resolvedTheme === 'dark'
-              ? t('chrome.themeToggle.toLight')
-              : t('chrome.themeToggle.toDark')
-          }
-          className="flex h-9 w-9 items-center justify-center"
-        >
-          {resolvedTheme === 'dark' ? <Icon.sun /> : <Icon.moon />}
-        </Glass>
+        <LocaleToggle tooltipPlacement="bottom" />
+        <ThemeIconButton placement="bottom" />
       </div>
     </div>
   );

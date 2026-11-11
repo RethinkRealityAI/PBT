@@ -5,6 +5,7 @@ export const chrome: Record<keyof typeof enChrome, string> = {
   'settings.language.label': 'Langue',
   'settings.language.hint': "S'applique à toute l'application, y compris le client IA et vos fiches de pointage.",
   'chrome.languageToggle.aria': 'Changer de langue',
+  'chrome.languageToggle.to': 'Changer de langue ({language})',
   'tab.train': 'Pratique',
   'tab.history': 'Historique',
   'tab.library': 'Ressources',

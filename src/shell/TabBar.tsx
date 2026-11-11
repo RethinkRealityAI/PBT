@@ -1,5 +1,6 @@
 import { Glass } from '../design-system/Glass';
 import { Icon } from '../design-system/Icon';
+import { Tooltip } from '../design-system/Tooltip';
 import { TABS } from '../app/routes';
 import { useScreenEnabled } from '../app/screenFlags';
 import { useNavigation } from '../app/providers/NavigationProvider';
@@ -71,8 +72,17 @@ export function TabBar() {
               ? t(TAB_LABEL_KEY[tab.screen])
               : tab.label;
             return (
-              <button
+              // An inactive tab is an icon alone: its name shows on hover /
+              // keyboard focus (never on a tap). The active one shows it already.
+              <Tooltip
                 key={tab.screen}
+                label={label}
+                disabled={active}
+                // The active tab sizes to its label ("Resources",
+                // "Historique") so it never clips; the others share the rest.
+                style={{ flex: active ? '0 0 auto' : 1, minWidth: 0 }}
+              >
+              <button
                 onClick={() => go(tab.screen)}
                 aria-label={label}
                 aria-pressed={active}
@@ -82,9 +92,7 @@ export function TabBar() {
                   justifyContent: 'center',
                   gap: 6,
                   height: 42,
-                  // The active tab sizes to its label ("Resources",
-                  // "Historique") so it never clips; the others share the rest.
-                  flex: active ? '0 0 auto' : 1,
+                  width: '100%',
                   padding: active ? '0 16px' : 0,
                   whiteSpace: 'nowrap',
                   border: active
@@ -113,6 +121,7 @@ export function TabBar() {
                 <IconCmp />
                 {active && <span>{label}</span>}
               </button>
+              </Tooltip>
             );
           })}
         </div>

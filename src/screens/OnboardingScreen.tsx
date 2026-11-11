@@ -1,12 +1,11 @@
-import { useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { Orb } from '../design-system/Orb';
 import { PillButton } from '../design-system/PillButton';
 import { Icon } from '../design-system/Icon';
-import { Glass } from '../design-system/Glass';
 import { useNavigation } from '../app/providers/NavigationProvider';
-import { useTheme } from '../app/providers/ThemeProvider';
 import { LocaleToggle } from '../shell/LocaleToggle';
+import { ThemeIconButton } from '../shell/ThemeIconButton';
 import { AccountUpgradeModal } from '../features/auth/AccountUpgradeModal';
 import { useT } from '../i18n/useT';
 import type { CatalogKey } from '../i18n/catalog';
@@ -14,28 +13,44 @@ import type { CatalogKey } from '../i18n/catalog';
 const BRAND_RED = 'oklch(0.62 0.22 22)';
 
 /** Slide copy lives in the `onboarding` catalog namespace — these are keys. */
-const SLIDES: { eyebrow: CatalogKey; title: CatalogKey; body: CatalogKey }[] = [
+const SLIDES: { eyebrow: CatalogKey; title: CatalogKey; lead: CatalogKey; body: CatalogKey }[] = [
   {
     eyebrow: 'onboarding.slide1.eyebrow',
     title: 'onboarding.slide1.title',
+    lead: 'onboarding.slide1.lead',
     body: 'onboarding.slide1.body',
   },
   {
     eyebrow: 'onboarding.slide2.eyebrow',
     title: 'onboarding.slide2.title',
+    lead: 'onboarding.slide2.lead',
     body: 'onboarding.slide2.body',
   },
   {
     eyebrow: 'onboarding.slide3.eyebrow',
     title: 'onboarding.slide3.title',
+    lead: 'onboarding.slide3.lead',
     body: 'onboarding.slide3.body',
   },
 ];
 
+/**
+ * `*word*` in a slide body is emphasis (the ACT verbs on slide 3). Plain text
+ * otherwise: the catalog string is never parsed as HTML.
+ */
+function renderEmphasis(text: string): ReactNode[] {
+  return text.split(/(\*[^*\n]+\*)/g).map((part, i) =>
+    part.length > 2 && part.startsWith('*') && part.endsWith('*') ? (
+      <em key={i}>{part.slice(1, -1)}</em>
+    ) : (
+      <Fragment key={i}>{part}</Fragment>
+    ),
+  );
+}
+
 export function OnboardingScreen() {
   const { go } = useNavigation();
   const t = useT();
-  const { resolvedTheme, toggle } = useTheme();
   const [slide, setSlide] = useState(0);
   // The "Sign in" link on the landing page now opens this modal instead of
   // jumping straight to the quiz — that previous behaviour bypassed the
@@ -72,21 +87,7 @@ export function OnboardingScreen() {
         }}
       >
         <LocaleToggle />
-        <Glass
-          radius={9999}
-          padding={0}
-          tint={0.3}
-          shine={false}
-          onClick={toggle}
-          ariaLabel={
-            resolvedTheme === 'dark'
-              ? t('chrome.themeToggle.toLight')
-              : t('chrome.themeToggle.toDark')
-          }
-          className="flex h-9 w-9 items-center justify-center"
-        >
-          {resolvedTheme === 'dark' ? <Icon.sun /> : <Icon.moon />}
-        </Glass>
+        <ThemeIconButton />
       </div>
 
       {/* Eyebrow — label only, no orb */}
@@ -186,18 +187,34 @@ export function OnboardingScreen() {
         >
           {t(current.title)}
         </h1>
-        <p
-          style={{
-            margin: 0,
-            maxWidth: 'min(320px, 86vw)',
-            fontSize: 'clamp(15px, 4vw, 17px)',
-            lineHeight: 1.6,
-            color: 'var(--pbt-text-muted)',
-            textWrap: 'pretty' as never,
-          }}
+        <div
+          className="flex flex-col"
+          style={{ maxWidth: 'min(340px, 88vw)', gap: 10 }}
         >
-          {t(current.body)}
-        </p>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 'clamp(15px, 4vw, 17px)',
+              lineHeight: 1.45,
+              fontWeight: 600,
+              color: 'var(--pbt-text)',
+              textWrap: 'pretty' as never,
+            }}
+          >
+            {t(current.lead)}
+          </p>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 'clamp(14px, 3.8vw, 16px)',
+              lineHeight: 1.55,
+              color: 'var(--pbt-text-muted)',
+              textWrap: 'pretty' as never,
+            }}
+          >
+            {renderEmphasis(t(current.body))}
+          </p>
+        </div>
       </div>
 
       {/* Footer: dots + CTA */}

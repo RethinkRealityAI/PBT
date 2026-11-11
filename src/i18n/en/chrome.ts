@@ -8,6 +8,8 @@ export const chrome = {
   'settings.language.label': 'Language',
   'settings.language.hint': 'Applies to the whole app, including the AI customer and your scorecards.',
   'chrome.languageToggle.aria': 'Switch language',
+  /** Tooltip + accessible name of the EN/FR pill; `{language}` is the one it switches TO, in its own language. */
+  'chrome.languageToggle.to': 'Switch language ({language})',
   'tab.train': 'Train',
   'tab.history': 'History',
   /** The clinical-resources tab (key kept from when it was "Library"). */

@@ -43,6 +43,8 @@ export const home = {
   'home.hero.select': 'Select scenario',
   'home.pick.startHere': 'Start here →',
   'home.pick.scoringAria': 'How sessions are scored',
+  /** Visible label beside the (i) on the Training library card. */
+  'home.pick.scoringInfo': 'Scoring info',
 
   // ── Quick actions ─────────────────────────────────────────
   'home.actions.analyzer.title': 'Pet Analyzer',

@@ -4,6 +4,7 @@ import { Glass } from '../design-system/Glass';
 import { DriverWave } from '../design-system/DriverWave';
 import { Orb } from '../design-system/Orb';
 import { Icon } from '../design-system/Icon';
+import { Tooltip } from '../design-system/Tooltip';
 import { PillButton } from '../design-system/PillButton';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
@@ -859,25 +860,58 @@ export function HomeScreen() {
                       </motion.span>
                     )}
                   </AnimatePresence>
-                  <button
-                    type="button"
-                    aria-label={t('home.pick.scoringAria')}
-                    onClick={openScoringInfo}
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: '50%',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: driverColors.primary,
-                      flexShrink: 0,
-                      ...roundGlassControlStyle(driverColors, dark),
-                    }}
-                  >
-                    <Icon.info style={{ width: 18, height: 18 }} aria-hidden />
-                  </button>
+                  {/* "Scoring info" + (i) is one button; its name is the
+                      visible label, the tooltip describes it. While the
+                      beacon says "Start here →" the label steps aside (it
+                      stays the accessible name) so the row never reads
+                      twice. */}
+                  <Tooltip label={t('home.pick.scoringAria')} describe placement="top">
+                    <button
+                      type="button"
+                      onClick={openScoringInfo}
+                      className="pbt-scoring-info"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: 0,
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--pbt-text-muted)',
+                        font: 'inherit',
+                        borderRadius: 9999,
+                      }}
+                    >
+                      <span
+                        className={beaconActive ? 'sr-only' : undefined}
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          letterSpacing: '-0.005em',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {t('home.pick.scoringInfo')}
+                      </span>
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: '50%',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: driverColors.primary,
+                          flexShrink: 0,
+                          ...roundGlassControlStyle(driverColors, dark),
+                        }}
+                      >
+                        <Icon.info style={{ width: 18, height: 18 }} aria-hidden />
+                      </span>
+                    </button>
+                  </Tooltip>
                 </motion.div>
               </div>
               </div>
