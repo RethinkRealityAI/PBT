@@ -11,6 +11,7 @@ export const quiz: Record<keyof typeof en, string> = {
   'quiz.title': 'Questionnaire des profils ECHO',
   'quiz.back.aria': 'Retour',
   'quiz.previous.aria': 'Question précédente',
+  'quiz.previousChoice': 'votre réponse précédente',
   'quiz.leave.aria': 'Quitter le questionnaire',
   'quiz.leave.title': 'Quitter le questionnaire ?',
   'quiz.leave.body':

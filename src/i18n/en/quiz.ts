@@ -8,10 +8,12 @@ export const quiz = {
   'quiz.title': 'ECHO Driver Quiz',
   'quiz.back.aria': 'Back',
   'quiz.previous.aria': 'Previous question',
+  /** Read after the option chosen earlier, when the trainee went Back to it. */
+  'quiz.previousChoice': 'your earlier answer',
   'quiz.leave.aria': 'Leave the quiz',
   'quiz.leave.title': 'Leave the quiz?',
   'quiz.leave.body':
-    'Your answers so far will be lost — the quiz starts again from question 1.',
+    'Your answers so far will be lost. The quiz starts again from question 1.',
   'quiz.leave.confirm': 'Leave and lose my answers',
   'quiz.leave.cancel': 'Keep answering',
   'quiz.theme.toLight.aria': 'Switch to light mode',
