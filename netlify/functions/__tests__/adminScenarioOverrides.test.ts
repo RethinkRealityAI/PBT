@@ -424,7 +424,7 @@ describe('GET op=capabilities', () => {
     sb.setHandler('scenario_overrides', () => ({ data: [], error: null }));
     const res = await capabilities();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ species: true, archive: true });
+    expect(await res.json()).toEqual({ species: true, archive: true, cats: 'off' });
   });
 
   it('reports species: false while the deferred migration is pending', async () => {
@@ -432,7 +432,26 @@ describe('GET op=capabilities', () => {
       data: null,
       error: { code: '42703', message: 'column scenario_overrides.species does not exist' },
     }));
-    expect(await (await capabilities()).json()).toEqual({ species: false, archive: false });
+    expect(await (await capabilities()).json()).toEqual({ species: false, archive: false, cats: 'off' });
+  });
+
+  it('reports the trainee cat switch, resolved server-side', async () => {
+    sb.setHandler('scenario_overrides', () => ({ data: [], error: null }));
+    sb.setHandler('flags', () => ({
+      data: { key: 'scenario.cat.enabled', default_value: true, value_type: 'boolean' },
+      error: null,
+    }));
+    sb.setHandler('flag_rules', () => ({ data: [], error: null }));
+    expect((await (await capabilities()).json()).cats).toBe('on');
+    sb.setHandler('flag_rules', () => ({
+      data: [
+        { id: 'r1', flag_key: 'scenario.cat.enabled', priority: 1, audience: { drivers: ['Analyzer'] }, value: false, enabled: true },
+      ],
+      error: null,
+    }));
+    expect((await (await capabilities()).json()).cats).toBe('some');
+    sb.setHandler('flags', () => ({ data: null, error: { code: '57014', message: 'timeout' } }));
+    expect((await (await capabilities()).json()).cats).toBeNull();
   });
 
   it('any other failure is a 500, not a false "unsupported"', async () => {
@@ -843,6 +862,6 @@ describe('GET ?op=capabilities', () => {
     const res = await handler(
       jsonRequest('admin-scenario-overrides?op=capabilities', null, { method: 'GET', headers: { authorization: 'Bearer admin' } }),
     );
-    expect(await res.json()).toEqual({ species: true, archive: false });
+    expect(await res.json()).toEqual({ species: true, archive: false, cats: 'off' });
   });
 });

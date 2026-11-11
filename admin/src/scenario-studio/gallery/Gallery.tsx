@@ -14,7 +14,7 @@ import { useToast } from '../../primitives/Toast';
 import { ApiError } from '../../lib/api';
 import { COLOR } from '../../lib/tokens';
 import { readStorage, writeStorage, type StorageKeyDef } from '../../../../src/lib/storage';
-import { isScenarioSpecies, type ScenarioSpecies } from '../../../../src/shared/scenarios/species';
+import { isScenarioSpecies, speciesOf, type ScenarioSpecies } from '../../../../src/shared/scenarios/species';
 import type { ObjectionCategory } from '../../../../src/shared/scenarios/objectionCategories';
 import { TAG_LIMITS, type TagColor } from '../../../../src/shared/scenarios/tags';
 import { AssistMark, PetBadge } from '../ui';
@@ -36,6 +36,8 @@ import type { CreateArgs } from '../StudioHome';
 import type { ScenarioTagsApi } from './useScenarioTags';
 import { GalleryCard } from './GalleryCard';
 import { CardActionDialog, type CardActionKind } from './CardActionDialog';
+import { CatSwitchNotice } from '../CatSwitchNotice';
+import type { CatSwitchState } from '../api';
 import { TagPopover } from './TagPopover';
 import { ManageTagsModal } from './ManageTagsModal';
 import {
@@ -61,6 +63,8 @@ export interface GalleryActions {
   isOnlyVisible: (entry: StudioEntry) => boolean;
   /** `capabilities.archive` — false while the column is missing. Undefined = unknown (allowed). */
   archiveAvailable?: boolean;
+  /** `capabilities.cats` — who trainees see cat scenarios for. Undefined = unknown (no notice). */
+  catSwitch?: CatSwitchState;
   tags: ScenarioTagsApi;
 }
 
@@ -268,6 +272,10 @@ export function Gallery(props: GalleryProps) {
     }
   }
 
+  const liveCats = entries.filter(
+    (e) => e.status === 'live' && !e.archived && e.source !== 'user' && speciesOf(e.draft.species) === 'cat',
+  ).length;
+
   const emptyState: EmptyGalleryState | null =
     !loading && shown.length === 0
       ? emptyGalleryState({
@@ -294,6 +302,16 @@ export function Gallery(props: GalleryProps) {
       </div>
 
       <AnimalSwitch value={animal} counts={{ dog: facets.animal.dog, cat: facets.animal.cat }} loading={loading} onChange={setAnimal} />
+
+      {/* Cats hidden from trainees by the Flags switch: say so wherever cat
+          scenarios are in view or live (never blocks anything). */}
+      {!loading && actions.catSwitch !== undefined && actions.catSwitch !== 'on' && (
+        animal === 'cat' ? (
+          <CatSwitchNotice state={actions.catSwitch} context={{ kind: 'gallery' }} />
+        ) : liveCats > 0 ? (
+          <CatSwitchNotice state={actions.catSwitch} context={{ kind: 'liveCats', count: liveCats }} />
+        ) : null
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <SearchBox value={query} onChange={onQuery} />
@@ -458,6 +476,7 @@ export function Gallery(props: GalleryProps) {
           live={pendingEntry.status === 'live'}
           unsaved={props.unsavedIds.has(pendingEntry.id)}
           refreshed={pending.refreshed}
+          catSwitch={speciesOf(pendingEntry.draft.species) === 'cat' ? actions.catSwitch : undefined}
           busy={busyId === pendingEntry.id}
           error={pending.error}
           canOpenBuilder

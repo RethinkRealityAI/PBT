@@ -50,4 +50,21 @@ describe('LibraryScenarioCardBody', () => {
     expect(screen.getByText('Anxious owner')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Difficulty: Hostile, level 3 of 4' })).toBeInTheDocument();
   });
+
+  it('shows the start arrow by default and drops it where nothing starts (admin preview)', () => {
+    const props = {
+      title: 'The price talk',
+      species: 'dog' as const,
+      pet: 'Beagle · Adult (3-7)',
+      owner: 'Anxious owner',
+      difficulty: 2 as const,
+      difficultyLabel: 'Skeptical',
+      difficultyAria: 'Difficulty: Skeptical, level 2 of 4',
+    };
+    const { container, rerender } = render(<LibraryScenarioCardBody {...props} />);
+    const arrows = () => container.querySelectorAll('span[aria-hidden] > svg').length;
+    const withArrow = arrows();
+    rerender(<LibraryScenarioCardBody {...props} showArrow={false} />);
+    expect(arrows()).toBe(withArrow - 1);
+  });
 });

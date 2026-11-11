@@ -10,6 +10,8 @@
  *     version", with "Open in builder" next to Publish.
  *   • Hiding the last live scenario (Unpublish or Archive) → the editor's
  *     last-visible warning, and the button says "anyway".
+ *   • A cat scenario while cats are switched off for trainees (Flags) →
+ *     a notice that it won't be visible yet. Never blocks.
  *
  * Rendered by the gallery in place — never inside a card (a card lifts
  * with a transform on hover, which would trap the fixed-position dialog).
@@ -20,6 +22,8 @@ import { Button } from '../../primitives/form';
 import { COLOR } from '../../lib/tokens';
 import { IconBadge, Kicker } from '../ui';
 import type { ReadinessItem } from '../studioModel';
+import type { CatSwitchState } from '../api';
+import { CatSwitchNotice } from '../CatSwitchNotice';
 
 export type CardActionKind = 'publish' | 'unpublish' | 'archive';
 
@@ -36,6 +40,8 @@ export interface CardActionDialogProps {
   live?: boolean;
   /** Someone else saved it while this dialog was being opened (a 409 re-read). */
   refreshed?: boolean;
+  /** A CAT scenario: who trainees see cats for (undefined for a dog / unknown). */
+  catSwitch?: CatSwitchState;
   busy: boolean;
   /** A write failed: said inside the dialog, which stays open. */
   error?: string | null;
@@ -106,7 +112,10 @@ export function CardActionDialog(props: CardActionDialogProps) {
 
   const body = (() => {
     if (blocked) return 'Sort these out in the builder first — the same checks its Publish step runs.';
-    if (kind === 'publish') return 'Trainees can practise it from their next visit to the app.';
+    if (kind === 'publish')
+      return props.catSwitch === 'off'
+        ? 'It goes live now. Trainees can practise it once cats are switched on for them.'
+        : 'Trainees can practise it from their next visit to the app.';
     if (kind === 'unpublish')
       return `Trainees will no longer see ${name}. Sessions already played keep their history.`;
     return 'It’s unpublished and moved to Archived. You can restore it any time.';
@@ -143,6 +152,8 @@ export function CardActionDialog(props: CardActionDialogProps) {
             This publishes the last SAVED version. You have unsaved changes in the builder.
           </Note>
         )}
+
+        {kind === 'publish' && !blocked && <CatSwitchNotice state={props.catSwitch} context={{ kind: 'publish' }} />}
 
         {kind === 'publish' && check && check.warnings.length > 0 && (
           <div style={{ display: 'grid', gap: 8 }}>

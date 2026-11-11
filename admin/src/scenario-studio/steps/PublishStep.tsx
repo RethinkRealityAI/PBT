@@ -26,6 +26,8 @@ import {
   useFieldId,
 } from '../ui';
 import { CardPreview, libraryCardPreview } from '../CardPreview';
+import { CatSwitchNotice } from '../CatSwitchNotice';
+import type { CatSwitchState } from '../api';
 import { STUDIO_STEPS, canPublish, readiness, stepIndex, type ReadinessItem } from '../studioModel';
 import type { StepProps } from '../types';
 import { useObjectionsContext } from '../objections/ObjectionsContext';
@@ -40,6 +42,8 @@ export interface PublishStepProps extends StepProps {
   busy: 'save' | 'publish' | 'unpublish' | null;
   /** The last save couldn't store the species (the column isn't there yet). */
   speciesPending: boolean;
+  /** Who trainees see cat scenarios for (`capabilities.cats`); undefined = unknown. */
+  catSwitch?: CatSwitchState;
   fallbackTitle?: string | null;
   /**
    * What trainees get: for a library scenario, blank fields inherit the
@@ -90,6 +94,10 @@ export function PublishStep(props: PublishStepProps) {
           The species couldn’t be stored yet — a database update is still pending. Everything else
           saved. Once the update is applied, save again and the AI owner will talk about a cat.
         </InlineAlert>
+      )}
+
+      {source !== 'user' && speciesOf(draft.species) === 'cat' && (
+        <CatSwitchNotice state={props.catSwitch} context={{ kind: 'publish' }} />
       )}
 
       {/* ── The card ── */}

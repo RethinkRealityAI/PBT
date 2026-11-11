@@ -164,3 +164,30 @@ export async function isSwitchOn(
     return true;
   }
 }
+
+/**
+ * Who a boolean switch is on for, as seen by the ADMIN (not one caller):
+ *   'on'   — everyone (no targeted rule says otherwise),
+ *   'off'  — no one,
+ *   'some' — a targeted rule (drivers, users, devices, a percentage…) turns
+ *            it the other way for part of the audience.
+ * `codeDefault` is what the app does when the flag row is missing. Pure: the
+ * caller reads the rows (enabled rules only, highest priority first).
+ */
+export function switchAudienceState(
+  key: string,
+  flag: FlagRow | null,
+  rules: RuleRow[],
+  codeDefault: boolean,
+): 'on' | 'off' | 'some' {
+  const enabled = rules.filter((r) => r.enabled && r.flag_key === key);
+  // An empty audience is the only one a rule with constraints can't match.
+  const base = flag
+    ? resolveFlags([flag], enabled, {})[key] === true
+    : codeDefault;
+  const targeted = enabled.some(
+    (r) => !audienceMatches(r.audience, key, {}) && (r.value === true) !== base,
+  );
+  if (targeted) return 'some';
+  return base ? 'on' : 'off';
+}

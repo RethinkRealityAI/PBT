@@ -98,14 +98,27 @@ export async function simulateScore(args: {
  * Resolves `undefined` when unknown (an older server, a network blip) —
  * callers treat unknown as "don't block".
  */
-export async function fetchScenarioCapabilities(): Promise<{ species?: boolean; archive?: boolean }> {
+export type CatSwitchState = 'on' | 'off' | 'some';
+
+export interface ScenarioCapabilities {
+  species?: boolean;
+  archive?: boolean;
+  /**
+   * Who the trainee app shows cat scenarios to (`scenario.cat.enabled`,
+   * resolved by the server). Undefined = unknown: say nothing.
+   */
+  cats?: CatSwitchState;
+}
+
+export async function fetchScenarioCapabilities(): Promise<ScenarioCapabilities> {
   try {
     const res = await apiFetch<unknown>('admin-scenario-overrides', { op: 'capabilities' });
     if (res && typeof res === 'object' && !Array.isArray(res)) {
-      const { species, archive } = res as { species?: unknown; archive?: unknown };
+      const { species, archive, cats } = res as { species?: unknown; archive?: unknown; cats?: unknown };
       return {
         ...(typeof species === 'boolean' ? { species } : {}),
         ...(typeof archive === 'boolean' ? { archive } : {}),
+        ...(cats === 'on' || cats === 'off' || cats === 'some' ? { cats } : {}),
       };
     }
     return {};

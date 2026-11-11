@@ -75,6 +75,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 import { isMissingSpeciesColumn, isMissingSuccessCriteriaColumn } from './_shared/speciesColumn';
+import { switchAudienceState, type FlagRow, type RuleRow } from './_shared/flagRules';
 import {
   checkTeamObjection,
   isMissingCopiedFromColumn,
@@ -588,6 +589,38 @@ function savedResponse(
   return jsonResponse({ ...row, [SPECIES_NOTICE_KEY]: notice });
 }
 
+/** The trainee app's cat switch (`useTrainingSpecies`; code default OFF). */
+const CAT_SWITCH = 'scenario.cat.enabled';
+
+/**
+ * Whether trainees can see cat scenarios: 'on' | 'off' | 'some' (a targeted
+ * rule), or null when it can't be read. Resolved here with the service role
+ * so the Studio can warn about it with `scenarios.read` alone; it never needs
+ * `flags.read`.
+ */
+async function catSwitchState(sb: SupabaseClient): Promise<'on' | 'off' | 'some' | null> {
+  try {
+    const [flagRes, rulesRes] = await Promise.all([
+      sb.from('flags').select('key, default_value, value_type').eq('key', CAT_SWITCH).maybeSingle(),
+      sb
+        .from('flag_rules')
+        .select('id, flag_key, priority, audience, value, enabled')
+        .eq('flag_key', CAT_SWITCH)
+        .eq('enabled', true)
+        .order('priority', { ascending: false }),
+    ]);
+    if (flagRes.error || rulesRes.error) return null;
+    return switchAudienceState(
+      CAT_SWITCH,
+      (flagRes.data ?? null) as FlagRow | null,
+      (rulesRes.data ?? []) as RuleRow[],
+      false,
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** 400 / 500 Response when `pushback_id` is a team id that can't be stored, else null. */
 async function rejectUnknownObjection(
   sb: SupabaseClient,
@@ -606,22 +639,26 @@ export default async (req: Request): Promise<Response> => {
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
-    // `?op=capabilities` — what this database can store. Today: whether the
+    // `?op=capabilities` — what this database can store (and whether
+    // trainees can see cat scenarios at all). Today: whether the
     // `species` column exists (it does in production since 2026-09-27; a
     // project that has not run the migration answers false), so the Studio
     // can refuse to publish a cat scenario that would reach trainees as a
     // dog (and say why) BEFORE a save, and keep saying it after a reload.
     if (new URL(req.url).searchParams.get('op') === 'capabilities') {
-      const [probe, archiveProbe] = await Promise.all([
+      const [probe, archiveProbe, cats] = await Promise.all([
         ctx.sb.from('scenario_overrides').select('species').limit(1),
         ctx.sb.from('scenario_overrides').select('archived_at').limit(1),
+        catSwitchState(ctx.sb),
       ]);
       if (probe.error && !isMissingSpeciesColumn(probe.error)) {
         return errorResponse(500, probe.error.message);
       }
       // `archive` (20261107000000): unknown errors read as "not available"
       // rather than failing the species answer the editor depends on.
-      return jsonResponse({ species: !probe.error, archive: !archiveProbe.error });
+      // `cats`: who the trainee app shows cat scenarios to (the Studio warns
+      // while it isn't everyone); null = couldn't read the switch.
+      return jsonResponse({ species: !probe.error, archive: !archiveProbe.error, cats });
     }
     // Match the consumer's flags-resolve filter: soft-deleted admin
     // scenarios are tombstones, not part of the live library. Without

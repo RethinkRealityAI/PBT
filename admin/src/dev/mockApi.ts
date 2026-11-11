@@ -772,9 +772,10 @@ export function installAdminMocks(): void {
       const posted = POST_ROUTES[name];
       return json(posted === undefined ? { ok: true, status: 'sent' } : posted);
     }
-    // What the database can store: everything, in the mock.
+    // What the database can store: everything, in the mock. Cats are off
+    // for trainees, as in production until the feline content ships.
     if (name === 'admin-scenario-overrides' && /[?&]op=capabilities/.test(url)) {
-      return json({ species: true, archive: true });
+      return json({ species: true, archive: true, cats: 'off' });
     }
     // Same endpoint, different question: `?trash=1` asks for the tombstones,
     // so it must not answer with the live library.

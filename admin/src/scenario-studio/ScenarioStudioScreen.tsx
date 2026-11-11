@@ -56,7 +56,7 @@ import { clearLocalDraft, listLocalDrafts, readLocalDraft, setLocalDraftsOwner }
 import type { KnowledgeState } from './types';
 import { StudioHome, type CreateArgs, type ResumableDraft } from './StudioHome';
 import { StudioEditor } from './StudioEditor';
-import { fetchScenarioCapabilities, setScenarioArchived, setScenarioVisibility } from './api';
+import { fetchScenarioCapabilities, setScenarioArchived, setScenarioVisibility, type ScenarioCapabilities } from './api';
 import { useScenarioTags } from './gallery/useScenarioTags';
 import type { GalleryActions } from './gallery/Gallery';
 import { setSimulatorSessionsOwner } from './simulator/simulatorSession';
@@ -116,7 +116,7 @@ export function ScenarioStudioScreen({
   const [open, setOpen] = useState<OpenState | null>(null);
   const [localNonce, setLocalNonce] = useState(0);
   /** What the database can store (whether the species column exists), probed once. */
-  const [capabilities, setCapabilities] = useState<{ species?: boolean; archive?: boolean }>({});
+  const [capabilities, setCapabilities] = useState<ScenarioCapabilities>({});
   useEffect(() => {
     let cancelled = false;
     void fetchScenarioCapabilities().then((c) => {
@@ -218,6 +218,7 @@ export function ScenarioStudioScreen({
     },
     isOnlyVisible: (entry) => visibleScenarioCount(entries, entry.id) === 0,
     archiveAvailable: capabilities.archive,
+    catSwitch: capabilities.cats,
     tags,
   };
 
@@ -473,6 +474,7 @@ export function ScenarioStudioScreen({
             )
           }
           speciesSupported={capabilities.species}
+          catSwitch={capabilities.cats}
           initialStep={open.step}
           initialCategoryId={open.categoryId ?? null}
           openAssistant={open.openAssistant}

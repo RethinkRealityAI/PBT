@@ -14,9 +14,10 @@
  * offers Open and Restore — never Publish. A trainee's own scenario keeps its
  * "Add to library" actions (tags and archive don't apply to it).
  *
- * The card never renders a dialog or popover itself: it lifts with a
- * transform on hover, which would trap a fixed-position child. It asks the
- * gallery instead (`onRequest`, `onOpenTags`).
+ * The card itself is not a control, so it doesn't lift on hover and its
+ * preview has no start arrow: only the buttons below act. It still never
+ * renders a dialog or popover itself (the gallery does, `onRequest`,
+ * `onOpenTags`), so a future transform can't trap a fixed-position child.
  */
 import { useRef } from 'react';
 import { Archive, ArchiveRestore, Copy, EyeOff, Pencil, Send, Tag, Tags } from 'lucide-react';
@@ -88,7 +89,6 @@ export function GalleryCard(props: GalleryCardProps) {
     <article
       aria-label={entry.title}
       aria-busy={props.busy || undefined}
-      className="pbt-studio-tile"
       title={`Reference: ${entry.id}`}
       style={{
         flex: 1,

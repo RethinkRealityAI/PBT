@@ -18,6 +18,10 @@
  * `--pbt-driver-*` vars of their locked profile), so the preview uses the
  * app's default palette rather than this scenario's driver.
  *
+ * One deliberate difference: no round → arrow. On the trainee's card it
+ * means "tap to start"; here nothing starts, so it would read as a dead
+ * button (`showArrow={false}`).
+ *
  * `compact` is the gallery thumbnail: the card alone. The full preview (the
  * Publish step) also shows the focus area it is filed under — the library's
  * first step, then the heading above its cards.
@@ -150,6 +154,8 @@ export function CardPreview({
         difficulty={card.difficulty}
         difficultyLabel={card.difficultyLabel}
         difficultyAria={card.difficultyAria}
+        // Nothing here starts a session: no "tap to start" arrow.
+        showArrow={false}
       />
     </Glass>
   );

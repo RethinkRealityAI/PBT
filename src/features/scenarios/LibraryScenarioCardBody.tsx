@@ -1,6 +1,8 @@
 /**
  * The inside of a Training library card: eyebrows, title, pet line, owner +
- * difficulty meter, and the arrow affordance.
+ * difficulty meter, and the arrow affordance. The arrow says "tap to start",
+ * so only a host where the card IS a start button shows it: the admin's
+ * preview passes `showArrow={false}`.
  *
  * Pure presentation — no hooks, no providers, no Tailwind classes — so the
  * admin bundle renders the SAME card in the Scenario Studio's preview
@@ -39,6 +41,8 @@ export interface LibraryScenarioCardBodyProps {
   difficulty: Difficulty;
   difficultyLabel: string;
   difficultyAria: string;
+  /** The round → start affordance. Default true (the trainee's tappable card). */
+  showArrow?: boolean;
 }
 
 export function LibraryScenarioCardBody({
@@ -51,6 +55,7 @@ export function LibraryScenarioCardBody({
   difficulty,
   difficultyLabel,
   difficultyAria,
+  showArrow = true,
 }: LibraryScenarioCardBodyProps) {
   return (
     <div style={{ display: 'flex', height: '100%', alignItems: 'center', gap: 12 }}>
@@ -125,6 +130,7 @@ export function LibraryScenarioCardBody({
           <DifficultyMeter level={difficulty} label={difficultyLabel} ariaLabel={difficultyAria} />
         </div>
       </div>
+      {showArrow && (
       <span
         aria-hidden
         style={{
@@ -142,6 +148,7 @@ export function LibraryScenarioCardBody({
       >
         <Icon.arrow />
       </span>
+      )}
     </div>
   );
 }
