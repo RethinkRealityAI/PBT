@@ -12,7 +12,10 @@ export function Page({ children, withTabBar = false, className }: PageProps) {
   return (
     <main
       className={cn(
-        'pbt-scroll relative flex-1 min-h-0 overflow-y-auto bg-transparent',
+        // overflow-y auto would make overflow-x auto too: one element a few
+        // px too wide (an entrance animation, a long word) let a sideways
+        // swipe drag the whole page off the left edge. Vertical only.
+        'pbt-scroll relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-transparent',
         // Mobile: 20px horizontal padding
         'px-5 pt-2',
         // Desktop: wider padding for breathing room

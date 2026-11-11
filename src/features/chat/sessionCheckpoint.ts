@@ -191,6 +191,7 @@ export async function recoverPendingSession(
       id: pending.id,
       scenarioSummary: scenarioSummaryLine(pending.scenario),
       pushbackId: pending.scenario.pushback.id,
+      ...(pending.scenario._overrideId ? { scenarioId: pending.scenario._overrideId } : {}),
       driver: pending.scenario.suggestedDriver,
       durationSeconds,
       mode: pending.mode,

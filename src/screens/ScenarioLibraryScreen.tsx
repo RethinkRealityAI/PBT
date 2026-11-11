@@ -50,12 +50,15 @@ import {
   libraryGroupOf,
   libraryGroups,
   libraryHasBothAnimals,
-  libraryObjectionFilters,
+  practisedScenarioIds,
   scenariosInGroup,
+  type PracticeFilter,
   type LibraryGroup,
 } from '../features/scenarios/libraryGrouping';
 import { objectionCategoryId } from '../shared/scenarios/objectionCategories';
 import { speciesOf, type ScenarioSpecies } from '../shared/scenarios/species';
+import { readStorage } from '../lib/storage';
+import { SESSIONS_KEY } from '../lib/sessionsKey';
 import type { CategoryIconKey } from '../shared/scenarios/categoryIcons';
 import { logEvent } from '../lib/analytics';
 import { useBrowserBackStep } from '../lib/useBrowserBackStep';
@@ -75,11 +78,14 @@ export function ScenarioLibraryScreen() {
   const canBuild = screenEnabled('create');
   const resolved = useResolvedLibraryScenarios();
   const [species, setSpecies] = useTrainingSpecies();
-  const { objections, teamObjections, categories, categoryById } = useObjectionCatalog();
+  const { teamObjections, categories, categoryById } = useObjectionCatalog();
 
   /** null = step 1 (focus areas); a group id or ALL = step 2. */
   const [groupId, setGroupId] = useState<string | null>(null);
-  const [objectionFilter, setObjectionFilter] = useState<string>('all');
+  const [practiceFilter, setPracticeFilter] = useState<PracticeFilter>('all');
+  // Sessions saved on this device — read once per visit (a session can't
+  // finish while this screen is open).
+  const [sessions] = useState(() => readStorage(SESSIONS_KEY));
 
   const showAnimalToggle = libraryHasBothAnimals(resolved);
   const forAnimal = useMemo(() => libraryForAnimal(resolved, species), [resolved, species]);
@@ -88,29 +94,25 @@ export function ScenarioLibraryScreen() {
     () => libraryGroups(forAnimal, teamObjections, categories, otherLabel),
     [forAnimal, teamObjections, categories, otherLabel],
   );
-  // One focus area (or none): no choice to make, the list is the screen.
-  const singleGroup = groups.length <= 1;
-  const activeGroup: string | null = singleGroup
-    ? ALL
-    : groupId === ALL || groups.some((g) => g.id === groupId)
-      ? groupId
-      : null;
+  // Dog and cat get the SAME two steps (focus areas → scenarios), even
+  // when an animal has a single area: skipping step 1 for one animal made
+  // the two sides look like different screens.
+  const activeGroup: string | null =
+    groupId === ALL || groups.some((g) => g.id === groupId) ? groupId : null;
   const step: 'groups' | 'scenarios' = activeGroup ? 'scenarios' : 'groups';
 
   const inGroup =
     activeGroup === ALL || activeGroup == null
       ? forAnimal
       : scenariosInGroup(forAnimal, activeGroup, teamObjections, categories);
-  // Objection chips narrow ONE focus area that holds several objections.
-  const objectionChips =
-    activeGroup && (activeGroup !== ALL || singleGroup)
-      ? libraryObjectionFilters(inGroup, objections, locale)
-      : [];
-  const showObjectionChips = objectionChips.length > 1;
-  const activeObjection =
-    showObjectionChips && objectionChips.some((o) => o.id === objectionFilter) ? objectionFilter : 'all';
+  // All · Practised · Not practised — the same three on every list, for
+  // every animal (the per-objection chips repeated each card's title).
+  const practised = useMemo(() => practisedScenarioIds(forAnimal, sessions), [forAnimal, sessions]);
+  const practisedCount = inGroup.filter((r) => practised.has(r.scenarioId)).length;
   const visible =
-    activeObjection === 'all' ? inGroup : inGroup.filter((r) => r.scenario.pushback.id === activeObjection);
+    practiceFilter === 'all'
+      ? inGroup
+      : inGroup.filter((r) => practised.has(r.scenarioId) === (practiceFilter === 'practised'));
 
   // The animal is chosen on step 1. If it changes while an area is open
   // (another tab, another surface), go back there: the area may not exist
@@ -120,15 +122,15 @@ export function ScenarioLibraryScreen() {
     if (seenSpecies.current === species) return;
     seenSpecies.current = species;
     setGroupId(null);
-    setObjectionFilter('all');
+    setPracticeFilter('all');
   }, [species]);
 
   const leaveGroup = () => {
     setGroupId(null);
-    setObjectionFilter('all');
+    setPracticeFilter('all');
   };
   // The step only exists when there was a step 1 to come back to.
-  useBrowserBackStep(step === 'scenarios' && !singleGroup, leaveGroup);
+  useBrowserBackStep(step === 'scenarios', leaveGroup);
 
   const openGroup = (group: LibraryGroup | null) => {
     logEvent({
@@ -137,13 +139,13 @@ export function ScenarioLibraryScreen() {
       target: 'library_category',
       meta: { category: group ? group.id : 'all', species: speciesOf(species), count: group?.count ?? forAnimal.length },
     });
-    setObjectionFilter('all');
+    setPracticeFilter('all');
     setGroupId(group ? group.id : ALL);
   };
 
   const changeSpecies = (next: ScenarioSpecies) => {
     if (next === species) return;
-    setObjectionFilter('all');
+    setPracticeFilter('all');
     setSpecies(next);
   };
 
@@ -166,16 +168,28 @@ export function ScenarioLibraryScreen() {
   };
 
   const onTopBack = () => {
-    if (step === 'scenarios' && !singleGroup) leaveGroup();
+    if (step === 'scenarios') leaveGroup();
     else back();
   };
 
-  // The area step 2 is showing (a one-area library shows that area).
-  const current = singleGroup
-    ? (groups[0] ?? null)
-    : activeGroup && activeGroup !== ALL
-      ? (groups.find((g) => g.id === activeGroup) ?? null)
-      : null;
+  // The area step 2 is showing (null = all of this animal's scenarios).
+  const current =
+    activeGroup && activeGroup !== ALL ? (groups.find((g) => g.id === activeGroup) ?? null) : null;
+  // Every step names the animal it is for: "All Dog Scenarios",
+  // "Cat Gastrointestinal Scenarios".
+  const isCat = species === 'cat';
+  const allTitle = t(isCat ? 'library.step.allCat' : 'library.step.allDog');
+  const stepTitle = current
+    ? t(isCat ? 'library.step.groupCat' : 'library.step.groupDog', { area: current.label })
+    : allTitle;
+  const speciesBadge = (
+    <SpeciesBadge
+      species={species}
+      size={26}
+      background="linear-gradient(160deg, var(--pbt-driver-primary), var(--pbt-driver-accent))"
+      title={t(isCat ? 'create.animal.cat' : 'create.animal.dog')}
+    />
+  );
   const animalOptions: SegmentedOption<ScenarioSpecies>[] = [
     { value: 'dog', label: t('create.animal.dog'), icon: <SpeciesIcon species="dog" size={16} /> },
     { value: 'cat', label: t('create.animal.cat'), icon: <SpeciesIcon species="cat" size={16} /> },
@@ -223,7 +237,7 @@ export function ScenarioLibraryScreen() {
               <div role="listitem" className="col-span-2 sm:col-span-3 lg:col-span-4">
                 <GroupCard
                   wide
-                  title={t('library.all.title')}
+                  title={allTitle}
                   count={countText(forAnimal.length)}
                   glyph={<LayoutGrid size={22} strokeWidth={1.9} aria-hidden />}
                   onClick={() => openGroup(null)}
@@ -245,68 +259,62 @@ export function ScenarioLibraryScreen() {
           </section>
         ) : (
           <section aria-labelledby="pbt-library-heading">
-            {!singleGroup && (
-              <button
-                type="button"
-                onClick={leaveGroup}
-                className="pbt-library-card hidden lg:inline-flex"
-                style={{
-                  alignItems: 'center',
-                  gap: 6,
-                  marginBottom: 14,
-                  padding: '6px 12px 6px 8px',
-                  borderRadius: 9999,
-                  border: '1px solid var(--pbt-glass-border)',
-                  background: 'color-mix(in oklab, var(--pbt-text) 4%, transparent)',
-                  color: 'var(--pbt-text)',
-                  font: 'inherit',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                <Icon.back aria-hidden style={{ width: 16, height: 16 }} />
-                {t('library.back')}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={leaveGroup}
+              className="pbt-library-card hidden lg:inline-flex"
+              style={{
+                alignItems: 'center',
+                gap: 6,
+                marginBottom: 14,
+                padding: '6px 12px 6px 8px',
+                borderRadius: 9999,
+                border: '1px solid var(--pbt-glass-border)',
+                background: 'color-mix(in oklab, var(--pbt-text) 4%, transparent)',
+                color: 'var(--pbt-text)',
+                font: 'inherit',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <Icon.back aria-hidden style={{ width: 16, height: 16 }} />
+              {t('library.back')}
+            </button>
             <StepHeading
               id="pbt-library-heading"
               eyebrow={t('library.eyebrow')}
-              title={current ? current.label : t('library.all.title')}
+              title={stepTitle}
               sub={countText(inGroup.length)}
-              badge={
-                showAnimalToggle && !singleGroup ? (
-                  <SpeciesBadge
-                    species={species}
-                    size={26}
-                    background="linear-gradient(160deg, var(--pbt-driver-primary), var(--pbt-driver-accent))"
-                    title={t(species === 'cat' ? 'create.animal.cat' : 'create.animal.dog')}
-                  />
-                ) : undefined
-              }
+              badge={speciesBadge}
               icon={current ? current.icon : 'all'}
             />
-            {/* Inside an area the animal is fixed (chosen on step 1) — a badge
-                says which; a one-area library has no step 1, so its pill stays. */}
-            {singleGroup && animalToggle}
-            {showObjectionChips && (
-              <ChipScroller ariaLabel={t('library.filterAria')} className="mb-3">
-                <FilterChip
-                  label={t('library.filterAll')}
-                  count={inGroup.length}
-                  active={activeObjection === 'all'}
-                  onClick={() => setObjectionFilter('all')}
-                />
-                {objectionChips.map((f) => (
-                  <FilterChip
-                    key={f.id}
-                    label={f.label}
-                    count={inGroup.filter((r) => r.scenario.pushback.id === f.id).length}
-                    active={activeObjection === f.id}
-                    onClick={() => setObjectionFilter(f.id)}
-                  />
-                ))}
-              </ChipScroller>
+            {/* Inside an area the animal is fixed (chosen on step 1): the
+                title and the badge say which. */}
+            <ChipScroller ariaLabel={t('library.practice.aria')} className="mb-3">
+              <FilterChip
+                label={t('library.filterAll')}
+                count={inGroup.length}
+                active={practiceFilter === 'all'}
+                onClick={() => setPracticeFilter('all')}
+              />
+              <FilterChip
+                label={t('library.practice.done')}
+                count={practisedCount}
+                active={practiceFilter === 'practised'}
+                onClick={() => setPracticeFilter('practised')}
+              />
+              <FilterChip
+                label={t('library.practice.new')}
+                count={inGroup.length - practisedCount}
+                active={practiceFilter === 'new'}
+                onClick={() => setPracticeFilter('new')}
+              />
+            </ChipScroller>
+            {visible.length === 0 && (
+              <p style={{ margin: '8px 2px 16px', fontSize: 14, color: 'var(--pbt-text-muted)' }}>
+                {t(practiceFilter === 'practised' ? 'library.practice.noneDone' : 'library.practice.noneNew')}
+              </p>
             )}
             <div
               aria-label={t('library.scenariosAria')}
@@ -322,7 +330,7 @@ export function ScenarioLibraryScreen() {
                 // Inside one focus area its name would only repeat the
                 // heading; under "All scenarios" it says where each one lives.
                 const categoryLabel =
-                  activeGroup === ALL && !singleGroup
+                  activeGroup === ALL
                     ? (categoryById(objectionCategoryId(scenario.pushback.id, teamObjections))?.label ?? null)
                     : null;
                 const difficultyLabel = localizedDifficultyLabel(scenario.difficulty, locale);
@@ -399,22 +407,38 @@ function StepHeading({
         >
           {eyebrow}
         </div>
-        <div className="flex items-center" style={{ gap: 10 }}>
+        {/* The animal badge rides at the end of the title text: it sits
+            after the last word, and drops to the next line with it when the
+            title is long — never squeezed into a column beside it. */}
+        <div style={{ fontSize: 26, lineHeight: 1.15, minWidth: 0 }}>
           <h2
             id={id}
             style={{
+              display: 'inline',
               margin: 0,
               fontSize: 26,
               fontWeight: 400,
               letterSpacing: '-0.025em',
-              lineHeight: 1.1,
+              lineHeight: 1.15,
               color: 'var(--pbt-text)',
-              minWidth: 0,
             }}
           >
             {title}
           </h2>
-          {badge}
+          {badge && (
+            <span
+              style={{
+                display: 'inline-flex',
+                verticalAlign: 'middle',
+                marginLeft: 10,
+                position: 'relative',
+                top: -2,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {badge}
+            </span>
+          )}
         </div>
         <p style={{ margin: '5px 0 0', fontSize: 13, lineHeight: 1.45, color: 'var(--pbt-text-muted)' }}>{sub}</p>
       </div>

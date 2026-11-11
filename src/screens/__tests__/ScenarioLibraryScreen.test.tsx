@@ -199,8 +199,11 @@ describe('ScenarioLibraryScreen — Dog | Cat', () => {
     }
     await user.click(within(pill).getByRole('tab', { name: 'Cat' }));
     expect(localStorage.getItem('pbt:train_species')).toBe('"cat"');
-    // One cat area: its scenarios open straight away.
-    expect(groupList()).toBeNull();
+    // Cats get the same two steps as dogs, even with a single area.
+    expect(groupCards()).toEqual(['All Cat Scenarios, 1 scenario', 'Urinary health, 1 scenario']);
+    await user.click(screen.getByRole('button', { name: /^Urinary health/ }));
+    expect(screen.getByRole('heading', { name: 'Cat Urinary health Scenarios' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Cat' })).toBeInTheDocument();
     expect(startButtons()).toEqual(['Kitten on dry food']);
   });
 
@@ -218,14 +221,14 @@ describe('ScenarioLibraryScreen — Dog | Cat', () => {
     const user = userEvent.setup();
     render(<ScenarioLibraryScreen />);
     await user.click(screen.getByRole('button', { name: /^Everyday nutrition/ }));
-    expect(screen.getByRole('heading', { name: 'Everyday nutrition' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dog Everyday nutrition Scenarios' })).toBeInTheDocument();
     act(() => {
       localStorage.setItem('pbt:train_species', '"cat"');
       window.dispatchEvent(new StorageEvent('storage', { key: 'pbt:train_species' }));
     });
-    // Cats hold one area, so its list IS the first step — with the pill back.
-    expect(screen.queryByRole('heading', { name: 'Everyday nutrition' })).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Urinary health' })).toBeInTheDocument();
+    // Back on the first step, now for cats.
+    expect(screen.queryByRole('heading', { name: 'Dog Everyday nutrition Scenarios' })).toBeNull();
+    expect(groupList()).not.toBeNull();
     expect(within(animalSwitch()!).getByRole('tab', { name: 'Cat' })).toHaveAttribute('aria-selected', 'true');
     // And back to dogs: the area grid, not the area that was open.
     act(() => {
@@ -241,7 +244,7 @@ describe('ScenarioLibraryScreen — Dog | Cat', () => {
     const user = userEvent.setup();
     render(<ScenarioLibraryScreen />);
     expect(animalSwitch()).toBeNull();
-    await user.click(screen.getByRole('button', { name: /^All scenarios/ }));
+    await user.click(screen.getByRole('button', { name: /^All Dog Scenarios/ }));
     expect(startButtons()).not.toContain('Kitten on dry food');
     expect(startButtons()).toContain('Weight / obesity denial');
   });
@@ -262,7 +265,7 @@ describe('ScenarioLibraryScreen — focus areas → scenarios', () => {
     render(<ScenarioLibraryScreen />);
     expect(screen.getByRole('heading', { name: 'Choose a focus area' })).toBeInTheDocument();
     expect(groupCards()).toEqual([
-      'All scenarios, 5 scenarios',
+      'All Dog Scenarios, 5 scenarios',
       'Everyday nutrition, 2 scenarios',
       'Weight management, 1 scenario',
       'GI, 1 scenario',
@@ -283,23 +286,33 @@ describe('ScenarioLibraryScreen — focus areas → scenarios', () => {
     expect(groupList()!.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
     // The cat area (no icon chosen) is guessed from its name.
     await user.click(within(animalSwitch()!).getByRole('tab', { name: 'Cat' }));
-    expect(screen.getByRole('heading', { name: 'Urinary health' }).closest('section')?.querySelector('[data-category-icon]')?.getAttribute('data-category-icon')).toBe('droplet');
+    expect(icon(/^Urinary health/)).toBe('droplet');
   });
 
-  it('opens an area, narrows it by objection, and the TopBar back returns to the areas', async () => {
+  it('opens an area, filters it by Practised / Not practised, and the TopBar back returns to the areas', async () => {
+    // One earlier session of the cost scenario on this device.
+    localStorage.setItem(
+      'pbt:sessions',
+      JSON.stringify([
+        { id: 's1', scenarioId: 'admin:dog-cost', scenarioSummary: 'x', pushbackId: 'cost', driver: 'Analyzer', durationSeconds: 60, mode: 'text', scoreReport: {}, transcript: [], createdAt: new Date().toISOString() },
+      ]),
+    );
     const user = userEvent.setup();
     render(<ScenarioLibraryScreen />);
     await user.click(screen.getByRole('button', { name: /^Everyday nutrition/ }));
-    expect(screen.getByRole('heading', { name: 'Everyday nutrition' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dog Everyday nutrition Scenarios' })).toBeInTheDocument();
     expect(startButtons()).toEqual(['Switching brands hesitation', 'Budget-minded owner']);
     // Inside one area its name isn't repeated on every card.
     const card = screen.getByRole('button', { name: 'Start: Budget-minded owner' });
     expect(within(card).queryByText('Everyday nutrition')).toBeNull();
     expect(within(card).getByText('Cost / price pushback')).toBeInTheDocument();
 
-    const chips = screen.getByRole('group', { name: 'Filter by objection' });
-    await user.click(within(chips).getByRole('button', { name: 'Cost / price pushback' }));
+    const chips = screen.getByRole('group', { name: 'Filter by practice' });
+    expect(within(chips).getAllByRole('button').map((b) => b.textContent)).toEqual(['All2', 'Practised1', 'Not practised1']);
+    await user.click(within(chips).getByRole('button', { name: /^Practised/ }));
     expect(startButtons()).toEqual(['Budget-minded owner']);
+    await user.click(within(chips).getByRole('button', { name: /^Not practised/ }));
+    expect(startButtons()).toEqual(['Switching brands hesitation']);
 
     await user.click(topBack());
     expect(back).not.toHaveBeenCalled();
@@ -323,14 +336,16 @@ describe('ScenarioLibraryScreen — focus areas → scenarios', () => {
     expect(back).not.toHaveBeenCalled();
   });
 
-  it('"All scenarios" names each card’s area', async () => {
+  it('"All Dog Scenarios" names each card’s area', async () => {
     const user = userEvent.setup();
     render(<ScenarioLibraryScreen />);
-    await user.click(screen.getByRole('button', { name: /^All scenarios/ }));
+    await user.click(screen.getByRole('button', { name: /^All Dog Scenarios/ }));
+    expect(screen.getByRole('heading', { name: 'All Dog Scenarios' })).toBeInTheDocument();
     expect(startButtons()).toHaveLength(5);
     const card = screen.getByRole('button', { name: 'Start: Weight / obesity denial' });
     expect(within(card).getByText('Weight management')).toBeInTheDocument();
-    // No objection chips across every area.
+    // The same practice filter on the all-areas list, never objection chips.
+    expect(screen.getByRole('group', { name: 'Filter by practice' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Filter by objection' })).toBeNull();
   });
 
@@ -349,15 +364,17 @@ describe('ScenarioLibraryScreen — focus areas → scenarios', () => {
     expect(logEvent).toHaveBeenCalledWith(expect.objectContaining({ target: 'library_category' }));
   });
 
-  it('a one-area library skips the area step', () => {
+  it('a one-area library still shows the area step (same screens for every animal)', async () => {
     // Dogs: only brand-switch + cost, both Everyday nutrition.
     flagSnapshot = snapshot([HIDDEN_SEED, { ...ROW, scenario_id: 'seed:0', visible: false }, ADMIN_DOG_COST]);
     flagValues = {};
+    const user = userEvent.setup();
     render(<ScenarioLibraryScreen />);
-    expect(groupList()).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Everyday nutrition' })).toBeInTheDocument();
+    expect(groupCards()).toEqual(['All Dog Scenarios, 2 scenarios', 'Everyday nutrition, 2 scenarios']);
+    await user.click(screen.getByRole('button', { name: /^Everyday nutrition/ }));
+    expect(screen.getByRole('heading', { name: 'Dog Everyday nutrition Scenarios' })).toBeInTheDocument();
     expect(startButtons()).toEqual(['Switching brands hesitation', 'Budget-minded owner']);
-    expect(screen.getByRole('group', { name: 'Filter by objection' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Filter by practice' })).toBeInTheDocument();
   });
 
   it('makes the whole card the Start target, difficulty a labelled meter, the persona the owner', async () => {
@@ -414,7 +431,7 @@ describe('ScenarioLibraryScreen — French', () => {
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label'));
     expect(names).toEqual([
-      'Tous les scénarios, 5 scénarios',
+      'Tous les scénarios pour chiens, 5 scénarios',
       'Nutrition au quotidien, 2 scénarios',
       'Gestion du poids, 1 scénario',
       'Gastro-intestinal, 1 scénario',
