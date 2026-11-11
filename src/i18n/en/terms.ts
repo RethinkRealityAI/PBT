@@ -14,7 +14,7 @@ export const terms = {
 
   'terms.section.what.title': 'What this is',
   'terms.section.what.body':
-    'PBT (Pushback Training) is a simulation tool designed to help veterinary teams practise handling common client objections — pricing, breed diets, raw food, and more. Scenarios here are roleplay exercises, not real client interactions. They are not a substitute for professional judgment.',
+    'PBT (Pushback Training) is a simulation tool designed to help veterinary teams practise handling common client objections: pricing, breed diets, raw food, and more. Scenarios here are roleplay exercises, not real client interactions. They are not a substitute for professional judgment.',
 
   'terms.section.act.title': 'The ACT framework',
   'terms.section.act.body':
@@ -22,7 +22,7 @@ export const terms = {
 
   'terms.section.ai.title': 'How the AI works',
   'terms.section.ai.body':
-    'Customer roleplay and scoring are powered by a large language model. The AI may produce imperfect or unexpected responses — treat its output as a training stimulus, not authoritative fact. (Responses are used to continuously improve the simulation anonymously.)',
+    'Customer roleplay and scoring are powered by a large language model. The AI may produce imperfect or unexpected responses. Treat its output as a training stimulus, not authoritative fact. (Responses are used to continuously improve the simulation anonymously.)',
 
   'terms.section.knowledge.title': 'Knowledge base',
   'terms.section.knowledge.body':
@@ -30,7 +30,7 @@ export const terms = {
 
   'terms.section.anonymous.title': 'Anonymous by default',
   'terms.section.anonymous.body':
-    "You can use PBT without an account. Your profile and session history are kept in your browser on this device. If you don't sign in, we never ask for your name, email or any other personal details. We record only anonymous usage data, your practice sessions (the conversations and their scores) and your ECHO style quiz answers, under a random ID for this device rather than your identity, and use them only to understand and improve the training. All data is encrypted in transit and at rest. You can stop this recording at any time with “Allow training data use” on the You tab. Creating an account is optional — it backs up your data to a private, encrypted cloud profile, and sessions already practised on this device move to it.",
+    "You can use PBT without an account. Your profile and session history are kept in your browser on this device. If you don't sign in, we never ask for your name, email or any other personal details. We record only anonymous usage data, your practice sessions (the conversations and their scores) and your ECHO style quiz answers, under a random ID for this device rather than your identity, and use them only to understand and improve the training. All data is encrypted in transit and at rest. You can stop this recording at any time with “Allow training data use” on the You tab. Creating an account is optional, it backs up your data to a private, encrypted cloud profile, and sessions already practised on this device move to it.",
 
   'terms.section.privacy.title': 'Privacy',
   'terms.section.privacy.body':
@@ -38,5 +38,5 @@ export const terms = {
 
   'terms.agree.checkbox':
     'I understand PBT is a training simulator, not a substitute for professional judgment, and I agree to the privacy approach above.',
-  'terms.agree.cta': "I agree — let's go",
+  'terms.agree.cta': "I agree, let's go",
 } as const;

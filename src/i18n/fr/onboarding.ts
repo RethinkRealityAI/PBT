@@ -1,7 +1,10 @@
 /**
  * fr-CA — carrousel d'accueil (3 diapositives) et boutons de pied de page.
  *
- * Registre : vouvoiement. Les `\n` des titres sont de la mise en page :
+ * Registre : vouvoiement. Chaque diapositive : titre, phrase d'accroche
+ * (en gras), texte. Les `*mot*` du texte s'affichent en italique : on garde
+ * les astérisques.
+ * Les `\n` des titres sont de la mise en page :
  * on les conserve, en rééquilibrant la coupure selon la longueur française.
  * « PBT · Pushback Training » est la signature du produit — non traduite.
  */
@@ -9,19 +12,25 @@ import type { onboarding as en } from '../en/onboarding';
 
 export const onboarding: Record<keyof typeof en, string> = {
   'onboarding.slide1.eyebrow': 'PBT · Pushback Training',
-  'onboarding.slide1.title': 'Pour vous aider à mener\ndes conversations difficiles.',
+  'onboarding.slide1.title': 'Menez les conversations\ndifficiles.',
+  'onboarding.slide1.lead':
+    'Bâtissez la confiance et l’empathie avec les propriétaires d’animaux quand ça compte le plus.',
   'onboarding.slide1.body':
-    "Cet outil de connexion humaine est conçu pour vous aider à bâtir des relations authentiques et empathiques. Idéal au travail comme dans la vie de tous les jours.",
+    'Apprenez à guider vos clients avec aisance dans les moments à fort enjeu, les discussions délicates sur le budget et les décisions chargées d’émotion.',
 
   'onboarding.slide2.eyebrow': 'Conçu pour les conversations en clinique',
-  'onboarding.slide2.title': 'Chaque client\nest différent.',
+  'onboarding.slide2.title': 'Exercez-vous avec\ndes scénarios réels.',
+  'onboarding.slide2.lead':
+    'Chaque client est unique. Exercez-vous à répondre avant d’entrer dans la salle d’examen.',
   'onboarding.slide2.body':
-    "Cet outil vous offre un espace pour poser vos questions, puis vous exercer à gérer les conversations difficiles avec les clients.",
+    'Lancez-vous dans un scénario difficile et testez différentes approches en toute sécurité, jusqu’à vous sentir pleinement en confiance.',
 
   'onboarding.slide3.eyebrow': 'Une évaluation rigoureuse',
-  'onboarding.slide3.title': 'Voyez ce qui a porté.\nCorrigez le reste.',
+  'onboarding.slide3.title': 'Voyez ce qui\na porté.',
+  'onboarding.slide3.lead':
+    'Recevez une rétroaction instantanée et concrète après chaque séance de pratique.',
   'onboarding.slide3.body':
-    "Après chaque séance, vous recevez une rétroaction sur la façon dont vous avez Reconnu les émotions du client, Clarifié sa véritable préoccupation et Transformé l'objection — en plus de votre empathie et de votre lien de confiance. Vous obtenez aussi des suggestions concrètes de répliques.",
+    'Voyez exactement dans quelle mesure vous avez *Reconnu* les émotions, *Clarifié* les préoccupations et *Transformé* l’objection, en plus de suggestions instantanées de répliques.',
 
   'onboarding.cta.continue': 'Continuer',
   'onboarding.cta.getStarted': 'Commencer',
