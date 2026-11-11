@@ -148,3 +148,55 @@ describe('useQuiz capture (admin ECHO analytics)', () => {
     expect(result.current.step.result.primary).toBe('Energizer');
   });
 });
+
+describe('useQuiz previousLetter (Back highlights the earlier choice)', () => {
+  const letterOf = (index: number, driver: string) =>
+    QUIZ_QUESTIONS[index].options.find((o) => o.driver === driver)?.letter;
+
+  it('is null on a first visit and the earlier letter after Back', () => {
+    const { result } = renderHook(() => useQuiz());
+    expect(result.current.previousLetter).toBeNull();
+    act(() => result.current.answer('Harmonizer'));
+    act(() => result.current.answer('Analyzer'));
+    // Q3 has never been answered.
+    expect(result.current.previousLetter).toBeNull();
+    act(() => result.current.undo());
+    expect(result.current.previousLetter).toBe(letterOf(1, 'Analyzer'));
+    act(() => result.current.undo());
+    expect(result.current.previousLetter).toBe(letterOf(0, 'Harmonizer'));
+  });
+
+  it('follows a changed answer and leaves the capture to record only the final one', () => {
+    let t = 2_000_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => t);
+    const { result } = renderHook(() => useQuiz());
+    t += 1000;
+    act(() => result.current.answer('Activator'));
+    t += 1000;
+    act(() => result.current.undo());
+    expect(result.current.previousLetter).toBe(letterOf(0, 'Activator'));
+    t += 4000;
+    act(() => result.current.answer('Energizer'));
+    act(() => result.current.undo());
+    expect(result.current.previousLetter).toBe(letterOf(0, 'Energizer'));
+    act(() => result.current.answer('Energizer'));
+    for (let i = 1; i < QUIZ_QUESTIONS.length; i++) act(() => result.current.answer('Analyzer'));
+    expect(result.current.step.kind).toBe('complete');
+    if (result.current.step.kind !== 'complete') return;
+    expect(result.current.step.capture.answers[0]).toMatchObject({
+      questionId: 1,
+      driver: 'Energizer',
+      letter: letterOf(0, 'Energizer'),
+    });
+    expect(result.current.step.capture.undoCount).toBe(2);
+    now.mockRestore();
+  });
+
+  it('reset forgets every earlier choice', () => {
+    const { result } = renderHook(() => useQuiz());
+    act(() => result.current.answer('Activator'));
+    act(() => result.current.undo());
+    act(() => result.current.reset());
+    expect(result.current.previousLetter).toBeNull();
+  });
+});

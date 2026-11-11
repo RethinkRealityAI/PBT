@@ -4,25 +4,22 @@ import { Glass } from '../design-system/Glass';
 import { DriverWave } from '../design-system/DriverWave';
 import { Orb } from '../design-system/Orb';
 import { Icon } from '../design-system/Icon';
+import { Tooltip } from '../design-system/Tooltip';
 import { PillButton } from '../design-system/PillButton';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
-import { useScenario } from '../app/providers/ScenarioProvider';
 import { useSession } from '../app/providers/SessionProvider';
 import { ECHO_DRIVERS } from '../data/echoDrivers';
 import { DRIVER_COLORS, RADII, type DriverColors } from '../design-system/tokens';
-import { LIBRARY_SCENARIOS, type Scenario } from '../data/scenarios';
-import { ScenarioHints } from '../features/scenarios/ScenarioHints';
 import { useResolvedLibraryScenarios } from '../data/useResolvedScenarios';
-import { useTrainingSpecies } from '../features/scenarios/useTrainingSpecies';
-import { Segmented, type SegmentedOption } from '../design-system/Segmented';
-import { SpeciesIcon } from '../design-system/SpeciesIcon';
-import { useObjectionCatalog } from '../features/scenarios/useObjectionCatalog';
-import { objectionCategoryId } from '../shared/scenarios/objectionCategories';
-import { speciesOf, type ScenarioSpecies } from '../shared/scenarios/species';
-import { useFlag, useFlagValue, useFlags, useSimulationConfig, IfFlag } from '../app/providers/FlagProvider';
+import {
+  SelectScenarioModal,
+  type SelectScenarioChoice,
+} from '../features/scenarios/SelectScenarioModal';
+import { logEvent } from '../lib/analytics';
+import { useFlag, useFlagValue, useSimulationConfig, IfFlag } from '../app/providers/FlagProvider';
 import { useScreenEnabled } from '../app/screenFlags';
 import { resolveDimensions, resolveWeights } from '../data/knowledge/simulationConfig';
 import type { DimensionKey } from '../data/knowledge/scoringRubric';
@@ -31,14 +28,12 @@ import { RecoveredSessionNotice } from '../features/chat/RecoveredSessionNotice'
 import { useTheme } from '../app/providers/ThemeProvider';
 import { readStorage, writeStorage, type StorageKeyDef } from '../lib/storage';
 import { ReportModal } from '../features/reporting/ReportModal';
-import { resolveDailyPickBase, type DailyPickBase } from '../lib/dailyPick';
 import { computeStreak } from '../lib/streak';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
 import { useT } from '../i18n/useT';
 import { useLanguage } from '../app/providers/LanguageProvider';
 import { formatPercent } from '../i18n/format';
 import { localizedResolvedDimension } from '../i18n/dataL10n/rubric';
-import { localizedScenario, localizedLifeStage } from '../i18n/dataL10n/scenarios';
 
 function getDisplayInitials(user: { email?: string; user_metadata?: { display_name?: string } } | null): string | null {
   if (!user) return null;
@@ -110,7 +105,7 @@ function iconBadgeStyle(dc: typeof DRIVER_COLORS[keyof typeof DRIVER_COLORS], da
   };
 }
 
-/** Small round controls (scenario arrows) — same glass + lift language as icon badges */
+/** Small round controls (the hero's info button) — same glass + lift language as icon badges */
 function roundGlassControlStyle(dc: DriverColors, dark: boolean): CSSProperties {
   return {
     border: `1px solid color-mix(in oklab, ${dc.primary} 42%, rgba(255,255,255,0.5))`,
@@ -275,55 +270,6 @@ function AcTGuideCard({
   );
 }
 
-/**
- * Hero card when the admin has hidden every library scenario.
- *
- * The previous behaviour fell back to `LIBRARY_SCENARIOS[0]` so the card
- * stayed renderable — which un-hid a scenario an admin had deliberately
- * turned off, and offered a Start button for it. An honest empty state is the
- * only correct answer: no title, no counter, and deliberately NO start CTA.
- */
-function EmptyScenarioHero({
-  driverColors,
-  dark,
-}: {
-  driverColors: DriverColors;
-  dark: boolean;
-}) {
-  const t = useT();
-  return (
-    <Glass
-      radius={RADII.xl}
-      padding={22}
-      tint={dark ? 0.38 : 0.08}
-      blur={dark ? 36 : 22}
-      style={{ minHeight: 160, marginBottom: 14 }}
-    >
-      <div className="flex items-start gap-3">
-        <div style={{ ...iconBadgeStyle(driverColors, dark), flexShrink: 0 }}>
-          <Icon.info />
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <h2
-            style={{
-              margin: '0 0 6px',
-              fontSize: 20,
-              fontWeight: 400,
-              letterSpacing: '-0.02em',
-              color: 'var(--pbt-text)',
-            }}
-          >
-            {t('home.pick.empty.title')}
-          </h2>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--pbt-text-muted)' }}>
-            {t('home.pick.empty.body')}
-          </p>
-        </div>
-      </div>
-    </Glass>
-  );
-}
-
 const DASHBOARD_WELCOMED_KEY: StorageKeyDef<boolean> = {
   key: 'dashboard_welcomed',
   fallback: false,
@@ -337,6 +283,10 @@ const SEEN_START_HERE_KEY: StorageKeyDef<boolean> = {
 };
 
 /** Desktop column count for the quick-action row (static class names for Tailwind). */
+/** The hero orb's float box and the orb inside it (the ripples need the margin). */
+const HERO_ORB_BOX = 84;
+const HERO_ORB_SIZE = 72;
+
 const QUICK_ACTION_DESKTOP_COLS: Record<number, string> = {
   1: 'lg:grid-cols-1',
   2: 'lg:grid-cols-2',
@@ -347,19 +297,13 @@ export function HomeScreen() {
   const { go } = useNavigation();
   const { profile } = useProfile();
   const { user } = useSession();
-  const { setScenario } = useScenario();
   const t = useT();
-  const { locale } = useLanguage();
-  // Manual pager offset applied on top of the date+driver daily base.
-  const [pickIndex, setPickIndex] = useState(0);
   const [scoringInfoOpen, setScoringInfoOpen] = useState(false);
-  const [scenarioInfoOpen, setScenarioInfoOpen] = useState(false);
+  const [selectOpen, setSelectOpen] = useState(false);
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
+  // Only the dialog's "n scenarios" reads it: the hero names no scenario.
   const resolvedLibrary = useResolvedLibraryScenarios();
-  const [trainSpecies, setTrainSpecies] = useTrainingSpecies();
-  // Today's pick names its category (the subject area) above the title.
-  const { teamObjections, categoryById } = useObjectionCatalog();
   const headlineOverride = useFlagValue<string>('field.home.headline', '');
   // Admin override for the greeting above the headline ("Good day.").
   const greetingRaw = useFlagValue<unknown>('field.home.welcome_eyebrow', '');
@@ -370,16 +314,12 @@ export function HomeScreen() {
   const showActCard = useFlag('component.home.act_guide_card', true) && screenEnabled('actGuide');
   const showLibraryCard = useFlag('component.home.library_card', true) && screenEnabled('resources');
   const showEchoCard = useFlag('component.home.echo_profile_card', true);
+  // Building your own lives in the Select scenario dialog, not a tile.
+  const canBuild = screenEnabled('create');
   // Quick actions into switched-off screens are dropped. On the 2-column phone
   // grid an odd last tile spans the row so it never ends in a hole.
   const quickActions = (
     [
-      {
-        label: t('home.actions.build.title'),
-        sub: t('home.actions.build.sub'),
-        icon: <Icon.plus />,
-        screen: 'create' as const,
-      },
       {
         label: t('home.actions.analyzer.title'),
         sub: t('home.actions.analyzer.sub'),
@@ -402,10 +342,6 @@ export function HomeScreen() {
   /** Ripples / Orb CSS pulse / breathing — off until Start Here → scoring modal is closed. */
   const [heroOrbMotion, setHeroOrbMotion] = useState(() => readStorage(SEEN_START_HERE_KEY));
   const pendingStartHereRef = useRef(false);
-  // Daily-pick base, pinned once the (async, admin-filtered) library resolves
-  // so the hero card can't swap mid-view. See resolveDailyPickBase.
-  const { ready: flagsReady } = useFlags();
-  const pickBaseRef = useRef<DailyPickBase | null>(null);
 
   useEffect(() => {
     const welcomed = readStorage(DASHBOARD_WELCOMED_KEY);
@@ -427,84 +363,29 @@ export function HomeScreen() {
 
   const driver = ECHO_DRIVERS[profile.primary];
   const driverColors = DRIVER_COLORS[profile.primary];
-  // Dog | Cat switch: only when the library actually holds scenarios for BOTH
-  // animals. With one animal (today: dogs only) there is no switch and no
-  // filter, so a stored preference can never empty the hero card.
-  const libraryHasBothAnimals =
-    resolvedLibrary.some((r) => speciesOf(r.scenario.species) === 'dog') &&
-    resolvedLibrary.some((r) => speciesOf(r.scenario.species) === 'cat');
-  const pickLibrary = libraryHasBothAnimals
-    ? resolvedLibrary.filter((r) => speciesOf(r.scenario.species) === trainSpecies)
-    : resolvedLibrary;
-  const total = pickLibrary.length;
-  // Today's pick rotates by calendar day + the user's driver; the manual
-  // prev/next pager offsets from that daily base. The base is held steady
-  // once the library has resolved so a late flag snapshot (or the 5-minute
-  // refresh) changing the visible scenario count can't shuffle the card the
-  // user is currently looking at. The CAT rotation gets its own seed (its own
-  // day+driver slot, so switching re-derives a base for the cat list instead
-  // of reusing an index computed for the dogs). The dog seed stays the plain
-  // driver: when an admin publishes the first cat scenario and the switch
-  // appears, a dog trainee's list and seed are unchanged, so the card they
-  // are reading does not reshuffle under them.
-  pickBaseRef.current = resolveDailyPickBase(pickBaseRef.current, {
-    total,
-    driverSeed:
-      libraryHasBothAnimals && trainSpecies === 'cat' ? `${profile.primary}:cat` : profile.primary,
-    resolved: flagsReady,
-  });
-  const dailyBase = pickBaseRef.current?.base ?? 0;
-  const safeIndex = total === 0 ? 0 : (((dailyBase + pickIndex) % total) + total) % total;
-  // `total === 0` renders <EmptyScenarioHero /> instead of this card, so the
-  // LIBRARY_SCENARIOS[0] fallback below is only a type guard — it is never
-  // shown, and must not be: it would resurrect a scenario the admin hid.
-  const resolvedSlot = pickLibrary[safeIndex];
-  const todaysPick = resolvedSlot?.scenario ?? LIBRARY_SCENARIOS[0];
-  const todaysOverride = resolvedSlot?.override ?? null;
-  const cardDriverKey =
-    (todaysOverride?.card_driver_override as
-      | 'Activator'
-      | 'Energizer'
-      | 'Analyzer'
-      | 'Harmonizer'
-      | null) ?? todaysPick.suggestedDriver;
-  // Card-level driver tint can be detached from the AI's scenario driver so
-  // an admin can theme a card differently from the conversation behaviour.
-  const cardDriverColors = DRIVER_COLORS[cardDriverKey] ?? driverColors;
   const initials = getDisplayInitials(user);
   const displayName = getDisplayName(user);
   const headline = headlineOverride.trim() || t('home.headline');
-  const cardTitle =
-    todaysOverride?.card_title_override?.trim() ||
-    localizedScenario(todaysPick, locale).pushback.title;
-  const cardSubtitle =
-    todaysOverride?.card_subtitle_override?.trim() ||
-    t(speciesOf(todaysPick.species) === 'cat' ? 'home.pick.subtitleCat' : 'home.pick.subtitle', {
-      breed: todaysPick.breed,
-      age: localizedLifeStage(todaysPick.age, locale, todaysPick.species),
-      driver: todaysPick.suggestedDriver,
-    });
-  const pickCategory =
-    categoryById(objectionCategoryId(todaysPick.pushback.id, teamObjections))?.label ?? null;
-  const speciesOptions: SegmentedOption<ScenarioSpecies>[] = [
-    { value: 'dog', label: t('create.animal.dog'), icon: <SpeciesIcon species="dog" size={14} /> },
-    { value: 'cat', label: t('create.animal.cat'), icon: <SpeciesIcon species="cat" size={14} /> },
-  ];
-  const changePickSpecies = (next: ScenarioSpecies) => {
-    if (next === trainSpecies) return;
-    // Start the other animal's rotation at its own daily pick.
-    setPickIndex(0);
-    setTrainSpecies(next);
-  };
-  const startButtonLabel =
-    todaysOverride?.start_button_label?.trim() || t('home.pick.start');
-  const infoModalTitle = todaysOverride?.info_modal_title?.trim() || '';
-  const infoModalBody = todaysOverride?.info_modal_body?.trim() || '';
-  const hasScenarioInfo = infoModalBody.length > 0;
 
-  const startTodaysPick = () => {
-    setScenario(todaysPick);
-    go('chat');
+  const openSelect = () => {
+    logEvent({ type: 'modal_open', screen: 'home', target: 'select_scenario_open', meta: { canBuild } });
+    setSelectOpen(true);
+  };
+
+  const chooseScenarioSource = (choice: SelectScenarioChoice) => {
+    setSelectOpen(false);
+    if (choice === 'library') {
+      logEvent({
+        type: 'cta_click',
+        screen: 'home',
+        target: 'select_scenario_library',
+        meta: { scenarios: resolvedLibrary.length },
+      });
+      go('scenarioLibrary');
+    } else {
+      logEvent({ type: 'cta_click', screen: 'home', target: 'select_scenario_build' });
+      go('create');
+    }
   };
 
   const dismissBeacon = () => {
@@ -524,11 +405,7 @@ export function HomeScreen() {
   const openScoringInfo = (e: MouseEvent) => {
     e.stopPropagation();
     if (beaconActive) pendingStartHereRef.current = true;
-    if (hasScenarioInfo) {
-      setScenarioInfoOpen(true);
-    } else {
-      setScoringInfoOpen(true);
-    }
+    setScoringInfoOpen(true);
   };
 
   return (
@@ -795,11 +672,9 @@ export function HomeScreen() {
               <AcTGuideCard driverColors={driverColors} dark={dark} onClick={() => go('actGuide')} />
             )}
 
-            {/* Hero scenario card — or an honest empty state when the admin
-                has hidden every scenario (never a hidden one un-hidden). */}
-            {total === 0 ? (
-              <EmptyScenarioHero driverColors={driverColors} dark={dark} />
-            ) : (
+            {/* Hero — the Training library. It names no scenario: "Select
+                scenario" opens the choice between the library and the
+                trainee's own builder. */}
             <Glass
               radius={RADII.xl}
               padding={22}
@@ -808,16 +683,24 @@ export function HomeScreen() {
               blur={dark ? 36 : 22}
               style={{ minHeight: 200, position: 'relative', marginBottom: 14, overflow: 'hidden' }}
             >
+              <div style={{ position: 'relative', zIndex: 1 }}>
+              {/*
+               * The orb FLOATS in the top-right corner (shape-outside: a
+               * circle), so the title and body wrap around it instead of
+               * leaving a fixed-width gutter — no blank corner, no squeezed
+               * copy, at any phone width or language.
+               */}
               <div
+                aria-hidden
                 style={{
-                  position: 'absolute',
-                  top: 58,
-                  right: 16,
-                  opacity: 0.85,
+                  float: 'right',
+                  position: 'relative',
+                  width: HERO_ORB_BOX,
+                  height: HERO_ORB_BOX,
+                  margin: '-6px -6px 6px 12px',
+                  shapeOutside: 'circle(50%)',
+                  opacity: 0.9,
                   pointerEvents: 'none',
-                  zIndex: 0,
-                  width: 104,
-                  height: 104,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -890,147 +773,56 @@ export function HomeScreen() {
                       : { duration: 0 }
                   }
                 >
-                  <Orb size={88} driver={profile.primary} pulse={heroOrbMotion} />
+                  <Orb size={HERO_ORB_SIZE} driver={profile.primary} pulse={heroOrbMotion} />
                 </motion.div>
               </div>
-
-              {/*
-               * Do not pad the whole column for the orb — only constrain title/subcopy.
-               * Otherwise prev/next + info align to a narrow column instead of the card edge.
-               */}
-              <div style={{ position: 'relative', zIndex: 1 }}>
-              {/* Header row: title left, flexible gap, switcher flush to card inner edge */}
-              <div
-                className="flex w-full min-w-0 items-center"
-                style={{ marginBottom: 8, gap: 12 }}
-              >
-                {libraryHasBothAnimals ? (
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Segmented
-                      options={speciesOptions}
-                      value={trainSpecies}
-                      onChange={changePickSpecies}
-                      ariaLabel={t('home.pick.speciesAria')}
-                    />
-                  </div>
-                ) : (
-                  <div aria-hidden style={{ flex: 1, minWidth: 8 }} />
-                )}
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    onClick={() => setPickIndex((i) => i - 1)}
-                    aria-label={t('home.pick.prevAria')}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: '50%',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: driverColors.primary,
-                      ...roundGlassControlStyle(driverColors, dark),
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-                  </button>
-                  <span
-                    style={{
-                      fontFamily: 'var(--pbt-font-mono)',
-                      fontSize: 10,
-                      letterSpacing: '0.10em',
-                      color: 'var(--pbt-text-muted)',
-                      minWidth: 32,
-                      textAlign: 'center',
-                    }}
-                  >
-                    {safeIndex + 1}/{total}
-                  </span>
-                  <button
-                    onClick={() => setPickIndex((i) => i + 1)}
-                    aria-label={t('home.pick.nextAria')}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: '50%',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: driverColors.primary,
-                      ...roundGlassControlStyle(driverColors, dark),
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-                  </button>
-                </div>
-              </div>
-
-              {pickCategory && (
-                <div
-                  style={{
-                    margin: '0 0 4px',
-                    paddingRight: 108,
-                    fontFamily: 'var(--pbt-font-mono)',
-                    fontSize: 9,
-                    fontWeight: 600,
-                    letterSpacing: '0.18em',
-                    textTransform: 'uppercase',
-                    color: 'var(--pbt-text-muted)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {pickCategory}
-                </div>
-              )}
               <h2
                 style={{
-                  margin: '0 0 6px',
-                  fontSize: 20,
+                  margin: '0 0 8px',
+                  // Eases down on the narrowest phones so the longest word
+                  // ("d'entraînement") still fits beside the orb.
+                  fontSize: 'clamp(21px, 6.6vw, 24px)',
                   fontWeight: 400,
-                  letterSpacing: '-0.02em',
+                  letterSpacing: '-0.025em',
+                  lineHeight: 1.1,
                   color: 'var(--pbt-text)',
-                  maxWidth: 240,
-                  paddingRight: 108,
-                  transition: 'opacity 0.2s',
+                  textWrap: 'balance',
                 }}
               >
-                {(() => {
-                  const title = cardTitle.replace('Switching brands', 'Switching\u00A0brands');
-                  const words = title.split(' ');
-                  return words.length > 4
-                    ? words.slice(0, 4).join(' ') + '…'
-                    : title;
-                })()}
+                {t('home.hero.title')}
               </h2>
               <p
                 style={{
-                  margin: '0 0 18px',
-                  fontSize: 13,
+                  margin: '0 0 20px',
+                  fontSize: 13.5,
+                  lineHeight: 1.45,
                   color: 'var(--pbt-text-muted)',
-                  maxWidth: 280,
-                  paddingRight: 108,
                 }}
               >
-                {cardSubtitle}
+                {t('home.hero.body')}
               </p>
-              <div className="flex w-full min-w-0 items-center justify-between gap-4">
+              {/* Wraps rather than clipping: on a narrow phone (or in French)
+                  the Start-here beacon drops under the button, right-aligned. */}
+              <div
+                className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-3"
+                style={{ clear: 'both' }}
+              >
                 <PillButton
-                  onClick={startTodaysPick}
+                  onClick={openSelect}
                   icon={<Icon.arrow />}
+                  aria-haspopup="dialog"
                   style={{
                     ...pillSolidDriverStyle(driverColors),
                     flexShrink: 0,
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {startButtonLabel}
+                  {t('home.hero.select')}
                 </PillButton>
                 <motion.div
                   style={{
                     flexShrink: 0,
+                    marginLeft: 'auto',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 8,
@@ -1068,30 +860,62 @@ export function HomeScreen() {
                       </motion.span>
                     )}
                   </AnimatePresence>
-                  <button
-                    type="button"
-                    aria-label={t('home.pick.scoringAria')}
-                    onClick={openScoringInfo}
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: '50%',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: driverColors.primary,
-                      flexShrink: 0,
-                      ...roundGlassControlStyle(driverColors, dark),
-                    }}
-                  >
-                    <Icon.info style={{ width: 18, height: 18 }} aria-hidden />
-                  </button>
+                  {/* "Scoring info" + (i) is one button; its name is the
+                      visible label, the tooltip describes it. While the
+                      beacon says "Start here →" the label steps aside (it
+                      stays the accessible name) so the row never reads
+                      twice. */}
+                  <Tooltip label={t('home.pick.scoringAria')} describe placement="top">
+                    <button
+                      type="button"
+                      onClick={openScoringInfo}
+                      className="pbt-scoring-info"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: 0,
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--pbt-text-muted)',
+                        font: 'inherit',
+                        borderRadius: 9999,
+                      }}
+                    >
+                      <span
+                        className={beaconActive ? 'sr-only' : undefined}
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          letterSpacing: '-0.005em',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {t('home.pick.scoringInfo')}
+                      </span>
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: '50%',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: driverColors.primary,
+                          flexShrink: 0,
+                          ...roundGlassControlStyle(driverColors, dark),
+                        }}
+                      >
+                        <Icon.info style={{ width: 18, height: 18 }} aria-hidden />
+                      </span>
+                    </button>
+                  </Tooltip>
                 </motion.div>
               </div>
               </div>
             </Glass>
-            )}
           </div>
 
           {/* ── Right column: quick actions + library + ACT guide + ECHO profile ── */}
@@ -1269,128 +1093,14 @@ export function HomeScreen() {
       </Page>
       <ReportModal open={reportOpen} screen="home" onClose={() => setReportOpen(false)} />
       <ScoringInfoModal open={scoringInfoOpen} onClose={handleScoringModalClosed} />
-      <ScenarioInfoModal
-        open={scenarioInfoOpen}
-        title={infoModalTitle || cardTitle}
-        body={infoModalBody}
-        scenario={todaysPick}
-        onClose={() => setScenarioInfoOpen(false)}
+      <SelectScenarioModal
+        open={selectOpen}
+        onClose={() => setSelectOpen(false)}
+        libraryCount={resolvedLibrary.length}
+        canBuild={canBuild}
+        onChoose={chooseScenarioSource}
       />
     </>
-  );
-}
-
-function ScenarioInfoModal({
-  open,
-  title,
-  body,
-  scenario,
-  onClose,
-}: {
-  open: boolean;
-  title: string;
-  body: string;
-  /** Scenario for surfacing the same ACT-aligned hints the Begin
-   *  Simulation modal shows — gives the trainee a preview of what
-   *  earns credit before they start. */
-  scenario?: Scenario;
-  onClose: () => void;
-}) {
-  const t = useT();
-  return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.button
-            type="button"
-            aria-label={t('home.scenarioInfo.closeAria')}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 60,
-              border: 'none',
-              background: 'rgba(20, 12, 14, 0.32)',
-              backdropFilter: 'blur(4px)',
-              cursor: 'default',
-            }}
-          />
-          <motion.div
-            role="dialog"
-            aria-modal="true"
-            initial={{ opacity: 0, scale: 0.94, x: '-50%', y: '-48%' }}
-            animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
-            exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-48%' }}
-            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-            className="pbt-scroll"
-            style={{
-              position: 'fixed',
-              top: '50%',
-              left: '50%',
-              zIndex: 61,
-              width: 'min(94vw, 480px)',
-              maxHeight: '88vh',
-              overflowY: 'auto',
-              borderRadius: 28,
-            }}
-          >
-            <Glass radius={28} padding="24px 22px" blur={26} tint={0.06}>
-              <div className="flex items-start justify-between gap-3" style={{ marginBottom: 12 }}>
-                <h2
-                  style={{
-                    margin: 0,
-                    fontSize: 18,
-                    fontWeight: 600,
-                    lineHeight: 1.25,
-                    letterSpacing: '-0.02em',
-                  }}
-                >
-                  {title}
-                </h2>
-                <button
-                  type="button"
-                  aria-label={t('home.modal.close')}
-                  onClick={onClose}
-                  style={{
-                    flexShrink: 0,
-                    width: 30,
-                    height: 30,
-                    borderRadius: '50%',
-                    border: '1px solid rgba(255,255,255,0.50)',
-                    background: 'rgba(255,255,255,0.22)',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--pbt-text-muted)',
-                  }}
-                >
-                  <Icon.close />
-                </button>
-              </div>
-              {body && (
-                <div
-                  style={{
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    color: 'var(--pbt-text)',
-                    whiteSpace: 'pre-wrap',
-                    fontWeight: 500,
-                    marginBottom: scenario ? 14 : 0,
-                  }}
-                >
-                  {body}
-                </div>
-              )}
-              {scenario && <ScenarioHints scenario={scenario} />}
-            </Glass>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
   );
 }
 

@@ -44,30 +44,23 @@ export const home: Record<keyof typeof enHome, string> = {
   'home.dim.empathy': 'Empathie',
   'home.dim.rapport': 'Lien de confiance',
 
-  // ── Carte vedette « choix du jour » ───────────────────────
-  'home.pick.subtitle': '{breed}, {age}. Moteur : {driver}.',
-  'home.pick.subtitleCat': 'Chat · {breed}, {age}. Moteur : {driver}.',
-  'home.pick.speciesAria': 'Animal du choix du jour',
-  'home.pick.start': 'Lancer le scénario',
-  'home.pick.prevAria': 'Scénario précédent',
-  'home.pick.nextAria': 'Scénario suivant',
+  // ── Carte vedette Bibliothèque d'entraînement ─────────────
+  'home.hero.title': 'Bibliothèque d’entraînement',
+  'home.hero.body': 'Choisissez un scénario clés en main ou créez le vôtre pour vous exercer.',
+  'home.hero.select': 'Choisir un scénario',
   'home.pick.startHere': 'Commencez ici →',
   'home.pick.scoringAria': 'Comment les séances sont évaluées',
-  'home.pick.empty.title': 'Aucun scénario disponible pour le moment',
-  'home.pick.empty.body':
-    'Tous les scénarios sont actuellement masqués. Créez le vôtre ou revenez plus tard.',
+  'home.pick.scoringInfo': 'Infos sur l’évaluation',
 
   // ── Actions rapides ───────────────────────────────────────
-  'home.actions.build.title': 'Créer un scénario',
-  'home.actions.build.sub': 'Objection personnalisée',
   'home.actions.analyzer.title': 'Analyseur animal',
   'home.actions.analyzer.sub': 'BCS · MCS · kcal',
   'home.actions.fecalScan.title': 'Analyse fécale',
   'home.actions.fecalScan.sub': 'Cote des selles · 1–5',
 
-  // ── Cartes Bibliothèque et profil ECHO ────────────────────
-  'home.library.aria': 'Bibliothèque',
-  'home.library.title': 'Bibliothèque clinique',
+  // ── Cartes Ressources cliniques et profil ECHO ────────────
+  'home.library.aria': 'Ressources cliniques',
+  'home.library.title': 'Ressources cliniques',
   'home.library.sub': 'WSAVA · BCS · MCS · cibles caloriques',
   'home.echo.aria': 'Votre profil de moteur ECHO',
   'home.echo.title': 'Votre profil ECHO',
@@ -78,7 +71,6 @@ export const home: Record<keyof typeof enHome, string> = {
 
   // ── Chrome des fenêtres modales ───────────────────────────
   'home.modal.close': 'Fermer',
-  'home.scenarioInfo.closeAria': 'Fermer les détails du scénario',
 
   // ── Fenêtre du guide d'évaluation ─────────────────────────
   'home.scoring.closeAria': "Fermer le guide d'évaluation",

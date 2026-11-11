@@ -37,7 +37,9 @@
  * `scenario_objections.created_by` / `updated_by` and
  * `scenario_objection_categories.created_by` / `updated_by` (team-authored
  * objections and their categories are shared content every scenario built
- * on them depends on — the FKs set null).
+ * on them depends on — the FKs set null). Likewise the Studio's team tag
+ * library (`scenario_tags.created_by`, `scenario_tag_assignments.created_by`)
+ * and `scenario_overrides.archived_by` — shared content, set null.
  */
 import { errorResponse, jsonResponse, requireUser, type AdminCtx } from './_shared/admin';
 

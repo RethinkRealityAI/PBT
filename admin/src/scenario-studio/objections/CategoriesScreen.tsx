@@ -29,6 +29,8 @@ import { COLOR } from '../../lib/tokens';
 import { useKnowledgeDocuments, useScenarioOverrides } from '../../data/queries';
 import type { AdminObjection, CatalogObjection } from '../../../../src/shared/scenarios/objections';
 import type { AdminObjectionCategory } from '../../../../src/shared/scenarios/objectionCategories';
+import { categoryIconFor } from '../../../../src/shared/scenarios/categoryIcons';
+import { CategoryIcon } from '../../../../src/design-system/CategoryIcon';
 import { PetBadge, StatusDot } from '../ui';
 import { buildStudioEntries, relativeTime } from '../studioModel';
 import type { KnowledgeState } from '../types';
@@ -549,7 +551,25 @@ function CategoryCard({
     <section aria-labelledby={headingId} style={cardBox}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 260px', minWidth: 0, display: 'grid', gap: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* The icon trainees see on this category's Training library card. */}
+            <span
+              aria-hidden
+              data-category-icon-badge
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                background: COLOR.brand,
+                flexShrink: 0,
+              }}
+            >
+              <CategoryIcon icon={categoryIconFor(c)} size={15} />
+            </span>
             <h2 id={headingId} style={cardTitle}>
               {c.name}
             </h2>

@@ -168,7 +168,15 @@ describe('the category editor form', () => {
       focusArea: 'gi',
       knowledgeSlugs: ['study:a'],
       sortOrder: 40,
+      icon: null,
     });
+    expect(categoryFormToWrite(formFromCategory({ ...PROBIOTICS, builtIn: false, icon: 'sprout' })).icon).toBe(
+      'sprout',
+    );
+    // A built-in's icon is fixed: never sent.
+    expect(categoryFormToWrite(formFromCategory({ ...PROBIOTICS, builtIn: true, icon: 'sprout' }))).not.toHaveProperty(
+      'icon',
+    );
     expect(categoryFormToWrite(emptyCategoryForm())).not.toHaveProperty('id');
     expect(categoryFormToWrite({ ...emptyCategoryForm(), name: '  GI  ', nameFr: '  ' })).toMatchObject({
       name: 'GI',

@@ -21,6 +21,7 @@ function entry(id: string, source: StudioEntry['source'], species: 'dog' | 'cat'
     draft: { scenario_id: id, species },
     status: source === 'user' ? 'trainee' : 'draft',
     editedAt: null,
+    archived: false,
   };
 }
 
@@ -178,7 +179,8 @@ describe('emptyGalleryState', () => {
   it('a read-only role gets the words but no create', () => {
     const s = emptyGalleryState(input({ canWrite: false, selection: sel({ animal: 'cat' }) }));
     expect(s.create).toBeNull();
-    expect(s.showAll).toBe(true);
+    // The animal is the top-level choice, not a filter to clear.
+    expect(s.showAll).toBe(false);
   });
 
   it('never offers to create a trainee-built scenario', () => {
@@ -217,8 +219,33 @@ describe('emptyGalleryState', () => {
     const s = emptyGalleryState(input({ query: '  Persian ', selection: sel({ animal: 'cat' }) }));
     expect(s.title).toBe('Nothing matches “Persian”');
     expect(s.clearSearch).toBe(true);
-    expect(s.showAll).toBe(true);
+    expect(s.showAll).toBe(false);
     expect(s.create).toBeNull();
     expect(emptyGalleryState(input({ query: 'x' })).showAll).toBe(false);
+  });
+
+  it('animal first: an empty animal offers its first scenario, and the other animal when it has some', () => {
+    const s = emptyGalleryState(input({ selection: sel({ animal: 'cat' }), otherAnimalCount: 2 }));
+    expect(s.title).toBe('No cat scenarios yet');
+    expect(s.create?.label).toBe('Create your first cat scenario');
+    expect(s.otherAnimal).toEqual({ species: 'dog', count: 2 });
+    expect(s.showAll).toBe(false);
+    expect(emptyGalleryState(input({ selection: sel({ animal: 'cat' }), otherAnimalCount: 0 })).otherAnimal).toBeNull();
+  });
+
+  it('archived: nothing put away — no create', () => {
+    const s = emptyGalleryState(input({ selection: sel({ status: 'archived', animal: 'dog' }) }));
+    expect(s.title).toBe('No archived dog scenarios');
+    expect(s.create).toBeNull();
+    expect(s.showAll).toBe(true);
+  });
+
+  it('tags: names the tag but never pretends a new scenario starts tagged', () => {
+    const s = emptyGalleryState(
+      input({ selection: sel({ animal: 'cat', category: 'weight', tags: ['t1'] }), tagNames: ['Q1 rollout'] }),
+    );
+    expect(s.title).toBe('No cat scenarios in Weight management tagged “Q1 rollout” yet');
+    expect(s.create?.label).toBe('Create a cat scenario in Weight management');
+    expect(s.showAll).toBe(true);
   });
 });

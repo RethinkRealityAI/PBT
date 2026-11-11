@@ -1,6 +1,7 @@
 import type { ReactElement, SVGAttributes } from 'react';
 import { DriverWave } from '../design-system/DriverWave';
 import { Icon } from '../design-system/Icon';
+import { Tooltip } from '../design-system/Tooltip';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useProfile } from '../app/providers/ProfileProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
@@ -19,7 +20,7 @@ interface NavItem {
   flag?: FlagKey;
 }
 
-/** Train / History / Library share the tab-bar labels; the rest are sidebar-only. */
+/** Train / History / Resources share the tab-bar labels; the rest are sidebar-only. */
 const NAV_ITEMS: NavItem[] = [
   { screen: 'home', labelKey: 'tab.train', icon: Icon.flame },
   { screen: 'create', labelKey: 'chrome.nav.create', icon: Icon.plus, flag: 'nav.sidebar.create.enabled' },
@@ -123,7 +124,8 @@ export function Sidebar() {
         }}
       >
         {visibleNav.map(({ screen, labelKey, icon: IconCmp }) => {
-          const active = current === screen;
+          // The Training library is reached from Train (Home's hero).
+          const active = current === screen || (screen === 'home' && current === 'scenarioLibrary');
           const label = t(labelKey);
           return (
             <button
@@ -211,7 +213,15 @@ export function Sidebar() {
             ? t('chrome.theme.dark')
             : t('chrome.theme.light')}
         </span>
-        <LocaleToggle />
+        <LocaleToggle tooltipPlacement="top" />
+        <Tooltip
+          label={
+            resolvedTheme === 'dark'
+              ? t('chrome.themeToggle.toLight')
+              : t('chrome.themeToggle.toDark')
+          }
+          placement="top"
+        >
         <button
           type="button"
           onClick={toggle}
@@ -242,6 +252,7 @@ export function Sidebar() {
             <Icon.moon style={{ width: 16, height: 16 }} />
           )}
         </button>
+        </Tooltip>
       </div>
     </aside>
   );

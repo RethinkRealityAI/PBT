@@ -30,6 +30,7 @@ import {
   type TeamObjection,
 } from '../../../../src/shared/scenarios/objections';
 import { focusAreaLabel } from '../../../../src/shared/knowledge/focusAreas';
+import type { CategoryIconKey } from '../../../../src/shared/scenarios/categoryIcons';
 import { ALL_KNOWLEDGE_SPECIES } from '../../../../src/shared/knowledge/knowledgeScopes';
 import { SCENARIO_SPECIES, type ScenarioSpecies } from '../../../../src/shared/scenarios/species';
 import { resolveDocScope } from '../../data/knowledgeActions';
@@ -228,6 +229,11 @@ export interface CategoryForm {
   focusArea: string | null;
   knowledgeSlugs: string[];
   sortOrder: number | null;
+  /**
+   * The icon trainees see on the Training library card. Null = automatic
+   * (guessed from the name). Never sent for a built-in (its icon is fixed).
+   */
+  icon: CategoryIconKey | null;
 }
 
 export function emptyCategoryForm(): CategoryForm {
@@ -240,6 +246,7 @@ export function emptyCategoryForm(): CategoryForm {
     focusArea: null,
     knowledgeSlugs: [],
     sortOrder: null,
+    icon: null,
   };
 }
 
@@ -253,6 +260,7 @@ export function formFromCategory(c: ObjectionCategory): CategoryForm {
     focusArea: c.focusArea,
     knowledgeSlugs: [...c.knowledgeSlugs],
     sortOrder: c.sortOrder,
+    icon: c.builtIn ? null : (c.icon ?? null),
   };
 }
 
@@ -266,6 +274,9 @@ export function categoryFormToWrite(form: CategoryForm): Record<string, unknown>
     focusArea: form.focusArea,
     knowledgeSlugs: [...form.knowledgeSlugs],
     sortOrder: form.sortOrder,
+    // A built-in's icon is fixed; a team category always sends its choice
+    // (null = automatic), so clearing it sticks.
+    ...(form.builtIn ? {} : { icon: form.icon }),
   };
 }
 

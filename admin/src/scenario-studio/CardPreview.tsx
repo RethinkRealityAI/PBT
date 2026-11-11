@@ -1,66 +1,135 @@
 /**
- * The scenario card as a trainee sees it on the Home screen.
+ * The scenario card as a trainee sees it in the Training library
+ * (src/screens/ScenarioLibraryScreen.tsx).
  *
- * It only earns its place if it is the string the trainee will read, so every
- * fallback follows HomeScreen exactly: title = card title, else the
- * pushback's name; subtitle = card subtitle, else `home.pick.subtitle`
- * ("<breed>, <life stage>. Driver: <driver>."); tint = the card colour, else
- * the owner's driver. The life stage is species-aware (a kitten reads
- * "Kitten (<1)"), the same as the app.
+ * It only earns its place if it is what the trainee will read, so nothing
+ * here is a lookalike:
+ *  - the card itself is the trainee app's own `LibraryScenarioCardBody`
+ *    (the provider-free inside of `LibraryScenarioCard`);
+ *  - the title / objection line / pet line follow `libraryCardTitles` and
+ *    `libraryCardPetLine` — the library's text rules;
+ *  - "<persona> owner" and the difficulty's accessible name are the English
+ *    catalogue strings (`src/i18n/en/library.ts`);
+ *  - the fallbacks for a blank persona / difficulty are the ones the app
+ *    plays (`draftToScenario`, parity-tested against the consumer's
+ *    `adminOverrideToScenario`): Skeptical, level 2.
  *
- * `compact` is the gallery thumbnail: the same tint and title with the
- * species glyph — the gallery card prints the details underneath.
+ * The trainee app paints the card with the TRAINEE's own ECHO colour (the
+ * `--pbt-driver-*` vars of their locked profile), so the preview uses the
+ * app's default palette rather than this scenario's driver.
+ *
+ * One deliberate difference: no round → arrow. On the trainee's card it
+ * means "tap to start"; here nothing starts, so it would read as a dead
+ * button (`showArrow={false}`).
+ *
+ * `compact` is the gallery thumbnail: the card alone. The full preview (the
+ * Publish step) also shows the focus area it is filed under — the library's
+ * first step, then the heading above its cards.
  */
-import { COLOR, DRIVERS, type DriverKey } from '../lib/tokens';
-import { lifeStageLabel, speciesOf } from '../../../src/shared/scenarios/species';
-import { PetBadge } from './ui';
+import type { CSSProperties } from 'react';
+import { Glass } from '../primitives/Glass';
+import { COLOR } from '../lib/tokens';
+import { CategoryIcon } from '../../../src/design-system/CategoryIcon';
+import { LibraryScenarioCardBody } from '../../../src/features/scenarios/LibraryScenarioCardBody';
+import { libraryCardPetLine, libraryCardTitles } from '../../../src/features/scenarios/libraryCardText';
+import { library as libraryCatalog } from '../../../src/i18n/en/library';
+import { create as createCatalog } from '../../../src/i18n/en/create';
+import { DIFFICULTY_LABELS, isPersona } from '../../../src/shared/scenarios/enums';
+import { lifeStageLabel, speciesOf, type ScenarioSpecies } from '../../../src/shared/scenarios/species';
+import {
+  OTHER_CATEGORY_ICON,
+  categoryIconFor,
+  type CategoryIconKey,
+} from '../../../src/shared/scenarios/categoryIcons';
+import type { Difficulty } from '../../../src/data/scenarios';
 import type { StudioDraft } from './studioModel';
 import { objectionLabel, type ObjectionRef } from './objections/objectionsModel';
+import { builtInAdminCategories, categoryOfObjection } from './objections/categoriesModel';
 import { useObjectionsContext } from './objections/ObjectionsContext';
 
-const DRIVER_SET = new Set<string>(['Activator', 'Energizer', 'Analyzer', 'Harmonizer']);
-
-function asDriver(v: unknown): DriverKey | null {
-  return typeof v === 'string' && DRIVER_SET.has(v) ? (v as DriverKey) : null;
+/** `{token}` substitution for the English catalogue strings. */
+function fill(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (m, k: string) => vars[k] ?? m);
 }
 
-export interface CardText {
+export interface LibraryCardPreview {
   title: string;
-  subtitle: string;
-  button: string;
-  /** Tint of the card itself (card colour override, else the owner's driver). */
-  tint: DriverKey;
-  /** The scenario's own driver — what the subtitle names. */
-  driver: DriverKey | null;
+  /** The objection, shown above the title only when a custom title hides it. */
+  objection: string | null;
+  species: ScenarioSpecies;
+  pet: string;
+  owner: string;
+  difficulty: Difficulty;
+  difficultyLabel: string;
+  difficultyAria: string;
+  /** The focus area it is filed under in the library. */
+  focusArea: { name: string; icon: CategoryIconKey };
 }
 
 /**
- * What the Home card will say for this draft. `fallbackTitle` covers a
- * scenario with no pushback yet (the built-in / trainee title); `team` names
- * a team objection by its own title, the way the app does.
+ * What the library card will say for this draft (English). Pass the
+ * EFFECTIVE draft — for a library scenario, blank fields inherit the
+ * built-in values, exactly as trainees get them (`withBaseFallback`).
+ * `fallbackTitle` names a scenario with no pushback yet.
  */
-export function cardText(
+export function libraryCardPreview(
   draft: StudioDraft,
-  fallbackTitle?: string | null,
-  team: readonly ObjectionRef[] = [],
-): CardText {
-  const driver = asDriver(draft.suggested_driver);
-  const tint = asDriver(draft.card_driver_override) ?? driver ?? 'Activator';
-  const breed = draft.breed?.trim() || '—';
-  const stage = lifeStageLabel(draft.life_stage, draft.species) || '—';
+  {
+    fallbackTitle,
+    objections = [],
+    categories = builtInAdminCategories(),
+  }: {
+    fallbackTitle?: string | null;
+    objections?: ReadonlyArray<ObjectionRef & { categoryId?: string | null }>;
+    categories?: ReadonlyArray<{ id: string; name: string; icon?: string | null }>;
+  } = {},
+): LibraryCardPreview {
+  const species = speciesOf(draft.species);
+  const objectionTitle = draft.pushback_id
+    ? objectionLabel(draft.pushback_id, objections)
+    : fallbackTitle?.trim() || 'Untitled scenario';
+  const { title, objection } = libraryCardTitles(draft.card_title_override, objectionTitle);
+  const persona = isPersona(draft.persona_override) ? draft.persona_override : 'Skeptical';
+  const d = draft.difficulty_override;
+  const difficulty: Difficulty = d === 1 || d === 2 || d === 3 || d === 4 ? d : 2;
+  const difficultyLabel = DIFFICULTY_LABELS[difficulty];
+  const team = objections.map((o) => ({ id: o.id, categoryId: o.categoryId ?? '' }));
+  const category = categoryOfObjection(draft.pushback_id, team, categories);
   return {
-    title:
-      draft.card_title_override?.trim() ||
-      (draft.pushback_id ? objectionLabel(draft.pushback_id, team) : '') ||
-      fallbackTitle?.trim() ||
-      'Untitled scenario',
-    subtitle:
-      draft.card_subtitle_override?.trim() || `${breed}, ${stage}. Driver: ${driver ?? '—'}.`,
-    button: draft.start_button_label?.trim() || 'Start scenario',
-    tint,
-    driver,
+    title,
+    objection,
+    species,
+    pet: libraryCardPetLine(
+      draft.breed?.trim() || '—',
+      lifeStageLabel(draft.life_stage, draft.species) || '—',
+    ),
+    owner: fill(libraryCatalog['library.card.persona'], { persona }),
+    difficulty,
+    difficultyLabel,
+    difficultyAria: fill(libraryCatalog['library.card.difficultyAria'], {
+      label: difficultyLabel,
+      level: String(difficulty),
+    }),
+    focusArea: category
+      ? { name: category.name, icon: categoryIconFor(category) }
+      : { name: createCatalog['create.pushback.otherTitle'], icon: OTHER_CATEGORY_ICON },
   };
 }
+
+/**
+ * The trainee app's light-theme variables the card body reads, scoped to the
+ * preview (the admin defines none of them). Values: `src/design-system/tokens.css`
+ * `:root` — the default palette a trainee sees before their ECHO profile
+ * colours the app.
+ */
+const TRAINEE_VARS = {
+  '--pbt-driver-primary': 'oklch(0.62 0.22 25)',
+  '--pbt-driver-accent': 'oklch(0.52 0.24 22)',
+  '--pbt-text': COLOR.ink,
+  '--pbt-text-muted': COLOR.inkMute,
+  '--pbt-font-mono': "'Geist Mono', ui-monospace, monospace",
+  color: 'var(--pbt-text)',
+} as CSSProperties;
 
 export function CardPreview({
   draft,
@@ -71,116 +140,84 @@ export function CardPreview({
   fallbackTitle?: string | null;
   compact?: boolean;
 }) {
-  const { objections } = useObjectionsContext();
-  const text = cardText(draft, fallbackTitle, objections);
-  const dc = DRIVERS[text.tint];
-  const species = speciesOf(draft.species);
-  const infoBody = draft.info_modal_body?.trim() ?? '';
+  const { objections, categories } = useObjectionsContext();
+  const card = libraryCardPreview(draft, { fallbackTitle, objections, categories });
+
+  const body = (
+    <Glass radius={18} padding={16} shine={false}>
+      <LibraryScenarioCardBody
+        title={card.title}
+        objection={card.objection}
+        species={card.species}
+        pet={card.pet}
+        owner={card.owner}
+        difficulty={card.difficulty}
+        difficultyLabel={card.difficultyLabel}
+        difficultyAria={card.difficultyAria}
+        // Nothing here starts a session: no "tap to start" arrow.
+        showArrow={false}
+      />
+    </Glass>
+  );
+
+  if (compact) return <div style={{ ...TRAINEE_VARS, overflowWrap: 'anywhere' }}>{body}</div>;
 
   return (
     <div
-      aria-label={compact ? undefined : 'Preview of the card trainees will see'}
-      role={compact ? undefined : 'group'}
+      role="group"
+      aria-label="Preview of the card trainees will see"
       style={{
-        position: 'relative',
-        padding: compact ? '14px 14px 16px' : 20,
-        borderRadius: compact ? 16 : 22,
-        background: `linear-gradient(180deg, color-mix(in oklab, ${dc.soft} 62%, white) 0%, white 100%)`,
-        border: `1px solid color-mix(in oklab, ${dc.color} 22%, transparent)`,
-        boxShadow: compact
-          ? 'none'
-          : `0 12px 32px -16px color-mix(in oklab, ${dc.color} 35%, transparent)`,
-        minHeight: compact ? 84 : 200,
-        overflow: 'hidden',
-        boxSizing: 'border-box',
+        ...TRAINEE_VARS,
+        display: 'grid',
+        gap: 12,
+        padding: 14,
+        borderRadius: 22,
+        background:
+          'radial-gradient(120% 90% at 0% 0%, color-mix(in oklab, var(--pbt-driver-primary) 10%, transparent), transparent 60%), rgba(60,20,15,0.035)',
+        border: `1px solid ${COLOR.border}`,
+        overflowWrap: 'anywhere',
       }}
     >
-      <div
-        aria-hidden
-        style={{
-          position: 'absolute',
-          right: compact ? -34 : -28,
-          top: compact ? -34 : -28,
-          width: compact ? 96 : 120,
-          height: compact ? 96 : 120,
-          borderRadius: '50%',
-          background: `radial-gradient(closest-side, ${dc.color}, transparent 70%)`,
-          opacity: 0.32,
-        }}
-      />
-      {compact && (
-        <PetBadge
-          species={species}
-          size={28}
-          title={species === 'cat' ? 'Cat' : 'Dog'}
+      {/* The focus area the card sits under (the library's first step, then
+          the heading above its scenarios). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <span
+          aria-hidden
           style={{
-            position: 'absolute',
-            right: 10,
-            top: 10,
-            boxShadow: '0 2px 8px -4px rgba(60,20,15,0.3)',
+            flexShrink: 0,
+            width: 34,
+            height: 34,
+            borderRadius: 11,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fff',
+            background: 'linear-gradient(160deg, var(--pbt-driver-primary), var(--pbt-driver-accent))',
+            boxShadow:
+              'inset 0 1px 0 rgba(255,255,255,0.35), 0 8px 18px -10px color-mix(in oklab, var(--pbt-driver-primary) 70%, transparent)',
           }}
-        />
-      )}
-      <div
-        style={{
-          position: 'relative',
-          fontSize: compact ? 15 : 18,
-          fontWeight: 600,
-          color: COLOR.ink,
-          letterSpacing: '-0.02em',
-          lineHeight: 1.25,
-          marginBottom: compact ? 0 : 6,
-          maxWidth: compact ? 'calc(100% - 36px)' : 260,
-          overflowWrap: 'anywhere',
-        }}
-      >
-        {text.title}
-      </div>
-      {!compact && (
-        <>
+        >
+          <CategoryIcon icon={card.focusArea.icon} size={17} strokeWidth={1.9} />
+        </span>
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
-              position: 'relative',
-              fontSize: 12,
-              color: COLOR.inkMute,
-              lineHeight: 1.45,
-              marginBottom: 16,
-              maxWidth: 300,
-              overflowWrap: 'anywhere',
+              fontFamily: 'var(--pbt-font-mono)',
+              fontSize: 9.5,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: 'var(--pbt-text-muted)',
+              marginBottom: 2,
             }}
           >
-            {text.subtitle}
+            {libraryCatalog['library.eyebrow']} · focus area
           </div>
-          <span
-            style={{
-              position: 'relative',
-              display: 'inline-block',
-              padding: '8px 16px',
-              borderRadius: 9999,
-              background: `linear-gradient(180deg, ${dc.color}, color-mix(in oklab, ${dc.color} 70%, black))`,
-              color: '#fff',
-              fontWeight: 700,
-              fontSize: 12,
-            }}
-          >
-            {text.button} →
-          </span>
-          {infoBody && (
-            <div
-              style={{
-                position: 'relative',
-                marginTop: 12,
-                fontSize: 11,
-                color: COLOR.inkMute,
-                fontStyle: 'italic',
-              }}
-            >
-              ⓘ {draft.info_modal_title?.trim() || text.title}: {infoBody.slice(0, 80)}
-              {infoBody.length > 80 ? '…' : ''}
-            </div>
-          )}
-        </>
-      )}
+          <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.015em', lineHeight: 1.2 }}>
+            {card.focusArea.name}
+          </div>
+        </div>
+      </div>
+      {body}
     </div>
   );
 }

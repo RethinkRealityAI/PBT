@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }));
 
 import handler, {
+  ARCHIVED_MESSAGE,
   COPIED_FROM_COLUMN_MISSING,
   SPECIES_COLUMN_MISSING,
   SUCCESS_CRITERIA_COLUMN_MISSING,
@@ -423,7 +424,7 @@ describe('GET op=capabilities', () => {
     sb.setHandler('scenario_overrides', () => ({ data: [], error: null }));
     const res = await capabilities();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ species: true });
+    expect(await res.json()).toEqual({ species: true, archive: true, cats: 'off' });
   });
 
   it('reports species: false while the deferred migration is pending', async () => {
@@ -431,7 +432,26 @@ describe('GET op=capabilities', () => {
       data: null,
       error: { code: '42703', message: 'column scenario_overrides.species does not exist' },
     }));
-    expect(await (await capabilities()).json()).toEqual({ species: false });
+    expect(await (await capabilities()).json()).toEqual({ species: false, archive: false, cats: 'off' });
+  });
+
+  it('reports the trainee cat switch, resolved server-side', async () => {
+    sb.setHandler('scenario_overrides', () => ({ data: [], error: null }));
+    sb.setHandler('flags', () => ({
+      data: { key: 'scenario.cat.enabled', default_value: true, value_type: 'boolean' },
+      error: null,
+    }));
+    sb.setHandler('flag_rules', () => ({ data: [], error: null }));
+    expect((await (await capabilities()).json()).cats).toBe('on');
+    sb.setHandler('flag_rules', () => ({
+      data: [
+        { id: 'r1', flag_key: 'scenario.cat.enabled', priority: 1, audience: { drivers: ['Analyzer'] }, value: false, enabled: true },
+      ],
+      error: null,
+    }));
+    expect((await (await capabilities()).json()).cats).toBe('some');
+    sb.setHandler('flags', () => ({ data: null, error: { code: '57014', message: 'timeout' } }));
+    expect((await (await capabilities()).json()).cats).toBeNull();
   });
 
   it('any other failure is a 500, not a false "unsupported"', async () => {
@@ -689,5 +709,159 @@ describe('success_criteria — "what a great answer includes" (scorer only)', ()
     expect(res.status).toBe(200);
     expect(((await res.json()) as Bag)._notice).toBe(SPECIES_COLUMN_MISSING);
     expect(upserts().at(-1)).not.toHaveProperty('success_criteria');
+  });
+});
+
+// ── Gallery card actions: publish / unpublish / archive / restore ─────────
+
+/** Every write (insert / update / upsert) to scenario_overrides, in order. */
+function writes(): Array<{ op: string; payload: Bag }> {
+  const out: Array<{ op: string; payload: Bag }> = [];
+  for (const call of sb.callsFor('scenario_overrides')) {
+    for (const op of call.ops) {
+      if (op.op === 'insert' || op.op === 'update' || op.op === 'upsert') out.push({ op: op.op, payload: op.args[0] as Bag });
+    }
+  }
+  return out;
+}
+
+/** A table whose reads return `existing` and whose writes echo `existing` + the payload. */
+function rowTable(existing: Bag | null, onWrite?: (payload: Bag) => SbResult) {
+  sb.setHandler('scenario_overrides', (call: SbCall) => {
+    const w = call.ops.find((o) => o.op === 'insert' || o.op === 'update' || o.op === 'upsert');
+    if (w) {
+      const payload = w.args[0] as Bag;
+      return onWrite ? onWrite(payload) : { data: { ...(existing ?? {}), ...payload, updated_at: 'T2' }, error: null };
+    }
+    return { data: existing, error: null };
+  });
+}
+
+const ADMIN_ROW: Bag = { ...ROW, scenario_id: 'admin:a1', updated_at: 'T1', deleted_at: null, archived_at: null };
+
+describe('POST ?op=visibility — publish / unpublish from a card', () => {
+  it('publishes a library scenario with no row as a sparse row (visible only)', async () => {
+    rowTable(null);
+    const res = await save({ scenario_id: 'seed:1', visible: true, baseUpdatedAt: null }, 'visibility');
+    expect(res.status).toBe(200);
+    expect(writes()).toEqual([{ op: 'insert', payload: { scenario_id: 'seed:1', visible: true, updated_by: 'admin-1' } }]);
+    expect(auditRows()[0]).toMatchObject({ entity_type: 'scenario_override', entity_id: 'seed:1', note: 'Published from the Studio gallery' });
+  });
+
+  it('unpublishes by writing only `visible`, guarded against tombstones', async () => {
+    rowTable({ ...ADMIN_ROW, visible: true });
+    const res = await save({ scenario_id: 'admin:a1', visible: false, baseUpdatedAt: 'T1' }, 'visibility');
+    expect(res.status).toBe(200);
+    expect(writes()).toEqual([{ op: 'update', payload: { visible: false, updated_by: 'admin-1' } }]);
+    expect(updateGuards()).toContainEqual(['deleted_at', null]);
+  });
+
+  it('answers 409 stale with the current row when someone saved meanwhile', async () => {
+    rowTable({ ...ADMIN_ROW, updated_at: 'T9' });
+    const res = await save({ scenario_id: 'admin:a1', visible: true, baseUpdatedAt: 'T1' }, 'visibility');
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as Bag;
+    expect(json.code).toBe('stale');
+    expect((json.current as Bag).updated_at).toBe('T9');
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('refuses to publish an archived scenario — restore it first', async () => {
+    rowTable({ ...ADMIN_ROW, archived_at: '2026-11-01T00:00:00Z' });
+    const res = await save({ scenario_id: 'admin:a1', visible: true }, 'visibility');
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as Bag).error).toBe(ARCHIVED_MESSAGE);
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('refuses an incomplete Studio scenario, a missing one and a trainee’s own', async () => {
+    rowTable({ ...ADMIN_ROW, suggested_driver: null });
+    expect((await save({ scenario_id: 'admin:a1', visible: true }, 'visibility')).status).toBe(400);
+    rowTable(null);
+    expect((await save({ scenario_id: 'admin:gone', visible: true }, 'visibility')).status).toBe(404);
+    expect((await save({ scenario_id: 'user:abc', visible: true }, 'visibility')).status).toBe(400);
+    expect((await save({ scenario_id: 'seed:1', visible: 'yes' }, 'visibility')).status).toBe(400);
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('needs scenarios.write', async () => {
+    sb.setHandler('admin_roles', () => ({ data: [{ key: 'tester', permissions: ['scenarios.read'] }], error: null }));
+    sb.setHandler('profiles', () => ({
+      data: { is_admin: false, disabled: false, admin_role: 'tester', permission_overrides: null },
+      error: null,
+    }));
+    rowTable(null);
+    expect((await save({ scenario_id: 'seed:1', visible: true }, 'visibility')).status).toBe(403);
+  });
+});
+
+describe('POST ?op=archive — archive / restore', () => {
+  it('archives = hidden + archived_at/by in ONE update', async () => {
+    rowTable({ ...ADMIN_ROW, visible: true });
+    const res = await save({ scenario_id: 'admin:a1', archived: true, baseUpdatedAt: 'T1' }, 'archive');
+    expect(res.status).toBe(200);
+    const [w] = writes();
+    expect(w.op).toBe('update');
+    expect(w.payload).toMatchObject({ visible: false, archived_by: 'admin-1', updated_by: 'admin-1' });
+    expect(typeof w.payload.archived_at).toBe('string');
+    expect(auditRows()[0]).toMatchObject({ note: 'Archived from the Studio gallery' });
+  });
+
+  it('restores HIDDEN — never touches visible', async () => {
+    rowTable({ ...ADMIN_ROW, archived_at: '2026-11-01T00:00:00Z' });
+    const res = await save({ scenario_id: 'admin:a1', archived: false }, 'archive');
+    expect(res.status).toBe(200);
+    expect(writes()).toEqual([{ op: 'update', payload: { archived_at: null, archived_by: null, updated_by: 'admin-1' } }]);
+  });
+
+  it('archives a library scenario with no row as a sparse hidden row', async () => {
+    rowTable(null);
+    const res = await save({ scenario_id: 'seed:2', archived: true }, 'archive');
+    expect(res.status).toBe(200);
+    expect(writes()[0]).toMatchObject({ op: 'insert', payload: { scenario_id: 'seed:2', visible: false } });
+  });
+
+  it('answers 503 archive_unavailable before the migration', async () => {
+    rowTable(ADMIN_ROW, () => ({
+      data: null,
+      error: { code: 'PGRST204', message: "Could not find the 'archived_at' column of 'scenario_overrides' in the schema cache" },
+    }));
+    const res = await save({ scenario_id: 'admin:a1', archived: true }, 'archive');
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as Bag).code).toBe('archive_unavailable');
+  });
+
+  it('refuses a trainee’s own scenario', async () => {
+    rowTable(null);
+    expect((await save({ scenario_id: 'user:abc', archived: true }, 'archive')).status).toBe(400);
+  });
+
+  it('a plain save can’t make an archived row visible', async () => {
+    rowTable({ ...ADMIN_ROW, archived_at: '2026-11-01T00:00:00Z' });
+    const res = await save({ ...ROW, scenario_id: 'admin:a1', visible: true });
+    expect(res.status).toBe(400);
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('duplicate never copies the archive state', async () => {
+    rowTable({ ...ADMIN_ROW, archived_at: '2026-11-01T00:00:00Z', archived_by: 'someone' });
+    const res = await save({ scenario_id: 'admin:a1' }, 'duplicate');
+    expect(res.status).toBe(200);
+    const [w] = writes();
+    expect(w.payload).toMatchObject({ archived_at: null, archived_by: null, visible: false });
+  });
+});
+
+describe('GET ?op=capabilities', () => {
+  it('reports whether archive can be stored', async () => {
+    sb.setHandler('scenario_overrides', (call: SbCall) => {
+      const cols = call.ops.find((o) => o.op === 'select')?.args[0];
+      if (cols === 'archived_at') return { data: null, error: { code: '42703', message: 'column scenario_overrides.archived_at does not exist' } };
+      return { data: [], error: null };
+    });
+    const res = await handler(
+      jsonRequest('admin-scenario-overrides?op=capabilities', null, { method: 'GET', headers: { authorization: 'Bearer admin' } }),
+    );
+    expect(await res.json()).toEqual({ species: true, archive: false, cats: 'off' });
   });
 });

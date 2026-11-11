@@ -67,6 +67,9 @@ const ResultScreen = lazy(() =>
 const CreateScreen = lazy(() =>
   import('../screens/CreateScreen').then((m) => ({ default: m.CreateScreen })),
 );
+const ScenarioLibraryScreen = lazy(() =>
+  import('../screens/ScenarioLibraryScreen').then((m) => ({ default: m.ScenarioLibraryScreen })),
+);
 const ChatScreen = lazy(() =>
   import('../screens/ChatScreen').then((m) => ({ default: m.ChatScreen })),
 );
@@ -480,6 +483,8 @@ function CurrentScreen() {
       return <HomeScreen />;
     case 'create':
       return <CreateScreen />;
+    case 'scenarioLibrary':
+      return <ScenarioLibraryScreen />;
     case 'chat':
       return <ChatScreen />;
     case 'stats':

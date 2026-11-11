@@ -271,3 +271,38 @@ describe('flags-resolve — objection categories in the public snapshot', () => 
     expect(((await second.json()) as { objectionCategories: unknown[] }).objectionCategories).toHaveLength(1);
   });
 });
+
+describe('flags-resolve — category icons (20261107000100_category_icons.sql)', () => {
+  it('publishes a team category\'s icon in snapshot.objectionCategories (never a built-in\'s)', async () => {
+    sb.setHandler('scenario_objections', () => ({ data: [], error: null }));
+    sb.setHandler('scenario_objection_categories', () => ({
+      data: [
+        { ...CATEGORY_ROW, icon: 'sprout' },
+        { ...CATEGORY_ROW, id: 'category:renal', name: 'Renal', icon: 'not-an-icon' },
+        { ...CATEGORY_ROW, id: 'weight', name: 'Weight', icon: 'heart' },
+      ],
+      error: null,
+    }));
+    const body = await resolve();
+    const cats = body.objectionCategories as Array<Record<string, unknown>>;
+    expect(cats.find((c) => c.id === 'category:probiotics')?.icon).toBe('sprout');
+    // An unknown key is dropped (the app guesses one); a built-in's is fixed in code.
+    expect(cats.find((c) => c.id === 'category:renal')).not.toHaveProperty('icon');
+    expect(cats.find((c) => c.id === 'weight')).not.toHaveProperty('icon');
+    const call = sb.callsFor('scenario_objection_categories')[0] as SbCall;
+    expect(String(call.ops.find((o) => o.op === 'select')?.args[0])).toMatch(/\bicon\b/);
+  });
+
+  it('before the migration: retries without the column and still publishes the categories', async () => {
+    sb.setHandler('scenario_objections', () => ({ data: [], error: null }));
+    sb.setHandler('scenario_objection_categories', (call: SbCall) =>
+      /\bicon\b/.test(String(call.ops.find((o) => o.op === 'select')?.args[0]))
+        ? { data: null, error: { code: '42703', message: 'column scenario_objection_categories.icon does not exist' } }
+        : { data: [CATEGORY_ROW], error: null },
+    );
+    const body = await resolve();
+    const cats = body.objectionCategories as Array<Record<string, unknown>>;
+    expect(cats.map((c) => c.id)).toEqual(['category:probiotics']);
+    expect(cats[0]).not.toHaveProperty('icon');
+  });
+});

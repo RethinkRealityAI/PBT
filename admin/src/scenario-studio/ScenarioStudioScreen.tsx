@@ -19,6 +19,8 @@
  * that editor would write nulls over override rows nobody ever loaded.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ScenarioOverrideRow } from '../data/types';
+import { ApiError } from '../lib/api';
 import { ContextBar, ScreenShell } from '../primitives/Shell';
 import { ErrorState } from '../primitives/QueryBoundary';
 import { useCan } from '../primitives/access';
@@ -33,6 +35,7 @@ import {
 import { buildInitialDraft, diffAgainstBase } from '../data/scenarioManifest';
 import {
   buildDuplicateDraft,
+  buildStudioContext,
   buildStudioEntries,
   buildTraineeLibraryDraft,
   emptyAdminDraft,
@@ -53,7 +56,9 @@ import { clearLocalDraft, listLocalDrafts, readLocalDraft, setLocalDraftsOwner }
 import type { KnowledgeState } from './types';
 import { StudioHome, type CreateArgs, type ResumableDraft } from './StudioHome';
 import { StudioEditor } from './StudioEditor';
-import { fetchScenarioCapabilities } from './api';
+import { fetchScenarioCapabilities, setScenarioArchived, setScenarioVisibility, type ScenarioCapabilities } from './api';
+import { useScenarioTags } from './gallery/useScenarioTags';
+import type { GalleryActions } from './gallery/Gallery';
 import { setSimulatorSessionsOwner } from './simulator/simulatorSession';
 
 interface OpenState {
@@ -111,7 +116,7 @@ export function ScenarioStudioScreen({
   const [open, setOpen] = useState<OpenState | null>(null);
   const [localNonce, setLocalNonce] = useState(0);
   /** What the database can store (whether the species column exists), probed once. */
-  const [capabilities, setCapabilities] = useState<{ species?: boolean }>({});
+  const [capabilities, setCapabilities] = useState<ScenarioCapabilities>({});
   useEffect(() => {
     let cancelled = false;
     void fetchScenarioCapabilities().then((c) => {
@@ -132,9 +137,19 @@ export function ScenarioStudioScreen({
   }, [bothLoaded, readError]);
   const loading = !everLoaded && !bothLoaded;
 
+  // Rows a gallery card action just wrote (or a 409 handed back), shown at
+  // once — the refetch that follows replaces them.
+  const [writtenRows, setWrittenRows] = useState<ReadonlyMap<string, ScenarioOverrideRow>>(new Map());
+  useEffect(() => setWrittenRows(new Map()), [overrides.data]);
+  const rows = useMemo(() => {
+    if (writtenRows.size === 0) return overrides.data;
+    const out = overrides.data.map((r) => writtenRows.get(r.scenario_id) ?? r);
+    for (const [id, row] of writtenRows) if (!overrides.data.some((r) => r.scenario_id === id)) out.push(row);
+    return out;
+  }, [overrides.data, writtenRows]);
   const entries = useMemo(
-    () => buildStudioEntries(overrides.data, userScenarios.data, objections.objections),
-    [overrides.data, userScenarios.data, objections.objections],
+    () => buildStudioEntries(rows, userScenarios.data, objections.objections),
+    [rows, userScenarios.data, objections.objections],
   );
   const libraryCopies = useMemo(() => libraryCopiesByTrainee(entries), [entries]);
 
@@ -152,6 +167,60 @@ export function ScenarioStudioScreen({
   );
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  // ── Gallery card actions ──
+  const tags = useScenarioTags();
+  const keepRow = useCallback((row: unknown) => {
+    if (!row || typeof row !== 'object' || typeof (row as { scenario_id?: unknown }).scenario_id !== 'string') return;
+    const r = row as ScenarioOverrideRow;
+    setWrittenRows((cur) => new Map(cur).set(r.scenario_id, r));
+  }, []);
+  const galleryActions: GalleryActions = {
+    publishContext: (entry) =>
+      buildStudioContext({
+        draft: entry.draft,
+        source: entry.source,
+        // A card can't know about this admin's test drives; the row is left out.
+        tested: true,
+        docs: knowledge.loading || knowledge.error ? null : knowledge.docs,
+        speciesSupported: capabilities.species,
+        objections: { team: objections.objections, deleted: objections.deleted, loaded: objections.loaded },
+        categories: objections.categories,
+      }),
+    setVisibility: async (entry, visible) => {
+      try {
+        keepRow(
+          await setScenarioVisibility({ scenarioId: entry.id, visible, baseUpdatedAt: entry.override?.updated_at ?? null }),
+        );
+        refresh();
+      } catch (err) {
+        // Someone saved meanwhile: show the row that won, then the gallery asks again.
+        if (err instanceof ApiError && err.code === 'stale') {
+          keepRow(err.body.current);
+          refresh();
+        }
+        throw err;
+      }
+    },
+    setArchived: async (entry, archived) => {
+      try {
+        keepRow(
+          await setScenarioArchived({ scenarioId: entry.id, archived, baseUpdatedAt: entry.override?.updated_at ?? null }),
+        );
+        refresh();
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'stale') {
+          keepRow(err.body.current);
+          refresh();
+        }
+        throw err;
+      }
+    },
+    isOnlyVisible: (entry) => visibleScenarioCount(entries, entry.id) === 0,
+    archiveAvailable: capabilities.archive,
+    catSwitch: capabilities.cats,
+    tags,
+  };
 
   // A scenario that vanished from the list (deleted elsewhere) with nothing
   // to start from: go back to the home rather than hold a dead selection.
@@ -405,6 +474,7 @@ export function ScenarioStudioScreen({
             )
           }
           speciesSupported={capabilities.species}
+          catSwitch={capabilities.cats}
           initialStep={open.step}
           initialCategoryId={open.categoryId ?? null}
           openAssistant={open.openAssistant}
@@ -441,6 +511,8 @@ export function ScenarioStudioScreen({
           clearLocalDraft(id);
           setLocalNonce((n) => n + 1);
         }}
+        meUserId={meUserId}
+        actions={galleryActions}
       />
     </ObjectionsProvider>
   );

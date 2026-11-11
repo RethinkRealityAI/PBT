@@ -47,10 +47,35 @@
  * `_notice: 'copied_from_column_missing'` (the species notice wins when both
  * were dropped — it changes what trainees play; provenance is display-only),
  * while a duplicate saves silently (nobody asked for provenance there).
+ *
+ * Gallery card actions (migration 20261107000000_scenario_tags_archive.sql):
+ *
+ *   POST ?op=visibility { scenario_id, visible, baseUpdatedAt? }
+ *        Publish / Unpublish from a gallery card. Writes ONLY `visible`
+ *        (+ updated_by): a library scenario keeps its sparse override (a
+ *        row is created with nothing but `visible` when it has none); an
+ *        `admin:` row must exist and, to go live, still pass
+ *        `validateOverride`. Refused (400) for a trainee's own `user:`
+ *        scenario and for an ARCHIVED row going live ("restore it first").
+ *        `baseUpdatedAt` works exactly as on a save (409 `stale`).
+ *   POST ?op=archive { scenario_id, archived, baseUpdatedAt? }
+ *        archived: true → `archived_at` = now, `archived_by` = caller and
+ *        `visible` = false in ONE update (hidden from trainees AND out of
+ *        the default gallery); archived: false → Restore: clears both and
+ *        leaves the scenario HIDDEN — publishing is a separate, deliberate
+ *        step. `user:` ids → 400. While the columns are missing → 503
+ *        { code: 'archive_unavailable' } (the capabilities probe reports
+ *        `archive: false` so the gallery disables the button first).
+ *
+ *   A plain upsert that would make an archived row visible is refused (400)
+ *   too, and Duplicate never copies the archive state. Every one of these
+ *   writes is audited as a `scenario_override` update with a note
+ *   (Published / Unpublished / Archived / Restored).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { can, errorResponse, jsonResponse, requireAdmin, writeAuditLog } from './_shared/admin';
 import { isMissingSpeciesColumn, isMissingSuccessCriteriaColumn } from './_shared/speciesColumn';
+import { switchAudienceState, type FlagRow, type RuleRow } from './_shared/flagRules';
 import {
   checkTeamObjection,
   isMissingCopiedFromColumn,
@@ -403,6 +428,150 @@ export async function upsertOverrideRow(
 const DELETED_MESSAGE =
   'This scenario was deleted. Ask an admin to restore it from Audit → Revert, or use Duplicate to save your version as a new scenario.';
 
+/** 400 for making an archived scenario visible. */
+export const ARCHIVED_MESSAGE =
+  'This scenario is archived. Restore it first (Studio → Archived → Restore), then publish it.';
+export const ARCHIVE_UNAVAILABLE_MESSAGE =
+  'Archiving needs a database update first (migration 20261107000000_scenario_tags_archive.sql).';
+
+/** `scenario_overrides.archived_at` / `archived_by` don't exist yet (PGRST204 / 42703). */
+export function isMissingArchiveColumn(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { code?: unknown; message?: unknown };
+  if (e.code !== 'PGRST204' && e.code !== '42703') return false;
+  return /\barchived_(at|by)\b/i.test(typeof e.message === 'string' ? e.message : '');
+}
+
+type OverrideBefore = Record<string, unknown> & {
+  deleted_at?: string | null;
+  updated_at?: string | null;
+  archived_at?: string | null;
+  created_by?: string | null;
+};
+
+/** 409 `stale` when `baseUpdatedAt` was sent and no longer matches; else null. */
+function staleResponse(baseUpdatedAt: unknown, before: OverrideBefore | null): Response | null {
+  if (baseUpdatedAt === undefined) return null;
+  const current = before?.updated_at ?? null;
+  if ((baseUpdatedAt ?? null) === current) return null;
+  return jsonResponse(
+    {
+      error:
+        'Someone else saved this scenario after you opened it. Your edits are still here — they have been re-applied on top of the latest version; review and save again.',
+      code: 'stale',
+      current: before ?? null,
+    },
+    { status: 409 },
+  );
+}
+
+async function readOverride(sb: SupabaseClient, scenarioId: string): Promise<OverrideBefore | null> {
+  return (
+    await sb.from('scenario_overrides').select('*').eq('scenario_id', scenarioId).maybeSingle()
+  ).data as OverrideBefore | null;
+}
+
+/**
+ * Write a few columns of one scenario's row: an UPDATE guarded by
+ * `deleted_at is null` when the row exists, else an insert of a sparse row
+ * (library scenarios only — the callers refuse a missing `admin:` row).
+ */
+async function writeColumns(
+  sb: SupabaseClient,
+  scenarioId: string,
+  columns: Record<string, unknown>,
+  existing: boolean,
+): Promise<{ data: unknown; error: DbError; conflict: boolean }> {
+  if (existing) {
+    const res = await sb
+      .from('scenario_overrides')
+      .update(columns)
+      .eq('scenario_id', scenarioId)
+      .is('deleted_at', null)
+      .select('*')
+      .maybeSingle();
+    return { data: res.data, error: res.error, conflict: !res.error && !res.data };
+  }
+  const res = await sb
+    .from('scenario_overrides')
+    .insert({ scenario_id: scenarioId, ...columns })
+    .select('*')
+    .maybeSingle();
+  return { data: res.data, error: res.error, conflict: false };
+}
+
+type Ctx = Exclude<Awaited<ReturnType<typeof requireAdmin>>, Response>;
+
+/** `?op=visibility` — Publish / Unpublish from a gallery card (see the header). */
+async function setVisibility(ctx: Ctx, body: { scenario_id: string; visible?: unknown; baseUpdatedAt?: unknown }): Promise<Response> {
+  const id = body.scenario_id;
+  if (typeof body.visible !== 'boolean') return errorResponse(400, 'visible must be true or false');
+  if (!/^(seed|admin):/.test(id)) {
+    return errorResponse(400, 'Only library and Studio scenarios can be published from the Studio.');
+  }
+  const before = await readOverride(ctx.sb, id);
+  if (before?.deleted_at) return errorResponse(409, DELETED_MESSAGE);
+  if (id.startsWith('admin:') && !before) return errorResponse(404, 'That scenario no longer exists.');
+  const stale = staleResponse(body.baseUpdatedAt, before);
+  if (stale) return stale;
+  if (body.visible && before?.archived_at) return errorResponse(400, ARCHIVED_MESSAGE);
+  if (body.visible && id.startsWith('admin:') && before) {
+    // The stored row must still be a complete, legal scenario to go live.
+    const invalid = validateOverride({ ...(before as unknown as OverrideUpsert), visible: true });
+    if (invalid) return errorResponse(400, `Not ready to publish: ${invalid}`);
+    const unknown = await rejectUnknownObjection(ctx.sb, before.pushback_id, 'Not ready to publish: ');
+    if (unknown) return unknown;
+  }
+  const saved = await writeColumns(ctx.sb, id, { visible: body.visible, updated_by: ctx.user.id }, Boolean(before));
+  if (saved.error) return errorResponse(500, saved.error.message ?? 'Database error');
+  if (saved.conflict) return errorResponse(409, DELETED_MESSAGE);
+  await writeAuditLog(ctx, {
+    entity_type: 'scenario_override',
+    entity_id: id,
+    action: before ? 'update' : 'create',
+    before,
+    after: saved.data,
+    note: body.visible ? 'Published from the Studio gallery' : 'Unpublished from the Studio gallery',
+  });
+  return jsonResponse(saved.data);
+}
+
+/** `?op=archive` — Archive / Restore (see the header). */
+async function setArchived(ctx: Ctx, body: { scenario_id: string; archived?: unknown; baseUpdatedAt?: unknown }): Promise<Response> {
+  const id = body.scenario_id;
+  if (typeof body.archived !== 'boolean') return errorResponse(400, 'archived must be true or false');
+  if (!/^(seed|admin):/.test(id)) {
+    return errorResponse(400, 'A trainee’s own scenario can’t be archived.');
+  }
+  const before = await readOverride(ctx.sb, id);
+  if (before?.deleted_at) return errorResponse(409, DELETED_MESSAGE);
+  if (id.startsWith('admin:') && !before) return errorResponse(404, 'That scenario no longer exists.');
+  const stale = staleResponse(body.baseUpdatedAt, before);
+  if (stale) return stale;
+  const columns = body.archived
+    ? { archived_at: new Date().toISOString(), archived_by: ctx.user.id, visible: false, updated_by: ctx.user.id }
+    : { archived_at: null, archived_by: null, updated_by: ctx.user.id };
+  // Restoring a scenario that has no row (never archived) is a no-op.
+  if (!body.archived && !before) return jsonResponse({ scenario_id: id, archived_at: null });
+  const saved = await writeColumns(ctx.sb, id, columns, Boolean(before));
+  if (saved.error) {
+    if (isMissingArchiveColumn(saved.error)) {
+      return jsonResponse({ error: ARCHIVE_UNAVAILABLE_MESSAGE, code: 'archive_unavailable' }, { status: 503 });
+    }
+    return errorResponse(500, saved.error.message ?? 'Database error');
+  }
+  if (saved.conflict) return errorResponse(409, DELETED_MESSAGE);
+  await writeAuditLog(ctx, {
+    entity_type: 'scenario_override',
+    entity_id: id,
+    action: before ? 'update' : 'create',
+    before,
+    after: saved.data,
+    note: body.archived ? 'Archived from the Studio gallery' : 'Restored from the archive (hidden)',
+  });
+  return jsonResponse(saved.data);
+}
+
 /** The saved row, plus a notice when an optional column could not be stored. */
 function savedResponse(
   data: unknown,
@@ -418,6 +587,38 @@ function savedResponse(
   if (!notice) return jsonResponse(data);
   const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
   return jsonResponse({ ...row, [SPECIES_NOTICE_KEY]: notice });
+}
+
+/** The trainee app's cat switch (`useTrainingSpecies`; code default OFF). */
+const CAT_SWITCH = 'scenario.cat.enabled';
+
+/**
+ * Whether trainees can see cat scenarios: 'on' | 'off' | 'some' (a targeted
+ * rule), or null when it can't be read. Resolved here with the service role
+ * so the Studio can warn about it with `scenarios.read` alone; it never needs
+ * `flags.read`.
+ */
+async function catSwitchState(sb: SupabaseClient): Promise<'on' | 'off' | 'some' | null> {
+  try {
+    const [flagRes, rulesRes] = await Promise.all([
+      sb.from('flags').select('key, default_value, value_type').eq('key', CAT_SWITCH).maybeSingle(),
+      sb
+        .from('flag_rules')
+        .select('id, flag_key, priority, audience, value, enabled')
+        .eq('flag_key', CAT_SWITCH)
+        .eq('enabled', true)
+        .order('priority', { ascending: false }),
+    ]);
+    if (flagRes.error || rulesRes.error) return null;
+    return switchAudienceState(
+      CAT_SWITCH,
+      (flagRes.data ?? null) as FlagRow | null,
+      (rulesRes.data ?? []) as RuleRow[],
+      false,
+    );
+  } catch {
+    return null;
+  }
 }
 
 /** 400 / 500 Response when `pushback_id` is a team id that can't be stored, else null. */
@@ -438,17 +639,26 @@ export default async (req: Request): Promise<Response> => {
   if (ctx instanceof Response) return ctx;
 
   if (req.method === 'GET') {
-    // `?op=capabilities` — what this database can store. Today: whether the
+    // `?op=capabilities` — what this database can store (and whether
+    // trainees can see cat scenarios at all). Today: whether the
     // `species` column exists (it does in production since 2026-09-27; a
     // project that has not run the migration answers false), so the Studio
     // can refuse to publish a cat scenario that would reach trainees as a
     // dog (and say why) BEFORE a save, and keep saying it after a reload.
     if (new URL(req.url).searchParams.get('op') === 'capabilities') {
-      const probe = await ctx.sb.from('scenario_overrides').select('species').limit(1);
+      const [probe, archiveProbe, cats] = await Promise.all([
+        ctx.sb.from('scenario_overrides').select('species').limit(1),
+        ctx.sb.from('scenario_overrides').select('archived_at').limit(1),
+        catSwitchState(ctx.sb),
+      ]);
       if (probe.error && !isMissingSpeciesColumn(probe.error)) {
         return errorResponse(500, probe.error.message);
       }
-      return jsonResponse({ species: !probe.error });
+      // `archive` (20261107000000): unknown errors read as "not available"
+      // rather than failing the species answer the editor depends on.
+      // `cats`: who the trainee app shows cat scenarios to (the Studio warns
+      // while it isn't everyone); null = couldn't read the switch.
+      return jsonResponse({ species: !probe.error, archive: !archiveProbe.error, cats });
     }
     // Match the consumer's flags-resolve filter: soft-deleted admin
     // scenarios are tombstones, not part of the live library. Without
@@ -513,6 +723,9 @@ export default async (req: Request): Promise<Response> => {
     return jsonResponse({ ok: true });
   }
 
+  if (op === 'visibility') return setVisibility(ctx, body as unknown as { scenario_id: string });
+  if (op === 'archive') return setArchived(ctx, body as unknown as { scenario_id: string });
+
   if (op === 'duplicate') {
     // Only admin-authored rows are self-contained. A seed/user override row is
     // a sparse overlay on a base scenario that lives in code (or in
@@ -556,6 +769,9 @@ export default async (req: Request): Promise<Response> => {
       // The copy's provenance is the row it was copied from — never the
       // source's own `copied_from`.
       copied_from: body.scenario_id,
+      // A copy of an archived scenario is a fresh draft, not archived. Only
+      // named when the source row has the columns (an older project has none).
+      ...('archived_at' in rest ? { archived_at: null, archived_by: null } : {}),
     };
     // The copy is hidden, so the "admin scenarios need every field" rule
     // doesn't apply — but its column VALUES must still be legal, or a bad row
@@ -591,7 +807,7 @@ export default async (req: Request): Promise<Response> => {
       .select('*')
       .eq('scenario_id', body.scenario_id)
       .maybeSingle()
-  ).data as (Record<string, unknown> & { deleted_at?: string | null; updated_at?: string | null }) | null;
+  ).data as OverrideBefore | null;
   // A soft-deleted admin scenario is a tombstone kept for Audit → Revert.
   // Writing over it would leave `deleted_at` set (it is not writable), so
   // the save would "succeed" while the scenario stayed invisible to everyone
@@ -601,20 +817,10 @@ export default async (req: Request): Promise<Response> => {
   // Optimistic concurrency (see the header). `null` means the editor saw no
   // row; any mismatch means someone else saved since — including creating a
   // row for a library scenario that had none.
-  if (body.baseUpdatedAt !== undefined) {
-    const current = before?.updated_at ?? null;
-    if ((body.baseUpdatedAt ?? null) !== current) {
-      return jsonResponse(
-        {
-          error:
-            'Someone else saved this scenario after you opened it. Your edits are still here — they have been re-applied on top of the latest version; review and save again.',
-          code: 'stale',
-          current: before ?? null,
-        },
-        { status: 409 },
-      );
-    }
-  }
+  const stale = staleResponse(body.baseUpdatedAt, before);
+  if (stale) return stale;
+  // An archived scenario goes live only after a Restore (a separate step).
+  if (body.visible === true && before?.archived_at) return errorResponse(400, ARCHIVED_MESSAGE);
   const isNewAdmin =
     body.scenario_id.startsWith('admin:') && (!before || before.created_by == null);
   // Provenance is written once, when the row is created (validateOverride

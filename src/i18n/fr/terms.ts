@@ -18,7 +18,7 @@ export const terms: Record<keyof typeof en, string> = {
 
   'terms.section.what.title': "Ce qu'est cet outil",
   'terms.section.what.body':
-    "PBT (Pushback Training) est un outil de simulation conçu pour aider les équipes vétérinaires à s'exercer à gérer les objections courantes des clients — le prix, les aliments adaptés à la race, l'alimentation crue, et plus encore. Les scénarios présentés ici sont des exercices de jeu de rôle, et non de véritables interactions avec des clients. Ils ne remplacent pas le jugement professionnel.",
+    "PBT (Pushback Training) est un outil de simulation conçu pour aider les équipes vétérinaires à s'exercer à gérer les objections courantes des clients : le prix, les aliments adaptés à la race, l'alimentation crue, et plus encore. Les scénarios présentés ici sont des exercices de jeu de rôle, et non de véritables interactions avec des clients. Ils ne remplacent pas le jugement professionnel.",
 
   'terms.section.act.title': 'Le cadre ACT',
   'terms.section.act.body':
@@ -26,7 +26,7 @@ export const terms: Record<keyof typeof en, string> = {
 
   'terms.section.ai.title': "Comment fonctionne l'IA",
   'terms.section.ai.body':
-    "Le jeu de rôle du client et l'évaluation reposent sur un grand modèle de langage. L'IA peut produire des réponses imparfaites ou inattendues — considérez ce qu'elle produit comme un stimulus d'entraînement, et non comme un fait faisant autorité. (Les réponses servent à améliorer continuellement la simulation, de façon anonyme.)",
+    "Le jeu de rôle du client et l'évaluation reposent sur un grand modèle de langage. L'IA peut produire des réponses imparfaites ou inattendues. Considérez ce qu'elle produit comme un stimulus d'entraînement, et non comme un fait faisant autorité. (Les réponses servent à améliorer continuellement la simulation, de façon anonyme.)",
 
   'terms.section.knowledge.title': 'Base de connaissances',
   'terms.section.knowledge.body':
@@ -34,7 +34,7 @@ export const terms: Record<keyof typeof en, string> = {
 
   'terms.section.anonymous.title': 'Anonyme par défaut',
   'terms.section.anonymous.body':
-    "Vous pouvez utiliser PBT sans compte. Votre profil et votre historique de séances sont conservés dans votre navigateur, sur cet appareil. Si vous ne vous connectez pas, nous ne vous demandons jamais votre nom, votre courriel ni aucun autre renseignement personnel. Nous n'enregistrons que des données d'utilisation anonymes, vos séances de pratique (les conversations et leurs résultats) et vos réponses au questionnaire des profils ECHO, associées à un identifiant aléatoire propre à cet appareil plutôt qu'à votre identité, et nous nous en servons uniquement pour comprendre et améliorer la formation. Toutes les données sont chiffrées en transit et au repos. Vous pouvez mettre fin à cet enregistrement en tout temps avec l'option « Autoriser l'utilisation des données d'entraînement » dans l'onglet Vous. La création d'un compte est facultative — elle sauvegarde vos données dans un profil infonuagique privé et chiffré, et les séances déjà effectuées sur cet appareil y sont transférées.",
+    "Vous pouvez utiliser PBT sans compte. Votre profil et votre historique de séances sont conservés dans votre navigateur, sur cet appareil. Si vous ne vous connectez pas, nous ne vous demandons jamais votre nom, votre courriel ni aucun autre renseignement personnel. Nous n'enregistrons que des données d'utilisation anonymes, vos séances de pratique (les conversations et leurs résultats) et vos réponses au questionnaire des profils ECHO, associées à un identifiant aléatoire propre à cet appareil plutôt qu'à votre identité, et nous nous en servons uniquement pour comprendre et améliorer la formation. Toutes les données sont chiffrées en transit et au repos. Vous pouvez mettre fin à cet enregistrement en tout temps avec l'option « Autoriser l'utilisation des données d'entraînement » dans l'onglet Vous. La création d'un compte est facultative : elle sauvegarde vos données dans un profil infonuagique privé et chiffré, et les séances déjà effectuées sur cet appareil y sont transférées.",
 
   'terms.section.privacy.title': 'Confidentialité',
   'terms.section.privacy.body':
@@ -42,5 +42,5 @@ export const terms: Record<keyof typeof en, string> = {
 
   'terms.agree.checkbox':
     "Je comprends que PBT est un simulateur d'entraînement et non un substitut au jugement professionnel, et j'accepte l'approche de confidentialité décrite ci-dessus.",
-  'terms.agree.cta': "J'accepte — c'est parti",
+  'terms.agree.cta': "J'accepte, c'est parti",
 };

@@ -95,6 +95,8 @@ import { KnowledgeStep } from './steps/KnowledgeStep';
 import { BriefStep } from './steps/BriefStep';
 import { TestDriveStep } from './steps/TestDriveStep';
 import { PublishStep } from './steps/PublishStep';
+import type { CatSwitchState } from './api';
+import { catNoticeTitle, CAT_SWITCH_LABEL } from './CatSwitchNotice';
 
 /** Editor width at which the assistant docks as a third column. */
 export const DOCK_MIN_WIDTH = 1140;
@@ -162,6 +164,12 @@ export interface StudioEditorProps {
    * scenario; undefined = unknown, never blocks.
    */
   speciesSupported?: boolean;
+  /**
+   * Who the trainee app shows cat scenarios to (`capabilities.cats`). Not
+   * 'on' → publishing a cat scenario says it won't be visible yet (asks,
+   * never blocks). Undefined = unknown: says nothing.
+   */
+  catSwitch?: CatSwitchState;
   initialStep?: StudioStepKey;
   /**
    * A new scenario started from the gallery's category filter: the Pushback
@@ -807,6 +815,20 @@ export function StudioEditor(props: StudioEditorProps) {
       });
       return;
     }
+    // A cat scenario while cats are switched off (or limited) for trainees:
+    // it can go live, but nobody (or not everybody) will see it yet.
+    const cats = props.catSwitch;
+    if (speciesOf(effectiveDraft.species) === 'cat' && cats !== undefined && cats !== 'on') {
+      const ok = await confirm({
+        title: catNoticeTitle(cats, { kind: 'publish' }),
+        body: can('flags.write')
+          ? `Publishing still works: it reaches trainees once “${CAT_SWITCH_LABEL}” is turned on in Flags.`
+          : `Publishing still works: it reaches trainees once an admin who manages Flags turns on “${CAT_SWITCH_LABEL}”.`,
+        confirmLabel: live ? 'Update anyway' : 'Publish anyway',
+        cancelLabel: 'Not yet',
+      });
+      if (!ok) return;
+    }
     // Retitling the card doesn't need a new test; changing the conversation does.
     const aiChanged = !live || aiSignature(draft) !== aiSignature(baseline);
     if (!ctx.tested && aiChanged) {
@@ -1066,7 +1088,9 @@ export function StudioEditor(props: StudioEditorProps) {
             dirty={dirty}
             busy={busy === 'save' || busy === 'publish' || busy === 'unpublish' ? busy : null}
             speciesPending={speciesPending}
+            catSwitch={props.catSwitch}
             fallbackTitle={fallbackTitle}
+            previewDraft={effectiveDraft}
             onPublish={() => void publish()}
             onSaveDraft={() => void persist('save')}
             onUnpublish={() => void persist('unpublish')}

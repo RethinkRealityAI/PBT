@@ -4,6 +4,7 @@ import { Glass } from '../design-system/Glass';
 import { DriverWave } from '../design-system/DriverWave';
 import { Icon } from '../design-system/Icon';
 import { PillButton } from '../design-system/PillButton';
+import { Tooltip } from '../design-system/Tooltip';
 import { useDialog } from '../lib/useDialog';
 import { useQuiz } from '../features/quiz/useQuiz';
 import { recordQuizResult } from '../features/quiz/recordQuizResult';
@@ -62,6 +63,8 @@ const glassShadowChosenCompact = `${LETTER_RIM_CHOSEN_COMPACT}, 0 4px 16px -8px 
 const focusRing = (dark: boolean) =>
   `0 0 0 3px color-mix(in oklab, var(--pbt-cherry) ${dark ? 32 : 26}%, transparent)`;
 const focusBorder = '1px solid color-mix(in oklab, var(--pbt-cherry) 55%, transparent)';
+/** The answer given earlier, on a question the trainee stepped back to. */
+const previousBorder = '1.5px solid color-mix(in oklab, var(--pbt-cherry) 50%, rgba(255,255,255,0.6))';
 
 /**
  * `:focus-visible` keeps the ring off pointer taps. Browsers that don't know
@@ -83,7 +86,7 @@ export function QuizScreen() {
   const t = useT();
   const { locale } = useLanguage();
   const dark = resolvedTheme === 'dark';
-  const { step, currentQuestion, tieBreaker, answer, undo, canUndo } = useQuiz();
+  const { step, currentQuestion, tieBreaker, answer, undo, canUndo, previousLetter } = useQuiz();
   const [chosen, setChosen] = useState<QuizOption | null>(null);
   const [focusedLetter, setFocusedLetter] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
@@ -200,18 +203,20 @@ export function QuizScreen() {
               paddingBottom: 'clamp(8px, 2.5vw, 14px)',
             }}
           >
-            <Glass
-              radius={9999}
-              padding={0}
-              blur={20}
-              tint={0.45}
-              onClick={handleBack}
-              ariaLabel={t(canUndo ? 'quiz.previous.aria' : 'quiz.back.aria')}
-              shine={false}
-              className="flex h-9 w-9 shrink-0 items-center justify-center"
-            >
-              <Icon.back />
-            </Glass>
+            <Tooltip label={t(canUndo ? 'quiz.previous.aria' : 'quiz.back.aria')} placement="bottom" className="shrink-0">
+              <Glass
+                radius={9999}
+                padding={0}
+                blur={20}
+                tint={0.45}
+                onClick={handleBack}
+                ariaLabel={t(canUndo ? 'quiz.previous.aria' : 'quiz.back.aria')}
+                shine={false}
+                className="flex h-9 w-9 shrink-0 items-center justify-center"
+              >
+                <Icon.back />
+              </Glass>
+            </Tooltip>
             <h1
               className="min-w-0 flex-1 truncate text-left"
               style={{
@@ -239,34 +244,42 @@ export function QuizScreen() {
               {counter}
             </span>
             {canUndo ? (
+              <Tooltip label={t('quiz.leave.aria')} placement="bottom" className="shrink-0">
+                <Glass
+                  radius={9999}
+                  padding={0}
+                  blur={20}
+                  tint={0.45}
+                  onClick={() => setLeaving(true)}
+                  ariaLabel={t('quiz.leave.aria')}
+                  shine={false}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center"
+                >
+                  <Icon.close />
+                </Glass>
+              </Tooltip>
+            ) : null}
+            <Tooltip
+              label={t(resolvedTheme === 'dark' ? 'quiz.theme.toLight.aria' : 'quiz.theme.toDark.aria')}
+              placement="bottom"
+              className="shrink-0"
+            >
               <Glass
                 radius={9999}
                 padding={0}
-                blur={20}
-                tint={0.45}
-                onClick={() => setLeaving(true)}
-                ariaLabel={t('quiz.leave.aria')}
+                tint={0.3}
                 shine={false}
+                onClick={toggle}
+                ariaLabel={t(
+                  resolvedTheme === 'dark'
+                    ? 'quiz.theme.toLight.aria'
+                    : 'quiz.theme.toDark.aria',
+                )}
                 className="flex h-9 w-9 shrink-0 items-center justify-center"
               >
-                <Icon.close />
+                {resolvedTheme === 'dark' ? <Icon.sun /> : <Icon.moon />}
               </Glass>
-            ) : null}
-            <Glass
-              radius={9999}
-              padding={0}
-              tint={0.3}
-              shine={false}
-              onClick={toggle}
-              ariaLabel={t(
-                resolvedTheme === 'dark'
-                  ? 'quiz.theme.toLight.aria'
-                  : 'quiz.theme.toDark.aria',
-              )}
-              className="flex h-9 w-9 shrink-0 items-center justify-center"
-            >
-              {resolvedTheme === 'dark' ? <Icon.sun /> : <Icon.moon />}
-            </Glass>
+            </Tooltip>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-visible">
@@ -369,10 +382,21 @@ export function QuizScreen() {
             style={{ paddingTop: 'clamp(10px, 2.5vh, 20px)', paddingBottom: 16 }}
           >
             {/*
-             * Fixed-height question block: 3 lines × (28.75px × 1.25) ≈ 108px.
-             * Vertically centres the text within that band regardless of length.
+             * Question block: at least 3 lines × (28.75px × 1.25) ≈ 108px, so
+             * short prompts don't shift the answers, and the text is centred in
+             * that band. A longer prompt (Q6, or French) GROWS the band instead
+             * of spilling onto the first answer, and the gap below it is the
+             * same for every question.
              */}
-            <div style={{ height: 108, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+            <div
+              style={{
+                minHeight: 108,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 'clamp(22px, 5.5vw, 30px)',
+              }}
+            >
               <h2
                 style={{
                   margin: 0,
@@ -396,6 +420,10 @@ export function QuizScreen() {
               {question.options.map((opt) => {
                 const isChosen = chosen?.letter === opt.letter;
                 const isOther = chosen !== null && !isChosen;
+                // Back to an answered question: its choice is highlighted
+                // until a tap (the same one again, or another) answers it.
+                const isPrevious = chosen === null && previousLetter === opt.letter;
+                const marked = isChosen || isPrevious;
                 const isFocused = focusedLetter === opt.letter;
 
                 return (
@@ -432,19 +460,21 @@ export function QuizScreen() {
                       radius={28}
                       padding={14}
                       blur={22}
-                      tint={isChosen ? (dark ? 0.48 : 0.22) : (dark ? 0.28 : 0.10)}
+                      tint={marked ? (dark ? 0.48 : 0.22) : (dark ? 0.28 : 0.10)}
                       glow={null}
                       shine={true}
                       className="rounded-[28px] outline-none"
                       style={{
-                        border: isChosen
-                          ? '1px solid rgba(255,255,255,0.72)'
-                          : isFocused
-                            ? focusBorder
-                            : glassBorder(dark),
+                        border: isPrevious
+                          ? previousBorder
+                          : marked
+                            ? '1px solid rgba(255,255,255,0.72)'
+                            : isFocused
+                              ? focusBorder
+                              : glassBorder(dark),
                         boxShadow: [
                           isFocused ? focusRing(dark) : null,
-                          isChosen ? glassShadowChosenCompact : glassShadowIdle,
+                          marked ? glassShadowChosenCompact : glassShadowIdle,
                         ]
                           .filter(Boolean)
                           .join(', '),
@@ -471,15 +501,15 @@ export function QuizScreen() {
                             WebkitBackdropFilter: 'blur(16px)',
                             background: dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.28)',
                             color: dark ? '#fff' : 'oklch(0.25 0.04 20)',
-                            border: isChosen
+                            border: marked
                               ? '1px solid rgba(255,255,255,0.72)'
                               : '1px solid rgba(255,255,255,0.55)',
-                            boxShadow: isChosen ? LETTER_RIM_CHOSEN_COMPACT : LETTER_RIM_SOFT,
+                            boxShadow: marked ? LETTER_RIM_CHOSEN_COMPACT : LETTER_RIM_SOFT,
                             transition: 'box-shadow 0.28s ease, border-color 0.28s ease',
                           }}
                         >
                           <AnimatePresence mode="wait">
-                            {isChosen ? (
+                            {marked ? (
                               <motion.span
                                 key="check"
                                 initial={{ scale: 0, opacity: 0 }}
@@ -507,11 +537,12 @@ export function QuizScreen() {
                             fontSize: 15.5,
                             lineHeight: 1.34,
                             color: 'var(--pbt-text)',
-                            fontWeight: isChosen ? 600 : 500,
+                            fontWeight: marked ? 600 : 500,
                             transition: 'font-weight 0.2s ease',
                           }}
                         >
                           {opt.text}
+                          {isPrevious && <span className="sr-only"> ({t('quiz.previousChoice')})</span>}
                         </div>
                       </div>
                     </Glass>

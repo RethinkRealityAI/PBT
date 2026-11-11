@@ -480,7 +480,11 @@ from `readinessWarnings.ts` that never block: a team objection with no
 hidden concerns, and inherited category documents none of which is filed for
 scoring for the scenario's animal; the Categories tab and the Pushback step
 flag the first one inline with "Add them"). `STUDIO_STEPS` covers every
-editable `scenario_overrides` column exactly once (unit-tested).
+editable `scenario_overrides` column exactly once (unit-tested) — except
+`RETIRED_CARD_FIELDS` (start button, "More info" panel, subtitle, card
+colour: the Training library card shows none of them since 2026-11-07 — it
+takes the trainee's own ECHO colour; columns kept, never edited or proposed).
+The Publish preview IS the trainee card (`LibraryScenarioCardBody`).
 
 - **Assistant = A2UI orchestration, ported from PhotoBoothAR.** The model
   never writes UI or data: `admin-scenario-agent` returns `{reply,
@@ -842,8 +846,7 @@ server-side: `netlify/functions/admin-*` verify the caller's Supabase JWT,
 check `profiles.is_admin` via the service role, then query Supabase. The
 browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
 
-Migrations (32 files, all hand-run; all applied to production except
-`20261106000100_audit_echo_quiz_entity.sql` —
+Migrations (34 files, all hand-run; all applied to production —
 `npm run verify:db` proves the live project has every relation AND column
 the code uses). Each
 file's header explains it in full:
@@ -971,9 +974,14 @@ file's header explains it in full:
   2026-11-06** (verified: 18 columns, 14 CHECKs, 5 indexes, RLS on / no
   policies / service_role only; 32 of 32 profiles backfilled).
 - `20261106000100_audit_echo_quiz_entity.sql` — adds `echo_quiz` to the
-  audit-log entity CHECK (re-creates the constraint). **NOT applied** (owner
-  decision); until it is, an ECHO review saves but its audit line is refused
-  (logged; reviewer + time stay on the row).
+  audit-log entity CHECK. Superseded by the next file (its constraint
+  includes `echo_quiz`); recorded in the history 2026-11-07.
+- `20261107000000_scenario_tags_archive.sql` — `scenario_tags` +
+  `scenario_tag_assignments` (RLS on / no policies / no client grants),
+  `scenario_overrides.archived_at` / `archived_by`, audit entities
+  `scenario_tag` + `echo_quiz`. **Applied to prod 2026-11-07** (verified).
+- `20261107000100_category_icons.sql` — `scenario_objection_categories.icon`
+  (CHECK = the 16 keys in `categoryIcons.ts`). **Applied to prod 2026-11-07.**
 
 June (Phase 2) admin screens: **Feedback** (`admin-feedback` → `session_feedback`),
 **Platform Reports** (`admin-reports` → `platform_reports`), and **Simulation**

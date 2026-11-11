@@ -158,25 +158,6 @@ const ADMIN_DOG_PROBIOTICS: ScenarioOverride = {
   pushback_id: 'team:probiotics',
   suggested_driver: 'Energizer',
 };
-const ADMIN_DOG_COST: ScenarioOverride = {
-  ...ROW,
-  scenario_id: 'admin:dog-cost',
-  breed: 'Poodle',
-  life_stage: 'Senior (7+)',
-  pushback_id: 'cost',
-  suggested_driver: 'Analyzer',
-  card_title_override: 'Budget-minded owner',
-};
-const ADMIN_DOG_OTHER: ScenarioOverride = {
-  ...ROW,
-  scenario_id: 'admin:dog-other',
-  breed: 'Boxer',
-  life_stage: 'Adult (3-7)',
-  pushback_id: 'custom',
-  pushback_notes: 'Insists on a home-cooked diet.',
-  suggested_driver: 'Activator',
-  card_title_override: 'Home cooking',
-};
 /** The admin hid the cost seed (seed:1). */
 const HIDDEN_SEED: ScenarioOverride = { ...ROW, scenario_id: 'seed:1', visible: false };
 
@@ -446,199 +427,18 @@ describe('CreateScreen — dogs only while scenario.cat.enabled is off', () => {
     expect(chips).not.toContain('Urinary');
   });
 
-  it('lists no published cat scenario in the Ready-made view', () => {
-    localStorage.setItem('pbt:train_species', '"cat"');
-    render(<CreateScreen view="library" />);
-    const cards = screen
-      .queryAllByRole('button', { name: /^Start: / })
-      .map((b) => b.getAttribute('aria-label')!.replace(/^Start: /, ''));
-    expect(cards).toContain('Weight / obesity denial');
-    expect(cards).not.toContain('Kitten on dry food');
-    expect(screen.queryByRole('tablist', { name: 'Animal to train on' })).toBeNull();
-  });
-});
-
-// ── Library view ──────────────────────────────────────────────────────────
-
-describe('CreateScreen — Library tab', () => {
-  const startButtons = () =>
-    screen
-      .queryAllByRole('button', { name: /^Start: / })
-      .map((b) => b.getAttribute('aria-label')!.replace(/^Start: /, ''));
-
-  it('lists the RESOLVED library for the chosen animal: hidden seed gone, published scenarios in', async () => {
-    const user = userEvent.setup();
-    render(<CreateScreen view="library" />);
-    const dogCards = startButtons();
-    expect(dogCards).toContain('Weight / obesity denial');
-    expect(dogCards).toContain('Switching brands hesitation');
-    expect(dogCards).toContain(PROBIOTICS.title);
-    // seed:1 (cost) is admin-hidden; the cat scenario is not a dog's.
-    expect(dogCards).not.toContain('Cost / price pushback');
-    expect(dogCards).not.toContain('Kitten on dry food');
-
-    await user.click(animalTab('Cat'));
-    expect(startButtons()).toEqual(['Kitten on dry food']);
-    const kitten = screen.getByRole('button', { name: 'Start: Kitten on dry food' });
-    expect(within(kitten).getByText('Maine Coon · Kitten (<1)')).toBeInTheDocument();
-    expect(within(kitten).getByText('Skeptical owner')).toBeInTheDocument();
-  });
-
-  it("names the category on every card, and the objection when the admin customised the title", async () => {
-    const user = userEvent.setup();
-    render(<CreateScreen view="library" />);
-    await user.click(animalTab('Cat'));
-    // The custom title says nothing about the pushback; the eyebrow names the
-    // category AND the objection on ONE line.
-    const catCard = screen.getByRole('button', { name: 'Start: Kitten on dry food' });
-    expect(within(catCard).getByText(WET_FOOD.title)).toBeInTheDocument();
-    expect(within(catCard).getByText('Urinary').parentElement).toBe(
-      within(catCard).getByText(WET_FOOD.title).parentElement,
-    );
-    // A card titled by its objection doesn't repeat it: category eyebrow only.
-    await user.click(animalTab('Dog'));
-    const card = screen.getByRole('button', { name: 'Start: Weight / obesity denial' });
-    expect(within(card).getAllByText('Weight / obesity denial')).toHaveLength(1);
-    expect(within(card).getByText('Weight management')).toBeInTheDocument();
-  });
-
-  it('starts a library scenario with its override handle', async () => {
-    const user = userEvent.setup();
-    render(<CreateScreen view="library" />);
-    await user.click(animalTab('Cat'));
-    await user.click(screen.getByRole('button', { name: 'Start: Kitten on dry food' }));
-    const started = setScenario.mock.calls[0][0] as Scenario;
-    expect(started._overrideId).toBe('admin:cat-1');
-    expect(started.species).toBe('cat');
-    expect(started.pushback.id).toBe('team:wet-food');
-    expect(go).toHaveBeenCalledWith('chat');
-  });
-
-  it('filters by category chips, then by objection chips within the chosen category', async () => {
-    const user = userEvent.setup();
-    flagSnapshot = snapshot([HIDDEN_SEED, ADMIN_CAT, ADMIN_DOG_PROBIOTICS, ADMIN_DOG_COST, ADMIN_DOG_OTHER]);
-    render(<CreateScreen view="library" />);
-    const categories = screen.getByRole('group', { name: 'Filter by category' });
-    // Each chip carries how many scenarios it leaves (decoration: the
-    // accessible name is the label alone).
-    const categoryNames = within(categories).getAllByRole('button').map((b) => b.textContent);
-    // Only categories present among the animal's scenarios, in category
-    // order; "Other pushback" (outside every category) last.
-    expect(categoryNames).toEqual([
-      'All5',
-      'Everyday nutrition2',
-      'Weight management1',
-      'GI1',
-      'Other pushback1',
-    ]);
-    expect(within(categories).getByRole('button', { name: 'All' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    // Under "All categories" every dog card shows and no objection row yet.
-    expect(startButtons()).toHaveLength(5);
-    expect(screen.queryByRole('group', { name: 'Filter by objection' })).toBeNull();
-
-    // A category with two objections gets objection chips.
-    await user.click(within(categories).getByRole('button', { name: 'Everyday nutrition' }));
-    expect(startButtons()).toEqual(['Switching brands hesitation', 'Budget-minded owner']);
-    const objections = screen.getByRole('group', { name: 'Filter by objection' });
-    expect(within(objections).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'All2',
-      'Cost / price pushback1',
-      'Switching brands hesitation1',
-    ]);
-    await user.click(within(objections).getByRole('button', { name: 'Cost / price pushback' }));
-    expect(startButtons()).toEqual(['Budget-minded owner']);
-    expect(within(objections).getByRole('button', { name: 'Cost / price pushback' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-
-    // A category with one objection: no objection row; switching category
-    // clears the objection filter.
-    await user.click(within(categories).getByRole('button', { name: 'GI' }));
-    expect(startButtons()).toEqual([PROBIOTICS.title]);
-    expect(screen.queryByRole('group', { name: 'Filter by objection' })).toBeNull();
-    await user.click(within(categories).getByRole('button', { name: 'Other pushback' }));
-    expect(startButtons()).toEqual(['Home cooking']);
-    await user.click(within(categories).getByRole('button', { name: 'Everyday nutrition' }));
-    expect(startButtons()).toHaveLength(2);
-
-    await user.click(within(categories).getByRole('button', { name: 'All' }));
-    expect(startButtons()).toHaveLength(5);
-  });
-
-  it('with a single category there is no category row; objection chips filter as before', async () => {
-    const user = userEvent.setup();
-    // Dog library: brand-switch + cost — both Everyday nutrition.
-    flagSnapshot = snapshot([
-      HIDDEN_SEED,
-      { ...ROW, scenario_id: 'seed:0', visible: false },
-      ADMIN_DOG_COST,
-    ]);
-    render(<CreateScreen view="library" />);
-    expect(screen.queryByRole('group', { name: 'Filter by category' })).toBeNull();
-    const objections = screen.getByRole('group', { name: 'Filter by objection' });
-    await user.click(within(objections).getByRole('button', { name: 'Switching brands hesitation' }));
-    expect(startButtons()).toEqual(['Switching brands hesitation']);
-  });
-
-  it('shows an empty state with a way to build one when the animal has no library scenarios', async () => {
-    const user = userEvent.setup();
-    flagSnapshot = snapshot([HIDDEN_SEED]);
-    render(<CreateScreen view="library" />);
-    await user.click(animalTab('Cat'));
-    expect(screen.getByText('No ready-made cat scenarios yet.')).toBeInTheDocument();
-    expect(startButtons()).toEqual([]);
-    await user.click(screen.getByRole('button', { name: 'Build one' }));
-    expect(screen.getByText('Build a scenario')).toBeInTheDocument();
-    expect(breedInput().value).toBe(POPULAR_BREEDS.cat[0]);
-  });
-
-  it('makes the whole card the Start target, with difficulty as a labelled meter and the persona as the owner', async () => {
-    const user = userEvent.setup();
-    flagSnapshot = null;
-    render(<CreateScreen view="library" />);
-    const card = screen.getByRole('button', { name: 'Start: Weight / obesity denial' });
-    // One target per card: no separate Start button inside it.
-    expect(within(card).queryAllByRole('button')).toHaveLength(0);
-    expect(within(card).queryByText('Start')).toBeNull();
-    // "Skeptical" is both a persona and a difficulty level: each is labelled.
-    expect(within(card).getByText('Skeptical owner')).toBeInTheDocument();
-    expect(within(card).getByRole('img', { name: 'Difficulty: Hostile, level 3 of 4' })).toBeInTheDocument();
-    await user.click(card);
-    expect(go).toHaveBeenCalledWith('chat');
-  });
-
-  it('names the view in the title and avoids the bottom bar’s "Library" for this view', () => {
-    render(<CreateScreen view="library" />);
-    expect(screen.getByText('Ready-made scenarios')).toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: 'Library' })).toBeNull();
-  });
-
-  it('without a snapshot the Library is the three shipped dog scenarios', async () => {
-    const user = userEvent.setup();
-    flagSnapshot = null;
-    render(<CreateScreen view="library" />);
-    expect(startButtons()).toEqual([
-      'Weight / obesity denial',
-      'Cost / price pushback',
-      'Switching brands hesitation',
-    ]);
-  });
 });
 
 // ── French ────────────────────────────────────────────────────────────────
 
 describe('CreateScreen — French', () => {
-  async function renderFr(view: 'build' | 'library' = 'build') {
+  async function renderFr() {
     // The French catalog is a lazy chunk: load it first so the assertions test
     // the wording, not how fast a dynamic import resolves under load.
     await loadCatalog('fr');
     render(
       <LanguageProvider initialLocale="fr">
-        <CreateScreen view={view} />
+        <CreateScreen />
       </LanguageProvider>,
     );
   }
@@ -660,17 +460,5 @@ describe('CreateScreen — French', () => {
     );
     // URINARY has no French name: English stands in.
     expect(within(group).getByRole('button', { name: 'Urinary' })).toBeInTheDocument();
-  });
-
-  it('labels the Ready-made view and its category row in French', async () => {
-    await renderFr('library');
-    expect(screen.getByText('Scénarios clés en main')).toBeInTheDocument();
-    const categories = screen.getByRole('group', { name: 'Filtrer par catégorie' });
-    expect(within(categories).getAllByRole('button').map((b) => b.getAttribute('title'))).toEqual([
-      'Toutes',
-      'Nutrition au quotidien',
-      'Gestion du poids',
-      'Gastro-intestinal',
-    ]);
   });
 });

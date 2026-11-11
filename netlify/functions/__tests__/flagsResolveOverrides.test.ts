@@ -56,6 +56,22 @@ describe('flags-resolve — what the public snapshot may carry', () => {
     expect(row.breed).toBe('Lab');
   });
 
+  it('never publishes the archive state, a live row’s or an archived (hidden) one’s', () => {
+    const [liveRow, archivedRow] = publicOverrideRows([
+      { ...live, archived_at: null, archived_by: null } as never,
+      { ...hidden, archived_at: '2026-11-07T00:00:00Z', archived_by: 'admin-1' } as never,
+    ]) as unknown as Array<Record<string, unknown>>;
+    expect(liveRow).not.toHaveProperty('archived_at');
+    expect(liveRow).not.toHaveProperty('archived_by');
+    expect(archivedRow).toEqual({ scenario_id: 'admin:draft', visible: false, sort_order: null });
+  });
+
+  it('carries no tags: the snapshot never reads the tag tables', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../flags-resolve.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/scenario_tag/);
+  });
+
   it('reduces a hidden row to "this scenario is hidden" — no draft content leaves the server', () => {
     const [row] = publicOverrideRows([hidden as never]) as unknown as Array<Record<string, unknown>>;
     expect(row).toEqual({ scenario_id: 'admin:draft', visible: false, sort_order: null });

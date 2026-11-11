@@ -16,8 +16,9 @@ import { isScenarioSpecies, type ScenarioSpecies } from '../../shared/scenarios/
  * erased: switching the flag on brings it back.
  *
  * Every mounted instance stays in sync: a change made through one hook is
- * broadcast to the others in the same tab, so two surfaces can never show
- * different animals at once.
+ * broadcast to the others in the same tab (and another tab's change arrives
+ * through the `storage` event), so two surfaces can never show different
+ * animals at once.
  */
 type Listener = (species: ScenarioSpecies) => void;
 const listeners = new Set<Listener>();
@@ -41,8 +42,17 @@ export function useTrainingSpecies(): [ScenarioSpecies, (next: ScenarioSpecies) 
   useEffect(() => {
     const listener: Listener = (next) => setSpeciesState(next);
     listeners.add(listener);
+    // Another tab of the app changed it: follow (the Training library then
+    // returns to its first step, see ScenarioLibraryScreen).
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key === `pbt:${STORAGE_KEYS.trainSpecies.key}`) {
+        setSpeciesState(readTrainingSpecies());
+      }
+    };
+    window.addEventListener('storage', onStorage);
     return () => {
       listeners.delete(listener);
+      window.removeEventListener('storage', onStorage);
     };
   }, []);
 

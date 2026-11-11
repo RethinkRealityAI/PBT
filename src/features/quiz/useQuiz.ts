@@ -71,6 +71,14 @@ export function useQuiz() {
   const startedAtRef = useRef<number>(shownAtRef.current);
   const undoCountRef = useRef(0);
   const lastAnswerAtRef = useRef<number>(shownAtRef.current);
+  /**
+   * The letter on record for each answered position (index-aligned like
+   * `answers`, truncated exactly like `recordsRef`). State, not a ref: after
+   * Back, the screen highlights the choice made there. Display only — the
+   * capture is still built from `recordsRef`, so a re-answer (same letter or
+   * another) is re-timed from when the question was shown again.
+   */
+  const [chosenLetters, setChosenLetters] = useState<QuizLetter[]>([]);
 
   const step: QuizStep = useMemo(() => {
     if (answers.length < QUIZ_QUESTIONS.length) {
@@ -108,6 +116,7 @@ export function useQuiz() {
         ...recordsRef.current.slice(0, index),
         { questionId, letter, driver, ms: Math.max(0, tapped - shownAtRef.current) },
       ];
+      setChosenLetters((prev) => [...prev.slice(0, index), letter]);
     }
     lastAnswerAtRef.current = tapped;
     // The next question appears now.
@@ -136,6 +145,7 @@ export function useQuiz() {
     setAnswers([]);
     setTieBreakerAsked(false);
     recordsRef.current = [];
+    setChosenLetters([]);
     undoCountRef.current = 0;
     shownAtRef.current = now();
     startedAtRef.current = shownAtRef.current;
@@ -145,6 +155,12 @@ export function useQuiz() {
   const currentQuestion =
     step.kind === 'question' ? QUIZ_QUESTIONS[step.index] : null;
   const tieBreaker = step.kind === 'tieBreaker' ? TIE_BREAKER : null;
+  // Only a position the trainee stepped BACK to has a letter on record:
+  // answering always appends, so the current position is otherwise empty.
+  const shownIndex =
+    step.kind === 'question' ? step.index : step.kind === 'tieBreaker' ? QUIZ_QUESTIONS.length : -1;
+  const previousLetter: QuizLetter | null =
+    shownIndex >= 0 ? chosenLetters[shownIndex] ?? null : null;
 
   return {
     step,
@@ -153,6 +169,8 @@ export function useQuiz() {
     answer,
     undo,
     canUndo: answers.length > 0,
+    /** The choice made here before the trainee went Back to it (null on a first visit). */
+    previousLetter,
     reset,
   };
 }
