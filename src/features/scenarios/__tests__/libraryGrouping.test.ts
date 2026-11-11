@@ -122,3 +122,23 @@ describe('the animal rule', () => {
     expect(libraryForAnimal(dogs, 'cat')).toEqual(dogs);
   });
 });
+
+describe('practisedScenarioIds', () => {
+  const item = (scenarioId: string, base: Scenario) => ({ scenarioId, scenario: base, override: null });
+  it('matches a session by its scenarioId, and an older record by objection + summary', async () => {
+    const { practisedScenarioIds } = await import('../libraryGrouping');
+    const { scenarioSummaryLine } = await import('../../../data/scenarioSummary');
+    const [a, b, c] = LIBRARY_SCENARIOS;
+    const items = [item('seed:0', a), item('seed:1', b), item('seed:2', c)];
+    const ids = practisedScenarioIds(items, [
+      { scenarioId: 'seed:0', pushbackId: a.pushback.id, scenarioSummary: 'whatever' },
+      { pushbackId: b.pushback.id, scenarioSummary: scenarioSummaryLine(b) },
+      { pushbackId: c.pushback.id, scenarioSummary: 'a different pet' },
+    ]);
+    expect([...ids].sort()).toEqual(['seed:0', 'seed:1']);
+  });
+  it('is empty with no sessions', async () => {
+    const { practisedScenarioIds } = await import('../libraryGrouping');
+    expect(practisedScenarioIds([item('seed:0', LIBRARY_SCENARIOS[0])], []).size).toBe(0);
+  });
+});

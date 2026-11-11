@@ -158,6 +158,13 @@ export interface SessionRecord {
   id: string;
   scenarioSummary: string;
   pushbackId: string;
+  /**
+   * The library scenario played (`seed:N` / `admin:<uuid>`, i.e. the
+   * scenario's `_overrideId`). Absent for a trainee's own builds and for
+   * records saved before 2026-11-11. The Training library's Practised /
+   * Not practised filter reads it (`practisedScenarioIds`).
+   */
+  scenarioId?: string;
   driver: string;
   durationSeconds: number;
   mode: 'text' | 'voice';

@@ -12,6 +12,8 @@
  * (`useObjectionCatalog`). No fetches, no React.
  */
 import type { ResolvedScenario } from '../../data/useResolvedScenarios';
+import { scenarioSummaryLine } from '../../data/scenarioSummary';
+import type { SessionRecord } from '../../services/types';
 import { localizedPushbackCategory } from '../../i18n/dataL10n/pushbacks';
 import type { Locale } from '../../i18n/locales';
 import {
@@ -140,4 +142,34 @@ export function libraryForAnimal(
   return libraryHasBothAnimals(items)
     ? items.filter((r) => speciesOf(r.scenario.species) === species)
     : [...items];
+}
+
+/** The Practised / Not practised filter on a scenario list. */
+export type PracticeFilter = 'all' | 'practised' | 'new';
+
+/**
+ * Which of these library scenarios the trainee has already played, from the
+ * sessions saved on this device. A record names its scenario (`scenarioId`)
+ * since 2026-11-11; an older one is matched on its objection + the
+ * scenario's one-line summary (breed, age, persona…), which is what it
+ * stored then.
+ */
+export function practisedScenarioIds(
+  items: readonly ResolvedScenario[],
+  sessions: readonly Pick<SessionRecord, 'scenarioId' | 'pushbackId' | 'scenarioSummary'>[],
+): Set<string> {
+  const byId = new Set<string>();
+  const legacy = new Set<string>();
+  for (const s of sessions) {
+    if (s.scenarioId) byId.add(s.scenarioId);
+    else legacy.add(`${s.pushbackId}\u0000${s.scenarioSummary}`);
+  }
+  const out = new Set<string>();
+  for (const it of items) {
+    if (byId.has(it.scenarioId)) out.add(it.scenarioId);
+    else if (legacy.size && legacy.has(`${it.scenario.pushback.id}\u0000${scenarioSummaryLine(it.scenario)}`)) {
+      out.add(it.scenarioId);
+    }
+  }
+  return out;
 }
