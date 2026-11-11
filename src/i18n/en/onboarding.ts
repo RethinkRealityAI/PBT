@@ -25,7 +25,7 @@ export const onboarding = {
   'onboarding.slide3.title': 'See what\nlanded.',
   'onboarding.slide3.lead': 'Get instant, actionable feedback after every practice round.',
   'onboarding.slide3.body':
-    'See exactly how well you *Acknowledged* emotions, *Clarified* concerns, and *Transformed* pushback, plus get instant “next-line” suggestions.',
+    'See exactly how well you *Acknowledged* emotions, *Clarified* concerns, and *Transformed* pushback, plus get instant “next‑line” suggestions.',
 
   'onboarding.cta.continue': 'Continue',
   'onboarding.cta.getStarted': 'Get Started',
