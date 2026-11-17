@@ -725,6 +725,27 @@ describe('buildScenarioAgentSystemPrompt', () => {
     research: [{ text: 'Owners   respond\nto written plans.', citation: 'Davies 2024' }],
   };
 
+  it('chooses a breed for the scenario, not the most common one (Mark, 2026-11-17)', () => {
+    const p = buildScenarioAgentSystemPrompt(base);
+    expect(p).toContain('- Breed: choose one that makes THIS scenario realistic');
+    expect(p).toContain('Never fall back on the most common breed of the species');
+    expect(p).not.toContain('a common breed for the species');
+    // The only cat example in the field spec used to be Domestic Shorthair.
+    expect(p).not.toMatch(/breed: text[^\n]*Domestic Shorthair/);
+  });
+
+  it('sends hidden concerns to the objection instead of passing a backstory off as them', () => {
+    const p = buildScenarioAgentSystemPrompt(base);
+    expect(p).toContain('belong to the OBJECTION, not to this scenario, and none of your tools can write them');
+    expect(p).toContain('NEVER propose a backstory');
+    expect(p).toContain('"Suggest hidden concerns and coaching"');
+  });
+
+  it('knows the card title is the only card text left', () => {
+    const p = buildScenarioAgentSystemPrompt(base);
+    expect(p).toContain('The card title (card_title_override) is the ONLY card text you can set');
+  });
+
   it('opens with the role and puts the static rules before the fenced data', () => {
     const p = buildScenarioAgentSystemPrompt(base);
     expect(p.startsWith('You are the Scenario Studio assistant for PBT (Pushback Training).')).toBe(true);

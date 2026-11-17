@@ -28,7 +28,8 @@ import {
   type TeamObjection,
 } from '../../../../src/shared/scenarios/objections';
 import type { ScenarioSpecies } from '../../../../src/shared/scenarios/species';
-import { Chip, FieldBlock, PetIcon, TextArea, TextInput } from '../ui';
+import { AssistButton, Chip, FieldBlock, PetIcon, TextArea, TextInput } from '../ui';
+import { suggestObjectionCoaching } from '../api';
 import type { KnowledgeState } from '../types';
 import { BodyPortal, Disclosure, EditorFrame, selectStyle } from './editorParts';
 import { CategoryEditor, NO_KNOWLEDGE } from './CategoryEditor';
@@ -39,6 +40,7 @@ import {
   formFromObjection,
   formToWrite,
   frenchHintField,
+  mergeCoachingSuggestions,
   objectionFormErrors,
   toAdminObjection,
   untranslatedHintKeys,
@@ -120,6 +122,8 @@ function EditorBody({
     [],
   );
   const [form, setForm] = useState<ObjectionForm>(initial);
+  const formRef = useRef(form);
+  formRef.current = form;
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,6 +153,10 @@ function EditorBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const noConcerns = coachingLines(form.coaching.rootConcerns).length === 0;
+  // "Suggest with AI" — drafts the coaching lists from the objection itself.
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestNote, setSuggestNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const canSuggest = form.title.trim() !== '' && form.example.trim() !== '';
   const alertRef = useRef<HTMLDivElement | null>(null);
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
   const categories = api.categories;
@@ -244,6 +252,48 @@ function EditorBody({
       window.setTimeout(() => alertRef.current?.focus(), 0);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function suggestCoaching() {
+    if (!canWrite || suggesting || !canSuggest) return;
+    setSuggesting(true);
+    setSuggestNote(null);
+    try {
+      const existing: Record<string, string[]> = {};
+      for (const key of COACHING_KEYS) {
+        const lines = coachingLines(form.coaching[key]);
+        if (lines.length) existing[key] = lines;
+      }
+      const res = await suggestObjectionCoaching({
+        title: form.title.trim(),
+        example: form.example.trim(),
+        species: form.species,
+        categoryId: form.categoryId,
+        existing,
+      });
+      // Read the boxes NOW (the admin may have typed while it ran) and only add.
+      const filled = mergeCoachingSuggestions(formRef.current.coaching, res.coaching).filled.length;
+      setForm((f) => ({ ...f, coaching: mergeCoachingSuggestions(f.coaching, res.coaching).coaching }));
+      setSuggestNote(
+        filled > 0
+          ? {
+              tone: 'ok',
+              text: `Added suggestions ${
+                res.groundedOn > 0
+                  ? `based on this objection and ${chosenCategory ? `the ${chosenCategory.name}` : 'its'} documents`
+                  : 'based on this objection'
+              }. Check and edit them — nothing is saved until you press ${objection ? 'Save changes' : 'Add objection'}.`,
+            }
+          : { tone: 'ok', text: 'Every box is already full, so nothing was added.' },
+      );
+    } catch (err) {
+      setSuggestNote({
+        tone: 'error',
+        text: err instanceof Error && err.message ? err.message : 'The AI couldn’t suggest coaching right now.',
+      });
+    } finally {
+      setSuggesting(false);
     }
   }
 
@@ -488,6 +538,36 @@ function EditorBody({
             <strong> what they’re really worried about</strong> only when the trainee asks good
             questions; the other boxes show up as hints for the trainee.
           </div>
+          {canWrite && (
+            <div style={{ display: 'grid', gap: 6, justifyItems: 'start' }}>
+              <AssistButton
+                disabled={!canSuggest || suggesting}
+                aria-busy={suggesting || undefined}
+                onClick={() => void suggestCoaching()}
+              >
+                {suggesting ? 'Suggesting…' : noConcerns ? 'Suggest hidden concerns and coaching' : 'Suggest more with AI'}
+              </AssistButton>
+              <div aria-live="polite" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                {!canSuggest ? (
+                  <span style={{ color: COLOR.inkMute }}>
+                    Add a name and what an owner typically says first — the suggestions are built from them, the
+                    animals and the category.
+                  </span>
+                ) : suggestNote ? (
+                  <span
+                    role={suggestNote.tone === 'error' ? 'alert' : undefined}
+                    style={{ color: suggestNote.tone === 'error' ? COLOR.danger : COLOR.inkSoft, fontWeight: 600 }}
+                  >
+                    {suggestNote.text}
+                  </span>
+                ) : (
+                  <span style={{ color: COLOR.inkMute }}>
+                    Fills empty boxes and adds to the others. It never removes what you wrote.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           {COACHING_KEYS.map((key) => (
             <Fragment key={key}>
               <CoachingBox

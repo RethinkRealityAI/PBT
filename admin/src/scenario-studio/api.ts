@@ -23,10 +23,22 @@ import type { ObjectionWriteRequest } from '../../../src/shared/scenarios/object
 import type { ScenarioTagWriteRequest, ScenarioTagsResponse } from '../../../src/shared/scenarios/tags';
 import type { ScenarioOverrideRow } from '../data/types';
 import type { ChatMessage, ScoreReport } from '../../../src/services/types';
+import type {
+  ObjectionCoachingRequest,
+  ObjectionCoachingResponse,
+} from '../../../src/shared/ai/objectionCoaching';
 
 /** Ask the Studio assistant for its next turn. */
 export function askScenarioAgent(req: ScenarioAgentRequest): Promise<ScenarioAgentResponse> {
   return postJson<ScenarioAgentResponse>('admin-scenario-agent', req);
+}
+
+/**
+ * Suggested coaching lists (hidden concerns first) for an objection — the
+ * objection editor's "Suggest with AI". Nothing is saved.
+ */
+export function suggestObjectionCoaching(req: ObjectionCoachingRequest): Promise<ObjectionCoachingResponse> {
+  return postJson<ObjectionCoachingResponse>('admin-objection-coaching', req);
 }
 
 /** The exact customer prompt + retrieved passages for a draft. */

@@ -4,6 +4,7 @@
  * draft's objection stands, and the editor's form.
  */
 import { describe, expect, it } from 'vitest';
+import { mergeCoachingSuggestions } from '../objectionsModel';
 import {
   animalsLabel,
   checkObjection,
@@ -353,5 +354,32 @@ describe('the editor form', () => {
       categoryId: PROBIOTICS,
     });
     expect(formToWrite(emptyObjectionForm())).not.toHaveProperty('focusArea');
+  });
+});
+
+describe('mergeCoachingSuggestions', () => {
+  const empty = {
+    rootConcerns: '',
+    acknowledgePatterns: '',
+    clarifyQuestions: '',
+    takeActionPatterns: '',
+    watchOuts: '',
+  };
+
+  it('fills empty boxes and appends below the admin’s own lines, never replacing them', () => {
+    const out = mergeCoachingSuggestions(
+      { ...empty, clarifyQuestions: 'Mine?' },
+      { rootConcerns: ['A', 'B'], clarifyQuestions: ['mine?', 'Theirs?'] },
+    );
+    expect(out.coaching.rootConcerns).toBe('A\nB');
+    expect(out.coaching.clarifyQuestions).toBe('Mine?\nTheirs?');
+    expect(out.filled).toEqual(['rootConcerns', 'clarifyQuestions']);
+  });
+
+  it('stops at the per-box cap and reports a full box as not filled', () => {
+    const full = ['1', '2', '3', '4', '5', '6'].join('\n');
+    const out = mergeCoachingSuggestions({ ...empty, watchOuts: full }, { watchOuts: ['7'] });
+    expect(out.coaching.watchOuts).toBe(full);
+    expect(out.filled).toEqual([]);
   });
 });
