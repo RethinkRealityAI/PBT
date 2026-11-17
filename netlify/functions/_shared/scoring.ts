@@ -29,7 +29,11 @@ import { MODEL_TEXT } from '../../../src/shared/ai/models';
 import type { EndedEarly } from '../../../src/shared/ai/contract';
 import { estimateCostUsd, estimateTokens } from '../../../src/shared/ai/telemetryHeuristics';
 import { DEFAULT_LOCALE, type Locale } from '../../../src/i18n/locales';
-import type { ChatMessage, ScoreReport } from '../../../src/services/types';
+import {
+  sanitizeExcellentExamples,
+  type ChatMessage,
+  type ScoreReport,
+} from '../../../src/services/types';
 
 /**
  * Localized `description` for a structured-output field whose VALUE is
@@ -116,6 +120,25 @@ function buildResponseSchema(locale: Locale) {
         },
         required: ['acknowledge', 'clarify', 'transform', 'empathy', 'rapport'],
       },
+      // "What excellent sounds like" for THIS conversation, one line per
+      // dimension. The scorecard shows the focus dimension's line and hides
+      // the section when it is blank — never the generic rubric anchor.
+      excellentExamples: {
+        type: Type.OBJECT,
+        properties: Object.fromEntries(
+          (['acknowledge', 'clarify', 'transform', 'empathy', 'rapport'] as const).map((k) => [
+            k,
+            {
+              type: Type.STRING,
+              ...frDescription(
+                locale,
+                'Une réplique excellente pour CE scénario et CETTE conversation, en français canadien.',
+              ),
+            },
+          ]),
+        ),
+        required: ['acknowledge', 'clarify', 'transform', 'empathy', 'rapport'],
+      },
       keyMoments: {
         type: Type.ARRAY,
         items: {
@@ -163,6 +186,7 @@ function buildResponseSchema(locale: Locale) {
       'critique',
       'betterAlternative',
       'perDimensionNotes',
+      'excellentExamples',
       'keyMoments',
       'turnSentiment',
     ],
@@ -287,11 +311,21 @@ export async function scoreTranscript(
     // Only the model's own fields ride along. `scoreUnavailable` is OUR flag
     // (the honest-failure fallback); a model that emitted it would turn a
     // real score into "unavailable" in every consumer.
-    const { scoreUnavailable: _neverFromModel, ...modelFields } = parsedOut as Record<
-      string,
-      unknown
-    >;
-    return { ...modelFields, ...dims, overall, band: bandFor(overall) } as ScoreReport;
+    const {
+      scoreUnavailable: _neverFromModel,
+      excellentExamples: rawExamples,
+      ...modelFields
+    } = parsedOut as Record<string, unknown>;
+    // Only the five known dimensions, as cleaned strings — an empty or
+    // malformed answer stores nothing, and the scorecard hides the section.
+    const excellentExamples = sanitizeExcellentExamples(rawExamples);
+    return {
+      ...modelFields,
+      ...(excellentExamples ? { excellentExamples } : {}),
+      ...dims,
+      overall,
+      band: bandFor(overall),
+    } as ScoreReport;
   } catch (err) {
     await recordCallServer(
       sb,

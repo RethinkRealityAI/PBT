@@ -345,6 +345,38 @@ describe('ai-evaluate', () => {
     expect(insert).toMatchObject({ call_type: 'evaluate', session_id: UUID });
   });
 
+  it('asks for a scenario-specific excellent line per dimension and stores only clean ones', async () => {
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ...validScore,
+        excellentExamples: { acknowledge: '  "It sounds like cost is a real worry."  ', clarify: '', bogus: 'x', rapport: 3 },
+      }),
+    });
+    const res = await evaluate(jsonRequest('ai-evaluate', { scenario, transcript, mode: 'text', sessionId: UUID }));
+    const body = await res.json();
+    expect(body.report.excellentExamples).toEqual({ acknowledge: 'It sounds like cost is a real worry.' });
+    const arg = mocks.generateContent.mock.calls[0][0];
+    expect(arg.config.responseSchema.required).toContain('excellentExamples');
+    expect(Object.keys(arg.config.responseSchema.properties.excellentExamples.properties)).toEqual([
+      'acknowledge',
+      'clarify',
+      'transform',
+      'empathy',
+      'rapport',
+    ]);
+    expect(arg.config.systemInstruction).toContain('# excellentExamples FORMAT');
+  });
+
+  it('stores no excellentExamples when the model gives none usable', async () => {
+    mocks.generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ...validScore, excellentExamples: { acknowledge: ' ' } }),
+    });
+    const res = await evaluate(jsonRequest('ai-evaluate', { scenario, transcript, mode: 'text', sessionId: UUID }));
+    const body = await res.json();
+    expect(body.report.overall).toBe(80);
+    expect('excellentExamples' in body.report).toBe(false);
+  });
+
   it('never grades a transcript with no trainee turn — no model call, an honest "unavailable"', async () => {
     const customerOnly = [
       { role: 'ai', text: 'Not fat.', timestamp: 1, emotion: 'red' },

@@ -8,11 +8,16 @@ import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
 import { useScreenEnabled } from '../app/screenFlags';
-import { useFlag } from '../app/providers/FlagProvider';
+import { useFlag, useSimulationConfig } from '../app/providers/FlagProvider';
 import { useChat } from '../app/providers/ChatProvider';
 import { useScenario } from '../app/providers/ScenarioProvider';
 import { bandFor } from '../data/knowledge/scoringRubric';
-import { isScoreUnavailable, normalizeScoreReport } from '../services/types';
+import {
+  excellentExampleFor,
+  isScoreUnavailable,
+  normalizeScoreReport,
+} from '../services/types';
+import { resolveWeights } from '../data/knowledge/simulationConfig';
 import { SessionFeedbackCard } from '../features/feedback/SessionFeedbackCard';
 import {
   computeScoreDelta,
@@ -28,10 +33,7 @@ import { SESSIONS_KEY } from '../lib/sessionsKey';
 import { setSelectedSessionId } from '../lib/selectedSession';
 import { useT } from '../i18n/useT';
 import { useLanguage } from '../app/providers/LanguageProvider';
-import {
-  localizedDimension,
-  localizedDimensions,
-} from '../i18n/dataL10n/rubric';
+import { displayDimensions } from '../i18n/dataL10n/rubric';
 
 const easeOut = [0.22, 1, 0.36, 1] as const;
 
@@ -77,6 +79,7 @@ export function StatsScreen() {
   const { locale } = useLanguage();
   const chat = useChat();
   const { scenario } = useScenario();
+  const simulationConfig = useSimulationConfig();
   const reduceMotion = useReducedMotion();
   const [rescoring, setRescoring] = useState(false);
   const [rescoreFailed, setRescoreFailed] = useState(false);
@@ -170,9 +173,17 @@ export function StatsScreen() {
     );
   }
 
-  // `weakestDimension` picks from the canonical rubric (score + weight are
-  // language-independent); localize only what gets rendered.
-  const focus = localizedDimension(weakestDimension(report), locale);
+  // The live rubric (AI-tuning labels, descriptions and weights — what the
+  // scorer was given), localized for display. `weakestDimension` picks by
+  // score with the resolved weights breaking a tie.
+  const dimensions = displayDimensions(simulationConfig, locale);
+  const focusKey = weakestDimension(report, resolveWeights(simulationConfig ?? {})).key;
+  const focus = dimensions.find((d) => d.key === focusKey) ?? dimensions[0];
+  // "What excellent sounds like" is the scorer's line for THIS scenario and
+  // conversation. No line (older record, blank answer) = no section: the
+  // rubric's generic anchor is about another pet's objection and read as
+  // random on the scorecard.
+  const focusExample = excellentExampleFor(report, focus.key);
   const bandColor = COLORS.score[report.band];
   // `focus.label` comes from the (admin-configurable) scoring rubric and is
   // interpolated as data — the surrounding sentence is what gets localized.
@@ -307,18 +318,19 @@ export function StatsScreen() {
           </motion.div>
         )}
 
-        {/* Focus next — the weakest dimension plus what excellent sounds
-            like, straight from the rubric bands. Turns "one thing to fix"
-            from a platitude into a named, example-backed target. */}
+        {/* Focus next — the weakest dimension plus what excellent would
+            have sounded like in THIS conversation (written by the scorer
+            from the scenario, its success criteria and the transcript).
+            Hidden when the scorer gave no line — never a generic one. */}
         <motion.div variants={itemVariants} style={{ marginTop: 14 }}>
           <Glass radius={22} padding={18} glow={bandFor(report[focus.key]) === 'good' ? null : bandColor}>
             <MonoLabel style={{ paddingLeft: 0, color: 'var(--pbt-driver-primary)', fontWeight: 700 }}>
               {t('stats.focus.label', { dimension: focus.label })}
             </MonoLabel>
-            <p style={{ margin: '0 0 10px', fontSize: 13.5, lineHeight: 1.5, color: 'var(--pbt-text)' }}>
+            <p style={{ margin: focusExample ? '0 0 10px' : 0, fontSize: 13.5, lineHeight: 1.5, color: 'var(--pbt-text)' }}>
               {focus.description}
             </p>
-            {focus.bands.excellent.example && (
+            {focusExample && (
               <>
                 <MonoLabel style={{ paddingLeft: 0, marginBottom: 4 }}>
                   {t('stats.focus.excellent')}
@@ -332,7 +344,7 @@ export function StatsScreen() {
                     color: 'var(--pbt-text)',
                   }}
                 >
-                  {focus.bands.excellent.example}
+                  {focusExample}
                 </p>
               </>
             )}
@@ -349,7 +361,7 @@ export function StatsScreen() {
         <MonoLabel>{t('stats.breakdown')}</MonoLabel>
         {/* Two-up on desktop so the dimensions don't form a tall narrow stack. */}
         <div className="lg:grid lg:grid-cols-2 lg:gap-3">
-          {localizedDimensions(locale).map((dim, idx) => {
+          {dimensions.map((dim, idx) => {
             const score = report[dim.key];
             const band = bandFor(score);
             const color = COLORS.score[band];

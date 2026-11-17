@@ -49,7 +49,7 @@ describe('BriefStep — what a great answer includes (scoring)', () => {
   it('says what the scorer already reads, and that the AI customer never sees it', () => {
     renderStep(BriefStep, { draft: completeDraft() });
     expect(screen.getByText('How the scorecard judges it')).toBeInTheDocument();
-    expect(screen.getByText(/The AI customer never\s+sees it/)).toBeInTheDocument();
+    expect(screen.getByText(/The AI customer\s+never sees them/)).toBeInTheDocument();
   });
 
   it('edits success_criteria with its own 1500-character limit', () => {
@@ -170,5 +170,27 @@ describe('BriefStep — the full briefing', () => {
     expect(await screen.findByText(/Server hiccup/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByTestId('briefing')).toBeInTheDocument();
+  });
+});
+
+describe('BriefStep — a first draft of the success criteria', () => {
+  it("offers to start from a built-in objection's coaching while the field is empty", () => {
+    const { patchSpy } = renderStep(BriefStep, { draft: completeDraft({ pushback_id: 'cost', success_criteria: null }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Start from the objection’s coaching' }));
+    const patch = patchSpy.mock.calls.at(-1)?.[0] as { success_criteria: string };
+    expect(patch.success_criteria).toMatch(/^Acknowledges the objection first/);
+    expect(patch.success_criteria.length).toBeLessThanOrEqual(1500);
+  });
+
+  it('never offers it over criteria the admin wrote, or for "Something else"', () => {
+    renderStep(BriefStep, { draft: completeDraft({ pushback_id: 'cost', success_criteria: 'Books a recheck.' }) });
+    expect(screen.queryByRole('button', { name: 'Start from the objection’s coaching' })).toBeNull();
+  });
+
+  it('is not offered for a custom objection', () => {
+    renderStep(BriefStep, {
+      draft: completeDraft({ pushback_id: 'custom', pushback_notes: 'Worried', success_criteria: null }),
+    });
+    expect(screen.queryByRole('button', { name: 'Start from the objection’s coaching' })).toBeNull();
   });
 });

@@ -102,3 +102,39 @@ describe('StatsScreen — difficulty beside the overall score', () => {
     expect(screen.queryByRole('img', { name: /^Difficulty:/ })).toBeNull();
   });
 });
+
+describe('StatsScreen — "What excellent sounds like" is scenario-specific', () => {
+  it("shows the scorer's line for the focus dimension", () => {
+    chatState.scoreReport = report(75, {
+      acknowledge: 40,
+      excellentExamples: {
+        acknowledge: 'It sounds like keeping Biscuit comfortable on a budget matters a lot to you.',
+        clarify: 'What does he eat in a day right now?',
+      },
+    });
+    render(<StatsScreen />);
+    expect(screen.getByText('Focus next · Acknowledge')).toBeInTheDocument();
+    expect(screen.getByText('What excellent sounds like')).toBeInTheDocument();
+    expect(
+      screen.getByText('It sounds like keeping Biscuit comfortable on a budget matters a lot to you.'),
+    ).toBeInTheDocument();
+  });
+
+  it('hides the section instead of showing the generic rubric line', () => {
+    chatState.scoreReport = report(75, { acknowledge: 40 });
+    render(<StatsScreen />);
+    expect(screen.getByText('Focus next · Acknowledge')).toBeInTheDocument();
+    expect(screen.queryByText('What excellent sounds like')).toBeNull();
+    // The old generic anchor (another dog, another objection) never appears.
+    expect(screen.queryByText(/Bella means to you/)).toBeNull();
+  });
+
+  it('hides it when the line for the focus dimension is blank', () => {
+    chatState.scoreReport = report(75, {
+      acknowledge: 40,
+      excellentExamples: { acknowledge: '  ', clarify: 'What does he eat in a day?' },
+    });
+    render(<StatsScreen />);
+    expect(screen.queryByText('What excellent sounds like')).toBeNull();
+  });
+});

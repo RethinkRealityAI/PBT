@@ -273,6 +273,17 @@ describe('readiness', () => {
     expect(canPublish(items)).toBe(false);
   });
 
+  it('recommends (never requires) saying what a great answer includes', () => {
+    const without = readiness({ ...complete, success_criteria: null }, ctx({ tested: true }));
+    const row = without.find((i) => i.key === 'success-criteria')!;
+    expect(row.ok).toBe(false);
+    expect(row.level).toBe('recommended');
+    expect(row.step).toBe('brief');
+    expect(canPublish(without)).toBe(true);
+    const withIt = readiness({ ...complete, success_criteria: 'Books a recheck.' }, ctx());
+    expect(withIt.find((i) => i.key === 'success-criteria')!.ok).toBe(true);
+  });
+
   it('lets an untested scenario publish — testing is recommended, not required', () => {
     const items = readiness(complete, ctx({ tested: false }));
     expect(items.find((i) => i.key === 'tested')!.ok).toBe(false);

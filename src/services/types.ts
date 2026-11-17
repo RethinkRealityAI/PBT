@@ -66,6 +66,55 @@ export interface ScoreReport extends LegacyScoreFields {
    * field will have it as undefined; consumers should fall back gracefully.
    */
   turnSentiment?: TurnSentiment[];
+  /**
+   * "What excellent sounds like", per dimension — ONE line the scorer wrote
+   * for THIS conversation (the pet's name, the owner's actual concern, the
+   * scenario's success criteria and objection coaching), not the generic
+   * rubric anchor. The scorecard shows the line for the focus dimension and
+   * hides the section when there is none (records scored before
+   * 2026-11-17, or the scorer left it blank). Read through
+   * `excellentExampleFor` — the stored report is untrusted shape.
+   */
+  excellentExamples?: Partial<Record<DimensionKey, string>>;
+}
+
+/** Longest example line a scorecard renders (a runaway model answer is cut). */
+export const EXCELLENT_EXAMPLE_MAX = 400;
+
+/**
+ * The scenario-specific "what excellent sounds like" line for one dimension,
+ * or null when the report has none worth showing. Never falls back to the
+ * rubric's generic band example: a line about another dog's cost objection is
+ * worse than no line.
+ */
+export function excellentExampleFor(
+  report: Pick<ScoreReport, 'excellentExamples'> | null | undefined,
+  key: DimensionKey,
+): string | null {
+  const raw = (report?.excellentExamples as Record<string, unknown> | undefined)?.[key];
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim().replace(/^["“”]+|["“”]+$/g, '').trim();
+  if (!text || text === '—' || text === '-') return null;
+  return text.length > EXCELLENT_EXAMPLE_MAX
+    ? `${text.slice(0, EXCELLENT_EXAMPLE_MAX - 1).trimEnd()}…`
+    : text;
+}
+
+/**
+ * Keep only the five known dimensions, as cleaned strings. Used by the
+ * scorer before it stores a report, so an unknown key or a non-string never
+ * reaches `score_report`.
+ */
+export function sanitizeExcellentExamples(
+  value: unknown,
+): Partial<Record<DimensionKey, string>> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const out: Partial<Record<DimensionKey, string>> = {};
+  for (const key of ['acknowledge', 'clarify', 'transform', 'empathy', 'rapport'] as DimensionKey[]) {
+    const line = excellentExampleFor({ excellentExamples: value as Record<DimensionKey, string> }, key);
+    if (line) out[key] = line;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export interface KeyMoment {
