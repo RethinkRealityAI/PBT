@@ -71,6 +71,8 @@ export const AI_ENDPOINTS = {
   scenarioSuggest: '/.netlify/functions/admin-scenario-ai',
   /** Admin-only (requires `scenarios.write`) — the Scenario Studio assistant. */
   scenarioAgent: '/.netlify/functions/admin-scenario-agent',
+  /** Admin-only (requires `scenarios.write`) — coaching / hidden-concern suggestions for an objection. */
+  objectionCoaching: '/.netlify/functions/admin-objection-coaching',
   /** Admin-only (requires `scenarios.read`) — exact prompt + retrieval for a draft. */
   scenarioInspect: '/.netlify/functions/admin-scenario-inspect',
   /** Anonymous session recording (no AI call) — see `SessionSaveRequest`. */

@@ -9,11 +9,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
-const { fetchObjections, postObjectionOp } = vi.hoisted(() => ({
+const { fetchObjections, postObjectionOp, suggestObjectionCoaching } = vi.hoisted(() => ({
   fetchObjections: vi.fn(),
   postObjectionOp: vi.fn(),
+  suggestObjectionCoaching: vi.fn(),
 }));
-vi.mock('../../api', () => ({ fetchObjections, postObjectionOp }));
+vi.mock('../../api', () => ({ fetchObjections, postObjectionOp, suggestObjectionCoaching }));
 
 vi.mock('../../../data/queries', () => ({
   useScenarioOverrides: () => ({ data: [], loading: false, error: null, refetch: () => {} }),
@@ -88,6 +89,7 @@ beforeEach(() => {
   resetObjectionsStore();
   fetchObjections.mockReset();
   postObjectionOp.mockReset();
+  suggestObjectionCoaching.mockReset();
   fetchObjections.mockResolvedValue({ objections: [GENERIC, COACHED], categories: [PROBIOTICS] });
 });
 
@@ -130,5 +132,49 @@ describe('Categories tab — objections without hidden concerns', () => {
     await screen.findByRole('region', { name: 'Probiotics' });
     expect(within(rowOf('Probiotics: not needed')).getByText(NO_HIDDEN_CONCERNS)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Add hidden concerns/ })).not.toBeInTheDocument();
+  });
+
+  it('“Suggest hidden concerns and coaching” drafts them from the objection, without saving or overwriting', async () => {
+    suggestObjectionCoaching.mockResolvedValue({
+      coaching: {
+        rootConcerns: ['Feels pressured to buy something extra', 'Worried it is a sales pitch'],
+        clarifyQuestions: ['What have you heard about probiotics?'],
+      },
+      groundedOn: 2,
+    });
+    renderScreen();
+    await screen.findByRole('region', { name: 'Probiotics' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add hidden concerns to “Probiotics: not needed”' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit objection' });
+    const questions = within(dialog).getByLabelText(/Good questions to ask/);
+    fireEvent.change(questions, { target: { value: 'My own question?' } });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Suggest hidden concerns and coaching/ }));
+    const box = within(dialog).getByLabelText(/What the owner is really worried about/) as HTMLTextAreaElement;
+    await waitFor(() =>
+      expect(box.value).toBe('Feels pressured to buy something extra\nWorried it is a sales pitch'),
+    );
+    // What the admin typed stays; the suggestion is added below it.
+    expect((questions as HTMLTextAreaElement).value).toBe('My own question?\nWhat have you heard about probiotics?');
+    expect(within(dialog).getByText(/based on this objection and the Probiotics documents/)).toBeInTheDocument();
+    expect(suggestObjectionCoaching).toHaveBeenCalledWith({
+      title: 'Probiotics: not needed',
+      example: '“Why would he need them?”',
+      species: ['dog', 'cat'],
+      categoryId: 'category:probiotics',
+      existing: { clarifyQuestions: ['My own question?'] },
+    });
+    expect(postObjectionOp).not.toHaveBeenCalled();
+  });
+
+  it('a failed suggestion says so and changes nothing', async () => {
+    suggestObjectionCoaching.mockRejectedValue(new Error('The AI could not suggest coaching right now.'));
+    renderScreen();
+    await screen.findByRole('region', { name: 'Probiotics' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add hidden concerns to “Probiotics: not needed”' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit objection' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /Suggest hidden concerns and coaching/ }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('The AI could not suggest coaching right now.');
+    expect((within(dialog).getByLabelText(/What the owner is really worried about/) as HTMLTextAreaElement).value).toBe('');
   });
 });

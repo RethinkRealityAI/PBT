@@ -128,10 +128,10 @@ export function starterPrompts(step: StudioStepKey, draft: StudioDraft): string[
       break;
     case 'publish':
       list = [
-        'Write a catchy card title and subtitle',
-        'Write the info text trainees see first',
-        'Suggest a start button label',
+        'Write a catchy card title',
+        'Give me three card title ideas',
         'Is this ready to publish?',
+        'What will trainees see on the card?',
       ];
       break;
   }
@@ -154,6 +154,6 @@ export function composerPlaceholder(step: StudioStepKey): string {
     case 'test':
       return 'Ask what to try in the test drive…';
     case 'publish':
-      return 'Ask for a card title, info text…';
+      return 'Ask for a card title, or if it’s ready…';
   }
 }

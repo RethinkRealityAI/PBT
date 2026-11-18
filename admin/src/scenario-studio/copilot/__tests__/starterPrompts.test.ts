@@ -23,7 +23,18 @@ describe('starterPrompts', () => {
     expect(starterPrompts('knowledge', blank)).toContain('Which documents should this scenario use?');
     expect(starterPrompts('brief', blank)).toContain('Make the owner more resistant to price talk');
     expect(starterPrompts('test', blank)).toContain('What should I try in the test drive?');
-    expect(starterPrompts('publish', blank)).toContain('Write a catchy card title and subtitle');
+    expect(starterPrompts('publish', blank)).toContain('Write a catchy card title');
+  });
+
+  it('never offers card text the trainee card no longer has (subtitle, info text, start button)', () => {
+    // RETIRED_CARD_FIELDS: the assistant has no tool for them, so a chip
+    // asking for one could only ever get a refusal or something else.
+    const steps = ['pet', 'pushback', 'customer', 'knowledge', 'brief', 'test', 'publish'] as const;
+    for (const step of steps) {
+      for (const prompt of starterPrompts(step, blank)) {
+        expect(prompt.toLowerCase()).not.toMatch(/subtitle|info text|start button/);
+      }
+    }
   });
 
   it('tailors to the draft (species, breed, pushback)', () => {

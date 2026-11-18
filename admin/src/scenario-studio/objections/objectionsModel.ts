@@ -412,6 +412,36 @@ export function coachingLines(text: string): string[] {
     .filter((l) => l !== '');
 }
 
+/**
+ * Fold AI coaching suggestions into the editor's boxes without losing a word
+ * the admin wrote: each suggestion is appended below what the box already
+ * holds (a line already there is skipped), up to the per-box cap. Returns
+ * the new boxes and the lists that gained at least one line.
+ */
+export function mergeCoachingSuggestions(
+  boxes: Record<CoachingKey, string>,
+  suggested: ObjectionCoaching,
+): { coaching: Record<CoachingKey, string>; filled: CoachingKey[] } {
+  const coaching = { ...boxes };
+  const filled: CoachingKey[] = [];
+  for (const key of COACHING_KEYS) {
+    const have = coachingLines(boxes[key]);
+    const seen = new Set(have.map((l) => l.toLowerCase()));
+    const add: string[] = [];
+    for (const item of suggested[key] ?? []) {
+      const line = item.replace(/\s+/g, ' ').trim();
+      if (!line || seen.has(line.toLowerCase())) continue;
+      if (have.length + add.length >= OBJECTION_LIMITS.coachingItems) break;
+      seen.add(line.toLowerCase());
+      add.push(line);
+    }
+    if (add.length === 0) continue;
+    coaching[key] = [...have, ...add].join('\n');
+    filled.push(key);
+  }
+  return { coaching, filled };
+}
+
 /** The `objection` body of an `upsert` (no `id` for a new one). */
 export function formToWrite(form: ObjectionForm): Record<string, unknown> {
   const coaching: ObjectionCoaching = {};
