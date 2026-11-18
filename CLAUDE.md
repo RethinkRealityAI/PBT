@@ -210,6 +210,21 @@ stored `scenario` jsonb — no column). One mark everywhere:
 shows nothing). EN parity fixtures: customer + voice stay byte-identical;
 `scoring-*` / `coach-*` were regenerated for the answer key.
 
+**"What excellent sounds like" is written for the scenario** (2026-11-17,
+after trainers found the scorecard quoting the rubric's generic anchor —
+another dog's cost objection — on every scenario): the scorer returns
+`excellentExamples` (one line per dimension, built from the transcript, the
+pet, the success criteria and the objection's answer key; sanitised by
+`sanitizeExcellentExamples` in `services/types.ts`). The scorecard (and the
+Studio Test drive) shows the focus dimension's line via `excellentExampleFor`
+and HIDES the section when there is none — never the rubric band example,
+which stays a scorer-only calibration anchor. Scorecard + History labels,
+descriptions and the focus tie-break read the LIVE rubric
+(`displayDimensions(simulationConfig, locale)`), the same labels the scorer
+was given. The Studio recommends success criteria (readiness row
+`success-criteria`) and offers "Start from the objection's coaching"
+(`draftSuccessCriteria`) while the field is empty.
+
 **Scorecard insights** (`src/features/scorecard/`): `scorecardInsights.ts`
 (delta vs history, weakest dimension, emotion journey — pure + tested) and
 `ResolutionJourney.tsx` (red/yellow/green arc strip). Both text and voice AI

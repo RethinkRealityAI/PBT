@@ -3,7 +3,11 @@ import {
   type DimensionDef,
   type DimensionKey,
 } from '../../data/knowledge/scoringRubric';
-import type { ResolvedDimension } from '../../data/knowledge/simulationConfig';
+import {
+  resolveDimensions,
+  type ResolvedDimension,
+  type SimulationConfig,
+} from '../../data/knowledge/simulationConfig';
 import { getDataOverlay } from '../dataRegistry';
 import { DEFAULT_LOCALE, type Locale } from '../locales';
 
@@ -106,4 +110,17 @@ export function localizedResolvedDimension(
         ? l10n.excellentExample
         : dim.excellentExample,
   };
+}
+
+/**
+ * The scorecard's dimension rows: the LIVE rubric (labels / descriptions an
+ * admin set in AI tuning — what the scorer itself was given) localized for
+ * display. Every trainee surface that names a dimension reads this, so the
+ * scorecard never shows a label the scorer didn't use.
+ */
+export function displayDimensions(
+  config: SimulationConfig | null | undefined,
+  locale: Locale,
+): ResolvedDimension[] {
+  return resolveDimensions(config ?? {}).map((d) => localizedResolvedDimension(d, locale));
 }

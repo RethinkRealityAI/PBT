@@ -6,9 +6,9 @@ import { Segmented } from '../design-system/Segmented';
 import { TopBar } from '../shell/TopBar';
 import { Page } from '../shell/Page';
 import { useNavigation } from '../app/providers/NavigationProvider';
-import { useFlag } from '../app/providers/FlagProvider';
+import { useFlag, useSimulationConfig } from '../app/providers/FlagProvider';
 import { bandFor } from '../data/knowledge/scoringRubric';
-import { localizedDimensions } from '../i18n/dataL10n/rubric';
+import { displayDimensions } from '../i18n/dataL10n/rubric';
 import { COLORS } from '../design-system/tokens';
 import { readStorage } from '../lib/storage';
 import { SESSIONS_KEY } from '../lib/sessionsKey';
@@ -140,6 +140,7 @@ function ScorecardView({ session }: { session: SessionRecord }) {
   const offerFeedback = useMemo(() => !isSessionRated(session.id), [session.id]);
   // Admin → Flags: the journey strip's switch (read before the early return).
   const showJourney = useFlag('component.stats.sentiment_chart', true);
+  const simulationConfig = useSimulationConfig();
 
   // A scoring-outage placeholder is not a real evaluation — don't render
   // it as a wall of zeros. The transcript tab still works.
@@ -224,7 +225,7 @@ function ScorecardView({ session }: { session: SessionRecord }) {
       <div>
         <div style={{ height: 14 }} className="lg:hidden" />
         <SectionLabel>{t('history.detail.breakdown')}</SectionLabel>
-        {localizedDimensions(locale).map((dim) => {
+        {displayDimensions(simulationConfig, locale).map((dim) => {
           const score = report[dim.key];
           const band = bandFor(score);
           const color =

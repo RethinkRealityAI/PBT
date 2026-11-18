@@ -8,6 +8,7 @@ import {
 import {
   DIMENSIONS,
   type DimensionDef,
+  type DimensionKey,
 } from '../../data/knowledge/scoringRubric';
 
 /**
@@ -69,17 +70,20 @@ export function emotionJourney(transcript: ChatMessage[]): AiEmotion[] {
 
 /**
  * The single dimension the trainee should work on next: the lowest score,
- * ties broken by rubric weight (heavier dimension = more leverage).
+ * ties broken by weight (heavier dimension = more leverage). Pass the
+ * RESOLVED weights (`resolveWeights(simulationConfig)`) so a tie follows the
+ * weighting the scorer actually used; the code defaults otherwise.
  */
-export function weakestDimension(report: ScoreReport): DimensionDef {
+export function weakestDimension(
+  report: ScoreReport,
+  weights?: Partial<Record<DimensionKey, number>>,
+): DimensionDef {
+  const w = (d: DimensionDef) => weights?.[d.key] ?? d.weight;
   let weakest = DIMENSIONS[0];
   for (const dim of DIMENSIONS) {
     const score = report[dim.key];
     const currentWeakest = report[weakest.key];
-    if (
-      score < currentWeakest ||
-      (score === currentWeakest && dim.weight > weakest.weight)
-    ) {
+    if (score < currentWeakest || (score === currentWeakest && w(dim) > w(weakest))) {
       weakest = dim;
     }
   }

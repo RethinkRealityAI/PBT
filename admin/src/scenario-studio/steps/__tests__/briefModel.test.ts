@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PREFIX_EXAMPLES,
   appendSentence,
+  draftSuccessCriteria,
   hasSentence,
   isHeadingLine,
   removeSentence,
@@ -75,5 +76,40 @@ describe('segmentPrompt', () => {
     expect(isHeadingLine('## Rules')).toBe(true);
     expect(isHeadingLine('#nospace')).toBe(false);
     expect(isHeadingLine('Plain')).toBe(false);
+  });
+});
+
+describe('draftSuccessCriteria — a starting draft from the objection coaching', () => {
+  const coaching = {
+    rootConcerns: ['Worry about ongoing affordability'],
+    acknowledgePatterns: ['Validate the cost without minimising it.'],
+    clarifyQuestions: ['What does her current food cost per day?'],
+    takeActionPatterns: ['Offer a 4-week trial commitment'],
+    watchOuts: ['Arguing about the price'],
+  };
+
+  it('writes one observable sentence per ACT step, then what to avoid', () => {
+    const out = draftSuccessCriteria(coaching, 1500);
+    expect(out).toBe(
+      'Acknowledges the objection first — validate the cost without minimising it. ' +
+        'Asks an open question that surfaces the real worry, such as: What does her current food cost per day? ' +
+        'Names the real concern back to the owner (often: worry about ongoing affordability) before recommending anything. ' +
+        'Ends on a credible, specific next step — offer a 4-week trial commitment. ' +
+        'Avoids: arguing about the price.',
+    );
+  });
+
+  it('uses only the lists that exist, and is empty for no coaching', () => {
+    expect(draftSuccessCriteria({ takeActionPatterns: ['Book a recheck'] }, 1500)).toBe(
+      'Ends on a credible, specific next step — book a recheck.',
+    );
+    expect(draftSuccessCriteria({}, 1500)).toBe('');
+    expect(draftSuccessCriteria(null, 1500)).toBe('');
+  });
+
+  it('drops whole sentences to fit the limit', () => {
+    const out = draftSuccessCriteria(coaching, 100);
+    expect(out.length).toBeLessThanOrEqual(100);
+    expect(out).toBe('Acknowledges the objection first — validate the cost without minimising it.');
   });
 });

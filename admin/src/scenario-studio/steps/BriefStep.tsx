@@ -10,10 +10,17 @@
 import type { StepProps } from '../types';
 import { AssistButton, Chip, Explainer, FieldBlock, StudioSection, TextArea, useFieldId } from '../ui';
 import { COLOR } from '../../lib/tokens';
+import { Button } from '../../primitives/form';
+import { PUSHBACK_KNOWLEDGE } from '../../../../src/data/knowledge/pushbackTaxonomy';
+import { isTeamObjectionId } from '../../../../src/shared/scenarios/objections';
+import { adaptPetWords, speciesOf } from '../../../../src/shared/scenarios/species';
+import { useObjectionsContext } from '../objections/ObjectionsContext';
 import { SCENARIO_LIMITS } from '../../../../src/shared/scenarios/limits';
 import type { StudioDraft } from '../studioModel';
 import {
   CRITERIA_EXAMPLES,
+  draftSuccessCriteria,
+  type CriteriaCoaching,
   PREFIX_EXAMPLES,
   SUFFIX_EXAMPLES,
   appendSentence,
@@ -141,7 +148,26 @@ function NoteField({
   );
 }
 
+/**
+ * The coaching of the draft's objection — a team objection's own lists, or
+ * the built-in taxonomy's. Null for "Something else" or an unknown id.
+ */
+function useDraftCoaching(pushbackId: string | null | undefined): CriteriaCoaching | null {
+  const { objections } = useObjectionsContext();
+  if (!pushbackId || pushbackId === 'custom') return null;
+  if (isTeamObjectionId(pushbackId)) {
+    return objections.find((o) => o.id === pushbackId)?.coaching ?? null;
+  }
+  return PUSHBACK_KNOWLEDGE[pushbackId] ?? null;
+}
+
 export function BriefStep({ draft, patch, canWrite, base, askAssistant, goTo }: StepProps) {
+  const coaching = useDraftCoaching(draft.pushback_id);
+  const species = speciesOf(draft.species);
+  const starter = adaptPetWords(draftSuccessCriteria(coaching, CRITERIA_MAX), species);
+  // Offered only while the field is empty: it is a starting point, never an
+  // overwrite of what the admin wrote.
+  const canStart = canWrite && !!starter && !(draft.success_criteria ?? '').trim();
   return (
     <StepBody>
       <Explainer title="How the briefing works">
@@ -208,9 +234,21 @@ export function BriefStep({ draft, patch, canWrite, base, askAssistant, goTo }: 
             Empathy, Rapport), so scores stay comparable. For this scenario the scorer also reads the
             objection’s coaching — the owner’s real worries, good questions, credible next steps and
             common mistakes — and any documents filed for scoring. Add what a great answer must
-            include <em>here</em> when this scenario has a specific point to hit. The AI customer never
-            sees it.
+            include <em>here</em> so the scorecard judges this scenario’s specific points. Trainees’
+            scorecards also show a “What excellent sounds like” line the scorer writes from these and
+            the conversation — the clearer they are, the more relevant that line is. The AI customer
+            never sees them.
           </Explainer>
+          {canStart && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Button onClick={() => patch({ success_criteria: starter })}>
+                Start from the objection’s coaching
+              </Button>
+              <span style={{ fontSize: 12.5, color: COLOR.inkMute }}>
+                Fills in a first draft from this objection’s good questions and next steps. Edit it to fit.
+              </span>
+            </div>
+          )}
           <NoteField
             field="success_criteria"
             label="What a great answer includes"

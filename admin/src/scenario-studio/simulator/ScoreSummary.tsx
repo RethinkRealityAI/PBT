@@ -10,7 +10,12 @@
  * there is no ring and no zeroes — just what happened and a Retry.
  */
 import { forwardRef, useId, useState, type ReactNode } from 'react';
-import type { ChatMessage, ScoreReport } from '../../../../src/services/types';
+import {
+  excellentExampleFor,
+  type ChatMessage,
+  type ScoreReport,
+} from '../../../../src/services/types';
+import { weakestDimension } from '../../../../src/features/scorecard/scorecardInsights';
 import { STUDIO_STEP_LABELS } from '../../../../src/shared/ai/scenarioAgent';
 import { Glass } from '../../primitives';
 import { Button, InlineAlert } from '../../primitives/form';
@@ -90,6 +95,12 @@ export const ScoreSummary = forwardRef<HTMLHeadingElement, ScoreSummaryProps>(fu
   const band = BAND_META[report.band] ?? BAND_META.poor;
   const verdict = verdictFor(report, messages);
   const moments = (report.keyMoments ?? []).filter((m) => m && (m.label || m.quote)).slice(0, 4);
+  // What the trainee's scorecard shows under "Focus next": the scorer's line
+  // for the weakest skill, written for this scenario. None = the trainee
+  // sees no such section either.
+  const focusKey = weakestDimension(report).key;
+  const focusLabel = SCORE_DIMENSIONS.find((d) => d.key === focusKey)?.label ?? focusKey;
+  const focusExample = excellentExampleFor(report, focusKey);
 
   return (
     <Glass padding={0} radius={RADIUS.xl} className="pbt-studio-in">
@@ -157,6 +168,25 @@ export const ScoreSummary = forwardRef<HTMLHeadingElement, ScoreSummaryProps>(fu
               }}
             >
               {report.betterAlternative.trim()}
+            </blockquote>
+          </Block>
+        )}
+
+        {focusExample && (
+          <Block title={`What excellent sounds like · ${focusLabel}`}>
+            <blockquote
+              style={{
+                margin: 0,
+                padding: '10px 14px',
+                borderRadius: RADIUS.md,
+                borderLeft: `3px solid ${COLOR.success}`,
+                background: COLOR.successSoft,
+                fontSize: 13.5,
+                lineHeight: 1.55,
+                color: COLOR.ink,
+              }}
+            >
+              {focusExample}
             </blockquote>
           </Block>
         )}

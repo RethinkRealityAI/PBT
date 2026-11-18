@@ -392,6 +392,19 @@ export function readiness(draft: StudioDraft, ctx: StudioContext): ReadinessItem
     },
     // Advisory: inherited category documents the scorer can't read.
     ...categoryScoringReadiness(ctx),
+    // Advisory: what a great answer includes. The scorer writes the
+    // trainee's "What excellent sounds like" line from these + the
+    // conversation; without them it leans on the objection's coaching alone.
+    {
+      key: 'success-criteria',
+      label: 'It says what a great answer includes',
+      ok: hasText(draft.success_criteria),
+      level: 'recommended',
+      detail: hasText(draft.success_criteria)
+        ? undefined
+        : 'The scorecard’s “What excellent sounds like” line is written from these. Add them on the AI brief step — for a listed objection, “Start from the objection’s coaching” gives you a first draft.',
+      step: 'brief',
+    },
     {
       key: 'tested',
       label: 'You have test-driven this version',

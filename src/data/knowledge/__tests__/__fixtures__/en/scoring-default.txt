@@ -59,10 +59,23 @@ Transform: Propose a specific, credible Royal Canin next step with concrete bene
 Return JSON with an integer 0–100 for each of the five dimensions
 (acknowledge, clarify, transform, empathy, rapport), a multi-paragraph
 critique, a betterAlternative example line, a perDimensionNotes object (one
-short coaching note per dimension, keyed by the same five dimension names), a
+short coaching note per dimension, keyed by the same five dimension names), an
+excellentExamples object (keyed by the same five dimension names — see below), a
 keyMoments array of up to 3 moments of note (with type=win|miss, label, quote,
 ts), and a turnSentiment array — ONE entry per turn in the transcript, in order.
 Do NOT include an overall or band — those are computed from your dimension scores.
+
+# excellentExamples FORMAT
+- One entry per dimension: what an EXCELLENT (≥85) answer would have sounded
+  like in THIS conversation, at the moment where that skill mattered most.
+- Write it as a line the staff member could have said to this owner, in their
+  voice — using this pet's and owner's real details from the transcript, the
+  owner's actual concern, and the scenario's success criteria and answer key
+  above when given. For rapport (pacing), one sentence describing what
+  excellent pacing would have looked like with this owner is fine.
+- Never copy or adapt the rubric's EXCELLENT example lines: they are written
+  about other pets and other objections. If the transcript gives you nothing
+  to build a line from for a dimension, return an empty string for it.
 
 # turnSentiment FORMAT
 - One object per transcript turn. Index 0 maps to turn 1 in the input.

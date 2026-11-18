@@ -148,3 +148,58 @@ export const CRITERIA_EXAMPLES: NoteExample[] = [
     sentence: 'Mentions a product only after asking at least one open question about the pet’s situation.',
   },
 ];
+
+/** The coaching lists a starting draft of the success criteria reads. */
+export interface CriteriaCoaching {
+  rootConcerns?: readonly string[];
+  acknowledgePatterns?: readonly string[];
+  clarifyQuestions?: readonly string[];
+  takeActionPatterns?: readonly string[];
+  watchOuts?: readonly string[];
+}
+
+/** Trim a coaching line into a clause: no trailing full stop, inner quotes kept. */
+function clause(line: string | undefined): string | null {
+  const t = (line ?? '').trim().replace(/[.\s]+$/, '');
+  return t ? t : null;
+}
+
+/**
+ * A STARTING draft of "What a great answer includes", built from the
+ * objection's own coaching — so a scenario has scenario-specific criteria
+ * (and the trainee's "What excellent sounds like" line has something
+ * specific to be written from) even before the admin writes their own.
+ * One observable sentence per ACT step, from the FIRST item of each list,
+ * then the first common mistake to avoid. Only lines that exist are used;
+ * returns '' when the coaching has nothing usable. Never longer than `max`
+ * (whole sentences are dropped from the end to fit). The admin edits it.
+ */
+export function draftSuccessCriteria(coaching: CriteriaCoaching | null | undefined, max: number): string {
+  if (!coaching) return '';
+  const first = (list?: readonly string[]) => clause(list?.find((l) => typeof l === 'string' && l.trim()));
+  const concern = first(coaching.rootConcerns);
+  const ack = first(coaching.acknowledgePatterns);
+  const ask = first(coaching.clarifyQuestions);
+  const act = first(coaching.takeActionPatterns);
+  const avoid = first(coaching.watchOuts);
+  const sentences = [
+    ack && `Acknowledges the objection first — ${lowerFirst(ack)}.`,
+    ask && `Asks an open question that surfaces the real worry, such as: ${ask}${/[?!]$/.test(ask) ? '' : '?'}`,
+    concern && `Names the real concern back to the owner (often: ${lowerFirst(concern)}) before recommending anything.`,
+    act && `Ends on a credible, specific next step — ${lowerFirst(act)}.`,
+    avoid && `Avoids: ${lowerFirst(avoid)}.`,
+  ].filter((s): s is string => !!s);
+  let out = '';
+  for (const s of sentences) {
+    const next = out ? `${out} ${s}` : s;
+    if (next.length > max) break;
+    out = next;
+  }
+  return out;
+}
+
+/** Lower-case the first letter unless the line opens with a quote or an acronym. */
+function lowerFirst(s: string): string {
+  if (/^[A-Z]{2}/.test(s)) return s;
+  return s.charAt(0).toLowerCase() + s.slice(1);
+}
